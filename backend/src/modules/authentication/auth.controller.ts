@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { signup, login } from './auth.service.js';
+import { signup, login, refreshTokens } from './auth.service.js';
 import { SuccessResponse } from '../../common/utils/response/success.responce.js';
 
 const router = Router()
@@ -15,10 +15,20 @@ router.post('/signup', async(req, res) => {
 router.post('/login', async(req, res, next) => {
     try {
         const result = await login(req.body);
-        SuccessResponse({ res, message: result.message, data: { token: result.token, user: result.user } })
+        SuccessResponse({ res, message: result.message, data: { token: result.token, refreshToken: result.refreshToken, user: result.user } })
     } catch (error) {
         next(error);
     }
 })
+
+router.post('/refresh', async (req, res, next) => {
+    try {
+        const { refreshToken } = req.body;
+        const result = await refreshTokens(refreshToken);
+        SuccessResponse({ res, message: 'Tokens refreshed successfully', data: result });
+    } catch (error) {
+        next(error);
+    }
+});
 
 export default router;

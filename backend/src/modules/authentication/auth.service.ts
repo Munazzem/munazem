@@ -21,11 +21,14 @@ export const login = async (data: ILoginRequest): Promise<IAuthResponse> => {
         throw UnauthorizedException({ message: 'تم إيقاف هذا الحساب، يرجى مراجعة الإدارة' });
     }
 
-    const token = TokenUtil.generateToken({
+    const payload = {
         userId: user._id.toString(),
         role: user.role,
         teacherId: user.teacherId ? user.teacherId.toString() : null
-    });
+    };
+
+    const token = TokenUtil.generateAccessToken(payload);
+    const refreshToken = TokenUtil.generateRefreshToken(payload);
 
     const userObject = user.toObject();
     delete userObject.password;
@@ -33,8 +36,34 @@ export const login = async (data: ILoginRequest): Promise<IAuthResponse> => {
     return {
         message: 'تم تسجيل الدخول بنجاح',
         token,
+        refreshToken,
         user: userObject
     };
+}
+
+export const refreshTokens = async (refreshToken: string) => {
+    if (!refreshToken) {
+        throw UnauthorizedException({ message: 'Refresh token is required' });
+    }
+
+    try {
+        const payload = TokenUtil.verifyRefreshToken(refreshToken);
+        
+        // Remove iat and exp from payload to generate a fresh token
+        const newPayload = { ...payload };
+        delete (newPayload as any).iat;
+        delete (newPayload as any).exp;
+
+        const newToken = TokenUtil.generateAccessToken(newPayload);
+        const newRefreshToken = TokenUtil.generateRefreshToken(newPayload);
+
+        return {
+            token: newToken,
+            refreshToken: newRefreshToken
+        };
+    } catch (error) {
+        throw UnauthorizedException({ message: 'Invalid or expired refresh token' });
+    }
 }
 
 export const signup = async(data: any)=>{
@@ -44,6 +73,13 @@ export const signup = async(data: any)=>{
     if (exsistUser) {
         throw ConflictException({ message: "User already exists with this email" })
     }
-    const userData = await UserModel.create({name,email,password,phone})
-    return userData
+    
+    const hashedPassword = await PasswordUtil.hashPassword(password);
+    
+    const userData = await UserModel.create({name, email, password: hashedPassword, phone})
+    
+    const userObject = userData.toObject();
+    delete userObject.password;
+    
+    return userObject;
 }
