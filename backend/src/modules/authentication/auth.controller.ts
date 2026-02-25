@@ -1,5 +1,5 @@
 import{Router} from 'express';
-import { signup } from './auth.serivce.js';
+import { signup } from './auth.service.js';
 import { SuccessResponse } from '../../common/utils/response/success.responce.js';
 
 const router = Router()

@@ -32,7 +32,7 @@ const userSchema = new Schema<IUserDocument>(
     role: {
         type: String,
         enum: Object.values(UserRole),
-        required: true,
+        default: UserRole.teacher,
     },
     teacherId: {
         type: Schema.Types.ObjectId,
