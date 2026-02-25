@@ -3,6 +3,7 @@ import { DBConnection } from './database/connection.js';
 import { globalErrorHandler } from './common/utils/response/error.responce.js';
 import { envVars } from '../config/env.service.js';
 import authRouter from './modules/authentication/auth.controller.js';
+import userRouter from './modules/users/users.routes.js';
 
 export const bootstrap = ()=>{
 const app = express();
@@ -11,6 +12,8 @@ app.use(express.json());
 DBConnection() // Connect to MongoDB
 
 app.use('/auth', authRouter) // Authentication routes
+app.use('/users', userRouter) // Users routes
+
 app.get('/', (req, res) => {
     res.send('Hello World!');
 });

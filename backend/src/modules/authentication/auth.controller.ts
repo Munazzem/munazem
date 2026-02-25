@@ -1,18 +1,24 @@
 import { Router } from 'express';
 import { signup, login, refreshTokens } from './auth.service.js';
 import { SuccessResponse } from '../../common/utils/response/success.responce.js';
+import { validate } from '../../middlewares/validate.middleware.js';
+import { loginSchema, signupSchema } from './auth.validation.js';
 
 const router = Router()
 
-router.post('/signup', async(req, res) => {
-    const userData = await signup(req.body)
-    if (!userData) {
-        res.status(400).json({message: "Failed to create user"})
+router.post('/signup', validate(signupSchema), async (req, res, next) => {
+    try {
+        const userData = await signup(req.body)
+        if (!userData) {
+            return res.status(400).json({message: "Failed to create user"})
+        }
+        SuccessResponse({ res, message: "User created successfully", data: userData })
+    } catch (error) {
+        next(error)
     }
-    SuccessResponse({ res, message: "User created successfully", data: userData })
 })
 
-router.post('/login', async(req, res, next) => {
+router.post('/login', validate(loginSchema), async (req, res, next) => {
     try {
         const result = await login(req.body);
         SuccessResponse({ res, message: result.message, data: { token: result.token, refreshToken: result.refreshToken, user: result.user } })
