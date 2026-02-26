@@ -1,4 +1,5 @@
-import express from 'express'
+import express from 'express';
+import cors from 'cors';
 import { DBConnection } from './database/connection.js';
 import { globalErrorHandler } from './common/utils/response/error.responce.js';
 import { envVars } from '../config/env.service.js';
@@ -9,12 +10,13 @@ import subscriptionsRouter from './modules/subscriptions/subscriptions.controlle
 export const bootstrap = ()=>{
 const app = express();
 app.use(express.json());
+app.use(cors());
 
 DBConnection() // Connect to MongoDB
 
-app.use('/auth', authRouter) // Authentication routes
-app.use('/users', userRouter) // Users routes
-app.use('/subscriptions', subscriptionsRouter) // Subscriptions routes
+app.use('/api/auth', authRouter) // Authentication routes
+app.use('/api/users', userRouter) // Users routes
+app.use('/api/subscriptions', subscriptionsRouter) // Subscriptions routes
 
 app.get('/', (req, res) => {
     res.send('Hello World!');
