@@ -65,21 +65,3 @@ export const refreshTokens = async (refreshToken: string) => {
         throw UnauthorizedException({ message: 'Invalid or expired refresh token' });
     }
 }
-
-export const signup = async(data: any)=>{
-    const {name, email , password , phone} = data;
-
-    const exsistUser = await UserModel.findOne({email})
-    if (exsistUser) {
-        throw ConflictException({ message: "User already exists with this email" })
-    }
-    
-    const hashedPassword = await PasswordUtil.hashPassword(password);
-    
-    const userData = await UserModel.create({name, email, password: hashedPassword, phone})
-    
-    const userObject = userData.toObject();
-    delete userObject.password;
-    
-    return userObject;
-}

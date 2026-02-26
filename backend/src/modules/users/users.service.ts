@@ -11,13 +11,14 @@ export class UserService {
         }
 
         if (creatorRole === UserRole.teacher) {
-            if (data.role !== UserRole.assistant) {
-                throw UnauthorizedException({ message: 'المدرس صلاحياته تقتصر على إضافة مساعدين فقط' });
-            }
+            // Force the role to Assistant (ignoring whatever was sent)
+            data.role = UserRole.assistant;
             data.teacherId = creatorId;
         }
 
-        if (creatorRole === UserRole.superAdmin && data.role === UserRole.teacher) {
+        if (creatorRole === UserRole.superAdmin) {
+            // Force the role to Teacher (ignoring whatever was sent)
+            data.role = UserRole.teacher;
             data.teacherId = null;
         }
 
