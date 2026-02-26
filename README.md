@@ -1,63 +1,63 @@
-# Monazem (منظِّم) 🚀
+# Monazem 🚀
 
-**Monazem** هو نظام إدارة سحابي (SaaS) متكامل ومغلق لدعم وإدارة المراكز التعليمية والمعلمين. النظام مصمم لتسهيل إدارة الطلاب، الحضور والانصراف، المساعدين، والاشتراكات بشكل آلي ومحمي بالكامل.
-
----
-
-## 🛠 التكنولوجيا المستخدمة (Tech Stack)
-- **بيئة العمل:** Node.js, Express.js
-- **اللغة:** TypeScript (لضمان الجودة وتقليل الأخطاء البرمجية)
-- **قاعدة البيانات:** MongoDB (عن طريق Mongoose)
-- **الأمان:** JWT (JSON Web Tokens), Bcrypt (لتشفير كلمات المرور)
-- **التحقق من البيانات (Validation):** Zod
+**Monazem** is a comprehensive, closed-ecosystem SaaS management system designed to support and manage educational centers and teachers. The system facilitates the automated and fully secured management of students, attendance, assistants, and subscriptions.
 
 ---
 
-## ✨ المميزات الحالية (Features Implemented)
+## 🛠 Tech Stack
+- **Environment:** Node.js, Express.js
+- **Language:** TypeScript (for code quality and error reduction)
+- **Database:** MongoDB (via Mongoose)
+- **Security:** JWT (JSON Web Tokens), Bcrypt (for password hashing)
+- **Data Validation:** Zod
 
-### 1. نظام المصادقة والأمان (Authentication & Security) 🔒
-- **نسق تسجيل دخول قوي:** يعتمد على الـ `Access Tokens` قصيرة المدى لدواعي الأمان.
-- **Refresh Tokens:** نظام توكنز طويلة الأمد (صالحة لمدة سنة) لضمان بقاء المستخدم بداخل حسابه من غير ما يضطر لتسجيل الدخول بشكل متكرر، مع إمكانية تجديد الجلسات (Sessions) بشكل ديناميكي.
-- **تشفير كلمات المرور:** باستخدام `Bcrypt` لضمان عدم حفظ أي كلمات مرور نصية في قاعدة البيانات.
-- **حماية المسارات (Route Guards):** طبقة `Middleware` مخصصة لمنع أي مستخدم غير مسجل من الوصول للمسارات الحساسة.
+---
 
-### 2. التحقق من صحة البيانات (Data Validation) 🛡
-- تم دمج مكتبة **Zod** لعمل طبقة `Middleware` مركزية تفحص كل الطلبات القادمة للخادم (Request Body, Query, Params).
-- النظام بيرفض أي بيانات غير متوافقة (زي أن يكون رقم التليفون أقل من 10 أرقام أو الإيميل صيغته خاطئة) وبيرجع رسائل خطأ واضحة `400 Bad Request` قبل ما الطلب يوصل أصلاً للداتابيز.
+## ✨ Implemented Features
 
-### 3. هندسة الصلاحيات الهرمية (Role-Based Access Control - RBAC) 👑
-تم تصميم النظام ليكون **مغلقاً (Closed Ecosystem)**، بمعنى أنه مفيش مسار للتسجيل العام (Public Signup). إضافة المستخدمين بتتم عن طريق هيكل وصلاحيات صارمة كالتالي:
+### 1. Authentication & Security 🔒
+- **Robust Login Flow:** Utilizes short-lived `Access Tokens` for enhanced security.
+- **Refresh Tokens:** Long-lived tokens (valid for 1 year) to ensure users remain logged in without frequent re-authentication, supporting dynamic session renewal.
+- **Password Hashing:** Uses `Bcrypt` to ensure no plain-text passwords are saved in the database.
+- **Route Guards:** Custom `Middleware` layers to prevent unauthorized access to sensitive routes.
 
-- **المدير العام (Super Admin):**
-  - المتحكم بأعلى صلاحية في السيرفر.
-  - يقدر يشوف الفواتير والاشتراكات.
-  - **صلاحية الإضافة:** يقدر يضيف حسابات **المعلمين (Teachers)** فقط.
+### 2. Data Validation 🛡
+- Integration of **Zod** as a central `Middleware` layer to validate all incoming server requests (Request Body, Query, Params).
+- The system rejects any non-compliant data (e.g., phone numbers less than 10 digits, invalid emails) and returns clear `400 Bad Request` errors before reaching the database.
+
+### 3. Role-Based Access Control (RBAC) 👑
+The system is designed as a **Closed Ecosystem**, meaning there is no public signup route. User creation follows a strict hierarchical structure:
+
+- **Super Admin:**
+  - Holds the highest server authority.
+  - Can view invoices and system subscriptions.
+  - **Creation Rights:** Authorized to create **Teacher** accounts only.
   
-- **المعلم (Teacher):**
-  - يدير السنتر الخاص بيه وطلابه.
-  - **صلاحية الإضافة:** يقدر يضيف حسابات **مساعدين (Assistants)** للنظام، وبشكل آلي، المساعد الجديد بيتربط بـ ID المعلم ده، بحيث ميتدخلش في شغل معلمين تانيين.
+- **Teacher:**
+  - Manages their own educational center and students.
+  - **Creation Rights:** Authorized to create **Assistant** accounts. The new assistant is automatically linked to the teacher's ID, preventing interference with other teachers.
 
-- **المساعد (Assistant):**
-  - أداة مساعدة للمعلم (بياخد الغياب، بيسجل درجات، الخ).
-  - لا يملك صلاحية إضافة أي حسابات جديدة للسيستم (`403 Forbidden`).
+- **Assistant:**
+  - A helping hand for the teacher (e.g., taking attendance, recording grades).
+  - No authorization to create any new accounts in the system (`403 Forbidden`).
 
 ---
 
-## ⚙️ طريقة التشغيل للمطورين (Development Setup)
+## ⚙️ Development Setup
 
-1. استنساخ المشروع (Clone the repository).
-2. تثبيت الحزم:
+1. Clone the repository.
+2. Install dependencies:
    ```bash
    cd backend
    npm install
    ```
-3. إضافة ملف الـ `.env` الخاص بالبيئة (بيشمل `DB_URL`، `JWT_SECRET`، `JWT_REFRESH_SECRET`).
-4. تشغيل سيرفر التطوير:
+3. Create the `.env` file (including `DB_URL`, `JWT_SECRET`, `JWT_REFRESH_SECRET`).
+4. Start the development server:
    ```bash
    npm run dev
    ```
 
-*(ملاحظة: السجل الأول للـ Super Admin تم تهيئته مسبقاً في قاعدة البيانات للوصول للوحة التحكم الأساسية).*
+*(Note: The initial Super Admin record is seeded directly into the database to access the main dashboard).*
 
 ---
-*تم التطوير بكل فخر لبناء بيئة تعليمية وتنظيمية أقوى.* ☕💻
+*Developed with pride to build a stronger educational and organizational environment.* ☕💻
