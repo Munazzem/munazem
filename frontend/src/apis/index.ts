@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { useAuthStore } from '../context/useAuthStore';
 
 // Base API instance
 export const api = axios.create({
@@ -7,8 +8,6 @@ export const api = axios.create({
     'Content-Type': 'application/json',
   },
 });
-
-import { useAuthStore } from '../context/useAuthStore';
 
 // Request Interceptor: Attach access token if available
 api.interceptors.request.use(

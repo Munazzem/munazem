@@ -49,10 +49,8 @@ export const useAuthStore = create<AuthState>()(
         })),
     }),
     {
-      name: 'monazem-auth-storage', // Key name in localStorage
+      name: 'monazem-auth-storage', 
       storage: createJSONStorage(() => localStorage), 
-      // In production, we should avoid persisting accessToken in localStorage strictly if possible, 
-      // but for MVP fast access it's standard. Alternatively, rely on cookies.
     }
   )
 );

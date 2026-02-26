@@ -10,10 +10,9 @@ import { api } from "@/apis";
 import { useAuthStore } from "@/context/useAuthStore";
 import { useRouter } from "next/navigation";
 
-// Define the validation schema using Zod
 const loginSchema = z.object({
   phone: z.string().min(10, "رقم الهاتف غير صحيح"),
-  password: z.string().min(6, "كلمة المرور غير صحيحة"),
+  password: z.string().min(6, "كلمة المرور يجب أن تكون 6 أحرف على الأقل"),
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
@@ -37,10 +36,8 @@ export default function LoginPage() {
       const response = await api.post("/auth/login", data);
       const { user, accessToken, refreshToken } = response.data.data;
 
-      // Save to Zustand global state
       login(user, accessToken, refreshToken);
 
-      // Redirect based on role
       if (user.role === "superAdmin") {
         router.push("/admin/dashboard");
       } else {
@@ -53,7 +50,6 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 flex-col overflow-hidden" dir="rtl">
-      
       <div className="w-full max-w-md p-8 bg-white rounded-2xl shadow-xl z-10 border border-gray-100">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-extrabold text-blue-900 mb-2">منظم</h1>
@@ -87,7 +83,6 @@ export default function LoginPage() {
           </Button>
         </form>
       </div>
-
     </div>
   );
 }
