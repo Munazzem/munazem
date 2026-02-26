@@ -7,6 +7,8 @@ import { envVars } from '../config/env.service.js';
 import authRouter from './modules/authentication/auth.controller.js';
 import userRouter from './modules/users/users.controller.js';
 import subscriptionsRouter from './modules/subscriptions/subscriptions.controller.js';
+import groupsRouter from './modules/groups/groups.controller.js';
+import studentsRouter from './modules/students/students.controller.js';
 
 export const bootstrap = ()=>{
 const app = express();
@@ -21,6 +23,8 @@ DBConnection() // Connect to MongoDB
 app.use('/auth', authRouter) // Authentication routes
 app.use('/users', userRouter) // Users routes
 app.use('/subscriptions', subscriptionsRouter) // Subscriptions routes
+app.use('/groups', groupsRouter)
+app.use('/students', studentsRouter)
 
 app.get('/', (req, res) => {
     res.send('Hello World!');
