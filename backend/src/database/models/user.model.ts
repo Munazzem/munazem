@@ -44,7 +44,7 @@ const userSchema = new Schema<IUserDocument>(
     status: {
         type: String,
         enum: Object.values(SubscriptionStatus),
-        default: SubscriptionStatus.active,
+        default: SubscriptionStatus.ACTIVE,
     },
     expiryDate: {
         type: Date,

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { login, refreshTokens } from './auth.service.js';
 import { SuccessResponse } from '../../common/utils/response/success.responce.js';
 import { validate } from '../../middlewares/validate.middleware.js';
-import { loginSchema } from './auth.validation.js';
+import { loginSchema } from '../../validation/auth.validation.js';
 
 const router = Router()
 
