@@ -5,6 +5,8 @@ import { SuccessResponse } from '../../common/utils/response/success.responce.js
 import { ErrorResponse, UnauthorizedException } from '../../common/utils/response/error.responce.js';
 import { authenticate } from '../../middlewares/auth.middleware.js';
 import { authorizeRoles } from '../../middlewares/roles.middleware.js';
+import { validate } from '../../middlewares/validate.middleware.js';
+import { userCreationSchema } from '../../validation/user.validation.js';
 import { UserRole } from '../../common/enums/enum.service.js';
 
 class UserController {
@@ -37,6 +39,6 @@ const router = Router();
 router.use(authenticate);
 
 // Only SuperAdmin and Teacher can create new users (Teacher creates Assistant, SuperAdmin creates Teacher)
-router.post('/', authorizeRoles(UserRole.superAdmin, UserRole.teacher), UserController.createUser);
+router.post('/', authorizeRoles(UserRole.superAdmin, UserRole.teacher), validate(userCreationSchema), UserController.createUser);
 
 export default router;

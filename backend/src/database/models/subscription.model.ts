@@ -6,7 +6,8 @@ const subscriptionSchema = new Schema<ISubscription>({
     teacherId: { 
         type: Schema.Types.ObjectId, 
         ref: 'User', 
-        required: true 
+        required: true,
+        index: true // [PERFORMANCE OPTIMIZATION] Added index to speed up finding all subscriptions belonging to a specific teacher
     },
     startDate: { 
         type: Date, 
