@@ -55,13 +55,15 @@ export class StudentService {
         if (queryFilters.gradeLevel) filter.gradeLevel = queryFilters.gradeLevel;
         if (queryFilters.isActive !== undefined) filter.isActive = queryFilters.isActive === 'true';
         
-        // Search by phone or barcode if provided
+        // Search by phone or barcode — anchored prefix regex (^) leverages the existing index
+        // Unlike /search/i which does a full collection scan, /^search/ uses the B-tree index
         if (queryFilters.search) {
-             filter.$or = [
-                 { studentPhone: new RegExp(queryFilters.search, 'i') },
-                 { parentPhone: new RegExp(queryFilters.search, 'i') },
-                 { barcode: new RegExp(queryFilters.search, 'i') },
-             ];
+            const prefixRegex = new RegExp(`^${queryFilters.search}`);
+            filter.$or = [
+                { studentPhone: prefixRegex },
+                { parentPhone:  prefixRegex },
+                { barcode:      prefixRegex },
+            ];
         }
 
         // Pagination
