@@ -5,6 +5,7 @@ export enum UserRole {
 }
 
 export enum SubscriptionStatus {
-    active = 'active',
-    expired = 'expired',
+    ACTIVE = 'ACTIVE',
+    EXPIRED = 'EXPIRED',
+    PENDING = 'PENDING'
 }

@@ -7,7 +7,8 @@ import type { ILoginRequest, IAuthResponse } from "../../types/auth.types.js";
 export const login = async (data: ILoginRequest): Promise<IAuthResponse> => {
     const { phone, password } = data;
 
-    const user = await UserModel.findOne({ phone }).select('+password');
+    // [PERFORMANCE OPTIMIZATION] Using .lean() to bypass Mongoose hydration. Faster read times for login.
+    const user = await UserModel.findOne({ phone }).select('+password').lean();
     if (!user) {
         throw UnauthorizedException({ message: 'رقم الهاتف أو كلمة المرور غير صحيحة' });
     }
@@ -21,29 +22,48 @@ export const login = async (data: ILoginRequest): Promise<IAuthResponse> => {
         throw UnauthorizedException({ message: 'تم إيقاف هذا الحساب، يرجى مراجعة الإدارة' });
     }
 
-    const token = TokenUtil.generateToken({
+    const payload = {
         userId: user._id.toString(),
         role: user.role,
         teacherId: user.teacherId ? user.teacherId.toString() : null
-    });
+    };
 
-    const userObject = user.toObject();
+    const token = TokenUtil.generateAccessToken(payload);
+    const refreshToken = TokenUtil.generateRefreshToken(payload);
+
+    // Since we used .lean(), 'user' is already a plain JS object, so we don't need .toObject()
+    const userObject = { ...user };
     delete userObject.password;
 
     return {
         message: 'تم تسجيل الدخول بنجاح',
         token,
+        refreshToken,
         user: userObject
     };
 }
 
-export const signup = async(data: any)=>{
-    const {name, email , password , phone} = data;
-
-    const exsistUser = await UserModel.findOne({email})
-    if (exsistUser) {
-        throw ConflictException({ message: "User already exists with this email" })
+export const refreshTokens = async (refreshToken: string) => {
+    if (!refreshToken) {
+        throw UnauthorizedException({ message: 'Refresh token is required' });
     }
-    const userData = await UserModel.create({name,email,password,phone})
-    return userData
+
+    try {
+        const payload = TokenUtil.verifyRefreshToken(refreshToken);
+        
+        // Remove iat and exp from payload to generate a fresh token
+        const newPayload = { ...payload };
+        delete (newPayload as any).iat;
+        delete (newPayload as any).exp;
+
+        const newToken = TokenUtil.generateAccessToken(newPayload);
+        const newRefreshToken = TokenUtil.generateRefreshToken(newPayload);
+
+        return {
+            token: newToken,
+            refreshToken: newRefreshToken
+        };
+    } catch (error) {
+        throw UnauthorizedException({ message: 'Invalid or expired refresh token' });
+    }
 }
