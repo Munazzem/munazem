@@ -1,5 +1,6 @@
 import mongoose, { Schema, Model } from 'mongoose';
 import type { IGroup } from '../../types/group.types.js';
+import { GradeLevel } from '../../common/enums/enum.service.js';
 
 const groupSchema = new Schema<IGroup>({
     name: { 
@@ -9,6 +10,7 @@ const groupSchema = new Schema<IGroup>({
     },
     gradeLevel: { 
         type: String, 
+        enum: Object.values(GradeLevel),
         required: [true, 'المرحلة الدراسية مطلوبة'] 
     },
     schedule: [{ 

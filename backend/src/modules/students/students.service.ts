@@ -1,21 +1,22 @@
 import { StudentModel } from '../../database/models/student.model.js';
 import { GroupModel } from '../../database/models/group.model.js';
 import { NotFoundException, BadRequestException, ConflictException } from '../../common/utils/response/error.responce.js';
+import type { CreateStudentDTO, UpdateStudentDTO } from '../../types/dto.types.js';
 
 export class StudentService {
     
     // Core logic for splitting the full name
-    private static parseFullName(fullName: string) {
+    private static parseFullName(fullName: string): { studentName: string; parentName: string } {
         const parts = fullName.trim().split(/\s+/);
         if (parts.length < 2) {
             throw BadRequestException({ message: 'الرجاء إدخال الاسم الثنائي على الأقل (اسم الطالب واسم الأب)' });
         }
-        const studentName = parts[0];
-        const parentName = parts.slice(1).join(' '); // Rejoin the rest of the names
+        const studentName = parts[0] as string; // safe: length >= 2 guaranteed above
+        const parentName = parts.slice(1).join(' ');
         return { studentName, parentName };
     }
 
-    static async createStudent(teacherId: string, data: any) {
+    static async createStudent(teacherId: string, data: CreateStudentDTO) {
         // 1. Verify group exists and belongs to this teacher
         const group = await GroupModel.findOne({ _id: data.groupId, teacherId }).lean();
         if (!group) {
@@ -25,16 +26,19 @@ export class StudentService {
         // 2. Parse the name
         const { studentName, parentName } = this.parseFullName(data.fullName);
 
-        // 3. Create
+        // 3. Create — explicit fields only (no spread of DTO to avoid fullName leaking into model)
         try {
             return await StudentModel.create({
-                ...data,
                 studentName,
                 parentName,
-                teacherId
+                studentPhone: data.studentPhone,
+                parentPhone:  data.parentPhone,
+                gradeLevel:   data.gradeLevel,
+                groupId:      data.groupId,
+                teacherId,
+                ...(data.barcode ? { barcode: data.barcode } : {}),
             });
         } catch (error: any) {
-            // Handle duplicate phone number indexing explicitly to give user-friendly message
             if (error.code === 11000) {
                 if (error.keyPattern?.studentPhone) {
                     throw ConflictException({ message: 'يوجد طالب آخر مسجل بنفس رقم الهاتف مع هذا المعلم' });
@@ -101,14 +105,19 @@ export class StudentService {
         return student;
     }
 
-    static async updateStudent(studentId: string, teacherId: string, data: any) {
-        // If fullName is updated, we must re-parse it
-        let updatePayload = { ...data };
+    static async updateStudent(studentId: string, teacherId: string, data: UpdateStudentDTO) {
+        // Build a typed update payload — extend with parsed name fields if needed
+        type UpdatePayload = Omit<UpdateStudentDTO, 'fullName'> & {
+            studentName?: string;
+            parentName?: string;
+        };
+        const updatePayload: UpdatePayload = { ...data };
+        delete (updatePayload as any).fullName;
+
         if (data.fullName) {
             const { studentName, parentName } = this.parseFullName(data.fullName);
             updatePayload.studentName = studentName;
             updatePayload.parentName = parentName;
-            delete updatePayload.fullName;
         }
 
         try {

@@ -1,11 +1,12 @@
 import { Document, Types } from 'mongoose';
+import { GradeLevel } from '../common/enums/enum.service.js';
 
 export interface IStudent {
     studentName: string;
     parentName: string;
     studentPhone: string;
     parentPhone: string;
-    gradeLevel: string;
+    gradeLevel: GradeLevel;
     barcode?: string;
     groupId: Types.ObjectId;
     teacherId: Types.ObjectId;

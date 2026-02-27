@@ -1,14 +1,18 @@
 import { GroupModel } from '../../database/models/group.model.js';
 import { StudentModel } from '../../database/models/student.model.js';
 import { NotFoundException, BadRequestException } from '../../common/utils/response/error.responce.js';
+import type { CreateGroupDTO, UpdateGroupDTO } from '../../types/dto.types.js';
 
 export class GroupService {
     
     // Create a new group (Only Assistants can trigger this in the controller)
-    static async createGroup(teacherId: string, data: any) {
+    static async createGroup(teacherId: string, data: CreateGroupDTO) {
         return await GroupModel.create({
-            ...data,
-            teacherId
+            name:       data.name,
+            gradeLevel: data.gradeLevel,
+            schedule:   data.schedule,
+            teacherId,
+            ...(data.capacity ? { capacity: data.capacity } : {}),
         });
     }
 
@@ -46,7 +50,7 @@ export class GroupService {
     }
 
     // Update group
-    static async updateGroup(groupId: string, teacherId: string, data: any) {
+    static async updateGroup(groupId: string, teacherId: string, data: UpdateGroupDTO) {
         const updatedGroup = await GroupModel.findOneAndUpdate(
             { _id: groupId, teacherId },
             data,
@@ -59,11 +63,9 @@ export class GroupService {
 
     // Delete group — guarded: refuses if students still exist in the group
     static async deleteGroup(groupId: string, teacherId: string) {
-        // Ensure the group exists and belongs to this teacher
         const group = await GroupModel.findOne({ _id: groupId, teacherId }).lean();
         if (!group) throw NotFoundException({ message: 'المجموعة غير موجودة' });
 
-        // Prevent orphan students
         const studentsCount = await StudentModel.countDocuments({ groupId, teacherId });
         if (studentsCount > 0) {
             throw BadRequestException({ message: `لا يمكن حذف المجموعة، يوجد بها ${studentsCount} طالب. يرجى نقل الطلاب أولاً` });

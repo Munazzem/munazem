@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import { DBConnection } from './database/connection.js';
 import { globalErrorHandler } from './common/utils/response/error.responce.js';
 import { envVars } from '../config/env.service.js';
@@ -13,6 +14,7 @@ import studentsRouter from './modules/students/students.controller.js';
 
 export const bootstrap = () => {
     const app = express();
+    app.use(helmet());           // Secure HTTP headers
     app.use(express.json());
     app.use(cors());
 

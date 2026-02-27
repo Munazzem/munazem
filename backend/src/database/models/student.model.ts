@@ -1,5 +1,6 @@
 import mongoose, { Schema, Model } from 'mongoose';
 import type { IStudent } from '../../types/student.types.js'
+import { GradeLevel } from '../../common/enums/enum.service.js';
 
 const studentSchema = new Schema<IStudent>({
     studentName: { 
@@ -23,6 +24,7 @@ const studentSchema = new Schema<IStudent>({
     },
     gradeLevel: { 
         type: String, 
+        enum: Object.values(GradeLevel),
         required: [true, 'المرحلة الدراسية مطلوبة'] 
     },
     barcode: { 

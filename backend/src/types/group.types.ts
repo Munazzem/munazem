@@ -1,4 +1,5 @@
 import { Document, Types } from 'mongoose';
+import { GradeLevel } from '../common/enums/enum.service.js';
 
 export interface ISchedule {
     day: string;
@@ -7,7 +8,7 @@ export interface ISchedule {
 
 export interface IGroup {
     name: string;
-    gradeLevel: string;
+    gradeLevel: GradeLevel;
     schedule: ISchedule[];
     capacity?: number;
     teacherId: Types.ObjectId;
