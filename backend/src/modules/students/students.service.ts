@@ -55,7 +55,7 @@ export class StudentService {
         if (queryFilters.gradeLevel) filter.gradeLevel = queryFilters.gradeLevel;
         if (queryFilters.isActive !== undefined) filter.isActive = queryFilters.isActive === 'true';
         
-        // Search by phone if provided
+        // Search by phone or barcode if provided
         if (queryFilters.search) {
              filter.$or = [
                  { studentPhone: new RegExp(queryFilters.search, 'i') },
@@ -64,11 +64,31 @@ export class StudentService {
              ];
         }
 
-        // [PERFORMANCE OPTIMIZATION] Lean for pure JSON extraction, extremely fast.
-        return await StudentModel.find(filter)
-            .populate('groupId', 'name schedule')
-            .sort({ createdAt: -1 })
-            .lean();
+        // Pagination
+        const page  = Math.max(1, parseInt(queryFilters.page)  || 1);
+        const limit = Math.min(100, Math.max(1, parseInt(queryFilters.limit) || 20));
+        const skip  = (page - 1) * limit;
+
+        // Run both queries in parallel for efficiency
+        const [data, total] = await Promise.all([
+            StudentModel.find(filter)
+                .populate('groupId', 'name schedule')
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            StudentModel.countDocuments(filter)
+        ]);
+
+        return {
+            data,
+            pagination: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit)
+            }
+        };
     }
 
     static async getStudentById(studentId: string, teacherId: string) {

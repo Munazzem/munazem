@@ -33,7 +33,7 @@ class GroupController {
         try {
             const user = (req as any).user;
             const teacherId = GroupController.extractTeacherId(user);
-            const groups = await GroupService.getGroupsByTeacherId(teacherId);
+            const groups = await GroupService.getGroupsByTeacherId(teacherId, req.query);
             return SuccessResponse({ res, message: 'تم جلب المجموعات بنجاح', data: groups });
         } catch (error) {
             next(error);

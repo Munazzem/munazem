@@ -1,5 +1,6 @@
 import { GroupModel } from '../../database/models/group.model.js';
-import { NotFoundException } from '../../common/utils/response/error.responce.js';
+import { StudentModel } from '../../database/models/student.model.js';
+import { NotFoundException, BadRequestException } from '../../common/utils/response/error.responce.js';
 
 export class GroupService {
     
@@ -11,15 +12,34 @@ export class GroupService {
         });
     }
 
-    // Get all groups for a specific teacher (Both Assistants and Teachers can access this)
-    static async getGroupsByTeacherId(teacherId: string) {
-        // [PERFORMANCE OPTIMIZATION] Using .lean() to drastically reduce memory usage
-        return await GroupModel.find({ teacherId }).lean();
+    // Get all groups for a specific teacher with pagination
+    static async getGroupsByTeacherId(teacherId: string, queryFilters: any = {}) {
+        const page  = Math.max(1, parseInt(queryFilters.page)  || 1);
+        const limit = Math.min(100, Math.max(1, parseInt(queryFilters.limit) || 20));
+        const skip  = (page - 1) * limit;
+
+        const [data, total] = await Promise.all([
+            GroupModel.find({ teacherId })
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            GroupModel.countDocuments({ teacherId })
+        ]);
+
+        return {
+            data,
+            pagination: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit)
+            }
+        };
     }
 
     // Get a specific group details
     static async getGroupById(groupId: string, teacherId: string) {
-        // [PERFORMANCE OPTIMIZATION] Using .lean()
         const group = await GroupModel.findOne({ _id: groupId, teacherId }).lean();
         if (!group) throw NotFoundException({ message: 'المجموعة غير موجودة' });
         return group;
@@ -27,8 +47,6 @@ export class GroupService {
 
     // Update group
     static async updateGroup(groupId: string, teacherId: string, data: any) {
-        // [NOTE] Re-fetching without .lean() here because we might need Mongoose validation upon save if complex logic is added later.
-        // Or we can just use findOneAndUpdate for atomic fast updates and return the new document.
         const updatedGroup = await GroupModel.findOneAndUpdate(
             { _id: groupId, teacherId },
             data,
@@ -39,10 +57,19 @@ export class GroupService {
         return updatedGroup;
     }
 
-    // Delete group (or soft delete)
+    // Delete group — guarded: refuses if students still exist in the group
     static async deleteGroup(groupId: string, teacherId: string) {
-        const deletedGroup = await GroupModel.findOneAndDelete({ _id: groupId, teacherId }).lean();
-        if (!deletedGroup) throw NotFoundException({ message: 'المجموعة غير موجودة' });
-        return deletedGroup;
+        // Ensure the group exists and belongs to this teacher
+        const group = await GroupModel.findOne({ _id: groupId, teacherId }).lean();
+        if (!group) throw NotFoundException({ message: 'المجموعة غير موجودة' });
+
+        // Prevent orphan students
+        const studentsCount = await StudentModel.countDocuments({ groupId, teacherId });
+        if (studentsCount > 0) {
+            throw BadRequestException({ message: `لا يمكن حذف المجموعة، يوجد بها ${studentsCount} طالب. يرجى نقل الطلاب أولاً` });
+        }
+
+        await GroupModel.findOneAndDelete({ _id: groupId, teacherId });
+        return group;
     }
 }
