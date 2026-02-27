@@ -1,9 +1,6 @@
 import mongoose, { Schema, Model } from "mongoose";
 import type { IUserDocument } from ".././../types/user.types.js";
-import {
-    UserRole,
-    SubscriptionStatus,
-} from "../../common/enums/enum.service.js";
+import { UserRole } from "../../common/enums/enum.service.js";
 
 const userSchema = new Schema<IUserDocument>(
     {
@@ -40,17 +37,7 @@ const userSchema = new Schema<IUserDocument>(
         default: null,
         index: true,
     },
-    subscription: {
-    status: {
-        type: String,
-        enum: Object.values(SubscriptionStatus),
-        default: SubscriptionStatus.ACTIVE,
-    },
-    expiryDate: {
-        type: Date,
-        default: null,
-    },
-    },
+
     isActive: {
         type: Boolean,
         default: true,

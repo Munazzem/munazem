@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import type { Request, Response } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { GroupService } from './groups.service.js';
 import { SuccessResponse } from '../../common/utils/response/success.responce.js';
-import { ErrorResponse, UnauthorizedException } from '../../common/utils/response/error.responce.js';
+import { UnauthorizedException } from '../../common/utils/response/error.responce.js';
 import { authenticate } from '../../middlewares/auth.middleware.js';
 import { authorizeRoles } from '../../middlewares/roles.middleware.js';
 import { validate } from '../../middlewares/validate.middleware.js';
@@ -18,58 +18,58 @@ class GroupController {
         throw UnauthorizedException({ message: 'طبيعة الحساب غير صالحة للقيام بهذه العملية' });
     }
 
-    static async createGroup(req: Request, res: Response) {
+    static async createGroup(req: Request, res: Response, next: NextFunction) {
         try {
             const user = (req as any).user;
             const teacherId = GroupController.extractTeacherId(user);
             const group = await GroupService.createGroup(teacherId, req.body);
             return SuccessResponse({ res, message: 'تم إنشاء المجموعة بنجاح', data: group, status: 201 });
-        } catch (error: any) {
-            return ErrorResponse({ message: error.message || 'فشل في إنشاء المجموعة', extra: error.cause?.extra, status: error.cause?.status || 500 });
+        } catch (error) {
+            next(error);
         }
     }
 
-    static async getGroups(req: Request, res: Response) {
+    static async getGroups(req: Request, res: Response, next: NextFunction) {
         try {
             const user = (req as any).user;
             const teacherId = GroupController.extractTeacherId(user);
             const groups = await GroupService.getGroupsByTeacherId(teacherId);
             return SuccessResponse({ res, message: 'تم جلب المجموعات بنجاح', data: groups });
-        } catch (error: any) {
-            return ErrorResponse({ message: error.message || 'فشل في جلب المجموعات', extra: error.cause?.extra, status: error.cause?.status || 500 });
+        } catch (error) {
+            next(error);
         }
     }
 
-    static async getGroupById(req: Request, res: Response) {
+    static async getGroupById(req: Request, res: Response, next: NextFunction) {
         try {
             const user = (req as any).user;
             const teacherId = GroupController.extractTeacherId(user);
             const group = await GroupService.getGroupById(req.params.id as string, teacherId);
             return SuccessResponse({ res, message: 'تم جلب بيانات المجموعة', data: group });
-        } catch (error: any) {
-            return ErrorResponse({ message: error.message || 'المجموعة غير موجودة', extra: error.cause?.extra, status: error.cause?.status || 404 });
+        } catch (error) {
+            next(error);
         }
     }
 
-    static async updateGroup(req: Request, res: Response) {
+    static async updateGroup(req: Request, res: Response, next: NextFunction) {
         try {
             const user = (req as any).user;
             const teacherId = GroupController.extractTeacherId(user);
             const updatedGroup = await GroupService.updateGroup(req.params.id as string, teacherId, req.body);
             return SuccessResponse({ res, message: 'تم التعديل بنجاح', data: updatedGroup });
-        } catch (error: any) {
-            return ErrorResponse({ message: error.message || 'فشل في التعديل', extra: error.cause?.extra, status: error.cause?.status || 500 });
+        } catch (error) {
+            next(error);
         }
     }
 
-    static async deleteGroup(req: Request, res: Response) {
+    static async deleteGroup(req: Request, res: Response, next: NextFunction) {
         try {
             const user = (req as any).user;
             const teacherId = GroupController.extractTeacherId(user);
             await GroupService.deleteGroup(req.params.id as string, teacherId);
             return SuccessResponse({ res, message: 'تم الحذف بنجاح' });
-        } catch (error: any) {
-            return ErrorResponse({ message: error.message || 'فشل في حذف المجموعة', extra: error.cause?.extra, status: error.cause?.status || 500 });
+        } catch (error) {
+            next(error);
         }
     }
 }

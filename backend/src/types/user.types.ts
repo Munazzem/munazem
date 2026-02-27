@@ -1,5 +1,5 @@
 import { Document, Types } from 'mongoose';
-import { UserRole, SubscriptionStatus } from '../common/enums/enum.service.js'; 
+import { UserRole } from '../common/enums/enum.service.js';
 
 export interface IUser {
   name: string;
@@ -8,10 +8,7 @@ export interface IUser {
   password?: string;
   role: UserRole;
   teacherId: Types.ObjectId | null;
-  subscription?: {
-    status:SubscriptionStatus;
-    expiryDate: Date | null;
-  };
+
   isActive: boolean;
 }
 
