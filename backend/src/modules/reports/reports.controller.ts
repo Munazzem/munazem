@@ -11,20 +11,26 @@ const reportsRouter = Router();
 // All reports require authentication
 reportsRouter.use(authenticate);
 
-// All reports: Teacher only (read-only data, high-level access)
-reportsRouter.use(authorizeRoles(UserRole.teacher));
+// All reports: Teacher only by default (read-only data, high-level access)
+// Exception: Dashboard is accessible to assistants too (they get a stripped-down version)
+// So we apply the global authorizeRoles(UserRole.teacher) lower down, NOT globally.
 
 // ─── GET /reports/dashboard — Home page quick stats
 reportsRouter.get(
     '/dashboard',
+    authorizeRoles(UserRole.teacher, UserRole.assistant), // Allow Assistant
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const teacherId = (req as any).user.userId;
-            const data = await ReportsService.getDashboardSummary(teacherId);
+            const user = (req as any).user;
+            const teacherId = user.role === UserRole.assistant ? user.teacherId : user.userId;
+            const data = await ReportsService.getDashboardSummary(teacherId, user.role);
             return SuccessResponse({ res, data, message: 'تم جلب ملخص لوحة التحكم' });
         } catch (error) { next(error); }
     }
 );
+
+// Apply Teacher-only restriction for the rest of the deeper financial/attendance reports
+reportsRouter.use(authorizeRoles(UserRole.teacher));
 
 // ─── GET /reports/student/:studentId — Full student report
 reportsRouter.get(

@@ -2,9 +2,10 @@ import { StudentModel }            from '../../database/models/student.model.js'
 import { GroupModel }              from '../../database/models/group.model.js';
 import { AttendanceSnapshotModel } from '../../database/models/attendance-snapshot.model.js';
 import { TransactionModel }        from '../../database/models/transaction.model.js';
-import { MonthlyLedgerModel }      from '../../database/models/ledger.model.js';
 import { SessionModel }            from '../../database/models/session.model.js';
-import { TransactionType, TransactionCategory, SessionStatus } from '../../common/enums/enum.service.js';
+import { MonthlyLedgerModel }      from '../../database/models/ledger.model.js';
+import mongoose from 'mongoose';
+import { TransactionType, TransactionCategory, SessionStatus, UserRole } from '../../common/enums/enum.service.js';
 import { NotFoundException } from '../../common/utils/response/error.responce.js';
 
 export class ReportsService {
@@ -211,29 +212,125 @@ export class ReportsService {
     // ══════════════════════════════════════════════════════════════
     // 4. Dashboard Summary — quick stats for the teacher's home page
     // ══════════════════════════════════════════════════════════════
-    static async getDashboardSummary(teacherId: string) {
+    static async getDashboardSummary(teacherId: string, role: UserRole) {
         const now   = new Date();
         const year  = now.getUTCFullYear();
         const month = now.getUTCMonth() + 1;
         const startOfMonth = new Date(Date.UTC(year, month - 1, 1));
+        const endOfMonth   = new Date(Date.UTC(year, month, 1));
 
+        // 1. Existing Quick Stats (Shared between Teacher and Assistant)
         const [
             totalStudents,
             totalGroups,
-            monthlyLedger,
             sessionsThisMonth,
         ] = await Promise.all([
             StudentModel.countDocuments({ teacherId, isActive: true }),
             GroupModel.countDocuments({ teacherId }),
-            MonthlyLedgerModel.findOne({ teacherId, year, month }, {
-                totalIncome: 1, totalExpenses: 1, netBalance: 1,
-            }).lean(),
             SessionModel.countDocuments({
                 teacherId,
                 date:   { $gte: startOfMonth },
                 status: SessionStatus.COMPLETED,
             }),
         ]);
+
+        // If the user is an assistant, return only basic functional stats
+        if (role === UserRole.assistant) {
+            return {
+                totalStudents,
+                totalGroups,
+                sessionsThisMonth,
+                message: "مرحباً بك في لوحة تحكم المساعد. من هنا يمكنك إدارة المجموعات والطلاب وأخذ الغياب."
+                // No financial data or charts provided to the assistant
+            };
+        }
+
+        // If the user is a teacher, fetch full financial and chart data
+        const monthlyLedger = await MonthlyLedgerModel.findOne({ teacherId, year, month }, {
+            totalIncome: 1, totalExpenses: 1, netBalance: 1,
+        }).lean();
+
+        // 2. Charts Data (Parallel Execution)
+        // a. Expenses Breakdown (This Month)
+        const expensesBreakdownPromise = TransactionModel.aggregate([
+            {
+                $match: {
+                    teacherId: new mongoose.Types.ObjectId(teacherId),
+                    type: TransactionType.EXPENSE,
+                    date: { $gte: startOfMonth, $lt: endOfMonth }
+                }
+            },
+            {
+                $group: {
+                    _id: '$category',
+                    value: { $sum: '$paidAmount' }
+                }
+            },
+            {
+                $project: {
+                    name: '$_id',
+                    value: 1,
+                    _id: 0
+                }
+            }
+        ]);
+
+        // b. Students Per Group
+        const studentsPerGroupPromise = StudentModel.aggregate([
+            {
+                $match: {
+                    teacherId: new mongoose.Types.ObjectId(teacherId),
+                    isActive: true
+                }
+            },
+            {
+                $group: {
+                    _id: '$groupId',
+                    studentCount: { $sum: 1 }
+                }
+            },
+            {
+                $lookup: {
+                    from: 'groups',
+                    localField: '_id',
+                    foreignField: '_id',
+                    as: 'groupDetails'
+                }
+            },
+            {
+                $project: {
+                    groupName: { $arrayElemAt: ['$groupDetails.name', 0] },
+                    studentCount: 1,
+                    _id: 0
+                }
+            }
+        ]);
+
+        // c. Income Trend (Last 6 Months)
+        // Adjust the date backwards 5 months to get a total of 6 months inclusive
+        const sixMonthsAgoDate = new Date(Date.UTC(year, month - 6, 1));
+        const incomeTrendPromise = MonthlyLedgerModel.find({
+            teacherId,
+            $or: [
+                { year: { $gte: sixMonthsAgoDate.getUTCFullYear() } }
+            ]
+        }, { year: 1, month: 1, totalIncome: 1 })
+        .sort({ year: 1, month: 1 }) // Chronological order
+        .limit(6)
+        .lean();
+
+        const [expensesBreakdown, studentsPerGroup, rawIncomeTrend] = await Promise.all([
+            expensesBreakdownPromise,
+            studentsPerGroupPromise,
+            incomeTrendPromise
+        ]);
+
+        // Format the income trend for the chart (e.g., "Oct 2023")
+        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const incomeTrend = rawIncomeTrend.map(ledger => ({
+            month: `${monthNames[ledger.month - 1]} ${ledger.year}`,
+            income: ledger.totalIncome
+        }));
 
         return {
             totalStudents,
@@ -244,6 +341,11 @@ export class ReportsService {
                 totalExpenses: monthlyLedger?.totalExpenses ?? 0,
                 netBalance:    monthlyLedger?.netBalance    ?? 0,
             },
+            charts: {
+                expensesBreakdown,
+                studentsPerGroup,
+                incomeTrend
+            }
         };
     }
 }
