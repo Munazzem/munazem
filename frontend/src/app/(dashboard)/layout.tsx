@@ -1,25 +1,17 @@
 import { ReactNode } from 'react';
+import { Sidebar } from '@/components/layout/Sidebar';
+import { Header } from '@/components/layout/Header';
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
     return (
         <div className="flex min-h-screen bg-[#f9f9fb]">
-            {/* Sidebar Placeholder */}
-            <aside className="w-64 bg-white border-l border-gray-200 hidden md:block">
-                <div className="p-6">
-                    <h2 className="text-2xl font-bold text-primary">مُنظِّم</h2>
-                </div>
-                {/* Navigation links will go here */}
-            </aside>
+            <Sidebar />
 
-            {/* Main Content */}
-            <main className="flex-1 flex flex-col">
-                {/* Header Placeholder */}
-                <header className="h-16 bg-white border-b border-gray-200 flex items-center px-6 justify-between">
-                    <div>لوحة التحكم</div>
-                    {/* User Profile / Logout will go here */}
-                </header>
+            {/* Main Content Area (offset by sidebar width on large screens) */}
+            <main className="flex-1 flex flex-col transition-all duration-300 sm:pr-64">
+                <Header />
 
-                <div className="p-6 flex-1 overflow-auto">
+                <div className="p-4 sm:p-8 flex-1 overflow-auto">
                     {children}
                 </div>
             </main>

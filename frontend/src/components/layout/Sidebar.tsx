@@ -1,0 +1,99 @@
+'use client';
+
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { cn } from '@/lib/utils';
+import { 
+    LayoutDashboard, 
+    Users, 
+    CalendarCheck, 
+    BookOpen, 
+    Wallet, 
+    Settings,
+    LogOut
+} from 'lucide-react';
+import { useAuthStore } from '@/lib/store/auth.store';
+import { useUIStore } from '@/lib/store/ui.store';
+
+const navItems = [
+    { name: 'لوحة التحكم', href: '/dashboard', icon: LayoutDashboard },
+    { name: 'الطلاب', href: '/dashboard/students', icon: Users },
+    { name: 'الحصص والغياب', href: '/dashboard/sessions', icon: CalendarCheck },
+    { name: 'الماليات', href: '/dashboard/payments', icon: Wallet },
+    { name: 'المتجر والمذكرات', href: '/dashboard/notebooks', icon: BookOpen },
+    { name: 'الإعدادات', href: '/dashboard/settings', icon: Settings },
+];
+
+export function Sidebar() {
+    const pathname = usePathname();
+    const logout = useAuthStore((state) => state.logout);
+    const { isSidebarOpen, setSidebarOpen } = useUIStore();
+
+    const handleLogout = () => {
+        logout();
+        window.location.href = '/login'; // Force full reload to clear all states
+    };
+
+    return (
+        <>
+            {/* Mobile Overlay */}
+            {isSidebarOpen && (
+                <div 
+                    className="fixed inset-0 z-30 bg-black/20 backdrop-blur-sm sm:hidden"
+                    onClick={() => setSidebarOpen(false)}
+                />
+            )}
+            
+            <aside 
+                className={cn(
+                    "fixed right-0 top-0 z-40 h-screen w-64 bg-white border-l border-gray-100 shadow-sm flex flex-col transition-transform duration-300 ease-in-out sm:translate-x-0",
+                    isSidebarOpen ? "translate-x-0" : "translate-x-full"
+                )}
+            >
+                {/* Logo Area */}
+            <div className="flex h-16 items-center justify-center border-b border-gray-100 px-6">
+                <Link href="/dashboard" className="flex items-center gap-2">
+                    <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+                        <span className="text-white font-bold text-xl">م</span>
+                    </div>
+                    <span className="text-xl font-extrabold text-primary tracking-tight">مُنظِّم</span>
+                </Link>
+            </div>
+
+            {/* Navigation Links */}
+            <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+                {navItems.map((item) => {
+                    const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                    return (
+                        <Link
+                            key={item.href}
+                            href={item.href}
+                            className={cn(
+                                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                                isActive 
+                                    ? "bg-primary/5 text-primary" 
+                                    : "text-gray-500 hover:bg-gray-50 hover:text-gray-900"
+                            )}
+                            onClick={() => setSidebarOpen(false)}
+                        >
+                            <item.icon className={cn("h-5 w-5", isActive ? "text-primary" : "text-gray-400")} />
+                            {item.name}
+                        </Link>
+                    );
+                })}
+            </div>
+
+            {/* Bottom Actions */}
+            <div className="border-t border-gray-100 p-4">
+                <button 
+                    onClick={handleLogout}
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
+                >
+                    <LogOut className="h-5 w-5" />
+                    تسجيل الخروج
+                </button>
+            </div>
+            </aside>
+        </>
+    );
+}
