@@ -24,3 +24,16 @@ export enum GradeLevel {
     SEC_2 = 'الصف الثاني الثانوي',
     SEC_3 = 'الصف الثالث الثانوي',
 }
+
+export enum SessionStatus {
+    SCHEDULED   = 'SCHEDULED',
+    IN_PROGRESS = 'IN_PROGRESS',
+    COMPLETED   = 'COMPLETED',
+    CANCELLED   = 'CANCELLED',
+}
+
+export enum AttendanceStatus {
+    PRESENT = 'PRESENT',
+    ABSENT  = 'ABSENT',
+    LATE    = 'LATE',
+}

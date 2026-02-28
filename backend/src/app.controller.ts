@@ -11,6 +11,8 @@ import userRouter from './modules/users/users.controller.js';
 import subscriptionsRouter from './modules/subscriptions/subscriptions.controller.js';
 import groupsRouter from './modules/groups/groups.controller.js';
 import studentsRouter from './modules/students/students.controller.js';
+import sessionRouter from './modules/sessions/sessions.controller.js';
+import attendanceRouter from './modules/attendance/attendance.controller.js';
 
 export const bootstrap = () => {
     const app = express();
@@ -38,6 +40,8 @@ export const bootstrap = () => {
     app.use('/subscriptions', subscriptionsRouter) // Subscriptions routes
     app.use('/groups', groupsRouter)
     app.use('/students', studentsRouter)
+    app.use('/sessions', sessionRouter)    // Session routes
+    app.use('/attendance', attendanceRouter) // Attendance routes
 
     app.get('/', (req, res) => {
         res.send('Hello World!');
