@@ -28,15 +28,17 @@ const getNavItems = (role?: string) => {
     }
     
     // Default for teachers and assistants
-    return [
-        { name: 'الرئيسية', href: '/dashboard', icon: LayoutDashboard },
-        { name: 'الطلاب', href: '/students', icon: Users },
+   const teacherLinks = [
+    { name: 'لوحة التحكم', href: '/dashboard', icon: LayoutDashboard },
+    { name: 'المجموعات الدراسية', href: '/groups', icon: GraduationCap },
+    { name: 'إدارة الطلاب', href: '/students', icon: Users },
         { name: 'المجموعات', href: '/groups', icon: GraduationCap },
         { name: 'الحصص والغياب', href: '/sessions', icon: CalendarCheck },
         { name: 'الماليات', href: '/dashboard/payments', icon: Wallet },
         { name: 'المتجر والمذكرات', href: '/dashboard/notebooks', icon: BookOpen },
         { name: 'الإعدادات', href: '/dashboard/settings', icon: Settings },
     ];
+    return teacherLinks;
 };
 
 export function Sidebar() {
