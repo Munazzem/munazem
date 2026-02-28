@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import Groq from 'groq-sdk';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const pdfParse = require('pdf-parse') as (buffer: Buffer) => Promise<{ text: string }>;
@@ -8,9 +8,9 @@ import { BadRequestException } from '../../common/utils/response/error.responce.
 import { envVars } from '../../../config/env.service.js';
 
 interface GenerateExamOptions {
-    questionCount:  number;
-    difficulty:     'easy' | 'medium' | 'hard' | 'mixed';
-    questionTypes:  QuestionType[];   // ['MCQ', 'TRUE_FALSE', 'ESSAY']
+    questionCount:    number;
+    difficulty:       'easy' | 'medium' | 'hard' | 'mixed';
+    questionTypes:    QuestionType[];
     marksPerQuestion?: number;
 }
 
@@ -68,18 +68,18 @@ ${content.slice(0, 8000)}
 `.trim();
 }
 
-// ── AI Exam Service ───────────────────────────────────────────────
+// ── AI Exam Service (Groq) ────────────────────────────────────────
 export class AIExamService {
 
     static async generateFromPDF(
         teacherId: string,
         pdfBuffer: Buffer,
         examMeta: {
-            title: string;
-            date: string;
+            title:        string;
+            date:         string;
             passingMarks: number;
-            gradeLevel?: string;
-            groupIds?: string[];
+            gradeLevel?:  string;
+            groupIds?:    string[];
         },
         options: GenerateExamOptions
     ) {
@@ -90,18 +90,32 @@ export class AIExamService {
             throw BadRequestException({ message: 'لم يتم العثور على نص كافٍ في الـ PDF' });
         }
 
-        // 2. Call Gemini API
-        const apiKey = envVars.geminiApiKey;
-        if (!apiKey) throw BadRequestException({ message: 'مفتاح Gemini API غير مُهيأ' });
+        // 2. Call Groq API
+        const apiKey = envVars.groqApiKey;
+        if (!apiKey) throw BadRequestException({ message: 'مفتاح Groq API غير مُهيأ' });
 
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+        const groq = new Groq({ apiKey });
 
-        const prompt = buildPrompt(content, options);
-        const result = await model.generateContent(prompt);
-        const text   = result.response.text();
+        const completion = await groq.chat.completions.create({
+            model:       'llama-3.3-70b-versatile',  // free, fast, great Arabic support
+            messages: [
+                {
+                    role:    'system',
+                    content: 'أنت مساعد تعليمي. أجب بـ JSON صالح فقط بدون أي نص إضافي.',
+                },
+                {
+                    role:    'user',
+                    content: buildPrompt(content, options),
+                },
+            ],
+            temperature:  0.7,
+            max_tokens:   4096,
+            response_format: { type: 'json_object' },  // Groq enforces JSON output
+        });
 
-        // 3. Parse AI response — strip markdown fences if present
+        const text = completion.choices[0]?.message?.content ?? '';
+
+        // 3. Parse AI response
         let parsed: { questions: any[] };
         try {
             const clean = text.replace(/```json|```/g, '').trim();
@@ -114,7 +128,7 @@ export class AIExamService {
             throw BadRequestException({ message: 'لم يُولِّد الذكاء الاصطناعي أسئلة — حاول مجدداً' });
         }
 
-        // 4. Compute totalMarks from questions
+        // 4. Compute totalMarks
         const totalMarks = parsed.questions.reduce((sum: number, q: any) => sum + (q.marks ?? 2), 0);
 
         // 5. Save as DRAFT exam
