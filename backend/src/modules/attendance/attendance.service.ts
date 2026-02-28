@@ -21,13 +21,21 @@ export class AttendanceService {
             throw BadRequestException({ message: 'هذه الحصة مُلغاة' });
         }
 
-        // Verify student exists
-        const student = await StudentModel.findById(data.studentId).lean();
+        // Resolve student — accept ObjectId, studentCode, or barcode
+        const isObjectId = mongoose.Types.ObjectId.isValid(data.studentId) && data.studentId.length === 24;
+        const student = isObjectId
+            ? await StudentModel.findById(data.studentId).lean()
+            : await StudentModel.findOne({
+                $or: [
+                    { studentCode: data.studentId },
+                    { barcode: data.studentId },
+                ],
+              }).lean();
         if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
 
         try {
             const record = await AttendanceModel.create({
-                studentId: data.studentId,
+                studentId: student._id,
                 sessionId: data.sessionId,
                 status:    data.status,
                 isGuest:   data.isGuest ?? false,
