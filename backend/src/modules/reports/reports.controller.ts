@@ -81,6 +81,26 @@ reportsRouter.get(
     }
 );
 
+// ─── GET /reports/group/:groupId/pdf — Download Group Report PDF
+reportsRouter.get(
+    '/group/:groupId/pdf',
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = (req as any).user.userId;
+            const pdfBuffer = await PdfService.generateGroupReportPdf(
+                req.params['groupId'] as string, teacherId
+            );
+            
+            res.set({
+                'Content-Type': 'application/pdf',
+                'Content-Disposition': `attachment; filename=group-report-${req.params['groupId']}.pdf`,
+                'Content-Length': pdfBuffer.length,
+            });
+            res.send(pdfBuffer);
+        } catch (error) { next(error); }
+    }
+);
+
 // ─── GET /reports/financial/monthly?year=2026&month=2 — Monthly financial report
 reportsRouter.get(
     '/financial/monthly',
@@ -92,6 +112,28 @@ reportsRouter.get(
             const month = parseInt(req.query['month'] as string) || (now.getUTCMonth() + 1);
             const data = await ReportsService.getFinancialMonthlyReport(teacherId, year, month);
             return SuccessResponse({ res, data, message: 'تم جلب التقرير المالي الشهري بنجاح' });
+        } catch (error) { next(error); }
+    }
+);
+
+// ─── GET /reports/financial/monthly/pdf?year=2026&month=2 — Monthly financial report PDF
+reportsRouter.get(
+    '/financial/monthly/pdf',
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = (req as any).user.userId;
+            const now   = new Date();
+            const year  = parseInt(req.query['year']  as string) || now.getUTCFullYear();
+            const month = parseInt(req.query['month'] as string) || (now.getUTCMonth() + 1);
+            
+            const pdfBuffer = await PdfService.generateMonthlyFinancialPdf(teacherId, year, month);
+            
+            res.set({
+                'Content-Type': 'application/pdf',
+                'Content-Disposition': `attachment; filename=financial-report-${year}-${month}.pdf`,
+                'Content-Length': pdfBuffer.length,
+            });
+            res.send(pdfBuffer);
         } catch (error) { next(error); }
     }
 );

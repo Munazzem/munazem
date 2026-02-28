@@ -5,6 +5,7 @@ import { UserRole } from '../../common/enums/enum.service.js';
 import { SuccessResponse } from '../../common/utils/response/success.responce.js';
 import { authenticate } from '../../middlewares/auth.middleware.js';
 import { authorizeRoles } from '../../middlewares/roles.middleware.js';
+import { PdfService } from '../reports/pdf.service.js';
 
 const attendanceRouter = Router();
 
@@ -50,6 +51,27 @@ attendanceRouter.get(
             const search = req.query.search as string | undefined;
             const records = await AttendanceService.getSessionAttendance(sessionId, teacherId, search);
             return SuccessResponse({ res, data: records, message: 'تم جلب سجل الحضور بنجاح' });
+        } catch (error) { next(error); }
+    }
+);
+
+// ─── GET /attendance/session/:sessionId/pdf — Download Attendance List PDF
+attendanceRouter.get(
+    '/session/:sessionId/pdf',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = resolveTeacherId((req as any).user);
+            const sessionId = req.params['sessionId'] as string;
+            
+            const pdfBuffer = await PdfService.generateSessionAttendancePdf(sessionId, teacherId);
+            
+            res.set({
+                'Content-Type': 'application/pdf',
+                'Content-Disposition': `attachment; filename=attendance-${sessionId}.pdf`,
+                'Content-Length': pdfBuffer.length,
+            });
+            res.send(pdfBuffer);
         } catch (error) { next(error); }
     }
 );
