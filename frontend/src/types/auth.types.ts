@@ -5,7 +5,7 @@
 export interface User {
     id: string;
     name: string;
-    role: 'SUPER_ADMIN' | 'TEACHER' | 'ASSISTANT';
+    role: 'superAdmin' | 'teacher' | 'assistant';
 }
 
 export interface AuthState {

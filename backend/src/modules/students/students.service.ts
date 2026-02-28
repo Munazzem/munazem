@@ -4,6 +4,7 @@ import { NotFoundException, BadRequestException, ConflictException } from '../..
 import type { CreateStudentDTO, UpdateStudentDTO } from '../../types/dto.types.js';
 import { GRADE_LETTER, GradeLevel } from '../../common/enums/enum.service.js';
 import { nextSequence } from '../../database/models/counter.model.js';
+import crypto from 'crypto';
 
 export class StudentService {
     
@@ -44,7 +45,7 @@ export class StudentService {
                 groupId:      data.groupId,
                 teacherId,
                 studentCode,
-                ...(data.barcode ? { barcode: data.barcode } : {}),
+                barcode: data.barcode || crypto.randomUUID(), // Auto generate barcode if omited
             });
         } catch (error: any) {
             if (error.code === 11000) {

@@ -9,7 +9,6 @@ import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { 
     Form, 
     FormControl, 
@@ -31,7 +30,7 @@ export default function LoginPage() {
     const router = useRouter();
     const [isLoading, setIsLoading] = useState(false);
 
-    const onSubmit = async (data: any) => {
+    const onSubmit = async (data: { phone: string; password: string }) => {
         setIsLoading(true);
         try {
             const res = await apiClient.post('/auth/login', data);
@@ -44,9 +43,10 @@ export default function LoginPage() {
                 });
                 router.push('/dashboard');
             }
-        } catch (error: any) {
+        } catch (error: { response?: { data?: { message?: string } } } | unknown) {
+            const err = error as { response?: { data?: { message?: string } } };
             toast.error('فشل تسجيل الدخول', {
-                description: error.response?.data?.message || 'تأكد من رقم الهاتف وكلمة المرور',
+                description: err.response?.data?.message || 'تأكد من رقم الهاتف وكلمة المرور',
             });
         } finally {
             setIsLoading(false);

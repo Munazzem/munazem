@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { Menu, Bell, Sparkles } from 'lucide-react';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { useUIStore } from '@/lib/store/ui.store';
@@ -7,6 +8,33 @@ import { useUIStore } from '@/lib/store/ui.store';
 export function Header() {
     const user = useAuthStore((state) => state.user);
     const toggleSidebar = useUIStore((state) => state.toggleSidebar);
+    const [isMounted, setIsMounted] = useState(false);
+
+    useEffect(() => {
+        // eslint-disable-next-line
+        setIsMounted(true);
+    }, []);
+
+    if (!isMounted) {
+        return (
+            <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-gray-100 bg-white/80 backdrop-blur-md px-4 sm:px-6">
+                <div className="flex items-center gap-4">
+                    <div className="h-8 w-8 bg-gray-200 rounded-lg animate-pulse sm:hidden" />
+                    <div className="hidden sm:block h-6 w-48 bg-gray-200 rounded-md animate-pulse" />
+                </div>
+                <div className="flex items-center gap-4">
+                    <div className="h-8 w-8 bg-gray-200 rounded-full animate-pulse" />
+                    <div className="flex items-center gap-3 border-r border-gray-200 pr-4">
+                        <div className="flex flex-col items-end gap-1.5">
+                            <div className="h-4 w-24 bg-gray-200 rounded animate-pulse" />
+                            <div className="h-3 w-16 bg-gray-100 rounded animate-pulse" />
+                        </div>
+                        <div className="h-9 w-9 rounded-full bg-gray-200 animate-pulse" />
+                    </div>
+                </div>
+            </header>
+        );
+    }
 
     return (
         <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-gray-100 bg-white/80 backdrop-blur-md px-4 sm:px-6">
@@ -40,7 +68,7 @@ export function Header() {
                     <div className="flex flex-col items-end">
                         <span className="text-sm font-bold text-gray-900">{user?.name || 'مستخدم'}</span>
                         <span className="text-xs text-primary font-medium">
-                            {user?.role === 'SUPER_ADMIN' ? 'مدير النظام' : user?.role === 'TEACHER' ? 'معلم' : user?.role === 'ASSISTANT' ? 'مساعد' : 'مستخدم'}
+                            {user?.role === 'superAdmin' ? 'مدير النظام' : user?.role === 'teacher' ? 'معلم' : user?.role === 'assistant' ? 'مساعد' : 'مستخدم'}
                         </span>
                     </div>
                     <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20">

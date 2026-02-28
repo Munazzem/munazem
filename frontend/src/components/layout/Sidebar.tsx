@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -10,29 +11,70 @@ import {
     BookOpen, 
     Wallet, 
     Settings,
-    LogOut
+    LogOut,
+    GraduationCap // Added GraduationCap icon
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { useUIStore } from '@/lib/store/ui.store';
 
-const navItems = [
-    { name: 'لوحة التحكم', href: '/dashboard', icon: LayoutDashboard },
-    { name: 'الطلاب', href: '/dashboard/students', icon: Users },
-    { name: 'الحصص والغياب', href: '/dashboard/sessions', icon: CalendarCheck },
-    { name: 'الماليات', href: '/dashboard/payments', icon: Wallet },
-    { name: 'المتجر والمذكرات', href: '/dashboard/notebooks', icon: BookOpen },
-    { name: 'الإعدادات', href: '/dashboard/settings', icon: Settings },
-];
+const getNavItems = (role?: string) => {
+    if (role === 'superAdmin') {
+        return [
+            { name: 'الرئيسية', href: '/dashboard', icon: LayoutDashboard },
+            { name: 'الاشتراكات والخطط', href: '/dashboard/subscriptions', icon: BookOpen },
+            { name: 'إدارة المعلمين', href: '/dashboard/users', icon: Users },
+            { name: 'الإعدادات', href: '/dashboard/settings', icon: Settings },
+        ];
+    }
+    
+    // Default for teachers and assistants
+    return [
+        { name: 'الرئيسية', href: '/dashboard', icon: LayoutDashboard },
+        { name: 'الطلاب', href: '/students', icon: Users },
+        { name: 'المجموعات', href: '/groups', icon: GraduationCap },
+        { name: 'الحصص والغياب', href: '/sessions', icon: CalendarCheck },
+        { name: 'الماليات', href: '/dashboard/payments', icon: Wallet },
+        { name: 'المتجر والمذكرات', href: '/dashboard/notebooks', icon: BookOpen },
+        { name: 'الإعدادات', href: '/dashboard/settings', icon: Settings },
+    ];
+};
 
 export function Sidebar() {
     const pathname = usePathname();
+    const user = useAuthStore((state) => state.user);
     const logout = useAuthStore((state) => state.logout);
     const { isSidebarOpen, setSidebarOpen } = useUIStore();
+    const [isMounted, setIsMounted] = useState(false);
+
+    useEffect(() => {
+        // eslint-disable-next-line
+        setIsMounted(true);
+    }, []);
+
+    const navItems = getNavItems(user?.role);
 
     const handleLogout = () => {
         logout();
         window.location.href = '/login'; // Force full reload to clear all states
     };
+
+    if (!isMounted) {
+        return (
+            <aside className="hidden sm:flex fixed right-0 top-0 z-40 h-screen w-64 bg-white border-l border-gray-100 shadow-sm flex-col">
+                <div className="flex h-16 items-center justify-center border-b border-gray-100 px-6">
+                    <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 bg-gray-200 rounded-lg animate-pulse" />
+                        <div className="h-6 w-16 bg-gray-200 rounded animate-pulse" />
+                    </div>
+                </div>
+                <div className="flex-1 py-4 px-3 space-y-2 mt-2">
+                    {[1, 2, 3, 4, 5, 6].map((i) => (
+                        <div key={i} className="h-10 w-full bg-gray-50 rounded-lg animate-pulse" />
+                    ))}
+                </div>
+            </aside>
+        );
+    }
 
     return (
         <>

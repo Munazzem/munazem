@@ -1,27 +1,75 @@
 'use client';
 
+import { useState, useEffect } from 'react';
+
 import { useAuthStore } from '@/lib/store/auth.store';
-import { Users, GraduationCap, ArrowUpRight, Activity, Loader2 } from 'lucide-react';
+import { Users, GraduationCap, ArrowUpRight, Activity } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { cn } from '@/lib/utils';
-import { fetchDashboardStats, DashboardData } from '@/lib/api/dashboard';
+import { fetchDashboardStats } from '@/lib/api/dashboard';
+import type { DashboardData } from '@/types/dashboard.types';
+import { SuperAdminDashboard } from '@/components/dashboard/SuperAdminDashboard';
+
+const DashboardSkeleton = () => (
+    <div className="space-y-6 animate-pulse">
+        <div>
+            <div className="h-8 w-48 bg-gray-200 rounded-md mb-2" />
+            <div className="h-4 w-64 bg-gray-100 rounded-md" />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm h-32 flex flex-col justify-between">
+                    <div className="flex justify-between items-center">
+                        <div className="h-4 w-24 bg-gray-100 rounded" />
+                        <div className="h-10 w-10 bg-gray-100 rounded-xl" />
+                    </div>
+                    <div className="h-8 w-16 bg-gray-200 rounded mt-4" />
+                </div>
+            ))}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+            <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-6 h-[340px]">
+                <div className="h-6 w-48 bg-gray-200 rounded mb-8" />
+                <div className="h-52 bg-gray-100 rounded-lg w-full flex items-end gap-4 p-4">
+                    {[30, 60, 45, 80, 50, 75].map((height, i) => (
+                        <div key={i} className="flex-1 bg-gray-200 rounded-t-lg" style={{ height: `${height}%`}}></div>
+                    ))}
+                </div>
+            </div>
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 h-[340px] flex flex-col items-center">
+                <div className="h-6 w-32 bg-gray-200 rounded mb-8 self-center" />
+                <div className="h-48 w-48 bg-gray-100 rounded-full mt-4" />
+            </div>
+        </div>
+    </div>
+);
 
 export default function DashboardPage() {
     const user = useAuthStore((state) => state.user);
+    const [isMounted, setIsMounted] = useState(false);
 
-    const { data: stats, isLoading, isError } = useQuery<DashboardData>({
-        queryKey: ['dashboardStats'],
+    useEffect(() => {
+        // eslint-disable-next-line
+        setIsMounted(true);
+    }, []);
+
+    const { data: dashboardData, isLoading, isError } = useQuery({
+        queryKey: ['dashboardSummary'],
         queryFn: fetchDashboardStats,
-        refetchInterval: 5 * 60 * 1000, // Fetch every 5 minutes automatically
+        enabled: user?.role === 'teacher' || user?.role === 'assistant'
     });
 
+    if (!isMounted) {
+        return <DashboardSkeleton />;
+    }
+
+    if (user?.role === 'superAdmin') {
+        return <SuperAdminDashboard />;
+    }
+
+    const stats: DashboardData | undefined = dashboardData as DashboardData | undefined;
+
     if (isLoading) {
-        return (
-            <div className="flex h-[60vh] flex-col items-center justify-center text-primary">
-                <Loader2 className="h-10 w-10 animate-spin mb-4" />
-                <p className="font-bold text-gray-500">جاري تحميل البيانات الحية...</p>
-            </div>
-        );
+        return <DashboardSkeleton />;
     }
 
     if (isError) {
@@ -81,8 +129,8 @@ export default function DashboardPage() {
                     </div>
                 </div>
 
-                {/* Stat Card 4 (Revenue - Teacher/SuperAdmin Only) */}
-                {(user?.role === 'SUPER_ADMIN' || user?.role === 'TEACHER') && (
+                {/* Stat Card 4 (Revenue - Teacher Only) */}
+                {(user?.role === 'teacher') && (
                     <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex flex-col justify-between relative overflow-hidden hover:shadow-md transition-shadow">
                         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary to-blue-400"></div>
                         
@@ -122,16 +170,16 @@ export default function DashboardPage() {
                         
                         {stats.charts.incomeTrend?.length > 0 ? (
                             <div className="flex items-end justify-between h-48 gap-2 pt-4">
-                                {stats.charts.incomeTrend.map((trend, i) => {
+                                {stats.charts.incomeTrend.map((trend: { income: number; month: string }, i: number) => {
                                     // Find max value to calculate percentage heights dynamically
-                                    const maxIncome = Math.max(...(stats.charts?.incomeTrend.map(t => t.income) || [1]));
+                                    const maxIncome = Math.max(...(stats.charts?.incomeTrend.map((t: { income: number }) => t.income) || [1]));
                                     const heightPercentage = Math.max((trend.income / maxIncome) * 100, 5); // Minimum 5% height
 
                                     return (
                                         <div key={i} className="flex flex-col items-center flex-1 group relative">
                                             {/* Tooltip on hover */}
                                             <div className="opacity-0 group-hover:opacity-100 absolute -top-10 bg-gray-800 text-white text-xs py-1 px-2 rounded whitespace-nowrap transition-opacity pointer-events-none">
-                                                {trend.income.toLocaleString()} جنيه
+                                                {trend.income.toLocaleString()} ج.م
                                             </div>
                                             
                                             <div 
@@ -156,7 +204,7 @@ export default function DashboardPage() {
                         
                         <div className="flex-1 overflow-y-auto space-y-4 pr-1">
                             {stats.charts.studentsPerGroup?.length > 0 ? (
-                                stats.charts.studentsPerGroup.map((group, idx) => (
+                                stats.charts.studentsPerGroup.map((group: { groupName: string; studentCount: number }, idx: number) => (
                                     <div key={idx} className="flex items-center justify-between">
                                         <div className="flex items-center gap-3">
                                             <div className="h-2 w-2 rounded-full bg-indigo-400"></div>
