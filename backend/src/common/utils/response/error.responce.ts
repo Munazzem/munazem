@@ -53,6 +53,14 @@ export const globalErrorHandler = (error: any, req: Request, res: Response, next
   const status = error.cause?.status || 500;
   const displayErrorMessage = error.message || 'Something went wrong';
   
+  if (status === 500) {
+      console.error('------- GLOBAL ERROR HANDLER 500 ERROR CAUGHT -------');
+      console.error('Request Path:', req.path);
+      console.error('Error Message:', error.message);
+      console.error('Error Stack:', error.stack);
+      console.error('-----------------------------------------------------');
+  }
+
   const response: IErrorResponse = {
     success: false,
     message: displayErrorMessage,

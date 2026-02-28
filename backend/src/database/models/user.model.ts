@@ -11,8 +11,9 @@ const userSchema = new Schema<IUserDocument>(
         },
         email: {
             type: String,
-            required: [true, "البريد الإلكتروني مطلوب"],
+            required: false,
             unique: true,
+            sparse: true,
             index: true,
         },
         phone: {
