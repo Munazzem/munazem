@@ -197,6 +197,32 @@ export class AttendanceService {
         return snapshot;
     }
 
+    // ─── Update a single attendance record (manual edit by assistant) ──
+    static async updateAttendance(attendanceId: string, updatedBy: string, status: string, notes?: string) {
+        const record = await AttendanceModel.findById(attendanceId).lean();
+        if (!record) throw NotFoundException({ message: 'سجل الحضور غير موجود' });
+
+        const session = await SessionModel.findById(record.sessionId).lean();
+        if (!session) throw NotFoundException({ message: 'الحصة غير موجودة' });
+        if (session.status === SessionStatus.COMPLETED) {
+            throw BadRequestException({ message: 'لا يمكن تعديل حضور حصة مكتملة' });
+        }
+
+        if (!Object.values(AttendanceStatus).includes(status as AttendanceStatus)) {
+            throw BadRequestException({ message: 'حالة الحضور غير صحيحة' });
+        }
+
+        return await AttendanceModel.findByIdAndUpdate(
+            attendanceId,
+            {
+                status,
+                scannedBy: new mongoose.Types.ObjectId(updatedBy),
+                ...(notes !== undefined ? { notes } : {}),
+            },
+            { new: true, runValidators: true }
+        ).lean();
+    }
+
     // ─── Get all snapshots for a group (attendance history) ──────────
     static async getGroupHistory(groupId: string, teacherId: string, queryFilters: any = {}) {
         const page  = Math.max(1, parseInt(queryFilters.page)  || 1);

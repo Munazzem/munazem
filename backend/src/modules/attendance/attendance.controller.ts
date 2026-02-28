@@ -118,6 +118,21 @@ attendanceRouter.get(
     }
 );
 
+// ─── PATCH /attendance/:id — Manually update attendance status (assistant only)
+attendanceRouter.patch(
+    '/:id',
+    authorizeRoles(UserRole.assistant),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const user = (req as any).user;
+            const attendanceId = req.params['id'] as string;
+            const { status, notes } = req.body as { status: string; notes?: string };
+            const updated = await AttendanceService.updateAttendance(attendanceId, user.userId, status, notes);
+            return SuccessResponse({ res, data: updated, message: 'تم تحديث حالة الحضور بنجاح' });
+        } catch (error) { next(error); }
+    }
+);
+
 // ─── GET /attendance/history/:groupId — Attendance history for a group
 attendanceRouter.get(
     '/history/:groupId',
