@@ -1,16 +1,27 @@
-import express from 'express'
+import express from 'express';
+import cors from 'cors';
+import compression from 'compression';
 import { DBConnection } from './database/connection.js';
 import { globalErrorHandler } from './common/utils/response/error.responce.js';
 import { envVars } from '../config/env.service.js';
 import authRouter from './modules/authentication/auth.controller.js';
+import userRouter from './modules/users/users.controller.js';
+import subscriptionsRouter from './modules/subscriptions/subscriptions.controller.js';
 
 export const bootstrap = ()=>{
 const app = express();
 app.use(express.json());
+app.use(cors());
+
+// Enable gzip compression for all HTTP responses to reduce payload size and improve latency.
+app.use(compression());
 
 DBConnection() // Connect to MongoDB
 
 app.use('/auth', authRouter) // Authentication routes
+app.use('/users', userRouter) // Users routes
+app.use('/subscriptions', subscriptionsRouter) // Subscriptions routes
+
 app.get('/', (req, res) => {
     res.send('Hello World!');
 });

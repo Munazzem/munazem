@@ -24,5 +24,6 @@ export interface IJwtPayload {
 export interface IAuthResponse {
     message: string;
     token: string;
+    refreshToken: string;
     user: Omit<IUser, 'password'>;
 }

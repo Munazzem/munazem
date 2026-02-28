@@ -1,9 +1,15 @@
+import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { UserService } from './users.service.js';
 import { SuccessResponse } from '../../common/utils/response/success.responce.js';
 import { ErrorResponse, UnauthorizedException } from '../../common/utils/response/error.responce.js';
+import { authenticate } from '../../middlewares/auth.middleware.js';
+import { authorizeRoles } from '../../middlewares/roles.middleware.js';
+import { validate } from '../../middlewares/validate.middleware.js';
+import { userCreationSchema } from '../../validation/user.validation.js';
+import { UserRole } from '../../common/enums/enum.service.js';
 
-export class UserController {
+class UserController {
 
     static async createUser(req: Request, res: Response) {
         try {
@@ -26,3 +32,13 @@ export class UserController {
         }
     }
 }
+
+const router = Router();
+
+// Protect all user routes globally by applying the middleware to the router
+router.use(authenticate);
+
+// Only SuperAdmin and Teacher can create new users (Teacher creates Assistant, SuperAdmin creates Teacher)
+router.post('/', authorizeRoles(UserRole.superAdmin, UserRole.teacher), validate(userCreationSchema), UserController.createUser);
+
+export default router;
