@@ -16,10 +16,13 @@ export interface IRegisterRequest {
 }
 
 export interface IJwtPayload {
-    userId: string;
-    role: UserRole;
+    userId:    string;
+    role:      UserRole;
     teacherId: string | null;
-    isActive: boolean;
+    isActive:  boolean;
+    // Standard JWT fields added by jsonwebtoken on sign/verify
+    iat?: number;
+    exp?: number;
 }
 
 export interface IAuthResponse {
