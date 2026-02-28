@@ -47,7 +47,8 @@ attendanceRouter.get(
         try {
             const teacherId = resolveTeacherId((req as any).user);
             const sessionId = req.params['sessionId'] as string;
-            const records = await AttendanceService.getSessionAttendance(sessionId, teacherId);
+            const search = req.query.search as string | undefined;
+            const records = await AttendanceService.getSessionAttendance(sessionId, teacherId, search);
             return SuccessResponse({ res, data: records, message: 'تم جلب سجل الحضور بنجاح' });
         } catch (error) { next(error); }
     }

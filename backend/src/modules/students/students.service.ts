@@ -67,14 +67,19 @@ export class StudentService {
         if (queryFilters.gradeLevel) filter.gradeLevel = queryFilters.gradeLevel;
         if (queryFilters.isActive !== undefined) filter.isActive = queryFilters.isActive === 'true';
         
-        // Search by phone or barcode — anchored prefix regex (^) leverages the existing index
-        // Unlike /search/i which does a full collection scan, /^search/ uses the B-tree index
         if (queryFilters.search) {
-            const prefixRegex = new RegExp(`^${queryFilters.search}`);
+            // Check if search term is possibly a studentCode (e.g., "1A", "12C")
+            // Or just a general string. We'll use regex for all to be safe and flexible.
+            const searchTerm = queryFilters.search.trim();
+            const prefixRegex = new RegExp(`^${searchTerm}`, 'i'); // for phone, barcode, studentCode (start matching)
+            const anywhereRegex = new RegExp(searchTerm, 'i');     // for name (can be anywhere)
+
             filter.$or = [
+                { studentCode:  prefixRegex },
                 { studentPhone: prefixRegex },
                 { parentPhone:  prefixRegex },
                 { barcode:      prefixRegex },
+                { studentName:  anywhereRegex }, // Allow searching ANY part of the name
             ];
         }
 

@@ -42,12 +42,28 @@ export class SessionService {
         const filter: any = { teacherId };
         if (queryFilters.groupId) filter.groupId = queryFilters.groupId;
         if (queryFilters.status)  filter.status  = queryFilters.status;
+        
+        // Exact Date match
         if (queryFilters.date) {
             const d = new Date(queryFilters.date);
             d.setHours(0, 0, 0, 0);
             const next = new Date(d);
             next.setDate(next.getDate() + 1);
             filter.date = { $gte: d, $lt: next };
+        } 
+        // Date Range match (startDate - endDate)
+        else if (queryFilters.startDate || queryFilters.endDate) {
+            filter.date = {};
+            if (queryFilters.startDate) {
+                const d = new Date(queryFilters.startDate);
+                d.setHours(0, 0, 0, 0);
+                filter.date.$gte = d;
+            }
+            if (queryFilters.endDate) {
+                const d = new Date(queryFilters.endDate);
+                d.setHours(23, 59, 59, 999);
+                filter.date.$lte = d;
+            }
         }
 
         const [data, total] = await Promise.all([

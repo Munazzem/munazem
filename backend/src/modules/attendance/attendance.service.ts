@@ -75,15 +75,34 @@ export class AttendanceService {
     }
 
     // ─── Get attendance for a session (the live list) ────────────────
-    static async getSessionAttendance(sessionId: string, teacherId: string) {
+    static async getSessionAttendance(sessionId: string, teacherId: string, search?: string) {
         const session = await SessionModel.findOne({ _id: sessionId, teacherId }).lean();
         if (!session) throw NotFoundException({ message: 'الحصة غير موجودة' });
 
+        let matchFilter: any = {};
+        if (search) {
+            const searchTerm = search.trim();
+            const prefixRegex = new RegExp(`^${searchTerm}`, 'i');
+            const anywhereRegex = new RegExp(searchTerm, 'i');
+            
+            matchFilter.$or = [
+                { studentCode:  prefixRegex },
+                { studentPhone: prefixRegex },
+                { studentName:  anywhereRegex },
+            ];
+        }
+
         const records = await AttendanceModel.find({ sessionId })
-            .populate('studentId', 'studentName studentPhone')
+            .populate({
+                path: 'studentId',
+                select: 'studentName studentPhone studentCode',
+                match: Object.keys(matchFilter).length > 0 ? matchFilter : undefined
+            })
             .lean();
 
-        return records;
+        // Mongoose populate with match returns null for studentId if it doesn't match the filter
+        // So we filter out the records where studentId is null (meaning the student didn't match the search)
+        return records.filter(r => r.studentId !== null);
     }
 
     // ─── Complete session + generate Snapshot ───────────────────────
