@@ -14,6 +14,7 @@ import studentsRouter from './modules/students/students.controller.js';
 import sessionRouter from './modules/sessions/sessions.controller.js';
 import attendanceRouter from './modules/attendance/attendance.controller.js';
 import paymentsRouter from './modules/payments/payments.controller.js';
+import notebooksRouter from './modules/notebooks/notebooks.controller.js';
 
 export const bootstrap = () => {
     const app = express();
@@ -44,6 +45,7 @@ export const bootstrap = () => {
     app.use('/sessions', sessionRouter)      // Session routes
     app.use('/attendance', attendanceRouter)  // Attendance routes
     app.use('/payments', paymentsRouter)      // Payments routes
+    app.use('/notebooks', notebooksRouter)    // Notebooks inventory routes
 
     app.get('/', (req, res) => {
         res.send('Hello World!');

@@ -3,6 +3,7 @@ import { TransactionModel }   from '../../database/models/transaction.model.js';
 import { DailyLedgerModel }   from '../../database/models/ledger.model.js';
 import { MonthlyLedgerModel } from '../../database/models/ledger.model.js';
 import { StudentModel }       from '../../database/models/student.model.js';
+import { NotebookModel }      from '../../database/models/notebook.model.js';
 import { TransactionType, TransactionCategory, GradeLevel } from '../../common/enums/enum.service.js';
 import { NotFoundException, BadRequestException } from '../../common/utils/response/error.responce.js';
 import type { IPriceSetting } from '../../types/price-settings.types.js';
@@ -158,10 +159,12 @@ export class PaymentsService {
     }
 
     // ── Record Notebook Sale ────────────────────────────────────────
+    // notebookId is required — price is taken from the Notebook model,
+    // and stock is decremented atomically with the ledger updates.
     static async recordNotebookSale(
         teacherId: string,
         createdBy: string,
-        data: { studentId: string; amount: number; discountAmount?: number; description?: string; date?: string }
+        data: { studentId: string; notebookId: string; quantity?: number; discountAmount?: number; description?: string; date?: string }
     ) {
         const student = await StudentModel.findById(data.studentId, { studentName: 1, teacherId: 1 }).lean();
         if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
@@ -169,8 +172,18 @@ export class PaymentsService {
             throw BadRequestException({ message: 'هذا الطالب لا ينتمي إلى هذا المعلم' });
         }
 
+        // Get notebook and validate stock
+        const notebook = await NotebookModel.findOne({ _id: data.notebookId, teacherId }).lean();
+        if (!notebook) throw NotFoundException({ message: 'المذكرة غير موجودة' });
+
+        const quantity = data.quantity ?? 1;
+        if (notebook.stock < quantity) {
+            throw BadRequestException({ message: `الكمية المتاحة في المخزن: ${notebook.stock}` });
+        }
+
+        const originalAmount = notebook.price * quantity;
         const discountAmount = data.discountAmount ?? 0;
-        const paidAmount     = data.amount - discountAmount;
+        const paidAmount     = originalAmount - discountAmount;
         const txDate         = data.date ? new Date(data.date) : new Date();
 
         if (paidAmount < 0) throw BadRequestException({ message: 'الخصم لا يمكن أن يتجاوز السعر' });
@@ -182,14 +195,16 @@ export class PaymentsService {
             category:       TransactionCategory.NOTEBOOK_SALE,
             studentId:      student._id,
             studentName:    student.studentName,
-            originalAmount: data.amount,
+            originalAmount,
             discountAmount,
             paidAmount,
             date:           txDate,
             ...(data.description ? { description: data.description } : {}),
         });
 
+        // Decrement stock + update both ledgers — all in parallel
         await Promise.all([
+            NotebookModel.findByIdAndUpdate(data.notebookId, { $inc: { stock: -quantity } }),
             updateDailyLedger(teacherId, txDate, {
                 transactionId: transaction._id,
                 type:          TransactionType.INCOME,
