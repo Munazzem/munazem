@@ -32,7 +32,6 @@ const getNavItems = (role?: string) => {
     { name: 'لوحة التحكم', href: '/dashboard', icon: LayoutDashboard },
     { name: 'المجموعات الدراسية', href: '/groups', icon: GraduationCap },
     { name: 'إدارة الطلاب', href: '/students', icon: Users },
-        { name: 'المجموعات', href: '/groups', icon: GraduationCap },
         { name: 'الحصص والغياب', href: '/sessions', icon: CalendarCheck },
         { name: 'الماليات', href: '/dashboard/payments', icon: Wallet },
         { name: 'المتجر والمذكرات', href: '/dashboard/notebooks', icon: BookOpen },
