@@ -37,3 +37,20 @@ export enum AttendanceStatus {
     ABSENT  = 'ABSENT',
     LATE    = 'LATE',
 }
+
+export enum TransactionType {
+    INCOME  = 'INCOME',
+    EXPENSE = 'EXPENSE',
+}
+
+export enum TransactionCategory {
+    // Income categories
+    SUBSCRIPTION  = 'SUBSCRIPTION',   // اشتراك طالب
+    NOTEBOOK_SALE = 'NOTEBOOK_SALE',  // بيع مذكرة
+    OTHER_INCOME  = 'OTHER_INCOME',   // إيراد متنوع
+    // Expense categories
+    SALARY        = 'SALARY',         // مرتب
+    RENT          = 'RENT',           // إيجار
+    SUPPLIES      = 'SUPPLIES',       // لوازم
+    OTHER_EXPENSE = 'OTHER_EXPENSE',  // مصروف متنوع
+}
