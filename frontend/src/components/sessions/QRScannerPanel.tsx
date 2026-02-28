@@ -44,7 +44,14 @@ export function QRScannerPanel({
 
             await scanner.start(
                 { facingMode: 'environment' },
-                { fps: 10, qrbox: { width: 220, height: 220 } },
+                {
+                    fps: 15,
+                    qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+                        const side = Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * 0.82);
+                        return { width: side, height: side };
+                    },
+                    aspectRatio: 1.0,
+                },
                 async (decodedText: string) => {
                     // Debounce — ignore same QR within 3 seconds
                     if (lastScannedRef.current === decodedText) return;
@@ -132,10 +139,10 @@ export function QRScannerPanel({
             <div
                 className={cn(
                     'relative rounded-xl overflow-hidden bg-gray-900 transition-all',
-                    isCameraActive ? 'h-64' : 'h-0'
+                    isCameraActive ? 'h-80 sm:h-96' : 'h-0'
                 )}
             >
-                <div id={SCANNER_ID} ref={containerRef} className="w-full h-full" />
+                <div id={SCANNER_ID} ref={containerRef} className="w-full h-full [&>video]:w-full [&>video]:h-full [&>video]:object-cover" />
                 {isProcessing && (
                     <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
                         <div className="bg-white rounded-lg px-4 py-2 flex items-center gap-2 text-sm font-medium">
