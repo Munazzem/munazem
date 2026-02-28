@@ -1,19 +1,6 @@
 import { create } from 'zustand';
 import Cookies from 'js-cookie';
-
-interface User {
-    id: string;
-    name: string;
-    role: 'SUPER_ADMIN' | 'TEACHER' | 'ASSISTANT';
-}
-
-interface AuthState {
-    user: User | null;
-    token: string | null;
-    isAuthenticated: boolean;
-    login: (user: User, token: string) => void;
-    logout: () => void;
-}
+import type { AuthState } from '@/types/auth.types';
 
 /**
  * Zustand Store for Global Authentication State.

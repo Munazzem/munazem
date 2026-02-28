@@ -1,10 +1,5 @@
 import { create } from 'zustand';
-
-interface UIState {
-    isSidebarOpen: boolean;
-    toggleSidebar: () => void;
-    setSidebarOpen: (isOpen: boolean) => void;
-}
+import type { UIState } from '@/types/ui.types';
 
 /**
  * Zustand Store for Global UI State (Mobile Sidebar Toggle, Theme, etc.)
