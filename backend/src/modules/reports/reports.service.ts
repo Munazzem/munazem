@@ -7,6 +7,7 @@ import { MonthlyLedgerModel }      from '../../database/models/ledger.model.js';
 import mongoose from 'mongoose';
 import { TransactionType, TransactionCategory, SessionStatus, UserRole } from '../../common/enums/enum.service.js';
 import { NotFoundException } from '../../common/utils/response/error.responce.js';
+import { BarcodeUtil } from '../../common/utils/barcode.util.js';
 
 export class ReportsService {
 
@@ -63,10 +64,20 @@ export class ReportsService {
         const subscriptions  = payments.filter(p => p.category === TransactionCategory.SUBSCRIPTION);
         const notebookSales  = payments.filter(p => p.category === TransactionCategory.NOTEBOOK_SALE);
 
+        // Generate Barcode Image using the studentCode (or barcode if they have a physical card)
+        const codeToEncode = student.barcode || (student as any).studentCode || student._id.toString().substring(0, 10);
+        let barcodeImageBase64 = '';
+        try {
+            barcodeImageBase64 = await BarcodeUtil.generateBase64Barcode(codeToEncode);
+        } catch (e) {
+            console.error('Failed to generate barcode image:', e);
+        }
+
         return {
             student: {
                 ...student,
                 groupName: group?.name ?? '—',
+                barcodeImageBase64,  // Useful for the print view natively on the frontend
             },
             attendance: {
                 totalSessions,

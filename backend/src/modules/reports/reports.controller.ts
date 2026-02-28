@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { ReportsService } from './reports.service.js';
+import { PdfService } from './pdf.service.js';
 import { UserRole } from '../../common/enums/enum.service.js';
 import { SuccessResponse } from '../../common/utils/response/success.responce.js';
 import { authenticate } from '../../middlewares/auth.middleware.js';
@@ -42,6 +43,26 @@ reportsRouter.get(
                 req.params['studentId'] as string, teacherId
             );
             return SuccessResponse({ res, data, message: 'تم جلب تقرير الطالب بنجاح' });
+        } catch (error) { next(error); }
+    }
+);
+
+// ─── GET /reports/student/:studentId/pdf — Download PDF Report
+reportsRouter.get(
+    '/student/:studentId/pdf',
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = (req as any).user.userId;
+            const pdfBuffer = await PdfService.generateStudentReportPdf(
+                req.params['studentId'] as string, teacherId
+            );
+            
+            res.set({
+                'Content-Type': 'application/pdf',
+                'Content-Disposition': `attachment; filename=student-report-${req.params['studentId']}.pdf`,
+                'Content-Length': pdfBuffer.length,
+            });
+            res.send(pdfBuffer);
         } catch (error) { next(error); }
     }
 );
