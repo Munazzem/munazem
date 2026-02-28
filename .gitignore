@@ -6,3 +6,7 @@ build
 walkthrough
 README_AR.md
 CHANGES.md
+
+# Test & dev scripts
+backend/test-*.ts
+backend/test-*.js
