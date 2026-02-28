@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { AddStudentModal } from '@/components/students/AddStudentModal';
 import { EditStudentModal } from '@/components/students/EditStudentModal';
+import { StudentProfileModal } from '@/components/students/StudentProfileModal';
 import { toast } from 'sonner';
 import {
     DropdownMenu,
@@ -49,6 +50,10 @@ export default function StudentsPage() {
     // Edit Modal State
     const [selectedStudent, setSelectedStudent] = useState<StudentWithGroup | null>(null);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
+    // Profile Modal State
+    const [profileStudent, setProfileStudent] = useState<StudentWithGroup | null>(null);
+    const [isProfileOpen, setIsProfileOpen] = useState(false);
 
     const queryClient = useQueryClient();
 
@@ -81,6 +86,11 @@ export default function StudentsPage() {
     const handleEditClick = (student: StudentWithGroup) => {
         setSelectedStudent(student);
         setIsEditModalOpen(true);
+    };
+
+    const handleProfileClick = (student: StudentWithGroup) => {
+        setProfileStudent(student);
+        setIsProfileOpen(true);
     };
 
     const students = data?.data || [];
@@ -169,12 +179,21 @@ export default function StudentsPage() {
                                             <Badge variant="outline" className="bg-gray-50 text-gray-600">{stu.barcode || '-'}</Badge>
                                         </TableCell>
                                         <TableCell className="font-bold text-gray-900 border-r border-transparent">
-                                            {stu.studentName}
+                                            <button
+                                                onClick={() => handleProfileClick(stu)}
+                                                className="hover:text-primary hover:underline transition-colors text-right"
+                                            >
+                                                {stu.studentName}
+                                            </button>
                                         </TableCell>
                                         <TableCell>
                                             <div className="flex flex-col">
                                                 <span className="text-sm font-medium text-gray-900">{stu.gradeLevel}</span>
-                                                <span className="text-xs text-gray-500 mt-1">{stu.groupDetails?.name || 'بدون مجموعة'}</span>
+                                                <span className="text-xs text-gray-500 mt-1">
+                                                    {typeof stu.groupId === 'object' && stu.groupId !== null
+                                                        ? (stu.groupId as { name: string }).name
+                                                        : stu.groupDetails?.name || 'بدون مجموعة'}
+                                                </span>
                                             </div>
                                         </TableCell>
                                         <TableCell>
@@ -206,12 +225,13 @@ export default function StudentsPage() {
                                                     <DropdownMenuLabel className="text-xs text-gray-500">الإجراءات</DropdownMenuLabel>
                                                     <DropdownMenuSeparator />
                                                     
-                                                    {/* Teacher-only actions */}
-                                                    {user?.role === 'teacher' && (
-                                                        <DropdownMenuItem className="cursor-pointer text-gray-700 focus:text-primary">
-                                                            <FileText className="mr-2 h-4 w-4 ml-2" /> تقرير شامل
-                                                        </DropdownMenuItem>
-                                                    )}
+                                                    {/* Profile — visible to all roles */}
+                                                    <DropdownMenuItem
+                                                        className="cursor-pointer text-gray-700 focus:text-primary"
+                                                        onClick={() => handleProfileClick(stu)}
+                                                    >
+                                                        <FileText className="mr-2 h-4 w-4 ml-2" /> بروفايل الطالب
+                                                    </DropdownMenuItem>
                                                     
                                                     <DropdownMenuItem 
                                                         className="cursor-pointer text-gray-700 focus:text-primary"
@@ -271,6 +291,13 @@ export default function StudentsPage() {
                 open={isEditModalOpen} 
                 onOpenChange={setIsEditModalOpen} 
                 student={selectedStudent} 
+            />
+
+            {/* Profile Modal Component */}
+            <StudentProfileModal
+                open={isProfileOpen}
+                onOpenChange={setIsProfileOpen}
+                student={profileStudent}
             />
         </div>
     );

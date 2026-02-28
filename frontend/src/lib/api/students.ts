@@ -27,8 +27,9 @@ export const fetchStudents = async (params: {
     }
     if (params.search) query.append('search', params.search);
 
+    // apiClient interceptor returns response.data directly → shape: { status, message, data }
     const res = await apiClient.get(`/students?${query.toString()}`);
-    return res.data?.data || res.data;
+    return (res as any).data;
 };
 
 /**
@@ -36,7 +37,7 @@ export const fetchStudents = async (params: {
  */
 export const fetchStudentById = async (id: string): Promise<StudentWithGroup> => {
     const res = await apiClient.get(`/students/${id}`);
-    return res.data?.data || res.data;
+    return (res as any).data;
 };
 
 /**
@@ -44,7 +45,7 @@ export const fetchStudentById = async (id: string): Promise<StudentWithGroup> =>
  */
 export const createStudent = async (data: CreateStudentDTO): Promise<StudentWithGroup> => {
     const res = await apiClient.post('/students', data);
-    return res.data?.data || res.data;
+    return (res as any).data;
 };
 
 /**
@@ -52,7 +53,7 @@ export const createStudent = async (data: CreateStudentDTO): Promise<StudentWith
  */
 export const updateStudent = async (id: string, data: UpdateStudentDTO): Promise<StudentWithGroup> => {
     const res = await apiClient.put(`/students/${id}`, data);
-    return res.data?.data || res.data;
+    return (res as any).data;
 };
 
 /**

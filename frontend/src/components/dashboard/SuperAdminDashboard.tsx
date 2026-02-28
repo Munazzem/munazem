@@ -6,8 +6,9 @@ import { CreditCard, Users, Activity } from 'lucide-react';
 import { useAuthStore } from '@/lib/store/auth.store';
 
 const fetchSubscriptions = async () => {
+    // apiClient interceptor returns response.data directly → shape: { status, message, data }
     const res = await apiClient.get('/subscriptions');
-    return res.data?.data || [];
+    return (res as any).data || [];
 };
 
 const SuperAdminSkeleton = () => (

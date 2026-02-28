@@ -36,7 +36,7 @@ export class GroupService {
         const limit = Math.min(100, Math.max(1, parseInt(queryFilters.limit) || 20));
         const skip  = (page - 1) * limit;
 
-        const [data, total] = await Promise.all([
+        const [groups, total] = await Promise.all([
             GroupModel.find({ teacherId })
                 .sort({ createdAt: -1 })
                 .skip(skip)
@@ -44,6 +44,21 @@ export class GroupService {
                 .lean(),
             GroupModel.countDocuments({ teacherId })
         ]);
+
+        // Attach studentsCount to each group in one aggregation query
+        const groupIds = groups.map(g => g._id);
+        const countAgg = groupIds.length > 0
+            ? await StudentModel.aggregate([
+                { $match: { groupId: { $in: groupIds } } },
+                { $group: { _id: '$groupId', count: { $sum: 1 } } },
+            ])
+            : [];
+        const countMap = new Map(countAgg.map(c => [c._id.toString(), c.count]));
+
+        const data = groups.map(g => ({
+            ...g,
+            studentsCount: countMap.get(g._id.toString()) ?? 0,
+        }));
 
         return {
             data,
