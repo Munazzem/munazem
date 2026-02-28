@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { UserRole } from '../../common/enums/enum.service.js';
+import { UserRole } from '../common/enums/enum.service.js';
 
 export const loginSchema = z.object({
   body: z.object({
