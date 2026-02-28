@@ -1,5 +1,6 @@
 import mongoose, { Document } from 'mongoose';
-import { SubscriptionStatus, SubscriptionPlan, DurationMonths } from '../common/enums/enum.service.js';
+import { SubscriptionStatus, SubscriptionPlan } from '../common/enums/enum.service.js';
+import type { DurationMonths } from '../common/enums/enum.service.js';
 
 export interface ISubscription extends Document {
     teacherId: mongoose.Types.ObjectId;

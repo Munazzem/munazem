@@ -39,15 +39,19 @@ export class SubscriptionService {
         const endDate = new Date(startDate);
         endDate.setMonth(endDate.getMonth() + data.durationMonths);
 
-        const newSubscription = await SubscriptionModel.create([{
+        const subscriptionData: Record<string, unknown> = {
             teacherId,
             planTier: data.planTier,
             durationMonths: data.durationMonths,
             startDate,
             endDate,
             amount,
-            paymentMethod: data.paymentMethod,
-        }], { session: session || null });
+        };
+        if (data.paymentMethod) {
+            subscriptionData.paymentMethod = data.paymentMethod;
+        }
+
+        const newSubscription = await SubscriptionModel.create([subscriptionData], { session: session || null });
 
         const subscriptionDoc = newSubscription[0];
 
