@@ -10,6 +10,28 @@ export enum SubscriptionStatus {
     PENDING = 'PENDING'
 }
 
+export enum SubscriptionPlan {
+    BASIC   = 'BASIC',
+    PRO     = 'PRO',
+    PREMIUM = 'PREMIUM',
+}
+
+export const PLAN_PRICES: Record<SubscriptionPlan, number> = {
+    [SubscriptionPlan.BASIC]:   1000,
+    [SubscriptionPlan.PRO]:     1500,
+    [SubscriptionPlan.PREMIUM]: 2000,
+};
+
+export const DURATION_MONTHS = [1, 4, 9, 12] as const;
+export type DurationMonths = typeof DURATION_MONTHS[number];
+
+export const DURATION_LABELS: Record<DurationMonths, string> = {
+    1:  'شهر واحد',
+    4:  'ترم دراسي (4 أشهر)',
+    9:  'ترمين دراسيين (9 أشهر)',
+    12: 'سنة كاملة (12 شهر)',
+};
+
 export enum GradeLevel {
     // إعدادي
     PREP_1 = 'الصف الأول الإعدادي',
@@ -33,8 +55,8 @@ export const GRADE_LETTER: Record<GradeLevel, string> = {
 
 // Grades visible per teacher stage
 export enum TeacherStage {
-    PREPARATORY = 'PREPARATORY',  // إعدادي
-    SECONDARY   = 'SECONDARY',    // ثانوي
+    PREPARATORY = 'PREPARATORY',  
+    SECONDARY   = 'SECONDARY',    
 }
 
 export const STAGE_GRADES: Record<TeacherStage, GradeLevel[]> = {

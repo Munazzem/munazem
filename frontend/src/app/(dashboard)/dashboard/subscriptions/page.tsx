@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchSubscriptions } from '@/lib/api/subscriptions';
-import type { ISubscription } from '@/types/subscription.types';
+import type { ISubscription, SubscriptionPlan } from '@/types/subscription.types';
+import { DURATION_LABELS } from '@/types/subscription.types';
 import { useAuthStore } from '@/lib/store/auth.store';
 import {
     CreditCard,
@@ -19,6 +20,18 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { AddSubscriptionModal } from '@/components/subscriptions/AddSubscriptionModal';
+
+const PLAN_BADGE: Record<SubscriptionPlan, { label: string; className: string }> = {
+    BASIC:   { label: 'الأساسية',   className: 'bg-blue-100 text-blue-700 border-blue-200' },
+    PRO:     { label: 'الاحترافية', className: 'bg-purple-100 text-purple-700 border-purple-200' },
+    PREMIUM: { label: 'المتميزة',   className: 'bg-amber-100 text-amber-700 border-amber-200' },
+};
+
+function planBadge(plan?: SubscriptionPlan) {
+    if (!plan || !PLAN_BADGE[plan]) return null;
+    const { label, className } = PLAN_BADGE[plan];
+    return <Badge className={cn('border text-xs font-medium', className)}>{label}</Badge>;
+}
 
 function statusConfig(status: ISubscription['status']) {
     switch (status) {
@@ -176,7 +189,8 @@ export default function SubscriptionsPage() {
                                 <tr className="bg-gray-50 border-b border-gray-100 text-gray-500">
                                     <th className="text-right font-semibold py-3.5 px-4">المعلم</th>
                                     <th className="text-right font-semibold py-3.5 px-4">الهاتف</th>
-                                    <th className="text-right font-semibold py-3.5 px-4">تاريخ البداية</th>
+                                    <th className="text-center font-semibold py-3.5 px-4">الباقة</th>
+                                    <th className="text-right font-semibold py-3.5 px-4">المدة</th>
                                     <th className="text-right font-semibold py-3.5 px-4">تاريخ الانتهاء</th>
                                     <th className="text-right font-semibold py-3.5 px-4">المبلغ</th>
                                     <th className="text-right font-semibold py-3.5 px-4">طريقة الدفع</th>
@@ -202,7 +216,14 @@ export default function SubscriptionsPage() {
                                                 </div>
                                             </td>
                                             <td className="py-3.5 px-4 text-gray-500" dir="ltr">{teacher.phone || '—'}</td>
-                                            <td className="py-3.5 px-4 text-gray-600">{formatDate(sub.startDate)}</td>
+                                            <td className="py-3.5 px-4 text-center">
+                                                {planBadge(sub.planTier)}
+                                            </td>
+                                            <td className="py-3.5 px-4 text-gray-600 text-sm whitespace-nowrap">
+                                                {sub.durationMonths
+                                                    ? DURATION_LABELS[sub.durationMonths] ?? `${sub.durationMonths} شهر`
+                                                    : '—'}
+                                            </td>
                                             <td className="py-3.5 px-4 text-gray-600">
                                                 <span className={cn(isExpiring ? 'text-amber-600 font-semibold' : '')}>
                                                     {formatDate(sub.endDate)}

@@ -1,5 +1,5 @@
 import { apiClient } from './axios';
-import type { ISubscription, CreateSubscriptionDTO } from '@/types/subscription.types';
+import type { ISubscription, IAvailablePlan, CreateSubscriptionDTO } from '@/types/subscription.types';
 
 // apiClient interceptor returns response.data directly → shape: { status, message, data }
 
@@ -10,6 +10,11 @@ export const fetchSubscriptions = async (): Promise<ISubscription[]> => {
 
 export const fetchTeacherSubscriptions = async (teacherId: string): Promise<ISubscription[]> => {
     const res = await apiClient.get(`/subscriptions/${teacherId}`);
+    return (res as any).data || [];
+};
+
+export const fetchAvailablePlans = async (): Promise<IAvailablePlan[]> => {
+    const res = await apiClient.get('/subscriptions/plans');
     return (res as any).data || [];
 };
 

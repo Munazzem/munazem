@@ -11,14 +11,16 @@ import { createSubscriptionSchema } from '../../validation/subscriptions.validat
 class SubscriptionController {
     static async createSubscription(req: Request, res: Response, next: NextFunction) {
         try {
-            const { teacherId, endDate, amount, paymentMethod } = req.body;
-            const newSubscription = await SubscriptionService.createSubscription(teacherId, { endDate, amount, paymentMethod });
-            
-            return SuccessResponse({ 
-                res, 
-                message: 'تم إضافة الاشتراك بنجاح وتفعيل حساب المعلم', 
-                data: newSubscription, 
-                status: 201 
+            const { teacherId, planTier, durationMonths, paymentMethod } = req.body;
+            const newSubscription = await SubscriptionService.createSubscription(
+                teacherId,
+                { planTier, durationMonths, paymentMethod }
+            );
+            return SuccessResponse({
+                res,
+                message: 'تم إضافة الاشتراك بنجاح وتفعيل حساب المعلم',
+                data: newSubscription,
+                status: 201,
             });
         } catch (error) {
             next(error);
@@ -28,10 +30,10 @@ class SubscriptionController {
     static async getAllSubscriptions(req: Request, res: Response, next: NextFunction) {
         try {
             const subscriptions = await SubscriptionService.getAllSubscriptions();
-            return SuccessResponse({ 
-                res, 
-                message: 'تم جلب جميع بطاقات الاشتراك بنجاح', 
-                data: subscriptions 
+            return SuccessResponse({
+                res,
+                message: 'تم جلب جميع بطاقات الاشتراك بنجاح',
+                data: subscriptions,
             });
         } catch (error) {
             next(error);
@@ -42,10 +44,23 @@ class SubscriptionController {
         try {
             const teacherId = req.params.teacherId as string;
             const subscriptions = await SubscriptionService.getTeacherSubscriptions(teacherId);
-            return SuccessResponse({ 
-                res, 
-                message: 'تم جلب اشتراكات المعلم بنجاح', 
-                data: subscriptions 
+            return SuccessResponse({
+                res,
+                message: 'تم جلب اشتراكات المعلم بنجاح',
+                data: subscriptions,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async getAvailablePlans(_req: Request, res: Response, next: NextFunction) {
+        try {
+            const plans = SubscriptionService.getAvailablePlans();
+            return SuccessResponse({
+                res,
+                message: 'تم جلب الباقات المتاحة بنجاح',
+                data: plans,
             });
         } catch (error) {
             next(error);
@@ -55,14 +70,16 @@ class SubscriptionController {
 
 const router = Router();
 
-// Protect all subscription routes globally
 router.use(authenticate);
+
+// Public to all authenticated users (teacher can see available plans)
+router.get('/plans', SubscriptionController.getAvailablePlans);
 
 // SuperAdmin Only routes
 router.post('/', authorizeRoles(UserRole.superAdmin), validate(createSubscriptionSchema), SubscriptionController.createSubscription);
 router.get('/', authorizeRoles(UserRole.superAdmin), SubscriptionController.getAllSubscriptions);
 
-// Shared route: SuperAdmin or Teacher can view specific teacher subscriptions
+// Shared: SuperAdmin or Teacher
 router.get('/:teacherId', authorizeRoles(UserRole.superAdmin, UserRole.teacher), SubscriptionController.getTeacherSubscriptions);
 
 export default router;
