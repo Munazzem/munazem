@@ -41,11 +41,6 @@ const teacherSchema = z.object({
   email: z.string().email('البريد الإلكتروني غير صحيح').optional().or(z.literal('')),
   password: z.string().min(6, 'كلمة المرور يجب أن تكون 6 أحرف على الأقل'),
   stage: z.nativeEnum(TeacherStage),
-  subscription: z.object({
-    amount: z.number().min(0, 'القيمة لا يمكن أن تكون سالبة'),
-    endDate: z.string().min(1, 'تاريخ انتهاء الاشتراك مطلوب'),
-    paymentMethod: z.string().optional()
-  }).optional() // Making it optional here, but usually SuperAdmin passes it. We'll simplify for now.
 });
 
 export function AddTeacherModal() {
@@ -60,10 +55,6 @@ export function AddTeacherModal() {
       email: '',
       password: '',
       stage: TeacherStage.preparatory,
-      subscription: {
-        amount: 0,
-        endDate: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0], // Next year
-      }
     },
   });
 
@@ -81,10 +72,6 @@ export function AddTeacherModal() {
   });
 
   const onSubmit = (values: z.infer<typeof teacherSchema>) => {
-    // Ensuring the endDate is saved in correct ISO format or DateTime for backend
-    if (values.subscription?.endDate) {
-        values.subscription.endDate = new Date(values.subscription.endDate).toISOString();
-    }
     createMutation.mutate(values);
   };
 
