@@ -27,6 +27,11 @@ const studentSchema = new Schema<IStudent>({
         enum: Object.values(GradeLevel),
         required: [true, 'المرحلة الدراسية مطلوبة'] 
     },
+    studentCode: { 
+        type: String, 
+        required: [true, 'كود الطالب مطلوب'],
+        index: true 
+    },
     barcode: { 
         type: String, 
         unique: true, 
@@ -55,5 +60,7 @@ const studentSchema = new Schema<IStudent>({
 
 // Compound index to ensure a student phone is unique per teacher (a student can't be added twice to the same teacher)
 studentSchema.index({ studentPhone: 1, teacherId: 1 }, { unique: true });
+// Ensure student code is unique per teacher system
+studentSchema.index({ studentCode: 1, teacherId: 1 }, { unique: true });
 
 export const StudentModel: Model<IStudent> = mongoose.model<IStudent>('Student', studentSchema);

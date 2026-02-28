@@ -2,11 +2,25 @@ import { GroupModel } from '../../database/models/group.model.js';
 import { StudentModel } from '../../database/models/student.model.js';
 import { NotFoundException, BadRequestException } from '../../common/utils/response/error.responce.js';
 import type { CreateGroupDTO, UpdateGroupDTO } from '../../types/dto.types.js';
+import { UserModel } from '../../database/models/user.model.js';
+import { STAGE_GRADES, GradeLevel, TeacherStage } from '../../common/enums/enum.service.js';
 
 export class GroupService {
     
     // Create a new group (Only Assistants can trigger this in the controller)
     static async createGroup(teacherId: string, data: CreateGroupDTO) {
+        // Enforce teacher stage limits
+        const teacher = await UserModel.findById(teacherId, { stage: 1 }).lean();
+        if (!teacher) throw NotFoundException({ message: 'المعلم غير موجود' });
+
+        if (teacher.stage) {
+            const allowedGrades = STAGE_GRADES[teacher.stage as TeacherStage];
+            if (!allowedGrades.includes(data.gradeLevel as GradeLevel)) {
+                const stageName = teacher.stage === TeacherStage.PREPARATORY ? 'الإعدادية' : 'الثانوية';
+                throw BadRequestException({ message: `هذا المعلم مسجل للمرحلة ${stageName} فقط. لا يمكن إنشاء مجموعة لهذه المرحلة الدراسية.` });
+            }
+        }
+
         return await GroupModel.create({
             name:       data.name,
             gradeLevel: data.gradeLevel,

@@ -11,19 +11,36 @@ export enum SubscriptionStatus {
 }
 
 export enum GradeLevel {
-    PRIMARY_1 = 'الصف الأول الابتدائي',
-    PRIMARY_2 = 'الصف الثاني الابتدائي',
-    PRIMARY_3 = 'الصف الثالث الابتدائي',
-    PRIMARY_4 = 'الصف الرابع الابتدائي',
-    PRIMARY_5 = 'الصف الخامس الابتدائي',
-    PRIMARY_6 = 'الصف السادس الابتدائي',
+    // إعدادي
     PREP_1 = 'الصف الأول الإعدادي',
     PREP_2 = 'الصف الثاني الإعدادي',
     PREP_3 = 'الصف الثالث الإعدادي',
-    SEC_1 = 'الصف الأول الثانوي',
-    SEC_2 = 'الصف الثاني الثانوي',
-    SEC_3 = 'الصف الثالث الثانوي',
+    // ثانوي
+    SEC_1  = 'الصف الأول الثانوي',
+    SEC_2  = 'الصف الثاني الثانوي',
+    SEC_3  = 'الصف الثالث الثانوي',
 }
+
+// Letter code per grade — used in student auto-generated code (e.g. 5A, 12C)
+export const GRADE_LETTER: Record<GradeLevel, string> = {
+    [GradeLevel.PREP_1]: 'A',
+    [GradeLevel.PREP_2]: 'B',
+    [GradeLevel.PREP_3]: 'C',
+    [GradeLevel.SEC_1]:  'D',
+    [GradeLevel.SEC_2]:  'E',
+    [GradeLevel.SEC_3]:  'F',
+};
+
+// Grades visible per teacher stage
+export enum TeacherStage {
+    PREPARATORY = 'PREPARATORY',  // إعدادي
+    SECONDARY   = 'SECONDARY',    // ثانوي
+}
+
+export const STAGE_GRADES: Record<TeacherStage, GradeLevel[]> = {
+    [TeacherStage.PREPARATORY]: [GradeLevel.PREP_1, GradeLevel.PREP_2, GradeLevel.PREP_3],
+    [TeacherStage.SECONDARY]:   [GradeLevel.SEC_1, GradeLevel.SEC_2, GradeLevel.SEC_3],
+};
 
 export enum SessionStatus {
     SCHEDULED   = 'SCHEDULED',

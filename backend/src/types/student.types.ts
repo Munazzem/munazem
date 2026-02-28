@@ -7,6 +7,7 @@ export interface IStudent {
     studentPhone: string;
     parentPhone: string;
     gradeLevel: GradeLevel;
+    studentCode: string;
     barcode?: string;
     groupId: Types.ObjectId;
     teacherId: Types.ObjectId;

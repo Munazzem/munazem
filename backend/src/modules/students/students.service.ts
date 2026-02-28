@@ -2,6 +2,8 @@ import { StudentModel } from '../../database/models/student.model.js';
 import { GroupModel } from '../../database/models/group.model.js';
 import { NotFoundException, BadRequestException, ConflictException } from '../../common/utils/response/error.responce.js';
 import type { CreateStudentDTO, UpdateStudentDTO } from '../../types/dto.types.js';
+import { GRADE_LETTER, GradeLevel } from '../../common/enums/enum.service.js';
+import { nextSequence } from '../../database/models/counter.model.js';
 
 export class StudentService {
     
@@ -26,7 +28,12 @@ export class StudentService {
         // 2. Parse the name
         const { studentName, parentName } = this.parseFullName(data.fullName);
 
-        // 3. Create — explicit fields only (no spread of DTO to avoid fullName leaking into model)
+        // 3. Generate sequential code per grade level per teacher
+        const letter = GRADE_LETTER[data.gradeLevel as GradeLevel];
+        const count  = await nextSequence(`${teacherId}_${data.gradeLevel}`);
+        const studentCode = `${count}${letter}`;  // e.g. 1A, 25C
+
+        // 4. Create — explicit fields only (no spread of DTO to avoid fullName leaking into model)
         try {
             return await StudentModel.create({
                 studentName,
@@ -36,6 +43,7 @@ export class StudentService {
                 gradeLevel:   data.gradeLevel,
                 groupId:      data.groupId,
                 teacherId,
+                studentCode,
                 ...(data.barcode ? { barcode: data.barcode } : {}),
             });
         } catch (error: any) {
