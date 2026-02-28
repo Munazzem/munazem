@@ -7,7 +7,8 @@ import type { ILoginRequest, IAuthResponse } from "../../types/auth.types.js";
 export const login = async (data: ILoginRequest): Promise<IAuthResponse> => {
     const { phone, password } = data;
 
-    const user = await UserModel.findOne({ phone }).select('+password');
+    // [PERFORMANCE OPTIMIZATION] Using .lean() to bypass Mongoose hydration. Faster read times for login.
+    const user = await UserModel.findOne({ phone }).select('+password').lean();
     if (!user) {
         throw UnauthorizedException({ message: 'رقم الهاتف أو كلمة المرور غير صحيحة' });
     }
@@ -30,7 +31,8 @@ export const login = async (data: ILoginRequest): Promise<IAuthResponse> => {
     const token = TokenUtil.generateAccessToken(payload);
     const refreshToken = TokenUtil.generateRefreshToken(payload);
 
-    const userObject = user.toObject();
+    // Since we used .lean(), 'user' is already a plain JS object, so we don't need .toObject()
+    const userObject = { ...user };
     delete userObject.password;
 
     return {
@@ -64,22 +66,4 @@ export const refreshTokens = async (refreshToken: string) => {
     } catch (error) {
         throw UnauthorizedException({ message: 'Invalid or expired refresh token' });
     }
-}
-
-export const signup = async(data: any)=>{
-    const {name, email , password , phone} = data;
-
-    const exsistUser = await UserModel.findOne({email})
-    if (exsistUser) {
-        throw ConflictException({ message: "User already exists with this email" })
-    }
-    
-    const hashedPassword = await PasswordUtil.hashPassword(password);
-    
-    const userData = await UserModel.create({name, email, password: hashedPassword, phone})
-    
-    const userObject = userData.toObject();
-    delete userObject.password;
-    
-    return userObject;
 }
