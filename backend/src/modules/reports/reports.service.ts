@@ -317,17 +317,21 @@ export class ReportsService {
             }
         ]);
 
-        // c. Income Trend (Last 6 Months)
-        // Adjust the date backwards 5 months to get a total of 6 months inclusive
-        const sixMonthsAgoDate = new Date(Date.UTC(year, month - 6, 1));
-        const incomeTrendPromise = MonthlyLedgerModel.find({
-            teacherId,
-            $or: [
-                { year: { $gte: sixMonthsAgoDate.getUTCFullYear() } }
-            ]
-        }, { year: 1, month: 1, totalIncome: 1 })
-        .sort({ year: 1, month: 1 }) // Chronological order
-        .limit(6)
+        // c. Income Trend (Last 6 Months) — correct cross-year boundary filter
+        // Build an array of {year, month} pairs for the last 6 months inclusive
+        const last6Months: { year: number; month: number }[] = [];
+        for (let i = 5; i >= 0; i--) {
+            const d = new Date(Date.UTC(year, month - 1 - i, 1));
+            last6Months.push({ year: d.getUTCFullYear(), month: d.getUTCMonth() + 1 });
+        }
+        const incomeTrendPromise = MonthlyLedgerModel.find(
+            {
+                teacherId,
+                $or: last6Months.map(({ year: y, month: m }) => ({ year: y, month: m })),
+            },
+            { year: 1, month: 1, totalIncome: 1 }
+        )
+        .sort({ year: 1, month: 1 })
         .lean();
 
         const [expensesBreakdown, studentsPerGroup, rawIncomeTrend] = await Promise.all([
@@ -336,11 +340,13 @@ export class ReportsService {
             incomeTrendPromise
         ]);
 
-        // Format the income trend for the chart (e.g., "Oct 2023")
-        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-        const incomeTrend = rawIncomeTrend.map(ledger => ({
-            month: `${monthNames[ledger.month - 1]} ${ledger.year}`,
-            income: ledger.totalIncome
+        // Format the income trend for the chart — Arabic month names
+        const monthNamesAr = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
+        // Fill in months with zero income so every month in the range has an entry
+        const rawMap = new Map(rawIncomeTrend.map(l => [`${l.year}-${l.month}`, l.totalIncome]));
+        const incomeTrend = last6Months.map(({ year: y, month: m }) => ({
+            month: monthNamesAr[m - 1] ?? String(m),
+            income: rawMap.get(`${y}-${m}`) ?? 0,
         }));
 
         return {

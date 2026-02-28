@@ -10,8 +10,7 @@ import {
     MoreVertical, 
     Edit, 
     Trash2, 
-    Users as UsersIcon,
-    Loader2
+    Loader2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -28,6 +27,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { AddTeacherModal } from '@/components/users/AddTeacherModal';
 import { EditTeacherModal } from '@/components/users/EditTeacherModal';
+import Link from 'next/link';
+import { ExternalLink } from 'lucide-react';
 
 export default function UsersPage() {
     const user = useAuthStore(state => state.user);
@@ -121,7 +122,7 @@ export default function UsersPage() {
                         <div key={teacher._id} className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
                             <div>
                                 <div className="flex justify-between items-start mb-4">
-                                    <div>
+                                    <div className="flex-1 min-w-0">
                                         <Badge variant="outline" className="mb-2 bg-primary/10 text-primary border-primary/20">
                                             {teacher.stage === 'PREPARATORY' ? 'إعدادي' : teacher.stage === 'SECONDARY' ? 'ثانوي' : 'غير محدد'}
                                         </Badge>
@@ -130,13 +131,18 @@ export default function UsersPage() {
                                     </div>
                                     <DropdownMenu dir="rtl">
                                         <DropdownMenuTrigger asChild>
-                                            <Button variant="ghost" className="h-8 w-8 p-0 text-gray-400 hover:text-primary">
+                                            <Button variant="ghost" className="h-8 w-8 p-0 text-gray-400 hover:text-primary shrink-0">
                                                 <MoreVertical className="h-5 w-5" />
                                             </Button>
                                         </DropdownMenuTrigger>
                                         <DropdownMenuContent align="end">
                                             <DropdownMenuLabel>الإجراءات</DropdownMenuLabel>
                                             <DropdownMenuSeparator />
+                                            <DropdownMenuItem asChild className="cursor-pointer focus:text-primary">
+                                                <Link href={`/dashboard/users/${teacher._id}`}>
+                                                    <ExternalLink className="mr-2 h-4 w-4 ml-2" /> عرض التفاصيل
+                                                </Link>
+                                            </DropdownMenuItem>
                                             <DropdownMenuItem className="cursor-pointer focus:text-primary" onClick={() => handleEditClick(teacher)}>
                                                 <Edit className="mr-2 h-4 w-4 ml-2" /> تعديل بيانات المعلم
                                             </DropdownMenuItem>
@@ -152,6 +158,13 @@ export default function UsersPage() {
                                 <Badge variant={teacher.isActive ? 'default' : 'secondary'} className={cn("pointer-events-none", teacher.isActive ? "bg-green-100 text-green-700 hover:bg-green-100" : "bg-gray-100 text-gray-600")}>
                                     {teacher.isActive ? 'نشط' : 'غير نشط'}
                                 </Badge>
+                                <Link
+                                    href={`/dashboard/users/${teacher._id}`}
+                                    className="text-xs text-primary hover:underline flex items-center gap-1"
+                                >
+                                    <ExternalLink className="h-3.5 w-3.5" />
+                                    عرض التفاصيل
+                                </Link>
                             </div>
                         </div>
                     ))}
