@@ -45,12 +45,29 @@ export enum TransactionType {
 
 export enum TransactionCategory {
     // Income categories
-    SUBSCRIPTION  = 'SUBSCRIPTION',   // اشتراك طالب
-    NOTEBOOK_SALE = 'NOTEBOOK_SALE',  // بيع مذكرة
-    OTHER_INCOME  = 'OTHER_INCOME',   // إيراد متنوع
+    SUBSCRIPTION  = 'SUBSCRIPTION',   
+    NOTEBOOK_SALE = 'NOTEBOOK_SALE',  
+    OTHER_INCOME  = 'OTHER_INCOME',   
     // Expense categories
-    SALARY        = 'SALARY',         // مرتب
-    RENT          = 'RENT',           // إيجار
-    SUPPLIES      = 'SUPPLIES',       // لوازم
-    OTHER_EXPENSE = 'OTHER_EXPENSE',  // مصروف متنوع
+    SALARY        = 'SALARY',         
+    RENT          = 'RENT',           
+    SUPPLIES      = 'SUPPLIES',       
+    OTHER_EXPENSE = 'OTHER_EXPENSE',  
+}
+
+export enum QuestionType {
+    MCQ        = 'MCQ',         
+    TRUE_FALSE = 'TRUE_FALSE',  
+    ESSAY      = 'ESSAY',       
+}
+
+export enum ExamStatus {
+    DRAFT     = 'DRAFT',      
+    PUBLISHED = 'PUBLISHED',  
+    COMPLETED = 'COMPLETED',  
+}
+
+export enum ExamSource {
+    MANUAL       = 'MANUAL',        
+    AI_GENERATED = 'AI_GENERATED',  
 }

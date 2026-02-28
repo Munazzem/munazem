@@ -16,6 +16,7 @@ import attendanceRouter from './modules/attendance/attendance.controller.js';
 import paymentsRouter from './modules/payments/payments.controller.js';
 import notebooksRouter from './modules/notebooks/notebooks.controller.js';
 import reportsRouter from './modules/reports/reports.controller.js';
+import examsRouter from './modules/exams/exams.controller.js';
 
 export const bootstrap = () => {
     const app = express();
@@ -48,6 +49,7 @@ export const bootstrap = () => {
     app.use('/payments', paymentsRouter)      // Payments routes
     app.use('/notebooks', notebooksRouter)    // Notebooks inventory routes
     app.use('/reports', reportsRouter)         // Reports routes
+    app.use('/exams', examsRouter)              // Exams + AI Generation routes
 
     app.get('/', (req, res) => {
         res.send('Hello World!');
