@@ -198,4 +198,59 @@ export class AttendanceService {
             pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
         };
     }
+
+    // ─── Generate WhatsApp Links for Session ─────────────────────────
+    static async generateWhatsAppLinks(sessionId: string, teacherId: string) {
+        const session = await SessionModel.findOne({ _id: sessionId, teacherId })
+            .populate('groupId', 'name')
+            .lean();
+            
+        if (!session) throw NotFoundException({ message: 'الحصة غير موجودة' });
+
+        const groupName = (session.groupId as any)?.name || 'مجموعة غير معروفة';
+
+        // 1. Get all students in the group
+        const allStudents = await StudentModel.find(
+            { groupId: session.groupId, teacherId, isActive: true },
+            { studentName: 1, parentPhone: 1 }
+        ).lean();
+
+        // 2. Get attendance records for this session
+        const records = await AttendanceModel.find({ sessionId }).lean();
+        const attendedSet = new Map(records.map(r => [r.studentId.toString(), r]));
+
+        // Formatter for WhatsApp (wa.me accepts standard phone numbers with country code)
+        // If the number doesn't start with country code, assume Egypt (+20) for Monazem context
+        const formatPhone = (phone: string) => {
+            let clean = phone.replace(/\D/g, '');
+            if (clean.startsWith('01')) clean = '2' + clean; // e.g. 010... -> 2010...
+            else if (!clean.startsWith('20') && clean.length === 10) clean = '20' + clean;
+            return clean;
+        };
+
+        const shortDate = session.date.toLocaleDateString('ar-EG', { month: 'short', day: 'numeric' });
+
+        return allStudents.map(student => {
+            const record = attendedSet.get(student._id.toString());
+            const isPresent = record && record.status !== AttendanceStatus.ABSENT;
+
+            let message = '';
+            if (isPresent) {
+                const timeStr = record.scannedAt.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+                message = `أهلاً بك ولي أمر الطالب/ة: ${student.studentName}.\n\nنعلمكم بحضور الطالب لحصة [${groupName}] بتاريخ ${shortDate}.\nوقت الوصول: ${timeStr}.\n\nشكراً لتعاونكم.`;
+            } else {
+                message = `أهلاً بك ولي أمر الطالب/ة: ${student.studentName}.\n\nنعلمكم بغياب الطالب عن حصة [${groupName}] بتاريخ ${shortDate}.\nبرجاء متابعة الأمر، شكراً لتعاونكم.`;
+            }
+
+            const encodedMessage = encodeURIComponent(message);
+            const waPhone = formatPhone(student.parentPhone);
+
+            return {
+                studentId: student._id,
+                studentName: student.studentName,
+                status: isPresent ? 'PRESENT' : 'ABSENT',
+                whatsappLink: `https://wa.me/${waPhone}?text=${encodedMessage}`,
+            };
+        });
+    }
 }

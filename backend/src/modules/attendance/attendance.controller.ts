@@ -67,6 +67,20 @@ attendanceRouter.post(
     }
 );
 
+// ─── GET /attendance/session/:sessionId/whatsapp-links — Formatted URLs
+attendanceRouter.get(
+    '/session/:sessionId/whatsapp-links',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = resolveTeacherId((req as any).user);
+            const sessionId = req.params['sessionId'] as string;
+            const links = await AttendanceService.generateWhatsAppLinks(sessionId, teacherId);
+            return SuccessResponse({ res, data: links, message: 'تم توليد روابط واتساب بنجاح' });
+        } catch (error) { next(error); }
+    }
+);
+
 // ─── GET /attendance/snapshot/:sessionId — Get saved snapshot (instant read)
 attendanceRouter.get(
     '/snapshot/:sessionId',
