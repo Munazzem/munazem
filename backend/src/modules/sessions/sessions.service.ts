@@ -87,4 +87,79 @@ export class SessionService {
             { new: true, runValidators: true }
         ).lean();
     }
+
+    // ─── Auto-generate week sessions from group schedules ────────────
+    // weekStart: ISO date string of the week's start day (e.g., Saturday "2026-03-07")
+    static async generateWeekSessions(teacherId: string, weekStart: string) {
+        // Arabic day name → JS getUTCDay() (0 = Sunday)
+        const dayMap: Record<string, number> = {
+            'الأحد':     0,
+            'الاثنين':   1,
+            'الثلاثاء':  2,
+            'الأربعاء':  3,
+            'الخميس':    4,
+            'الجمعة':    5,
+            'السبت':     6,
+        };
+
+        const startDate = new Date(weekStart);
+        startDate.setUTCHours(0, 0, 0, 0);
+        const startDayOfWeek = startDate.getUTCDay(); // 0–6
+
+        // Get all active groups with schedule
+        const groups = await GroupModel.find(
+            { teacherId },
+            { _id: 1, schedule: 1 }
+        ).lean();
+
+        let createdCount = 0;
+        let skippedCount = 0;
+
+        for (const group of groups) {
+            if (!group.schedule || group.schedule.length === 0) continue;
+
+            for (const slot of group.schedule) {
+                const targetDay = dayMap[slot.day];
+                if (targetDay === undefined) continue; // unknown day name — skip
+
+                // Calculate how many days from weekStart to that day
+                let diff = targetDay - startDayOfWeek;
+                if (diff < 0) diff += 7; // wrap to next occurrence within the week
+
+                const sessionDate = new Date(startDate);
+                sessionDate.setUTCDate(startDate.getUTCDate() + diff);
+
+                // Duplicate guard (same logic as createSession)
+                const nextDay = new Date(sessionDate);
+                nextDay.setUTCDate(sessionDate.getUTCDate() + 1);
+
+                const existing = await SessionModel.findOne({
+                    groupId: group._id,
+                    date: { $gte: sessionDate, $lt: nextDay },
+                }).lean();
+
+                if (existing) {
+                    skippedCount++;
+                    continue;
+                }
+
+                await SessionModel.create({
+                    groupId:   group._id,
+                    teacherId,
+                    date:      sessionDate,
+                    startTime: slot.time,
+                    status:    SessionStatus.SCHEDULED,
+                });
+
+                createdCount++;
+            }
+        }
+
+        return {
+            weekStart,
+            createdCount,
+            skippedCount,
+            message: `تم إنشاء ${createdCount} حصة، تم تجاهل ${skippedCount} حصة موجودة مسبقاً`,
+        };
+    }
 }

@@ -42,7 +42,8 @@ async function updateDailyLedger(
     );
 }
 
-// Atomically updates (upsert) the MonthlyLedger when a transaction occurs
+// Atomically updates (upsert) the MonthlyLedger when a transaction occurs.
+// Two-step approach: try to $inc existing day entry, fall back to $push if day not yet in array.
 async function updateMonthlyLedger(
     teacherId: string,
     date: Date,
@@ -54,30 +55,47 @@ async function updateMonthlyLedger(
     const day   = startOfDay(date);
     const net   = isIncome ? paidAmount : -paidAmount;
 
+    const topLevelInc = {
+        totalIncome:   isIncome ? paidAmount : 0,
+        totalExpenses: isIncome ? 0 : paidAmount,
+        netBalance:    net,
+    };
+
+    // Step 1 — Try to update the existing day entry with positional $ operator
+    const updated = await MonthlyLedgerModel.findOneAndUpdate(
+        { teacherId, year, month, 'dailySummaries.date': day },
+        {
+            $inc: {
+                ...topLevelInc,
+                'dailySummaries.$.totalIncome':      isIncome ? paidAmount : 0,
+                'dailySummaries.$.totalExpenses':    isIncome ? 0 : paidAmount,
+                'dailySummaries.$.netBalance':       net,
+                'dailySummaries.$.transactionCount': 1,
+            },
+        }
+    );
+
+    if (updated) return; // Day entry existed — done
+
+    // Step 2 — Day not yet in array: push new entry (or upsert the whole document)
     await MonthlyLedgerModel.findOneAndUpdate(
         { teacherId, year, month },
         {
-            $inc: {
-                totalIncome:   isIncome ? paidAmount : 0,
-                totalExpenses: isIncome ? 0 : paidAmount,
-                netBalance:    net,
-            },
-            // Update the matching day summary or add a new one
+            $inc:  topLevelInc,
             $push: {
                 dailySummaries: {
-                    $each: [{
-                        date:             day,
-                        totalIncome:      isIncome ? paidAmount : 0,
-                        totalExpenses:    isIncome ? 0 : paidAmount,
-                        netBalance:       net,
-                        transactionCount: 1,
-                    }],
-                }
-            }
+                    date:             day,
+                    totalIncome:      isIncome ? paidAmount : 0,
+                    totalExpenses:    isIncome ? 0 : paidAmount,
+                    netBalance:       net,
+                    transactionCount: 1,
+                },
+            },
         },
         { upsert: true }
     );
 }
+
 
 // ─── PaymentsService ─────────────────────────────────────────────
 export class PaymentsService {

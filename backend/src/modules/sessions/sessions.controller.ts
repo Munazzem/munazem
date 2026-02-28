@@ -68,4 +68,18 @@ sessionRouter.patch(
     }
 );
 
+// ─── POST /sessions/generate-week?weekStart=2026-03-07 — Auto-generate all sessions for a week
+sessionRouter.post(
+    '/generate-week',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = resolveTeacherId((req as any).user);
+            const weekStart = (req.query['weekStart'] as string) ?? new Date().toISOString().split('T')[0];
+            const result = await SessionService.generateWeekSessions(teacherId, weekStart);
+            return SuccessResponse({ res, data: result, message: result.message });
+        } catch (error) { next(error); }
+    }
+);
+
 export default sessionRouter;
