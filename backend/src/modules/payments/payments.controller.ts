@@ -60,6 +60,19 @@ paymentsRouter.post(
     }
 );
 
+// POST /payments/subscription/batch — Record multiple subscriptions at once (Assistant only)
+paymentsRouter.post(
+    '/subscription/batch',
+    authorizeRoles(UserRole.assistant),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const user = (req as any).user;
+            const result = await PaymentsService.recordBatchSubscription(user.teacherId, user.userId, req.body);
+            return SuccessResponse({ res, data: result, message: `تم تسجيل ${result.successCount} اشتراك بنجاح`, status: 201 });
+        } catch (error) { next(error); }
+    }
+);
+
 // POST /payments/notebook — Record notebook sale (Assistant only)
 paymentsRouter.post(
     '/notebook',

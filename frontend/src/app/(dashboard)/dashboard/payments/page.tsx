@@ -6,6 +6,7 @@ import { getDailyLedger, getMonthlyLedger } from '@/lib/api/payments';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { AddTransactionModal } from '@/components/payments/AddTransactionModal';
 import { PriceSettingsModal } from '@/components/payments/PriceSettingsModal';
+import { BatchSubscriptionModal } from '@/components/payments/BatchSubscriptionModal';
 import {
     Wallet,
     TrendingUp,
@@ -110,7 +111,12 @@ function DailyTab({ isAssistant }: { isAssistant: boolean }) {
                         <ChevronLeft className="h-4 w-4" />
                     </Button>
                 </div>
-                {isAssistant && <AddTransactionModal onSuccess={() => refetch()} />}
+                {isAssistant && (
+                    <div className="flex gap-2">
+                        <BatchSubscriptionModal />
+                        <AddTransactionModal onSuccess={() => refetch()} />
+                    </div>
+                )}
             </div>
 
             {/* Stats */}

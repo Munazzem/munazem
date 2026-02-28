@@ -21,7 +21,15 @@ import { Badge } from '@/components/ui/badge';
 import { AddStudentModal } from '@/components/students/AddStudentModal';
 import { EditStudentModal } from '@/components/students/EditStudentModal';
 import { StudentProfileModal } from '@/components/students/StudentProfileModal';
+import { getAllowedGrades } from '@/lib/utils/grades';
 import { toast } from 'sonner';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -42,8 +50,11 @@ import {
 export default function StudentsPage() {
     const user = useAuthStore(state => state.user);
 
+    const allowedGrades = getAllowedGrades(user?.stage);
+
     // Filters State
     const [searchTerm, setSearchTerm] = useState('');
+    const [gradeFilter, setGradeFilter] = useState('');
     const [page, setPage] = useState(1);
     const limit = 20;
 
@@ -93,7 +104,10 @@ export default function StudentsPage() {
         setIsProfileOpen(true);
     };
 
-    const students = data?.data || [];
+    const rawStudents = data?.data || [];
+    const students = gradeFilter
+        ? rawStudents.filter((s: StudentWithGroup) => s.gradeLevel === gradeFilter)
+        : rawStudents;
     const pagination = data?.pagination;
 
     return (
@@ -127,11 +141,22 @@ export default function StudentsPage() {
                     />
                 </div>
 
-                {/* Additional Filters Button (e.g. Group, Grade) */}
-                <Button variant="outline" className="w-full sm:w-auto text-gray-600 flex items-center gap-2">
-                    <Filter size={18} />
-                    تصفية متقدمة
-                </Button>
+                <Select
+                    value={gradeFilter}
+                    onValueChange={(val) => { setGradeFilter(val === 'ALL' ? '' : val); setPage(1); }}
+                    dir="rtl"
+                >
+                    <SelectTrigger className="w-full sm:w-52 border-gray-200 bg-gray-50 text-gray-700">
+                        <Filter size={16} className="ml-2 text-gray-400" />
+                        <SelectValue placeholder="كل المراحل" />
+                    </SelectTrigger>
+                    <SelectContent dir="rtl">
+                        <SelectItem value="ALL">كل المراحل</SelectItem>
+                        {allowedGrades.map((g) => (
+                            <SelectItem key={g} value={g}>{g}</SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
             </div>
 
             {/* Students Data Table */}

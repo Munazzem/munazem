@@ -30,13 +30,23 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { AddGroupModal } from '@/components/groups/AddGroupModal';
 import { EditGroupModal } from '@/components/groups/EditGroupModal';
+import { getAllowedGrades } from '@/lib/utils/grades';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 
 export default function GroupsPage() {
     const user = useAuthStore(state => state.user);
 
     const [searchTerm, setSearchTerm] = useState('');
+    const [gradeFilter, setGradeFilter] = useState('');
     const [page, setPage] = useState(1);
     const limit = 20;
+    const allowedGrades = getAllowedGrades(user?.stage);
 
     const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -72,7 +82,10 @@ export default function GroupsPage() {
         setIsEditModalOpen(true);
     };
 
-    const groups = data?.data || [];
+    const rawGroups = data?.data || [];
+    const groups = gradeFilter
+        ? rawGroups.filter((g) => g.gradeLevel === gradeFilter)
+        : rawGroups;
     const pagination = data?.pagination;
 
     return (
@@ -105,10 +118,22 @@ export default function GroupsPage() {
                         }}
                     />
                 </div>
-                <Button variant="outline" className="w-full sm:w-auto text-gray-600 flex items-center gap-2">
-                    <Filter size={18} />
-                    تصفية متقدمة
-                </Button>
+                <Select
+                    value={gradeFilter}
+                    onValueChange={(val) => { setGradeFilter(val === 'ALL' ? '' : val); setPage(1); }}
+                    dir="rtl"
+                >
+                    <SelectTrigger className="w-full sm:w-52 border-gray-200 bg-gray-50 text-gray-700">
+                        <Filter size={16} className="ml-2 text-gray-400" />
+                        <SelectValue placeholder="كل المراحل" />
+                    </SelectTrigger>
+                    <SelectContent dir="rtl">
+                        <SelectItem value="ALL">كل المراحل</SelectItem>
+                        {allowedGrades.map((g) => (
+                            <SelectItem key={g} value={g}>{g}</SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
             </div>
 
             {isLoading ? (

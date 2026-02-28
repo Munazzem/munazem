@@ -6,6 +6,8 @@ export interface User {
     id: string;
     name: string;
     role: 'superAdmin' | 'teacher' | 'assistant';
+    stage?: 'PREPARATORY' | 'SECONDARY' | null;
+    teacherId?: string | null;
 }
 
 export interface AuthState {

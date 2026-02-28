@@ -176,6 +176,91 @@ export class PaymentsService {
         return transaction;
     }
 
+    // ── Record Batch Subscriptions ──────────────────────────────────
+    static async recordBatchSubscription(
+        teacherId: string,
+        createdBy: string,
+        data: { studentIds: string[]; discountAmount?: number; description?: string; date?: string }
+    ) {
+        if (!data.studentIds || data.studentIds.length === 0) {
+            throw BadRequestException({ message: 'يجب اختيار طالب واحد على الأقل' });
+        }
+
+        const settings = await PriceSettingsModel.findOne({ teacherId }).lean();
+        if (!settings) {
+            throw BadRequestException({ message: 'لم يتم تحديد أسعار المراحل بعد — يرجى إعداد الأسعار أولاً' });
+        }
+
+        const txDate = data.date ? new Date(data.date) : new Date();
+        const discountAmount = data.discountAmount ?? 0;
+
+        const results: { studentId: string; studentName: string; paidAmount: number; status: 'success' | 'error'; error?: string }[] = [];
+
+        for (const studentId of data.studentIds) {
+            try {
+                const student = await StudentModel.findById(studentId, {
+                    studentName: 1, gradeLevel: 1, teacherId: 1
+                }).lean();
+
+                if (!student) {
+                    results.push({ studentId, studentName: '', paidAmount: 0, status: 'error', error: 'الطالب غير موجود' });
+                    continue;
+                }
+
+                if (student.teacherId.toString() !== teacherId) {
+                    results.push({ studentId, studentName: student.studentName, paidAmount: 0, status: 'error', error: 'الطالب لا ينتمي إلى هذا المعلم' });
+                    continue;
+                }
+
+                const priceSetting = settings.prices.find(p => p.gradeLevel === student.gradeLevel);
+                if (!priceSetting) {
+                    results.push({ studentId, studentName: student.studentName, paidAmount: 0, status: 'error', error: `لم يتم تحديد سعر للمرحلة: ${student.gradeLevel}` });
+                    continue;
+                }
+
+                const originalAmount = priceSetting.amount;
+                const paidAmount = Math.max(0, originalAmount - discountAmount);
+
+                const transaction = await TransactionModel.create({
+                    teacherId,
+                    createdBy,
+                    type:           TransactionType.INCOME,
+                    category:       TransactionCategory.SUBSCRIPTION,
+                    studentId:      student._id,
+                    studentName:    student.studentName,
+                    gradeLevel:     student.gradeLevel,
+                    originalAmount,
+                    discountAmount,
+                    paidAmount,
+                    date:           txDate,
+                    ...(data.description ? { description: data.description } : {}),
+                });
+
+                await Promise.all([
+                    updateDailyLedger(teacherId, txDate, {
+                        transactionId: transaction._id,
+                        type:          TransactionType.INCOME,
+                        category:      TransactionCategory.SUBSCRIPTION,
+                        paidAmount,
+                        studentName:   student.studentName,
+                        createdBy,
+                        time:          txDate,
+                    }, true),
+                    updateMonthlyLedger(teacherId, txDate, paidAmount, true),
+                ]);
+
+                results.push({ studentId, studentName: student.studentName, paidAmount, status: 'success' });
+            } catch (err: any) {
+                results.push({ studentId, studentName: '', paidAmount: 0, status: 'error', error: err?.message ?? 'خطأ غير متوقع' });
+            }
+        }
+
+        const successCount = results.filter(r => r.status === 'success').length;
+        const totalPaid    = results.filter(r => r.status === 'success').reduce((sum, r) => sum + r.paidAmount, 0);
+
+        return { results, successCount, failCount: results.length - successCount, totalPaid };
+    }
+
     // ── Record Notebook Sale ────────────────────────────────────────
     // notebookId is required — price is taken from the Notebook model,
     // and stock is decremented atomically with the ledger updates.

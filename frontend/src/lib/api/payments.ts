@@ -54,6 +54,31 @@ export const recordNotebookSale = async (data: {
     return (res as any).data;
 };
 
+export interface IBatchSubscriptionResult {
+    studentId: string;
+    studentName: string;
+    paidAmount: number;
+    status: 'success' | 'error';
+    error?: string;
+}
+
+export interface IBatchSubscriptionResponse {
+    results: IBatchSubscriptionResult[];
+    successCount: number;
+    failCount: number;
+    totalPaid: number;
+}
+
+export const recordBatchSubscription = async (data: {
+    studentIds: string[];
+    discountAmount?: number;
+    description?: string;
+    date?: string;
+}): Promise<IBatchSubscriptionResponse> => {
+    const res = await apiClient.post('/payments/subscription/batch', data);
+    return (res as any).data;
+};
+
 export const recordExpense = async (data: {
     category: TransactionCategory;
     amount: number;

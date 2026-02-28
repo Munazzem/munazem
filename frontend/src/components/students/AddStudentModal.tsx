@@ -7,6 +7,8 @@ import * as z from 'zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createStudent } from '@/lib/api/students';
 import { fetchGroups } from '@/lib/api/groups';
+import { useAuthStore } from '@/lib/store/auth.store';
+import { getAllowedGrades } from '@/lib/utils/grades';
 import { toast } from 'sonner';
 import { Plus, Loader2 } from 'lucide-react';
 
@@ -56,6 +58,8 @@ interface Group {
 export function AddStudentModal() {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
+  const user = useAuthStore((s) => s.user);
+  const allowedGrades = getAllowedGrades(user?.stage);
 
   // Define the form
   const form = useForm<z.infer<typeof formSchema>>({
@@ -77,8 +81,10 @@ export function AddStudentModal() {
 
   const groups: Group[] = groupsData?.data || [];
   
-  // Extract unique grade levels from the groups
-  const availableGradeLevels = Array.from(new Set(groups.map(g => g.gradeLevel)));
+  // Extract unique grade levels from groups, filtered by teacher's allowed stage
+  const availableGradeLevels = Array.from(
+    new Set(groups.map(g => g.gradeLevel).filter(g => allowedGrades.includes(g)))
+  );
   
   // Watch the selected gradeLevel to filter the groups dropdown
   const selectedGradeLevel = useWatch({ control: form.control, name: 'gradeLevel' });

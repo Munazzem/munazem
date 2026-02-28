@@ -6,6 +6,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createGroup } from '@/lib/api/groups';
+import { useAuthStore } from '@/lib/store/auth.store';
+import { getAllowedGrades } from '@/lib/utils/grades';
 import { toast } from 'sonner';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 
@@ -34,15 +36,10 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 
-// Assume backend grade level enum maps to these Arabic strings
-const GRADE_LEVELS = [
-    "الصف الأول الإعدادي", "الصف الثاني الإعدادي", "الصف الثالث الإعدادي",
-    "الصف الأول الثانوي", "الصف الثاني الثانوي", "الصف الثالث الثانوي"
-];
-
-const DAYS_OF_WEEK = [
+const DAYS_OF_WEEK_LIST = [
     "السبت", "الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة"
 ];
+
 
 const groupSchema = z.object({
   name: z.string().min(2, 'اسم المجموعة يجب أن يكون حرفين على الأقل'),
@@ -57,6 +54,8 @@ const groupSchema = z.object({
 export function AddGroupModal() {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
+  const user = useAuthStore((s) => s.user);
+  const allowedGrades = getAllowedGrades(user?.stage);
 
   const form = useForm<z.infer<typeof groupSchema>>({
     resolver: zodResolver(groupSchema),
@@ -136,7 +135,7 @@ export function AddGroupModal() {
                         <SelectTrigger><SelectValue placeholder="اختر المرحلة" /></SelectTrigger>
                         </FormControl>
                         <SelectContent dir="rtl">
-                            {GRADE_LEVELS.map((grade) => (
+                            {allowedGrades.map((grade) => (
                                 <SelectItem key={grade} value={grade}>{grade}</SelectItem>
                             ))}
                         </SelectContent>
@@ -194,7 +193,7 @@ export function AddGroupModal() {
                                                 <SelectTrigger className="h-9"><SelectValue placeholder="يوم" /></SelectTrigger>
                                             </FormControl>
                                             <SelectContent dir="rtl">
-                                                {DAYS_OF_WEEK.map(day => <SelectItem key={day} value={day}>{day}</SelectItem>)}
+                                                {DAYS_OF_WEEK_LIST.map(day => <SelectItem key={day} value={day}>{day}</SelectItem>)}
                                             </SelectContent>
                                         </Select>
                                         <FormMessage className="text-xs" />
