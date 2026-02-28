@@ -42,6 +42,18 @@ export const getSessionSnapshot = async (sessionId: string): Promise<IAttendance
     return (res as any).data;
 };
 
+export interface IWhatsAppLink {
+    studentId: string;
+    studentName: string;
+    status: 'PRESENT' | 'ABSENT';
+    whatsappLink: string;
+}
+
+export const getWhatsAppLinks = async (sessionId: string): Promise<IWhatsAppLink[]> => {
+    const res = await apiClient.get(`/attendance/session/${sessionId}/whatsapp-links`);
+    return (res as any).data;
+};
+
 export const getGroupAttendanceHistory = async (
     groupId: string,
     params?: { page?: number; limit?: number }
