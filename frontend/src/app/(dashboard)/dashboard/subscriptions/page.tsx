@@ -20,6 +20,9 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { AddSubscriptionModal } from '@/components/subscriptions/AddSubscriptionModal';
+import { RenewSubscriptionModal } from '@/components/subscriptions/RenewSubscriptionModal';
+import { Button } from '@/components/ui/button';
+import { RefreshCw } from 'lucide-react';
 
 const PLAN_BADGE: Record<SubscriptionPlan, { label: string; className: string }> = {
     BASIC:   { label: 'الأساسية',   className: 'bg-blue-100 text-blue-700 border-blue-200' },
@@ -68,6 +71,7 @@ function getTeacher(sub: ISubscription) {
 export default function SubscriptionsPage() {
     const user = useAuthStore((s) => s.user);
     const [search, setSearch] = useState('');
+    const [renewSub, setRenewSub] = useState<ISubscription | null>(null);
 
     const { data, isLoading, isError } = useQuery({
         queryKey: ['subscriptions'],
@@ -196,6 +200,7 @@ export default function SubscriptionsPage() {
                                     <th className="text-right font-semibold py-3.5 px-4">طريقة الدفع</th>
                                     <th className="text-center font-semibold py-3.5 px-4">الحالة</th>
                                     <th className="text-center font-semibold py-3.5 px-4">الأيام المتبقية</th>
+                                    <th className="text-center font-semibold py-3.5 px-4">تجديد</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
@@ -242,15 +247,24 @@ export default function SubscriptionsPage() {
                                                 </Badge>
                                             </td>
                                             <td className="py-3.5 px-4 text-center">
-                                                {sub.status === 'EXPIRED' ? (
-                                                    <span className="text-red-500 font-semibold">منتهي</span>
-                                                ) : days < 0 ? (
+                                                {sub.status === 'EXPIRED' || days < 0 ? (
                                                     <span className="text-red-500 font-semibold">منتهي</span>
                                                 ) : (
                                                     <span className={cn('font-semibold', isExpiring ? 'text-amber-600' : 'text-green-600')}>
                                                         {days} يوم
                                                     </span>
                                                 )}
+                                            </td>
+                                            <td className="py-3.5 px-4 text-center">
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="h-8 gap-1.5 text-primary border-primary/30 hover:bg-primary/5"
+                                                    onClick={() => setRenewSub(sub)}
+                                                >
+                                                    <RefreshCw className="h-3.5 w-3.5" />
+                                                    تجديد
+                                                </Button>
                                             </td>
                                         </tr>
                                     );
@@ -260,6 +274,12 @@ export default function SubscriptionsPage() {
                     </div>
                 </div>
             )}
+
+            <RenewSubscriptionModal
+                open={!!renewSub}
+                onOpenChange={(v) => { if (!v) setRenewSub(null); }}
+                subscription={renewSub}
+            />
         </div>
     );
 }
