@@ -12,7 +12,8 @@ import {
     Wallet, 
     Settings,
     LogOut,
-    GraduationCap // Added GraduationCap icon
+    GraduationCap,
+    ClipboardList,
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { useUIStore } from '@/lib/store/ui.store';
@@ -33,6 +34,7 @@ const getNavItems = (role?: string) => {
     { name: 'المجموعات الدراسية', href: '/groups', icon: GraduationCap },
     { name: 'إدارة الطلاب', href: '/students', icon: Users },
         { name: 'الحصص والغياب', href: '/sessions', icon: CalendarCheck },
+        { name: 'الامتحانات', href: '/exams', icon: ClipboardList },
         { name: 'الماليات', href: '/dashboard/payments', icon: Wallet },
         { name: 'المتجر والمذكرات', href: '/dashboard/notebooks', icon: BookOpen },
         { name: 'الإعدادات', href: '/dashboard/settings', icon: Settings },
