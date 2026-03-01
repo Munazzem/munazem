@@ -71,12 +71,15 @@ export function CreateExamModal({ open, onOpenChange }: Props) {
 
     const mutation = useMutation({
         mutationFn: (values: FormValues) => {
-            const totalMarks = (values.questions ?? []).reduce((s, q) => s + (q.marks || 0), 0);
+            const totalMarks   = (values.questions ?? []).reduce((s, q) => s + (q.marks || 0), 0);
+            const autoTotal    = totalMarks || 100;
+            // Use entered passingMarks if set, else default to 50% of total
+            const passingMarks = values.passingMarks || Math.round(autoTotal * 0.5);
             return createExam({
                 title:        values.title,
                 date:         values.date,
-                totalMarks:   totalMarks || values.passingMarks,
-                passingMarks: values.passingMarks,
+                totalMarks:   autoTotal,
+                passingMarks,
                 gradeLevel:   values.gradeLevel,
                 groupIds:     values.groupIds?.length ? values.groupIds : undefined,
                 questions:    values.questions as IQuestion[],
@@ -127,12 +130,15 @@ export function CreateExamModal({ open, onOpenChange }: Props) {
                             {errors.date && <p className="text-red-500 text-xs mt-1">{errors.date.message}</p>}
                         </div>
                         <div>
-                            <label className="text-sm font-medium text-gray-700 block mb-1">درجة النجاح *</label>
+                            <label className="text-sm font-medium text-gray-700 block mb-1">
+                                درجة النجاح
+                                <span className="text-xs text-gray-400 mr-1">(50% تلقائياً)</span>
+                            </label>
                             <Input
                                 type="number"
                                 min={1}
                                 {...register('passingMarks', { valueAsNumber: true })}
-                                placeholder="مثال: 50"
+                                placeholder="تُحسب تلقائياً من مجموع الدرجات"
                                 dir="ltr"
                             />
                             {errors.passingMarks && <p className="text-red-500 text-xs mt-1">{errors.passingMarks.message}</p>}

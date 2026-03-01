@@ -42,7 +42,7 @@ export function AIGenerateExamModal({ open, onOpenChange }: Props) {
     const [file,             setFile]             = useState<File | null>(null);
     const [title,            setTitle]            = useState('');
     const [date,             setDate]             = useState('');
-    const [passingMarks,     setPassingMarks]     = useState(50);
+    const [passingMarksOverride, setPassingMarksOverride] = useState('');
     const [gradeLevel,       setGradeLevel]       = useState('');
     const [selectedGroups,   setSelectedGroups]   = useState<string[]>([]);
     const [questionCount,    setQuestionCount]    = useState(10);
@@ -66,7 +66,11 @@ export function AIGenerateExamModal({ open, onOpenChange }: Props) {
             fd.append('pdf',             file);
             fd.append('title',           title);
             fd.append('date',            date);
-            fd.append('passingMarks',    String(passingMarks));
+            // passingMarks = user override OR 50% of (questionCount × marksPerQuestion)
+            const autoPassingMarks = passingMarksOverride
+                ? Number(passingMarksOverride)
+                : Math.round(questionCount * marksPerQuestion * 0.5);
+            fd.append('passingMarks',    String(autoPassingMarks));
             fd.append('questionCount',   String(questionCount));
             fd.append('difficulty',      difficulty);
             fd.append('marksPerQuestion',String(marksPerQuestion));
@@ -152,12 +156,15 @@ export function AIGenerateExamModal({ open, onOpenChange }: Props) {
                             <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} dir="ltr" />
                         </div>
                         <div>
-                            <label className="text-sm font-medium text-gray-700 block mb-1">درجة النجاح *</label>
+                            <label className="text-sm font-medium text-gray-700 block mb-1">
+                                درجة النجاح
+                                <span className="text-xs text-gray-400 mr-1">(50% تلقائياً)</span>
+                            </label>
                             <Input
                                 type="number" min={1} dir="ltr"
-                                value={passingMarks}
-                                onChange={(e) => setPassingMarks(Number(e.target.value))}
-                                placeholder="50"
+                                value={passingMarksOverride}
+                                onChange={(e) => setPassingMarksOverride(e.target.value)}
+                                placeholder={`${Math.round(questionCount * marksPerQuestion * 0.5)} (تلقائي)`}
                             />
                         </div>
                         <div>

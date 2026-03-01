@@ -85,9 +85,14 @@ export default function ExamsPage() {
     const exams: IExam[] = (data as any)?.data ?? [];
     const pagination     = (data as any)?.pagination;
 
-    const filtered = search.trim()
-        ? exams.filter((e) => e.title.includes(search))
+    // Enforce stage-based grade filtering on the frontend as well
+    const stageFiltered = user?.stage
+        ? exams.filter((e) => !e.gradeLevel || allowedGrades.includes(e.gradeLevel))
         : exams;
+
+    const filtered = search.trim()
+        ? stageFiltered.filter((e) => e.title.includes(search))
+        : stageFiltered;
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500" dir="rtl">

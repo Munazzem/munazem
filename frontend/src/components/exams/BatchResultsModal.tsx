@@ -30,13 +30,15 @@ export function BatchResultsModal({ exam, open, onOpenChange, onSuccess }: Props
     const [submitted, setSubmitted] = useState(false);
     const [result, setResult] = useState<{ total: number; inserted: number } | null>(null);
 
-    // Fetch students — if exam has groups, filter by first group; otherwise fetch all
+    // groupIds come as ObjectId strings from the backend — stringify each one
+    const firstGroupId = exam.groupIds?.length
+        ? String(exam.groupIds[0])
+        : undefined;
+
+    // Fetch students — filter by group if exam has groups, else fetch all
     const { data: studentsData, isLoading: studentsLoading } = useQuery({
-        queryKey: ['students-for-exam', exam._id, exam.groupIds],
-        queryFn:  () => fetchStudents({
-            limit:   200,
-            ...(exam.groupIds?.length ? { groupId: exam.groupIds[0] } : {}),
-        }),
+        queryKey: ['students-for-exam', exam._id, firstGroupId],
+        queryFn:  () => fetchStudents({ limit: 200, ...(firstGroupId ? { groupId: firstGroupId } : {}) }),
         enabled:  open,
     });
 
@@ -66,13 +68,19 @@ export function BatchResultsModal({ exam, open, onOpenChange, onSuccess }: Props
 
         setRows(
             students
-                .filter((s) => s?._id && s?.fullName)
-                .map((s) => ({
-                    studentId:   String(s._id),
-                    studentName: String(s.fullName),
-                    score:       '',
-                    alreadyDone: done.has(String(s._id)),
-                }))
+                .filter((s) => s?._id && (s?.studentName || s?.fullName))
+                .map((s) => {
+                    const name = s.fullName
+                        ?? (s.studentName && s.parentName
+                            ? `${s.studentName} ${s.parentName}`
+                            : s.studentName ?? '—');
+                    return {
+                        studentId:   String(s._id),
+                        studentName: String(name),
+                        score:       '',
+                        alreadyDone: done.has(String(s._id)),
+                    };
+                })
         );
     }, [open, studentsData, resultsData]);
 

@@ -17,6 +17,7 @@ import {
     ListChecks,
     BarChart2,
     AlertTriangle,
+    MessageCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -350,13 +351,15 @@ export default function ExamDetailPage() {
                                                         <th className="text-center font-semibold text-gray-500 px-4 py-3">النسبة</th>
                                                         <th className="text-center font-semibold text-gray-500 px-4 py-3">التقدير</th>
                                                         <th className="text-center font-semibold text-gray-500 px-4 py-3">الحالة</th>
+                                                        <th className="text-center font-semibold text-gray-500 px-4 py-3 w-12">واتساب</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-gray-50">
                                                     {results.map((r: any) => {
-                                                        const name = typeof r.studentId === 'string'
-                                                            ? r.studentId
-                                                            : (r.studentId?.fullName ?? '—');
+                                                        const name = r.studentName ?? '—';
+                                                        const waMsg = encodeURIComponent(
+                                                            `السلام عليكم،\nنتيجة ${name} في امتحان "${examData.title}":\nالدرجة: ${r.score} من ${examData.totalMarks}\nالنسبة: ${r.percentage}%\nالتقدير: ${r.grade}\nالحالة: ${r.passed ? 'ناجح ✅' : 'راسب ❌'}`
+                                                        );
                                                         return (
                                                             <tr key={r._id} className="hover:bg-gray-50/50">
                                                                 <td className="px-6 py-3 font-medium text-gray-900">{name}</td>
@@ -380,6 +383,17 @@ export default function ExamDetailPage() {
                                                                         {r.passed ? 'ناجح' : 'راسب'}
                                                                     </span>
                                                                 </td>
+                                                                <td className="px-4 py-3 text-center">
+                                                                    <a
+                                                                        href={`https://wa.me/?text=${waMsg}`}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className="inline-flex items-center justify-center h-7 w-7 rounded-full bg-green-50 hover:bg-green-100 text-green-600 transition-colors"
+                                                                        title="إرسال النتيجة لولي الأمر"
+                                                                    >
+                                                                        <MessageCircle className="h-3.5 w-3.5" />
+                                                                    </a>
+                                                                </td>
                                                             </tr>
                                                         );
                                                     })}
@@ -390,19 +404,30 @@ export default function ExamDetailPage() {
                                         {/* Mobile cards */}
                                         <div className="sm:hidden divide-y divide-gray-50">
                                             {results.map((r: any) => {
-                                                const name = typeof r.studentId === 'string'
-                                                    ? r.studentId
-                                                    : (r.studentId?.fullName ?? '—');
+                                                const name = r.studentName ?? '—';
+                                                const waMsg = encodeURIComponent(
+                                                    `السلام عليكم،\nنتيجة ${name} في امتحان "${examData.title}":\nالدرجة: ${r.score} من ${examData.totalMarks}\nالنسبة: ${r.percentage}%\nالتقدير: ${r.grade}\nالحالة: ${r.passed ? 'ناجح ✅' : 'راسب ❌'}`
+                                                );
                                                 return (
                                                     <div key={r._id} className="p-4">
                                                         <div className="flex items-center justify-between">
                                                             <span className="font-medium text-gray-900">{name}</span>
-                                                            <span className={cn(
-                                                                'text-xs font-medium px-2 py-0.5 rounded-full',
-                                                                r.passed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                                                            )}>
-                                                                {r.passed ? 'ناجح' : 'راسب'}
-                                                            </span>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className={cn(
+                                                                    'text-xs font-medium px-2 py-0.5 rounded-full',
+                                                                    r.passed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                                                )}>
+                                                                    {r.passed ? 'ناجح' : 'راسب'}
+                                                                </span>
+                                                                <a
+                                                                    href={`https://wa.me/?text=${waMsg}`}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="inline-flex items-center justify-center h-7 w-7 rounded-full bg-green-50 hover:bg-green-100 text-green-600 transition-colors"
+                                                                >
+                                                                    <MessageCircle className="h-3.5 w-3.5" />
+                                                                </a>
+                                                            </div>
                                                         </div>
                                                         <div className="flex gap-4 mt-1 text-sm text-gray-500">
                                                             <span>الدرجة: <strong className="text-gray-800">{r.score}</strong></span>
