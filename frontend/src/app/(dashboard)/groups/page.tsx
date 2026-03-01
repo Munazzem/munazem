@@ -41,6 +41,7 @@ import {
 
 export default function GroupsPage() {
     const user = useAuthStore(state => state.user);
+    const isAssistant = user?.role === 'assistant';
 
     const [searchTerm, setSearchTerm] = useState('');
     const [gradeFilter, setGradeFilter] = useState('');
@@ -96,10 +97,7 @@ export default function GroupsPage() {
                     <p className="text-gray-500 mt-1">تنسيق المجموعات الدراسية وإدارة المواعيد ({pagination?.total || 0} مجموعة).</p>
                 </div>
                 
-                {/* Only assistants can add groups per backend logic. Allowing teacher for testing, but should be bounded. */}
-                {(user?.role === 'assistant' || user?.role === 'teacher') && (
-                    <AddGroupModal />
-                )}
+                {isAssistant && <AddGroupModal />}
             </div>
 
             <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col sm:flex-row gap-4 items-center justify-between">
@@ -167,12 +165,20 @@ export default function GroupsPage() {
                                         <DropdownMenuContent align="end">
                                             <DropdownMenuLabel>الإجراءات</DropdownMenuLabel>
                                             <DropdownMenuSeparator />
-                                            <DropdownMenuItem className="cursor-pointer focus:text-primary" onClick={() => handleEditClick(group)}>
-                                                <Edit className="mr-2 h-4 w-4 ml-2" /> تعديل المجموعة
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50" onClick={() => handleDelete(group._id, group.name)}>
-                                                <Trash2 className="mr-2 h-4 w-4 ml-2" /> حذف المجموعة
-                                            </DropdownMenuItem>
+                                            {isAssistant ? (
+                                                <>
+                                                    <DropdownMenuItem className="cursor-pointer focus:text-primary" onClick={() => handleEditClick(group)}>
+                                                        <Edit className="mr-2 h-4 w-4 ml-2" /> تعديل المجموعة
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50" onClick={() => handleDelete(group._id, group.name)}>
+                                                        <Trash2 className="mr-2 h-4 w-4 ml-2" /> حذف المجموعة
+                                                    </DropdownMenuItem>
+                                                </>
+                                            ) : (
+                                                <DropdownMenuItem disabled className="text-gray-400 text-xs">
+                                                    للعرض فقط
+                                                </DropdownMenuItem>
+                                            )}
                                         </DropdownMenuContent>
                                     </DropdownMenu>
                                 </div>

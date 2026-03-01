@@ -50,6 +50,7 @@ import {
 
 export default function StudentsPage() {
     const user = useAuthStore(state => state.user);
+    const isAssistant = user?.role === 'assistant';
 
     const allowedGrades = getAllowedGrades(user?.stage);
 
@@ -120,7 +121,7 @@ export default function StudentsPage() {
                     <p className="text-gray-500 mt-1">عرض، إضافة، وتعديل بيانات الطلاب ({pagination?.total || 0} طالب).</p>
                 </div>
                 
-                <AddStudentModal />
+                {isAssistant && <AddStudentModal />}
             </div>
 
             {/* Filters Bar */}
@@ -262,7 +263,6 @@ export default function StudentsPage() {
                                                     <DropdownMenuLabel className="text-xs text-gray-500">الإجراءات</DropdownMenuLabel>
                                                     <DropdownMenuSeparator />
                                                     
-                                                    {/* Profile — visible to all roles */}
                                                     <DropdownMenuItem
                                                         className="cursor-pointer text-gray-700 focus:text-primary"
                                                         onClick={() => handleProfileClick(stu)}
@@ -270,21 +270,25 @@ export default function StudentsPage() {
                                                         <FileText className="mr-2 h-4 w-4 ml-2" /> بروفايل الطالب
                                                     </DropdownMenuItem>
                                                     
-                                                    <DropdownMenuItem 
-                                                        className="cursor-pointer text-gray-700 focus:text-primary"
-                                                        onClick={() => handleEditClick(stu)}
-                                                    >
-                                                        <Edit className="mr-2 h-4 w-4 ml-2" /> تعديل البيانات
-                                                    </DropdownMenuItem>
-                                                    
-                                                    <DropdownMenuSeparator />
-                                                    
-                                                    <DropdownMenuItem 
-                                                        className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50"
-                                                        onClick={() => handleDelete(stu._id, stu.studentName)}
-                                                    >
-                                                        <Trash2 className="mr-2 h-4 w-4 ml-2" /> حذف الطالب
-                                                    </DropdownMenuItem>
+                                                    {isAssistant && (
+                                                        <>
+                                                            <DropdownMenuItem 
+                                                                className="cursor-pointer text-gray-700 focus:text-primary"
+                                                                onClick={() => handleEditClick(stu)}
+                                                            >
+                                                                <Edit className="mr-2 h-4 w-4 ml-2" /> تعديل البيانات
+                                                            </DropdownMenuItem>
+                                                            
+                                                            <DropdownMenuSeparator />
+                                                            
+                                                            <DropdownMenuItem 
+                                                                className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50"
+                                                                onClick={() => handleDelete(stu._id, stu.studentName)}
+                                                            >
+                                                                <Trash2 className="mr-2 h-4 w-4 ml-2" /> حذف الطالب
+                                                            </DropdownMenuItem>
+                                                        </>
+                                                    )}
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
                                         </TableCell>
