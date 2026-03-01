@@ -30,10 +30,13 @@ export function BatchResultsModal({ exam, open, onOpenChange, onSuccess }: Props
     const [submitted, setSubmitted] = useState(false);
     const [result, setResult] = useState<{ total: number; inserted: number } | null>(null);
 
-    // Fetch students belonging to the exam's groups
+    // Fetch students — if exam has groups, filter by first group; otherwise fetch all
     const { data: studentsData, isLoading: studentsLoading } = useQuery({
         queryKey: ['students-for-exam', exam._id, exam.groupIds],
-        queryFn:  () => fetchStudents({ limit: 200, groupId: exam.groupIds?.[0] }),
+        queryFn:  () => fetchStudents({
+            limit:   200,
+            ...(exam.groupIds?.length ? { groupId: exam.groupIds[0] } : {}),
+        }),
         enabled:  open,
     });
 
@@ -46,7 +49,15 @@ export function BatchResultsModal({ exam, open, onOpenChange, onSuccess }: Props
 
     useEffect(() => {
         if (!open) { setSubmitted(false); setResult(null); return; }
-        const students: any[] = (studentsData as any)?.data ?? (studentsData as any) ?? [];
+
+        // fetchStudents returns { data: [...], pagination: {...} }
+        const raw: any = studentsData;
+        const students: any[] = Array.isArray(raw?.data)
+            ? raw.data
+            : Array.isArray(raw)
+            ? raw
+            : [];
+
         const done: Set<string> = new Set(
             ((resultsData as any)?.results ?? []).map((r: any) =>
                 typeof r.studentId === 'string' ? r.studentId : r.studentId?._id
@@ -54,12 +65,14 @@ export function BatchResultsModal({ exam, open, onOpenChange, onSuccess }: Props
         );
 
         setRows(
-            students.map((s) => ({
-                studentId:   s._id,
-                studentName: s.fullName,
-                score:       '',
-                alreadyDone: done.has(s._id),
-            }))
+            students
+                .filter((s) => s?._id && s?.fullName)
+                .map((s) => ({
+                    studentId:   String(s._id),
+                    studentName: String(s.fullName),
+                    score:       '',
+                    alreadyDone: done.has(String(s._id)),
+                }))
         );
     }, [open, studentsData, resultsData]);
 
