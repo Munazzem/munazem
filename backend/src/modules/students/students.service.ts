@@ -61,6 +61,56 @@ export class StudentService {
         }
     }
 
+    static async bulkCreateStudents(teacherId: string, students: CreateStudentDTO[]) {
+        const results: { index: number; success: boolean; studentName?: string; studentCode?: string; error?: string }[] = [];
+
+        for (let i = 0; i < students.length; i++) {
+            const data = students[i]!;
+            try {
+                // Verify group belongs to teacher
+                const group = await GroupModel.findOne({ _id: data.groupId, teacherId }).lean();
+                if (!group) {
+                    results.push({ index: i, success: false, error: 'المجموعة غير موجودة أو لا صلاحية لك عليها' });
+                    continue;
+                }
+
+                const { studentName, parentName } = this.parseFullName(data.fullName);
+
+                const letter = GRADE_LETTER[data.gradeLevel as GradeLevel];
+                const count  = await nextSequence(`${teacherId}_${data.gradeLevel}`);
+                const studentCode = `${count}${letter}`;
+
+                const created = await StudentModel.create({
+                    studentName,
+                    parentName,
+                    studentPhone: data.studentPhone,
+                    parentPhone:  data.parentPhone,
+                    gradeLevel:   data.gradeLevel,
+                    groupId:      data.groupId,
+                    teacherId,
+                    studentCode,
+                    barcode: data.barcode || crypto.randomUUID(),
+                });
+
+                results.push({ index: i, success: true, studentName: created.studentName, studentCode: created.studentCode });
+            } catch (error: any) {
+                let message = 'حدث خطأ أثناء الإضافة';
+                if (error.code === 11000) {
+                    if (error.keyPattern?.studentPhone) message = 'رقم الهاتف مسجل مسبقاً';
+                    else if (error.keyPattern?.barcode) message = 'الباركود مستخدم مسبقاً';
+                } else if (error.message) {
+                    message = error.message;
+                }
+                results.push({ index: i, success: false, error: message });
+            }
+        }
+
+        const successCount = results.filter(r => r.success).length;
+        const failCount    = results.filter(r => !r.success).length;
+
+        return { results, successCount, failCount, total: students.length };
+    }
+
     static async getStudentsByTeacherId(teacherId: string, queryFilters: any) {
         // Build robust filter query dynamically
         const filter: any = { teacherId };

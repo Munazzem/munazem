@@ -62,3 +62,35 @@ export const updateStudent = async (id: string, data: UpdateStudentDTO): Promise
 export const deleteStudent = async (id: string): Promise<void> => {
     await apiClient.delete(`/students/${id}`);
 };
+
+export interface BulkStudentInput {
+    fullName: string;
+    studentPhone: string;
+    parentPhone: string;
+    gradeLevel: string;
+    groupId: string;
+    barcode?: string;
+}
+
+export interface BulkStudentResult {
+    index: number;
+    success: boolean;
+    studentName?: string;
+    studentCode?: string;
+    error?: string;
+}
+
+export interface BulkCreateResponse {
+    results: BulkStudentResult[];
+    successCount: number;
+    failCount: number;
+    total: number;
+}
+
+/**
+ * Bulk create multiple students at once
+ */
+export const bulkCreateStudents = async (students: BulkStudentInput[]): Promise<BulkCreateResponse> => {
+    const res = await apiClient.post('/students/bulk', { students });
+    return (res as any).data;
+};

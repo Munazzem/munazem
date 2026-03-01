@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { AddStudentModal } from '@/components/students/AddStudentModal';
+import { BulkAddStudentsModal } from '@/components/students/BulkAddStudentsModal';
 import { EditStudentModal } from '@/components/students/EditStudentModal';
 import { StudentProfileModal } from '@/components/students/StudentProfileModal';
 import { getAllowedGrades } from '@/lib/utils/grades';
@@ -155,7 +156,12 @@ export default function StudentsPage() {
                         {pagination?.total || 0} طالب مسجل
                     </p>
                 </div>
-                {isAssistant && <AddStudentModal />}
+                {isAssistant && (
+                    <div className="flex gap-2 flex-wrap">
+                        <BulkAddStudentsModal />
+                        <AddStudentModal />
+                    </div>
+                )}
             </div>
 
             {/* Filters Bar */}

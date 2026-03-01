@@ -6,7 +6,7 @@ import { UnauthorizedException } from '../../common/utils/response/error.responc
 import { authenticate } from '../../middlewares/auth.middleware.js';
 import { authorizeRoles } from '../../middlewares/roles.middleware.js';
 import { validate } from '../../middlewares/validate.middleware.js';
-import { createStudentSchema, updateStudentSchema } from '../../validation/student.validation.js';
+import { createStudentSchema, updateStudentSchema, bulkCreateStudentsSchema } from '../../validation/student.validation.js';
 import { UserRole } from '../../common/enums/enum.service.js';
 
 class StudentController {
@@ -72,6 +72,17 @@ class StudentController {
             next(error);
         }
     }
+
+    static async bulkCreateStudents(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const teacherId = StudentController.extractTeacherId(user);
+            const result = await StudentService.bulkCreateStudents(teacherId, req.body.students);
+            return SuccessResponse({ res, message: `تم إضافة ${result.successCount} من ${result.total} طالب`, data: result, status: 201 });
+        } catch (error) {
+            next(error);
+        }
+    }
 }
 
 const router = Router();
@@ -84,6 +95,7 @@ router.use(authenticate);
 // ============================================
 
 router.post('/', authorizeRoles(UserRole.assistant), validate(createStudentSchema), StudentController.createStudent);
+router.post('/bulk', authorizeRoles(UserRole.assistant), validate(bulkCreateStudentsSchema), StudentController.bulkCreateStudents);
 router.put('/:id', authorizeRoles(UserRole.assistant), validate(updateStudentSchema), StudentController.updateStudent);
 router.delete('/:id', authorizeRoles(UserRole.assistant), StudentController.deleteStudent);
 
