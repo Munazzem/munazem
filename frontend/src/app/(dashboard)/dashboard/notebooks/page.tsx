@@ -176,6 +176,7 @@ function EditNotebookDialog({
 export default function NotebooksPage() {
     const user = useAuthStore((s) => s.user);
     const isTeacher = user?.role === 'teacher';
+    const canManage = user?.role === 'teacher' || user?.role === 'assistant';
     const allowedGrades = getAllowedGrades(user?.stage);
 
     const [search, setSearch] = useState('');
@@ -224,7 +225,7 @@ export default function NotebooksPage() {
                         {lowStock > 0 && <span className="text-amber-600"> · {lowStock} مخزون منخفض</span>})
                     </p>
                 </div>
-                {isTeacher && <AddNotebookModal />}
+                {canManage && <AddNotebookModal />}
             </div>
 
             {/* Filters */}
@@ -266,7 +267,7 @@ export default function NotebooksPage() {
                     <div className="p-12 text-center">
                         <BookOpen className="h-12 w-12 text-gray-200 mx-auto mb-3" />
                         <p className="text-gray-400">لا توجد مذكرات بعد.</p>
-                        {isTeacher && <p className="text-xs text-gray-400 mt-1">اضغط "إضافة مذكرة" لإضافة أول مذكرة.</p>}
+                        {canManage && <p className="text-xs text-gray-400 mt-1">اضغط "إضافة مذكرة" لإضافة أول مذكرة.</p>}
                     </div>
                 ) : (
                     <div className="overflow-x-auto">
@@ -320,7 +321,7 @@ export default function NotebooksPage() {
                                                 <DropdownMenuContent align="end">
                                                     <DropdownMenuLabel className="text-xs text-gray-400">الإجراءات</DropdownMenuLabel>
                                                     <DropdownMenuSeparator />
-                                                    {isTeacher && (
+                                                    {canManage && (
                                                         <>
                                                             <DropdownMenuItem
                                                                 className="cursor-pointer focus:text-primary"
@@ -342,11 +343,6 @@ export default function NotebooksPage() {
                                                                 <Trash2 className="mr-2 h-4 w-4 ml-2" /> حذف
                                                             </DropdownMenuItem>
                                                         </>
-                                                    )}
-                                                    {!isTeacher && (
-                                                        <DropdownMenuItem disabled className="text-gray-400 text-xs">
-                                                            لا توجد إجراءات متاحة
-                                                        </DropdownMenuItem>
                                                     )}
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
