@@ -7,7 +7,8 @@ import type { StudentWithGroup } from '@/types/student.types';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { recordSubscription } from '@/lib/api/payments';
-import { fetchStudentReport } from '@/lib/api/reports';
+import { fetchStudentReport, downloadStudentReportPdf } from '@/lib/api/reports';
+import { downloadBlob } from '@/lib/utils/download';
 import {
     Dialog,
     DialogContent,
@@ -37,6 +38,7 @@ import {
     TrendingUp,
     AlertCircle,
     Receipt,
+    FileDown,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -84,6 +86,20 @@ export function StudentProfileModal({ student, open, onOpenChange }: StudentProf
             toast.error(err?.response?.data?.message ?? 'حدث خطأ أثناء تسجيل الاشتراك');
         },
     });
+
+    const [pdfLoading, setPdfLoading] = useState(false);
+    const handleDownloadPdf = async () => {
+        if (!student) return;
+        setPdfLoading(true);
+        try {
+            const blob = await downloadStudentReportPdf(student._id);
+            downloadBlob(blob, `تقرير-${student.studentName}.pdf`);
+        } catch {
+            toast.error('فشل تحميل التقرير');
+        } finally {
+            setPdfLoading(false);
+        }
+    };
 
     if (!student) return null;
 
@@ -192,16 +208,31 @@ export function StudentProfileModal({ student, open, onOpenChange }: StudentProf
                                         {qrValue}
                                     </p>
                                 </div>
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => window.print()}
-                                    className="w-full gap-1.5 border-[#0f4c81]/30 text-[#0f4c81] hover:bg-[#0f4c81]/5 text-xs font-bold"
-                                >
-                                    <Printer className="h-3.5 w-3.5" />
-                                    طباعة
-                                </Button>
-                                {isAssistant && (
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => window.print()}
+                            className="w-full gap-1.5 border-[#0f4c81]/30 text-[#0f4c81] hover:bg-[#0f4c81]/5 text-xs font-bold"
+                        >
+                            <Printer className="h-3.5 w-3.5" />
+                            طباعة
+                        </Button>
+                        {isTeacher && (
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={handleDownloadPdf}
+                                disabled={pdfLoading}
+                                className="w-full gap-1.5 border-gray-200 text-gray-700 hover:bg-gray-50 text-xs font-bold"
+                            >
+                                {pdfLoading
+                                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    : <FileDown className="h-3.5 w-3.5" />
+                                }
+                                تقرير PDF
+                            </Button>
+                        )}
+                        {isAssistant && (
                                     <Button
                                         size="sm"
                                         onClick={() => {

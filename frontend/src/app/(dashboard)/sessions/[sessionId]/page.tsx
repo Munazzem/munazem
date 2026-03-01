@@ -11,8 +11,10 @@ import {
     completeSession,
     getSessionSnapshot,
     getWhatsAppLinks,
+    downloadAttendancePdf,
     type IWhatsAppLink,
 } from '@/lib/api/attendance';
+import { downloadBlob } from '@/lib/utils/download';
 import { fetchStudents } from '@/lib/api/students';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { QRScannerPanel } from '@/components/sessions/QRScannerPanel';
@@ -35,6 +37,7 @@ import {
     ExternalLink,
     Send,
     Receipt,
+    FileDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -376,6 +379,19 @@ export default function SessionDetailPage() {
     const [editRecord, setEditRecord] = useState<IAttendanceRecord | null>(null);
     const [showWhatsApp, setShowWhatsApp] = useState(false);
     const [showBatchSubscribe, setShowBatchSubscribe] = useState(false);
+    const [pdfLoading, setPdfLoading] = useState(false);
+
+    const handleDownloadAttendancePdf = async () => {
+        setPdfLoading(true);
+        try {
+            const blob = await downloadAttendancePdf(sessionId);
+            downloadBlob(blob, `تقرير-حضور-${sessionId}.pdf`);
+        } catch {
+            toast.error('فشل تحميل تقرير الحضور');
+        } finally {
+            setPdfLoading(false);
+        }
+    };
 
     // Fetch session
     const { data: session, isLoading: sessionLoading } = useQuery({
@@ -731,6 +747,18 @@ export default function SessionDetailPage() {
                                 تسجيل اشتراكات الحاضرين
                             </Button>
                         )}
+                        <Button
+                            variant="outline"
+                            onClick={handleDownloadAttendancePdf}
+                            disabled={pdfLoading}
+                            className="gap-2 border-gray-200 text-gray-700 hover:bg-gray-50"
+                        >
+                            {pdfLoading
+                                ? <Loader2 className="h-4 w-4 animate-spin" />
+                                : <FileDown className="h-4 w-4" />
+                            }
+                            تقرير الحضور PDF
+                        </Button>
                         <Button
                             onClick={() => setShowWhatsApp(true)}
                             className="gap-2 bg-[#25D366] hover:bg-[#1ebe5d] text-white"

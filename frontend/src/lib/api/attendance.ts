@@ -67,3 +67,10 @@ export const getGroupAttendanceHistory = async (
     const res = await apiClient.get(`/attendance/history/${groupId}?${query.toString()}`);
     return (res as any).data;
 };
+
+export const downloadAttendancePdf = async (sessionId: string): Promise<Blob> => {
+    const res = await apiClient.get(`/attendance/session/${sessionId}/pdf`, {
+        responseType: 'blob',
+    });
+    return res as unknown as Blob;
+};

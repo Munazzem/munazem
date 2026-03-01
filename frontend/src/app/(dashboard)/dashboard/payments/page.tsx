@@ -3,6 +3,9 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getDailyLedger, getMonthlyLedger } from '@/lib/api/payments';
+import { downloadMonthlyReportPdf } from '@/lib/api/reports';
+import { downloadBlob } from '@/lib/utils/download';
+import { toast } from 'sonner';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { AddTransactionModal } from '@/components/payments/AddTransactionModal';
 import { PriceSettingsModal } from '@/components/payments/PriceSettingsModal';
@@ -16,6 +19,7 @@ import {
     ChevronLeft,
     ChevronRight,
     Receipt,
+    FileDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -199,11 +203,24 @@ function MonthlyTab() {
     const now = new Date();
     const [year, setYear] = useState(now.getFullYear());
     const [month, setMonth] = useState(now.getMonth() + 1);
+    const [pdfLoading, setPdfLoading] = useState(false);
 
     const { data: ledger, isLoading } = useQuery({
         queryKey: ['monthly-ledger', year, month],
         queryFn: () => getMonthlyLedger(year, month),
     });
+
+    const handleDownloadPdf = async () => {
+        setPdfLoading(true);
+        try {
+            const blob = await downloadMonthlyReportPdf(year, month);
+            downloadBlob(blob, `التقرير-المالي-${year}-${month}.pdf`);
+        } catch {
+            toast.error('فشل تحميل التقرير');
+        } finally {
+            setPdfLoading(false);
+        }
+    };
 
     const MONTH_NAMES = [
         'يناير','فبراير','مارس','أبريل','مايو','يونيو',
@@ -230,15 +247,30 @@ function MonthlyTab() {
     return (
         <div className="space-y-4">
             {/* Month Picker */}
-            <div className="flex items-center gap-2">
-                <Button variant="outline" size="icon" className="h-9 w-9" onClick={prevMonth}>
-                    <ChevronRight className="h-4 w-4" />
-                </Button>
-                <span className="text-sm font-medium text-gray-700 min-w-[120px] text-center">
-                    {MONTH_NAMES[month - 1]} {year}
-                </span>
-                <Button variant="outline" size="icon" className="h-9 w-9" onClick={nextMonth}>
-                    <ChevronLeft className="h-4 w-4" />
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                    <Button variant="outline" size="icon" className="h-9 w-9" onClick={prevMonth}>
+                        <ChevronRight className="h-4 w-4" />
+                    </Button>
+                    <span className="text-sm font-medium text-gray-700 min-w-[120px] text-center">
+                        {MONTH_NAMES[month - 1]} {year}
+                    </span>
+                    <Button variant="outline" size="icon" className="h-9 w-9" onClick={nextMonth}>
+                        <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                </div>
+                <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleDownloadPdf}
+                    disabled={pdfLoading}
+                    className="gap-1.5 text-xs"
+                >
+                    {pdfLoading
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <FileDown className="h-3.5 w-3.5" />
+                    }
+                    تحميل PDF
                 </Button>
             </div>
 

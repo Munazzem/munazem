@@ -13,7 +13,8 @@ import {
     Trash2, 
     Users,
     Clock,
-    Loader2
+    Loader2,
+    FileText,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -30,6 +31,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { AddGroupModal } from '@/components/groups/AddGroupModal';
 import { EditGroupModal } from '@/components/groups/EditGroupModal';
+import { GroupReportModal } from '@/components/groups/GroupReportModal';
 import { getAllowedGrades } from '@/lib/utils/grades';
 import {
     Select,
@@ -51,6 +53,8 @@ export default function GroupsPage() {
 
     const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [reportGroupId, setReportGroupId] = useState<string | null>(null);
+    const [reportGroupName, setReportGroupName] = useState('');
 
     const queryClient = useQueryClient();
 
@@ -175,8 +179,11 @@ export default function GroupsPage() {
                                                     </DropdownMenuItem>
                                                 </>
                                             ) : (
-                                                <DropdownMenuItem disabled className="text-gray-400 text-xs">
-                                                    للعرض فقط
+                                                <DropdownMenuItem
+                                                    className="cursor-pointer focus:text-primary"
+                                                    onClick={() => { setReportGroupId(group._id); setReportGroupName(group.name); }}
+                                                >
+                                                    <FileText className="mr-2 h-4 w-4 ml-2" /> تقرير المجموعة
                                                 </DropdownMenuItem>
                                             )}
                                         </DropdownMenuContent>
@@ -221,6 +228,13 @@ export default function GroupsPage() {
             )}
 
             <EditGroupModal open={isEditModalOpen} onOpenChange={setIsEditModalOpen} group={selectedGroup} />
+
+            <GroupReportModal
+                groupId={reportGroupId}
+                groupName={reportGroupName}
+                open={reportGroupId !== null}
+                onOpenChange={(v) => { if (!v) setReportGroupId(null); }}
+            />
         </div>
     );
 }
