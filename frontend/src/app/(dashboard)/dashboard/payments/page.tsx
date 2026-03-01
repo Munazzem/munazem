@@ -57,13 +57,13 @@ function StatCard({
     const Icon = c.icon;
 
     return (
-        <div className={cn('rounded-xl border p-4 shadow-sm', c.bg, c.border)}>
+        <div className={cn('rounded-xl border p-3 sm:p-4 shadow-sm', c.bg, c.border)}>
             <div className="flex items-center justify-between mb-2">
                 <p className="text-xs text-gray-500 font-medium">{label}</p>
                 <Icon className={cn('h-4 w-4', c.iconColor)} />
             </div>
-            <p className={cn('text-2xl font-bold', c.text)}>
-                {value.toLocaleString('ar-EG')} <span className="text-sm font-normal">ج</span>
+            <p className={cn('text-xl sm:text-2xl font-bold', c.text)}>
+                {value.toLocaleString('ar-EG')} <span className="text-xs sm:text-sm font-normal">ج</span>
             </p>
         </div>
     );
@@ -86,10 +86,10 @@ function DailyTab({ isAssistant }: { isAssistant: boolean }) {
     return (
         <div className="space-y-4">
             {/* Controls */}
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                     <Button
-                        variant="outline" size="icon" className="h-9 w-9"
+                        variant="outline" size="icon" className="h-9 w-9 shrink-0"
                         onClick={() => {
                             const d = new Date(date);
                             d.setDate(d.getDate() - 1);
@@ -102,10 +102,10 @@ function DailyTab({ isAssistant }: { isAssistant: boolean }) {
                         type="date"
                         value={date}
                         onChange={(e) => setDate(e.target.value)}
-                        className="h-9 w-40 text-sm"
+                        className="h-9 flex-1 sm:w-40 text-sm"
                     />
                     <Button
-                        variant="outline" size="icon" className="h-9 w-9"
+                        variant="outline" size="icon" className="h-9 w-9 shrink-0"
                         onClick={() => {
                             const d = new Date(date);
                             d.setDate(d.getDate() + 1);
@@ -124,17 +124,17 @@ function DailyTab({ isAssistant }: { isAssistant: boolean }) {
             </div>
 
             {/* Stats */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <StatCard label="إجمالي الدخل" value={ledger?.totalIncome ?? 0} type="income" />
                 <StatCard label="إجمالي المصروفات" value={ledger?.totalExpenses ?? 0} type="expense" />
                 <StatCard label="الصافي" value={ledger?.netBalance ?? 0} type="net" />
             </div>
 
-            {/* Transactions Table */}
+            {/* Transactions */}
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-                    <h3 className="font-semibold text-gray-800 flex items-center gap-2">
-                        <Receipt className="h-5 w-5 text-primary" />
+                <div className="flex items-center justify-between px-4 sm:px-5 py-3 sm:py-4 border-b border-gray-100">
+                    <h3 className="font-semibold text-gray-800 flex items-center gap-2 text-sm sm:text-base">
+                        <Receipt className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                         المعاملات
                     </h3>
                     <span className="text-sm text-gray-400">{txs.length} معاملة</span>
@@ -151,47 +151,72 @@ function DailyTab({ isAssistant }: { isAssistant: boolean }) {
                         <p className="text-sm">لا توجد معاملات في هذا اليوم</p>
                     </div>
                 ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead>
-                                <tr className="border-b border-gray-50 bg-gray-50/50">
-                                    <th className="px-4 py-3 text-right font-medium text-gray-600">النوع</th>
-                                    <th className="px-4 py-3 text-right font-medium text-gray-600">الفئة</th>
-                                    <th className="px-4 py-3 text-right font-medium text-gray-600">الطالب</th>
-                                    <th className="px-4 py-3 text-right font-medium text-gray-600">المبلغ</th>
-                                    <th className="px-4 py-3 text-right font-medium text-gray-600">الوقت</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-50">
-                                {txs.map((tx, i) => (
-                                    <tr key={i} className="hover:bg-gray-50/50 transition-colors">
-                                        <td className="px-4 py-3">
-                                            <span className={cn(
-                                                'inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium border',
-                                                tx.type === 'INCOME'
-                                                    ? 'bg-green-50 text-green-700 border-green-100'
-                                                    : 'bg-red-50 text-red-600 border-red-100'
-                                            )}>
-                                                {tx.type === 'INCOME' ? '↑ دخل' : '↓ مصروف'}
-                                            </span>
-                                        </td>
-                                        <td className="px-4 py-3 text-gray-600">
-                                            {CATEGORY_LABELS[tx.category as TransactionCategory] ?? tx.category}
-                                        </td>
-                                        <td className="px-4 py-3 text-gray-700">
-                                            {tx.studentName ?? '—'}
-                                        </td>
-                                        <td className="px-4 py-3 font-semibold text-gray-800">
+                    <>
+                        {/* Mobile Cards */}
+                        <div className="sm:hidden divide-y divide-gray-50">
+                            {txs.map((tx, i) => (
+                                <div key={i} className="px-4 py-3">
+                                    <div className="flex items-center justify-between mb-1">
+                                        <span className={cn(
+                                            'inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium border',
+                                            tx.type === 'INCOME'
+                                                ? 'bg-green-50 text-green-700 border-green-100'
+                                                : 'bg-red-50 text-red-600 border-red-100'
+                                        )}>
+                                            {tx.type === 'INCOME' ? '↑ دخل' : '↓ مصروف'}
+                                        </span>
+                                        <span className="font-bold text-gray-800 text-sm">
                                             {tx.paidAmount.toLocaleString('ar-EG')} ج
-                                        </td>
-                                        <td className="px-4 py-3 text-gray-400 text-xs">
-                                            {formatTime(tx.time)}
-                                        </td>
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-gray-600">
+                                        {CATEGORY_LABELS[tx.category as TransactionCategory] ?? tx.category}
+                                        {tx.studentName && ` · ${tx.studentName}`}
+                                    </p>
+                                    <p className="text-xs text-gray-400 mt-0.5">{formatTime(tx.time)}</p>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Desktop Table */}
+                        <div className="hidden sm:block overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="border-b border-gray-50 bg-gray-50/50">
+                                        <th className="px-4 py-3 text-right font-medium text-gray-600">النوع</th>
+                                        <th className="px-4 py-3 text-right font-medium text-gray-600">الفئة</th>
+                                        <th className="px-4 py-3 text-right font-medium text-gray-600">الطالب</th>
+                                        <th className="px-4 py-3 text-right font-medium text-gray-600">المبلغ</th>
+                                        <th className="px-4 py-3 text-right font-medium text-gray-600">الوقت</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
+                                </thead>
+                                <tbody className="divide-y divide-gray-50">
+                                    {txs.map((tx, i) => (
+                                        <tr key={i} className="hover:bg-gray-50/50 transition-colors">
+                                            <td className="px-4 py-3">
+                                                <span className={cn(
+                                                    'inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium border',
+                                                    tx.type === 'INCOME'
+                                                        ? 'bg-green-50 text-green-700 border-green-100'
+                                                        : 'bg-red-50 text-red-600 border-red-100'
+                                                )}>
+                                                    {tx.type === 'INCOME' ? '↑ دخل' : '↓ مصروف'}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3 text-gray-600">
+                                                {CATEGORY_LABELS[tx.category as TransactionCategory] ?? tx.category}
+                                            </td>
+                                            <td className="px-4 py-3 text-gray-700">{tx.studentName ?? '—'}</td>
+                                            <td className="px-4 py-3 font-semibold text-gray-800">
+                                                {tx.paidAmount.toLocaleString('ar-EG')} ج
+                                            </td>
+                                            <td className="px-4 py-3 text-gray-400 text-xs">{formatTime(tx.time)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </>
                 )}
             </div>
         </div>
@@ -247,15 +272,15 @@ function MonthlyTab() {
     return (
         <div className="space-y-4">
             {/* Month Picker */}
-            <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
-                    <Button variant="outline" size="icon" className="h-9 w-9" onClick={prevMonth}>
+                    <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" onClick={prevMonth}>
                         <ChevronRight className="h-4 w-4" />
                     </Button>
-                    <span className="text-sm font-medium text-gray-700 min-w-[120px] text-center">
+                    <span className="text-sm font-medium text-gray-700 flex-1 text-center sm:min-w-[120px]">
                         {MONTH_NAMES[month - 1]} {year}
                     </span>
-                    <Button variant="outline" size="icon" className="h-9 w-9" onClick={nextMonth}>
+                    <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" onClick={nextMonth}>
                         <ChevronLeft className="h-4 w-4" />
                     </Button>
                 </div>
@@ -264,7 +289,7 @@ function MonthlyTab() {
                     size="sm"
                     onClick={handleDownloadPdf}
                     disabled={pdfLoading}
-                    className="gap-1.5 text-xs"
+                    className="gap-1.5 text-xs w-full sm:w-auto"
                 >
                     {pdfLoading
                         ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -275,35 +300,35 @@ function MonthlyTab() {
             </div>
 
             {/* Stats */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <StatCard label="إجمالي الدخل" value={ledger?.totalIncome ?? 0} type="income" />
                 <StatCard label="إجمالي المصروفات" value={ledger?.totalExpenses ?? 0} type="expense" />
                 <StatCard label="الصافي" value={ledger?.netBalance ?? 0} type="net" />
             </div>
 
             {/* Bar Chart */}
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-                <h3 className="font-semibold text-gray-800 mb-4">الدخل والمصروفات يومياً</h3>
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-3 sm:p-5">
+                <h3 className="font-semibold text-gray-800 mb-4 text-sm sm:text-base">الدخل والمصروفات يومياً</h3>
                 {isLoading ? (
-                    <div className="flex items-center justify-center h-48 text-gray-400">
+                    <div className="flex items-center justify-center h-40 sm:h-48 text-gray-400">
                         <Loader2 className="h-5 w-5 animate-spin ml-2" />
                         تحميل...
                     </div>
                 ) : chartData.length === 0 ? (
-                    <div className="flex items-center justify-center h-48 text-gray-400 text-sm">
+                    <div className="flex items-center justify-center h-40 sm:h-48 text-gray-400 text-sm">
                         لا توجد بيانات لهذا الشهر
                     </div>
                 ) : (
-                    <ResponsiveContainer width="100%" height={260}>
-                        <BarChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                    <ResponsiveContainer width="100%" height={220}>
+                        <BarChart data={chartData} margin={{ top: 0, right: 0, left: -10, bottom: 0 }}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                            <XAxis dataKey="day" tick={{ fontSize: 11 }} />
-                            <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}`} />
+                            <XAxis dataKey="day" tick={{ fontSize: 10 }} />
+                            <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}`} width={40} />
                             <Tooltip
                                 formatter={(value: number) => [`${value.toLocaleString('ar-EG')} ج`]}
                                 labelFormatter={(label) => `يوم ${label}`}
                             />
-                            <Legend />
+                            <Legend wrapperStyle={{ fontSize: 12 }} />
                             <Bar dataKey="دخل" fill="#22c55e" radius={[3, 3, 0, 0]} />
                             <Bar dataKey="مصروف" fill="#ef4444" radius={[3, 3, 0, 0]} />
                         </BarChart>
@@ -345,34 +370,36 @@ export default function PaymentsPage() {
     ];
 
     return (
-        <div className="min-h-screen bg-gray-50/30 p-6" dir="rtl">
+        <div className="min-h-screen bg-gray-50/30 p-3 sm:p-4 lg:p-6" dir="rtl">
             {/* Header */}
-            <div className="mb-6">
-                <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                    <Wallet className="h-6 w-6 text-primary" />
+            <div className="mb-4 sm:mb-6">
+                <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-2">
+                    <Wallet className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
                     الماليات
                 </h1>
-                <p className="text-sm text-gray-500 mt-1">
+                <p className="text-xs sm:text-sm text-gray-500 mt-1">
                     {isAssistant ? 'تسجيل المعاملات المالية ومتابعة الجارد اليومي' : 'متابعة الإيرادات والمصروفات'}
                 </p>
             </div>
 
-            {/* Tabs */}
-            <div className="flex gap-1 bg-white border border-gray-100 rounded-xl p-1 mb-5 shadow-sm w-fit">
-                {tabs.filter((t) => t.show).map((tab) => (
-                    <button
-                        key={tab.id}
-                        onClick={() => setActiveTab(tab.id)}
-                        className={cn(
-                            'px-4 py-2 rounded-lg text-sm font-medium transition-all',
-                            activeTab === tab.id
-                                ? 'bg-primary text-white shadow-sm'
-                                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                        )}
-                    >
-                        {tab.label}
-                    </button>
-                ))}
+            {/* Tabs — scrollable on mobile */}
+            <div className="overflow-x-auto pb-1 mb-4 sm:mb-5">
+                <div className="flex gap-1 bg-white border border-gray-100 rounded-xl p-1 shadow-sm w-fit min-w-full sm:min-w-0">
+                    {tabs.filter((t) => t.show).map((tab) => (
+                        <button
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            className={cn(
+                                'px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap flex-1 sm:flex-none',
+                                activeTab === tab.id
+                                    ? 'bg-primary text-white shadow-sm'
+                                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                            )}
+                        >
+                            {tab.label}
+                        </button>
+                    ))}
+                </div>
             </div>
 
             {/* Tab Content */}

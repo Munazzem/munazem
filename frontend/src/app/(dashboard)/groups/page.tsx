@@ -94,25 +94,24 @@ export default function GroupsPage() {
     const pagination = data?.pagination;
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-500">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-500" dir="rtl">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900 tracking-tight">إدارة المجموعات</h1>
-                    <p className="text-gray-500 mt-1">تنسيق المجموعات الدراسية وإدارة المواعيد ({pagination?.total || 0} مجموعة).</p>
+                    <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">إدارة المجموعات</h1>
+                    <p className="text-sm text-gray-500 mt-0.5">{pagination?.total || 0} مجموعة مسجلة</p>
                 </div>
-                
                 {isAssistant && <AddGroupModal />}
             </div>
 
-            <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col sm:flex-row gap-4 items-center justify-between">
-                <div className="relative w-full sm:w-96">
+            <div className="bg-white p-3 sm:p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+                <div className="relative flex-1">
                     <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-400">
                         <Search size={18} />
                     </div>
                     <Input 
                         type="text"
                         placeholder="ابحث باسم المجموعة..."
-                        className="pl-4 pr-10 border-gray-200 bg-gray-50 focus-visible:ring-primary focus-visible:bg-white"
+                        className="pl-4 pr-9 border-gray-200 bg-gray-50 focus-visible:ring-primary focus-visible:bg-white text-sm"
                         value={searchTerm}
                         onChange={(e) => {
                             setSearchTerm(e.target.value);
@@ -125,7 +124,7 @@ export default function GroupsPage() {
                     onValueChange={(val) => { setGradeFilter(val === 'ALL' ? '' : val); setPage(1); }}
                     dir="rtl"
                 >
-                    <SelectTrigger className="w-full sm:w-52 border-gray-200 bg-gray-50 text-gray-700">
+                    <SelectTrigger className="w-full sm:w-48 border-gray-200 bg-gray-50 text-gray-700 text-sm">
                         <Filter size={16} className="ml-2 text-gray-400" />
                         <SelectValue placeholder="كل المراحل" />
                     </SelectTrigger>
@@ -151,9 +150,9 @@ export default function GroupsPage() {
                     لا توجد مجموعات لعرضها.
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
                     {groups.map((group) => (
-                        <div key={group._id} className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
+                        <div key={group._id} className="bg-white border border-gray-100 rounded-2xl p-4 sm:p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
                             <div>
                                 <div className="flex justify-between items-start mb-4">
                                     <div>

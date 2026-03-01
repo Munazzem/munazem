@@ -171,63 +171,91 @@ export default function TeacherDetailPage() {
 
             {/* Subscription History */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-                    <h2 className="font-bold text-gray-900 flex items-center gap-2">
-                        <CreditCard className="h-5 w-5 text-primary" />
+                <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-100">
+                    <h2 className="font-bold text-gray-900 flex items-center gap-2 text-sm sm:text-base">
+                        <CreditCard className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                         سجل الاشتراكات ({subscriptions.length})
                     </h2>
                 </div>
 
                 {subscriptions.length === 0 ? (
-                    <div className="p-10 text-center text-gray-400">لا توجد اشتراكات مسجلة لهذا المعلم</div>
+                    <div className="p-10 text-center text-gray-400 text-sm">لا توجد اشتراكات مسجلة لهذا المعلم</div>
                 ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead>
-                                <tr className="border-b border-gray-50 bg-gray-50/50">
-                                    <th className="text-right font-semibold text-gray-500 px-6 py-3">الباقة</th>
-                                    <th className="text-right font-semibold text-gray-500 px-4 py-3">المدة</th>
-                                    <th className="text-right font-semibold text-gray-500 px-4 py-3">المبلغ</th>
-                                    <th className="text-right font-semibold text-gray-500 px-4 py-3">من</th>
-                                    <th className="text-right font-semibold text-gray-500 px-4 py-3">إلى</th>
-                                    <th className="text-right font-semibold text-gray-500 px-4 py-3">الحالة</th>
-                                    <th className="text-right font-semibold text-gray-500 px-4 py-3">إجراء</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-50">
-                                {subscriptions.map((sub) => {
-                                    const cfg = STATUS_CONFIG[sub.status] ?? { label: sub.status, cls: 'bg-gray-100 text-gray-500', icon: Clock };
-                                    const StatusIcon = cfg.icon;
-                                    return (
-                                        <tr key={sub._id} className="hover:bg-gray-50/50 transition-colors">
-                                            <td className="px-6 py-3 font-semibold text-gray-900">{PLAN_LABELS[sub.planTier]}</td>
-                                            <td className="px-4 py-3 text-gray-600">{DURATION_LABELS[sub.durationMonths]}</td>
-                                            <td className="px-4 py-3 font-medium text-gray-900">{sub.amount.toLocaleString()} ج</td>
-                                            <td className="px-4 py-3 text-gray-500">{new Date(sub.startDate).toLocaleDateString('ar-EG')}</td>
-                                            <td className="px-4 py-3 text-gray-500">{new Date(sub.endDate).toLocaleDateString('ar-EG')}</td>
-                                            <td className="px-4 py-3">
-                                                <span className={cn('inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full', cfg.cls)}>
-                                                    <StatusIcon className="h-3 w-3" />
-                                                    {cfg.label}
-                                                </span>
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    className="h-7 text-xs gap-1"
-                                                    onClick={() => setRenewSub(sub)}
-                                                >
-                                                    <RefreshCw className="h-3 w-3" />
-                                                    تجديد
-                                                </Button>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
+                    <>
+                        {/* Mobile Cards */}
+                        <div className="md:hidden divide-y divide-gray-50">
+                            {subscriptions.map((sub) => {
+                                const cfg = STATUS_CONFIG[sub.status] ?? { label: sub.status, cls: 'bg-gray-100 text-gray-500', icon: Clock };
+                                const StatusIcon = cfg.icon;
+                                return (
+                                    <div key={sub._id} className="px-4 py-3">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div>
+                                                <span className="font-bold text-gray-900 text-sm">{PLAN_LABELS[sub.planTier]}</span>
+                                                <span className="text-xs text-gray-500 mr-2">· {DURATION_LABELS[sub.durationMonths]}</span>
+                                            </div>
+                                            <span className={cn('inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full', cfg.cls)}>
+                                                <StatusIcon className="h-3 w-3" />
+                                                {cfg.label}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center justify-between text-xs text-gray-500">
+                                            <span>{new Date(sub.startDate).toLocaleDateString('ar-EG')} ← {new Date(sub.endDate).toLocaleDateString('ar-EG')}</span>
+                                            <span className="font-bold text-gray-800">{sub.amount.toLocaleString()} ج</span>
+                                        </div>
+                                        <div className="mt-2">
+                                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1 w-full" onClick={() => setRenewSub(sub)}>
+                                                <RefreshCw className="h-3 w-3" /> تجديد
+                                            </Button>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {/* Desktop Table */}
+                        <div className="hidden md:block overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="border-b border-gray-50 bg-gray-50/50">
+                                        <th className="text-right font-semibold text-gray-500 px-6 py-3">الباقة</th>
+                                        <th className="text-right font-semibold text-gray-500 px-4 py-3">المدة</th>
+                                        <th className="text-right font-semibold text-gray-500 px-4 py-3">المبلغ</th>
+                                        <th className="text-right font-semibold text-gray-500 px-4 py-3">من</th>
+                                        <th className="text-right font-semibold text-gray-500 px-4 py-3">إلى</th>
+                                        <th className="text-right font-semibold text-gray-500 px-4 py-3">الحالة</th>
+                                        <th className="text-right font-semibold text-gray-500 px-4 py-3">إجراء</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-50">
+                                    {subscriptions.map((sub) => {
+                                        const cfg = STATUS_CONFIG[sub.status] ?? { label: sub.status, cls: 'bg-gray-100 text-gray-500', icon: Clock };
+                                        const StatusIcon = cfg.icon;
+                                        return (
+                                            <tr key={sub._id} className="hover:bg-gray-50/50 transition-colors">
+                                                <td className="px-6 py-3 font-semibold text-gray-900">{PLAN_LABELS[sub.planTier]}</td>
+                                                <td className="px-4 py-3 text-gray-600">{DURATION_LABELS[sub.durationMonths]}</td>
+                                                <td className="px-4 py-3 font-medium text-gray-900">{sub.amount.toLocaleString()} ج</td>
+                                                <td className="px-4 py-3 text-gray-500">{new Date(sub.startDate).toLocaleDateString('ar-EG')}</td>
+                                                <td className="px-4 py-3 text-gray-500">{new Date(sub.endDate).toLocaleDateString('ar-EG')}</td>
+                                                <td className="px-4 py-3">
+                                                    <span className={cn('inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full', cfg.cls)}>
+                                                        <StatusIcon className="h-3 w-3" />
+                                                        {cfg.label}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => setRenewSub(sub)}>
+                                                        <RefreshCw className="h-3 w-3" /> تجديد
+                                                    </Button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    </>
                 )}
             </div>
 

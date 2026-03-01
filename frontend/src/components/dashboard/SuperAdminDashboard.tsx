@@ -125,13 +125,13 @@ export function SuperAdminDashboard() {
     }
 
     return (
-        <div className="space-y-8 animate-in fade-in duration-500" dir="rtl">
+        <div className="space-y-5 sm:space-y-8 animate-in fade-in duration-500" dir="rtl">
             {/* Header */}
             <div>
-                <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
+                <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">
                     مرحباً بعودتك، {user?.name?.split(' ')[0]}
                 </h1>
-                <p className="text-gray-500 mt-1">نظرة عامة على اشتراكات المنصة وحالة المعلمين.</p>
+                <p className="text-sm text-gray-500 mt-0.5">نظرة عامة على اشتراكات المنصة وحالة المعلمين.</p>
             </div>
 
             {/* Stat Cards */}
@@ -225,54 +225,80 @@ export function SuperAdminDashboard() {
                 </div>
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                     {subscriptions.length === 0 ? (
-                        <div className="p-8 text-center text-gray-400">لا توجد اشتراكات بعد</div>
+                        <div className="p-8 text-center text-gray-400 text-sm">لا توجد اشتراكات بعد</div>
                     ) : (
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
-                                <thead>
-                                    <tr className="border-b border-gray-50 bg-gray-50/50">
-                                        <th className="text-right font-semibold text-gray-500 px-5 py-3">المعلم</th>
-                                        <th className="text-right font-semibold text-gray-500 px-4 py-3">الباقة</th>
-                                        <th className="text-right font-semibold text-gray-500 px-4 py-3">المبلغ</th>
-                                        <th className="text-right font-semibold text-gray-500 px-4 py-3">تنتهي</th>
-                                        <th className="text-right font-semibold text-gray-500 px-4 py-3">الحالة</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-50">
-                                    {subscriptions.slice(0, 8).map((sub) => {
-                                        const teacher = typeof sub.teacherId === 'object' && sub.teacherId !== null
-                                            ? sub.teacherId as { name: string; phone: string }
-                                            : { name: 'غير معروف', phone: '' };
-                                        const daysLeft = Math.ceil((new Date(sub.endDate).getTime() - Date.now()) / 86400000);
-                                        const statusCfg = STATUS_CONFIG[sub.status] ?? { label: sub.status, cls: 'bg-gray-100 text-gray-600' };
-                                        return (
-                                            <tr key={sub._id} className="hover:bg-gray-50/50 transition-colors">
-                                                <td className="px-5 py-3">
-                                                    <p className="font-semibold text-gray-900">{teacher.name}</p>
-                                                    <p className="text-xs text-gray-400" dir="ltr">{teacher.phone}</p>
-                                                </td>
-                                                <td className="px-4 py-3 text-gray-700">{PLAN_LABEL[sub.planTier] ?? sub.planTier}</td>
-                                                <td className="px-4 py-3 font-medium text-gray-900">{sub.amount?.toLocaleString()} ج</td>
-                                                <td className="px-4 py-3">
-                                                    <span className={cn(
-                                                        'text-xs font-medium',
-                                                        daysLeft <= 7 ? 'text-red-600' : daysLeft <= 30 ? 'text-amber-600' : 'text-gray-500'
-                                                    )}>
-                                                        {new Date(sub.endDate).toLocaleDateString('ar-EG')}
-                                                        {sub.status === 'ACTIVE' && ` (${daysLeft} يوم)`}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    <span className={cn('text-xs font-bold px-2 py-1 rounded-full', statusCfg.cls)}>
-                                                        {statusCfg.label}
-                                                    </span>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
+                        <>
+                            {/* Mobile Cards */}
+                            <div className="sm:hidden divide-y divide-gray-50">
+                                {subscriptions.slice(0, 8).map((sub) => {
+                                    const teacher = typeof sub.teacherId === 'object' && sub.teacherId !== null
+                                        ? sub.teacherId as { name: string; phone: string }
+                                        : { name: 'غير معروف', phone: '' };
+                                    const daysLeft = Math.ceil((new Date(sub.endDate).getTime() - Date.now()) / 86400000);
+                                    const statusCfg = STATUS_CONFIG[sub.status] ?? { label: sub.status, cls: 'bg-gray-100 text-gray-600' };
+                                    return (
+                                        <div key={sub._id} className="px-4 py-3">
+                                            <div className="flex items-center justify-between mb-1">
+                                                <p className="font-semibold text-gray-900 text-sm">{teacher.name}</p>
+                                                <span className={cn('text-xs font-bold px-2 py-0.5 rounded-full', statusCfg.cls)}>{statusCfg.label}</span>
+                                            </div>
+                                            <div className="flex items-center justify-between text-xs text-gray-500">
+                                                <span>{PLAN_LABEL[sub.planTier] ?? sub.planTier} · {sub.amount?.toLocaleString()} ج</span>
+                                                <span className={cn(daysLeft <= 7 ? 'text-red-600 font-semibold' : daysLeft <= 30 ? 'text-amber-600 font-semibold' : '')}>
+                                                    {new Date(sub.endDate).toLocaleDateString('ar-EG')}
+                                                    {sub.status === 'ACTIVE' && ` (${daysLeft})`}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            {/* Desktop Table */}
+                            <div className="hidden sm:block overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead>
+                                        <tr className="border-b border-gray-50 bg-gray-50/50">
+                                            <th className="text-right font-semibold text-gray-500 px-5 py-3">المعلم</th>
+                                            <th className="text-right font-semibold text-gray-500 px-4 py-3">الباقة</th>
+                                            <th className="text-right font-semibold text-gray-500 px-4 py-3">المبلغ</th>
+                                            <th className="text-right font-semibold text-gray-500 px-4 py-3">تنتهي</th>
+                                            <th className="text-right font-semibold text-gray-500 px-4 py-3">الحالة</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-50">
+                                        {subscriptions.slice(0, 8).map((sub) => {
+                                            const teacher = typeof sub.teacherId === 'object' && sub.teacherId !== null
+                                                ? sub.teacherId as { name: string; phone: string }
+                                                : { name: 'غير معروف', phone: '' };
+                                            const daysLeft = Math.ceil((new Date(sub.endDate).getTime() - Date.now()) / 86400000);
+                                            const statusCfg = STATUS_CONFIG[sub.status] ?? { label: sub.status, cls: 'bg-gray-100 text-gray-600' };
+                                            return (
+                                                <tr key={sub._id} className="hover:bg-gray-50/50 transition-colors">
+                                                    <td className="px-5 py-3">
+                                                        <p className="font-semibold text-gray-900">{teacher.name}</p>
+                                                        <p className="text-xs text-gray-400" dir="ltr">{teacher.phone}</p>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-gray-700">{PLAN_LABEL[sub.planTier] ?? sub.planTier}</td>
+                                                    <td className="px-4 py-3 font-medium text-gray-900">{sub.amount?.toLocaleString()} ج</td>
+                                                    <td className="px-4 py-3">
+                                                        <span className={cn('text-xs font-medium', daysLeft <= 7 ? 'text-red-600' : daysLeft <= 30 ? 'text-amber-600' : 'text-gray-500')}>
+                                                            {new Date(sub.endDate).toLocaleDateString('ar-EG')}
+                                                            {sub.status === 'ACTIVE' && ` (${daysLeft} يوم)`}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-4 py-3">
+                                                        <span className={cn('text-xs font-bold px-2 py-1 rounded-full', statusCfg.cls)}>
+                                                            {statusCfg.label}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </>
                     )}
                 </div>
             </div>
@@ -292,7 +318,7 @@ export function SuperAdminDashboard() {
                                     : { name: 'غير معروف', phone: '' };
                                 const days = Math.ceil((new Date(sub.endDate).getTime() - Date.now()) / 86400000);
                                 return (
-                                    <div key={sub._id} className="flex items-center justify-between px-5 py-3.5">
+                                    <div key={sub._id} className="flex items-center justify-between px-3 sm:px-5 py-3">
                                         <div className="flex items-center gap-3">
                                             <div className="h-9 w-9 rounded-full bg-amber-200 flex items-center justify-center text-amber-800 font-bold text-sm shrink-0">
                                                 {teacher.name.charAt(0)}

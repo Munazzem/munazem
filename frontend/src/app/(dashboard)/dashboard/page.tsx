@@ -126,11 +126,11 @@ export default function DashboardPage() {
     const isTeacher = user?.role === 'teacher';
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-500" dir="rtl">
+        <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-500" dir="rtl">
             {/* Header */}
             <div>
-                <h1 className="text-2xl font-bold text-gray-900 tracking-tight">نظرة عامة</h1>
-                <p className="text-gray-500 mt-1">حالة المنصة التعليمية لليوم.</p>
+                <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">نظرة عامة</h1>
+                <p className="text-sm text-gray-500 mt-0.5">حالة المنظمة التعليمية لليوم.</p>
             </div>
 
             {/* Assistant welcome banner */}
@@ -182,38 +182,38 @@ export default function DashboardPage() {
 
             {/* Charts — Teacher only */}
             {isTeacher && stats?.charts && (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
                     {/* Income Trend — Bar Chart via recharts */}
-                    <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-                        <h3 className="font-bold text-gray-900 mb-5 flex items-center gap-2">
-                            <TrendingUp className="h-5 w-5 text-primary" />
+                    <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6">
+                        <h3 className="font-bold text-gray-900 mb-4 sm:mb-5 flex items-center gap-2 text-sm sm:text-base">
+                            <TrendingUp className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                             اتجاه الإيرادات (آخر 6 أشهر)
                         </h3>
                         {stats.charts.incomeTrend?.length > 0 ? (
-                            <ResponsiveContainer width="100%" height={220}>
+                            <ResponsiveContainer width="100%" height={200}>
                                 <BarChart data={stats.charts.incomeTrend} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
                                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-                                    <XAxis dataKey="month" tick={{ fontSize: 12, fill: '#6b7280' }} axisLine={false} tickLine={false} />
-                                    <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} width={50}
+                                    <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} />
+                                    <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} width={40}
                                         tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
                                     <Tooltip
                                         formatter={(v: number) => [`${v.toLocaleString('ar-EG')} ج.م`, 'الإيرادات']}
-                                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)', fontSize: 13, direction: 'rtl' }}
+                                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)', fontSize: 12, direction: 'rtl' }}
                                     />
                                     <Bar dataKey="income" fill="#0f4c81" radius={[6, 6, 0, 0]} maxBarSize={48} />
                                 </BarChart>
                             </ResponsiveContainer>
                         ) : (
-                            <div className="flex items-center justify-center h-48 text-gray-400 text-sm">
+                            <div className="flex items-center justify-center h-40 text-gray-400 text-sm">
                                 لا توجد بيانات مالية سابقة لعرضها
                             </div>
                         )}
                     </div>
 
                     {/* Students Per Group */}
-                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col">
-                        <h3 className="font-bold text-gray-900 mb-5 flex items-center gap-2">
-                            <Users className="h-5 w-5 text-indigo-500" />
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6 flex flex-col">
+                        <h3 className="font-bold text-gray-900 mb-4 sm:mb-5 flex items-center gap-2 text-sm sm:text-base">
+                            <Users className="h-4 w-4 sm:h-5 sm:w-5 text-indigo-500" />
                             توزيع الطلاب
                         </h3>
                         <div className="flex-1 overflow-y-auto space-y-3">
@@ -240,9 +240,9 @@ export default function DashboardPage() {
             {/* Daily Summary */}
             {dailySummary && (
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                    <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-                        <h3 className="font-bold text-gray-900 flex items-center gap-2">
-                            <CalendarDays className="h-5 w-5 text-primary" />
+                    <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-100">
+                        <h3 className="font-bold text-gray-900 flex items-center gap-2 text-sm sm:text-base">
+                            <CalendarDays className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                             ملخص اليوم
                         </h3>
                         <span className="text-xs text-gray-400">
@@ -250,38 +250,38 @@ export default function DashboardPage() {
                         </span>
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-x-reverse divide-gray-50">
-                        <div className="p-5 text-center">
+                        <div className="p-3 sm:p-5 text-center">
                             <div className="flex justify-center mb-2">
-                                <div className="h-9 w-9 rounded-xl bg-blue-50 flex items-center justify-center">
-                                    <Activity className="h-4.5 w-4.5 text-blue-600" />
+                                <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl bg-blue-50 flex items-center justify-center">
+                                    <Activity className="h-4 w-4 text-blue-600" />
                                 </div>
                             </div>
-                            <p className="text-2xl font-bold text-gray-900">{dailySummary.sessionsCount}</p>
-                            <p className="text-xs text-gray-500 mt-0.5">حصص منتهية</p>
+                            <p className="text-xl sm:text-2xl font-bold text-gray-900">{dailySummary.sessionsCount}</p>
+                            <p className="text-[11px] sm:text-xs text-gray-500 mt-0.5">حصص منتهية</p>
                         </div>
-                        <div className="p-5 text-center border-r border-gray-50">
+                        <div className="p-3 sm:p-5 text-center border-r border-gray-50">
                             <div className="flex justify-center mb-2">
-                                <div className="h-9 w-9 rounded-xl bg-green-50 flex items-center justify-center">
-                                    <UserCheck className="h-4.5 w-4.5 text-green-600" />
+                                <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl bg-green-50 flex items-center justify-center">
+                                    <UserCheck className="h-4 w-4 text-green-600" />
                                 </div>
                             </div>
-                            <p className="text-2xl font-bold text-gray-900">{dailySummary.totalPresent}</p>
-                            <p className="text-xs text-gray-500 mt-0.5">طالب حضر</p>
+                            <p className="text-xl sm:text-2xl font-bold text-gray-900">{dailySummary.totalPresent}</p>
+                            <p className="text-[11px] sm:text-xs text-gray-500 mt-0.5">طالب حضر</p>
                         </div>
-                        <div className="p-5 text-center border-r border-gray-50">
+                        <div className="p-3 sm:p-5 text-center border-r border-gray-50">
                             <div className="flex justify-center mb-2">
-                                <div className="h-9 w-9 rounded-xl bg-indigo-50 flex items-center justify-center">
-                                    <CreditCard className="h-4.5 w-4.5 text-indigo-600" />
+                                <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl bg-indigo-50 flex items-center justify-center">
+                                    <CreditCard className="h-4 w-4 text-indigo-600" />
                                 </div>
                             </div>
-                            <p className="text-2xl font-bold text-gray-900">{dailySummary.subscriptionsCount}</p>
-                            <p className="text-xs text-gray-500 mt-0.5">اشتراك سُجِّل</p>
+                            <p className="text-xl sm:text-2xl font-bold text-gray-900">{dailySummary.subscriptionsCount}</p>
+                            <p className="text-[11px] sm:text-xs text-gray-500 mt-0.5">اشتراك سُجِّل</p>
                         </div>
                         {isTeacher && (
-                            <div className="p-5 text-center border-r border-gray-50">
+                            <div className="p-3 sm:p-5 text-center border-r border-gray-50">
                                 <div className="flex justify-center mb-2">
-                                    <div className="h-9 w-9 rounded-xl bg-emerald-50 flex items-center justify-center">
-                                        <Wallet className="h-4.5 w-4.5 text-emerald-600" />
+                                    <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl bg-emerald-50 flex items-center justify-center">
+                                        <Wallet className="h-4 w-4 text-emerald-600" />
                                     </div>
                                 </div>
                                 <p className={cn(
@@ -300,38 +300,36 @@ export default function DashboardPage() {
             {/* Today's Activity Feed */}
             {stats?.recentActivities && stats.recentActivities.length > 0 && (
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                    <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-                        <h3 className="font-bold text-gray-900 flex items-center gap-2">
-                            <Receipt className="h-5 w-5 text-primary" />
+                    <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-100">
+                        <h3 className="font-bold text-gray-900 flex items-center gap-2 text-sm sm:text-base">
+                            <Receipt className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                             نشاط اليوم
                         </h3>
-                        <span className="text-xs text-gray-400">
-                            {stats.recentActivities.length} معاملة
-                        </span>
+                        <span className="text-xs text-gray-400">{stats.recentActivities.length} معاملة</span>
                     </div>
                     <div className="divide-y divide-gray-50">
                         {stats.recentActivities.slice(0, 6).map((tx, i) => (
-                            <div key={i} className="flex items-center justify-between px-6 py-3">
-                                <div className="flex items-center gap-3">
+                            <div key={i} className="flex items-center justify-between px-4 sm:px-6 py-2.5 sm:py-3 gap-2">
+                                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                                     <div className={cn(
-                                        'h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0',
+                                        'h-7 w-7 sm:h-8 sm:w-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0',
                                         tx.type === 'INCOME' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
                                     )}>
                                         {tx.type === 'INCOME' ? '+' : '-'}
                                     </div>
-                                    <div>
-                                        <p className="text-sm font-medium text-gray-800">
+                                    <div className="min-w-0">
+                                        <p className="text-sm font-medium text-gray-800 truncate">
                                             {tx.studentName || tx.description || CAT_LABELS[tx.category] || tx.category}
                                         </p>
                                         <p className="text-xs text-gray-400 flex items-center gap-1">
-                                            <Clock className="h-3 w-3" />
+                                            <Clock className="h-3 w-3 shrink-0" />
                                             {new Date(tx.time).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
                                             {' · '}{CAT_LABELS[tx.category] ?? tx.category}
                                         </p>
                                     </div>
                                 </div>
                                 <span className={cn(
-                                    'text-sm font-bold',
+                                    'text-sm font-bold shrink-0',
                                     tx.type === 'INCOME' ? 'text-green-700' : 'text-red-600'
                                 )}>
                                     {tx.type === 'INCOME' ? '+' : '-'}{tx.paidAmount.toLocaleString('ar-EG')} ج

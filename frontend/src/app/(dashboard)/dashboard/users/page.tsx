@@ -79,25 +79,24 @@ export default function UsersPage() {
     }
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-500">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-500" dir="rtl">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900 tracking-tight">إدارة المعلمين</h1>
-                    <p className="text-gray-500 mt-1">تتبع وإدارة حسابات المعلمين في النظام.</p>
+                    <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">إدارة المعلمين</h1>
+                    <p className="text-sm text-gray-500 mt-0.5">تتبع وإدارة حسابات المعلمين في النظام.</p>
                 </div>
-                
                 <AddTeacherModal />
             </div>
 
-            <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col sm:flex-row gap-4 items-center justify-between">
-                <div className="relative w-full sm:w-96">
+            <div className="bg-white p-3 sm:p-4 rounded-xl border border-gray-100 shadow-sm">
+                <div className="relative w-full sm:w-80">
                     <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-400">
                         <Search size={18} />
                     </div>
                     <Input 
                         type="text"
                         placeholder="ابحث باسم المعلم..."
-                        className="pl-4 pr-10 border-gray-200 bg-gray-50 focus-visible:ring-primary focus-visible:bg-white"
+                        className="pl-4 pr-9 border-gray-200 bg-gray-50 focus-visible:ring-primary focus-visible:bg-white text-sm"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
@@ -117,7 +116,7 @@ export default function UsersPage() {
                     لا يوجد معلمين متطابقين مع البحث.
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
                     {users.map((teacher) => (
                         <div key={teacher._id} className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
                             <div>

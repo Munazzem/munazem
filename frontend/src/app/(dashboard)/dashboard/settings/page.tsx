@@ -86,11 +86,11 @@ export default function SettingsPage() {
     });
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-500 max-w-2xl" dir="rtl">
+        <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-500 max-w-2xl" dir="rtl">
             {/* Header */}
             <div>
-                <h1 className="text-2xl font-bold text-gray-900 tracking-tight">الإعدادات</h1>
-                <p className="text-gray-500 mt-1">إدارة بيانات حسابك وكلمة المرور.</p>
+                <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">الإعدادات</h1>
+                <p className="text-sm text-gray-500 mt-0.5">إدارة بيانات حسابك وكلمة المرور.</p>
             </div>
 
             {/* Profile Card */}
@@ -127,7 +127,7 @@ export default function SettingsPage() {
                                     )}
                                 />
 
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <FormField
                                         control={profileForm.control}
                                         name="phone"
@@ -205,7 +205,7 @@ export default function SettingsPage() {
                                 )}
                             />
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <FormField
                                     control={passwordForm.control}
                                     name="newPassword"
