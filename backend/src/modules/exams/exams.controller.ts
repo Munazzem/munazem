@@ -58,39 +58,39 @@ examsRouter.get(
     }
 );
 
-// PUT /exams/:id — Update exam (Teacher only, DRAFT only)
+// PUT /exams/:id — Update exam (Teacher + Assistant, DRAFT only)
 examsRouter.put(
     '/:id',
-    authorizeRoles(UserRole.teacher),
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const teacherId = (req as any).user.userId;
+            const teacherId = resolveTeacherId((req as any).user);
             const exam = await ExamsService.updateExam(req.params['id'] as string, teacherId, req.body);
             return SuccessResponse({ res, data: exam, message: 'تم تعديل الامتحان بنجاح' });
         } catch (error) { next(error); }
     }
 );
 
-// PATCH /exams/:id/publish — Publish exam (Teacher only)
+// PATCH /exams/:id/publish — Publish exam (Teacher + Assistant)
 examsRouter.patch(
     '/:id/publish',
-    authorizeRoles(UserRole.teacher),
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const teacherId = (req as any).user.userId;
+            const teacherId = resolveTeacherId((req as any).user);
             const exam = await ExamsService.publishExam(req.params['id'] as string, teacherId);
             return SuccessResponse({ res, data: exam, message: 'تم نشر الامتحان بنجاح — يمكن الآن إدخال الدرجات' });
         } catch (error) { next(error); }
     }
 );
 
-// DELETE /exams/:id — Delete DRAFT exam (Teacher only)
+// DELETE /exams/:id — Delete DRAFT exam (Teacher + Assistant)
 examsRouter.delete(
     '/:id',
-    authorizeRoles(UserRole.teacher),
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const teacherId = (req as any).user.userId;
+            const teacherId = resolveTeacherId((req as any).user);
             await ExamsService.deleteExam(req.params['id'] as string, teacherId);
             return SuccessResponse({ res, data: null, message: 'تم حذف الامتحان بنجاح' });
         } catch (error) { next(error); }
@@ -149,14 +149,14 @@ examsRouter.get(
 
 // ════════ AI EXAM GENERATION ═══════════════════════════════════════
 
-// POST /exams/ai/generate — Upload PDF + generate exam (Teacher only)
+// POST /exams/ai/generate — Upload PDF + generate exam (Teacher + Assistant)
 examsRouter.post(
     '/ai/generate',
-    authorizeRoles(UserRole.teacher),
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
     upload.single('pdf'),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const teacherId = (req as any).user.userId;
+            const teacherId = resolveTeacherId((req as any).user);
             if (!req.file) {
                 return next(new Error('الرجاء رفع ملف PDF'));
             }

@@ -49,7 +49,7 @@ function StatusBadge({ status }: { status: ExamStatus }) {
 
 export default function ExamsPage() {
     const user      = useAuthStore((s) => s.user);
-    const isTeacher = user?.role === 'teacher';
+    const isTeacher = user?.role === 'teacher' || user?.role === 'assistant';
     const router    = useRouter();
     const queryClient = useQueryClient();
     const allowedGrades = getAllowedGrades(user?.stage);
