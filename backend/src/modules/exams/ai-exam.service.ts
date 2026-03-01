@@ -1,7 +1,13 @@
 import Groq from 'groq-sdk';
 import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const pdfParse = require('pdf-parse') as (buffer: Buffer) => Promise<{ text: string }>;
+
+const _require = createRequire(import.meta.url);
+const _pdfParseModule = _require('pdf-parse');
+// pdf-parse v1 exports the function directly; v2 nests it under .default
+const pdfParse: (buffer: Buffer) => Promise<{ text: string }> =
+    typeof _pdfParseModule === 'function'
+        ? _pdfParseModule
+        : (_pdfParseModule.default ?? _pdfParseModule);
 import { ExamsService } from './exams.service.js';
 import { ExamSource, QuestionType } from '../../common/enums/enum.service.js';
 import { BadRequestException } from '../../common/utils/response/error.responce.js';
