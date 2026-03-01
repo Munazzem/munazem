@@ -201,23 +201,23 @@ function SnapshotSummary({ snapshot }: { snapshot: IAttendanceSnapshot }) {
         : 0;
 
     return (
-        <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
-            <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                <CalendarCheck className="h-5 w-5 text-primary" />
+        <div className="bg-white rounded-xl border border-gray-100 p-3 sm:p-5 shadow-sm">
+            <h3 className="font-semibold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2 text-sm sm:text-base">
+                <CalendarCheck className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                 ملخص الحصة
             </h3>
-            <div className="grid grid-cols-3 gap-3 mb-4">
-                <div className="text-center bg-green-50 rounded-lg p-3">
-                    <p className="text-2xl font-bold text-green-700">{snapshot.presentCount}</p>
-                    <p className="text-xs text-green-600 mt-1">حاضر</p>
+            <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-4">
+                <div className="text-center bg-green-50 rounded-lg p-2 sm:p-3">
+                    <p className="text-xl sm:text-2xl font-bold text-green-700">{snapshot.presentCount}</p>
+                    <p className="text-[11px] sm:text-xs text-green-600 mt-1">حاضر</p>
                 </div>
-                <div className="text-center bg-red-50 rounded-lg p-3">
-                    <p className="text-2xl font-bold text-red-600">{snapshot.absentCount}</p>
-                    <p className="text-xs text-red-500 mt-1">غائب</p>
+                <div className="text-center bg-red-50 rounded-lg p-2 sm:p-3">
+                    <p className="text-xl sm:text-2xl font-bold text-red-600">{snapshot.absentCount}</p>
+                    <p className="text-[11px] sm:text-xs text-red-500 mt-1">غائب</p>
                 </div>
-                <div className="text-center bg-blue-50 rounded-lg p-3">
-                    <p className="text-2xl font-bold text-blue-700">{rate}%</p>
-                    <p className="text-xs text-blue-600 mt-1">نسبة الحضور</p>
+                <div className="text-center bg-blue-50 rounded-lg p-2 sm:p-3">
+                    <p className="text-xl sm:text-2xl font-bold text-blue-700">{rate}%</p>
+                    <p className="text-[11px] sm:text-xs text-blue-600 mt-1">نسبة الحضور</p>
                 </div>
             </div>
 
@@ -541,9 +541,9 @@ export default function SessionDetailPage() {
     const absentCount = attendanceRecords.filter((r) => r.status === 'ABSENT').length;
 
     return (
-        <div className="min-h-screen bg-gray-50/30 p-4 lg:p-6" dir="rtl">
+        <div className="min-h-screen bg-gray-50/30 p-3 sm:p-4 lg:p-6" dir="rtl">
             {/* Header */}
-            <div className="mb-5">
+            <div className="mb-4 sm:mb-5">
                 <button
                     onClick={() => router.push('/sessions')}
                     className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-3 transition-colors"
@@ -551,12 +551,12 @@ export default function SessionDetailPage() {
                     <ArrowRight className="h-4 w-4" />
                     الرجوع للحصص
                 </button>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                     <div>
-                        <h1 className="text-xl font-bold text-gray-900">
+                        <h1 className="text-lg sm:text-xl font-bold text-gray-900">
                             {groupName}
                         </h1>
-                        <p className="text-sm text-gray-500 mt-0.5">
+                        <p className="text-xs sm:text-sm text-gray-500 mt-0.5">
                             {new Date(session.date).toLocaleDateString('ar-EG', {
                                 weekday: 'long',
                                 year: 'numeric',
@@ -565,7 +565,7 @@ export default function SessionDetailPage() {
                             })} — {session.startTime}
                         </p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 shrink-0">
                         <span className={cn(
                             'px-3 py-1 rounded-full text-xs font-medium',
                             STATUS_COLORS[session.status]
@@ -577,9 +577,9 @@ export default function SessionDetailPage() {
                                 size="sm"
                                 variant="destructive"
                                 onClick={() => setShowCompleteConfirm(true)}
-                                className="gap-1.5"
+                                className="gap-1.5 text-xs sm:text-sm"
                             >
-                                <CheckCircle2 className="h-4 w-4" />
+                                <CheckCircle2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                                 إنهاء الحصة
                             </Button>
                         )}
@@ -588,26 +588,26 @@ export default function SessionDetailPage() {
             </div>
 
             {/* Stats Bar */}
-            <div className="grid grid-cols-3 gap-3 mb-5">
-                <div className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm text-center">
-                    <p className="text-xl font-bold text-green-700">{presentCount}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">حاضر</p>
+            <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-4 sm:mb-5">
+                <div className="bg-white rounded-xl border border-gray-100 p-2 sm:p-3 shadow-sm text-center">
+                    <p className="text-lg sm:text-xl font-bold text-green-700">{presentCount}</p>
+                    <p className="text-[11px] sm:text-xs text-gray-500 mt-0.5">حاضر</p>
                 </div>
-                <div className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm text-center">
-                    <p className="text-xl font-bold text-red-600">{absentCount}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">غائب</p>
+                <div className="bg-white rounded-xl border border-gray-100 p-2 sm:p-3 shadow-sm text-center">
+                    <p className="text-lg sm:text-xl font-bold text-red-600">{absentCount}</p>
+                    <p className="text-[11px] sm:text-xs text-gray-500 mt-0.5">غائب</p>
                 </div>
-                <div className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm text-center">
-                    <p className="text-xl font-bold text-blue-700">{attendanceRecords.length}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">إجمالي</p>
+                <div className="bg-white rounded-xl border border-gray-100 p-2 sm:p-3 shadow-sm text-center">
+                    <p className="text-lg sm:text-xl font-bold text-blue-700">{attendanceRecords.length}</p>
+                    <p className="text-[11px] sm:text-xs text-gray-500 mt-0.5">إجمالي</p>
                 </div>
             </div>
 
             {/* Main Content */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-5">
                 {/* Left Panel — QR Scanner (assistant only, active sessions) */}
                 {isAssistant && isSessionActive && (
-                    <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
+                    <div className="bg-white rounded-xl border border-gray-100 p-3 sm:p-5 shadow-sm">
                         <QRScannerPanel
                             sessionId={sessionId}
                             onScan={handleQRScan}
@@ -635,7 +635,7 @@ export default function SessionDetailPage() {
                     'bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden',
                     (!isAssistant || !isSessionActive) && 'lg:col-span-2'
                 )}>
-                    <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                    <div className="flex items-center justify-between px-3 sm:px-5 py-3 sm:py-4 border-b border-gray-100">
                         <h3 className="font-semibold text-gray-800 flex items-center gap-2">
                             <Users className="h-5 w-5 text-primary" />
                             قائمة الحضور
@@ -669,7 +669,7 @@ export default function SessionDetailPage() {
                                 return (
                                     <li
                                         key={record._id}
-                                        className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50/60 transition-colors"
+                                        className="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-2.5 sm:py-3 hover:bg-gray-50/60 transition-colors"
                                     >
                                         <div className={cn(
                                             'w-8 h-8 rounded-full flex items-center justify-center shrink-0',
@@ -734,14 +734,14 @@ export default function SessionDetailPage() {
 
             {/* Snapshot (after completion) */}
             {session.status === 'COMPLETED' && snapshot && (
-                <div className="mt-5 space-y-3">
+                <div className="mt-3 sm:mt-5 space-y-3">
                     <SnapshotSummary snapshot={snapshot} />
-                    <div className="flex justify-end flex-wrap gap-2">
+                    <div className="flex flex-col sm:flex-row flex-wrap justify-end gap-2">
                         {isAssistant && (
                             <Button
                                 variant="outline"
                                 onClick={() => setShowBatchSubscribe(true)}
-                                className="gap-2 border-blue-200 text-blue-700 hover:bg-blue-50"
+                                className="gap-2 border-blue-200 text-blue-700 hover:bg-blue-50 w-full sm:w-auto"
                             >
                                 <Receipt className="h-4 w-4" />
                                 تسجيل اشتراكات الحاضرين
@@ -751,7 +751,7 @@ export default function SessionDetailPage() {
                             variant="outline"
                             onClick={handleDownloadAttendancePdf}
                             disabled={pdfLoading}
-                            className="gap-2 border-gray-200 text-gray-700 hover:bg-gray-50"
+                            className="gap-2 border-gray-200 text-gray-700 hover:bg-gray-50 w-full sm:w-auto"
                         >
                             {pdfLoading
                                 ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -761,10 +761,11 @@ export default function SessionDetailPage() {
                         </Button>
                         <Button
                             onClick={() => setShowWhatsApp(true)}
-                            className="gap-2 bg-[#25D366] hover:bg-[#1ebe5d] text-white"
+                            className="gap-2 bg-[#25D366] hover:bg-[#1ebe5d] text-white w-full sm:w-auto"
                         >
                             <MessageSquare className="h-4 w-4" />
-                            إرسال رسائل واتساب لأولياء الأمور
+                            <span className="hidden sm:inline">إرسال رسائل واتساب لأولياء الأمور</span>
+                            <span className="sm:hidden">واتساب لأولياء الأمور</span>
                         </Button>
                     </div>
                 </div>

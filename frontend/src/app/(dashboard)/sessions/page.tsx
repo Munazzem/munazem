@@ -18,6 +18,7 @@ import {
     CalendarDays,
     Loader2,
     Wand2,
+    ArrowLeft,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -30,19 +31,13 @@ import {
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import type { ISession, SessionStatus } from '@/types/session.types';
+import { cn } from '@/lib/utils';
 
 const STATUS_LABELS: Record<SessionStatus, string> = {
     SCHEDULED: 'مجدولة',
     IN_PROGRESS: 'جارية',
     COMPLETED: 'منتهية',
     CANCELLED: 'ملغية',
-};
-
-const STATUS_VARIANT: Record<SessionStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-    SCHEDULED: 'secondary',
-    IN_PROGRESS: 'default',
-    COMPLETED: 'outline',
-    CANCELLED: 'destructive',
 };
 
 const STATUS_COLORS: Record<SessionStatus, string> = {
@@ -62,6 +57,7 @@ export default function SessionsPage() {
     const [groupFilter, setGroupFilter] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [dateFilter, setDateFilter] = useState('');
+    const [showFilters, setShowFilters] = useState(false);
 
     const { data, isLoading, isFetching } = useQuery({
         queryKey: ['sessions', page, groupFilter, statusFilter, dateFilter],
@@ -92,7 +88,6 @@ export default function SessionsPage() {
     });
 
     const handleGenerateWeek = () => {
-        // Start from today's Saturday (beginning of Egyptian week)
         const today = new Date();
         const day = today.getDay();
         const diff = day >= 6 ? 0 : -(day + 1);
@@ -106,10 +101,27 @@ export default function SessionsPage() {
     const pagination = data?.pagination;
     const groups = groupsData?.data ?? [];
 
+    const hasActiveFilters = !!(groupFilter || statusFilter || dateFilter);
+
+    const clearFilters = () => {
+        setGroupFilter('');
+        setStatusFilter('');
+        setDateFilter('');
+        setPage(1);
+    };
+
     const formatDate = (dateStr: string) => {
         return new Date(dateStr).toLocaleDateString('ar-EG', {
             weekday: 'short',
             year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+        });
+    };
+
+    const formatDateShort = (dateStr: string) => {
+        return new Date(dateStr).toLocaleDateString('ar-EG', {
+            weekday: 'short',
             month: 'short',
             day: 'numeric',
         });
@@ -124,15 +136,15 @@ export default function SessionsPage() {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50/30 p-6" dir="rtl">
+        <div className="min-h-screen bg-gray-50/30 p-3 sm:p-4 lg:p-6" dir="rtl">
             {/* Header */}
-            <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                        <CalendarCheck className="h-6 w-6 text-primary" />
+                    <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-2">
+                        <CalendarCheck className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
                         الحصص والغياب
                     </h1>
-                    <p className="text-sm text-gray-500 mt-1">
+                    <p className="text-xs sm:text-sm text-gray-500 mt-1">
                         {isAssistant ? 'إدارة الحصص وتسجيل الحضور' : 'عرض الحصص وسجلات الحضور'}
                     </p>
                 </div>
@@ -143,46 +155,59 @@ export default function SessionsPage() {
                             size="sm"
                             onClick={handleGenerateWeek}
                             disabled={generateMutation.isPending}
-                            className="gap-2"
+                            className="gap-1.5 text-xs sm:text-sm"
                         >
                             {generateMutation.isPending ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
                             ) : (
-                                <Wand2 className="h-4 w-4" />
+                                <Wand2 className="h-3.5 w-3.5" />
                             )}
-                            توليد حصص الأسبوع
+                            <span className="hidden sm:inline">توليد حصص الأسبوع</span>
+                            <span className="sm:hidden">توليد</span>
                         </Button>
                         <CreateSessionModal />
                     </div>
                 )}
             </div>
 
-            {/* Filters */}
-            <div className="bg-white rounded-xl border border-gray-100 p-4 mb-5 flex flex-wrap gap-3 items-end shadow-sm">
-                <div className="flex items-center gap-2 text-sm font-medium text-gray-600">
-                    <Filter className="h-4 w-4" />
-                    تصفية:
-                </div>
+            {/* Filters — collapsible on mobile */}
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm mb-4">
+                {/* Filter toggle for mobile */}
+                <button
+                    className="flex items-center justify-between w-full px-4 py-3 sm:hidden text-sm font-medium text-gray-700"
+                    onClick={() => setShowFilters(!showFilters)}
+                >
+                    <span className="flex items-center gap-2">
+                        <Filter className="h-4 w-4" />
+                        تصفية {hasActiveFilters && <span className="bg-primary text-white text-[10px] px-1.5 py-0.5 rounded-full">مفعّل</span>}
+                    </span>
+                    <ChevronLeft className={cn('h-4 w-4 transition-transform', showFilters && '-rotate-90')} />
+                </button>
 
-                <div className="min-w-[180px]">
+                {/* Filters content */}
+                <div className={cn(
+                    'sm:flex flex-wrap gap-3 items-end p-3 sm:p-4',
+                    showFilters ? 'flex flex-col' : 'hidden sm:flex'
+                )}>
+                    <div className="flex items-center gap-2 text-sm font-medium text-gray-600 hidden sm:flex">
+                        <Filter className="h-4 w-4" />
+                        تصفية:
+                    </div>
+
                     <Select value={groupFilter} onValueChange={(v) => { setGroupFilter(v === 'all' ? '' : v); setPage(1); }}>
-                        <SelectTrigger className="h-9 text-sm">
+                        <SelectTrigger className="h-9 text-sm w-full sm:w-48">
                             <SelectValue placeholder="كل المجموعات" />
                         </SelectTrigger>
                         <SelectContent>
                             <SelectItem value="all">كل المجموعات</SelectItem>
                             {groups.map((g) => (
-                                <SelectItem key={g._id} value={g._id}>
-                                    {g.name}
-                                </SelectItem>
+                                <SelectItem key={g._id} value={g._id}>{g.name}</SelectItem>
                             ))}
                         </SelectContent>
                     </Select>
-                </div>
 
-                <div className="min-w-[150px]">
                     <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v === 'all' ? '' : v); setPage(1); }}>
-                        <SelectTrigger className="h-9 text-sm">
+                        <SelectTrigger className="h-9 text-sm w-full sm:w-40">
                             <SelectValue placeholder="كل الحالات" />
                         </SelectTrigger>
                         <SelectContent>
@@ -192,48 +217,85 @@ export default function SessionsPage() {
                             ))}
                         </SelectContent>
                     </Select>
-                </div>
 
-                <div>
                     <Input
                         type="date"
-                        className="h-9 text-sm w-44"
+                        className="h-9 text-sm w-full sm:w-44"
                         value={dateFilter}
                         onChange={(e) => { setDateFilter(e.target.value); setPage(1); }}
                     />
-                </div>
 
-                {(groupFilter || statusFilter || dateFilter) && (
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => { setGroupFilter(''); setStatusFilter(''); setDateFilter(''); setPage(1); }}
-                        className="gap-1 text-gray-500 h-9"
-                    >
-                        <RefreshCw className="h-3.5 w-3.5" />
-                        مسح
-                    </Button>
-                )}
+                    {hasActiveFilters && (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={clearFilters}
+                            className="gap-1 text-gray-500 h-9 w-full sm:w-auto"
+                        >
+                            <RefreshCw className="h-3.5 w-3.5" />
+                            مسح الفلاتر
+                        </Button>
+                    )}
+                </div>
             </div>
 
-            {/* Table */}
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-                {isLoading ? (
-                    <div className="flex items-center justify-center py-20 text-gray-400">
-                        <Loader2 className="h-6 w-6 animate-spin ml-2" />
-                        جارٍ التحميل...
-                    </div>
-                ) : sessions.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-20 text-gray-400 gap-3">
-                        <CalendarDays className="h-12 w-12 text-gray-200" />
-                        <p className="text-sm">لا توجد حصص</p>
-                        {isAssistant && (
-                            <p className="text-xs text-gray-400">
-                                ابدأ بإنشاء حصة جديدة أو توليد حصص الأسبوع
-                            </p>
-                        )}
-                    </div>
-                ) : (
+            {/* Loading */}
+            {isLoading && (
+                <div className="flex items-center justify-center py-16 text-gray-400">
+                    <Loader2 className="h-6 w-6 animate-spin ml-2" />
+                    جارٍ التحميل...
+                </div>
+            )}
+
+            {/* Empty */}
+            {!isLoading && sessions.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-16 text-gray-400 gap-3 bg-white rounded-xl border border-gray-100 shadow-sm">
+                    <CalendarDays className="h-12 w-12 text-gray-200" />
+                    <p className="text-sm">لا توجد حصص</p>
+                    {isAssistant && (
+                        <p className="text-xs text-gray-400">ابدأ بإنشاء حصة جديدة أو توليد حصص الأسبوع</p>
+                    )}
+                </div>
+            )}
+
+            {/* ── Mobile / Tablet: Card list ── */}
+            {!isLoading && sessions.length > 0 && (
+                <div className="lg:hidden space-y-3">
+                    {sessions.map((session) => (
+                        <button
+                            key={session._id}
+                            className="w-full text-right bg-white border border-gray-100 rounded-xl shadow-sm p-4 hover:border-primary/30 hover:shadow-md transition-all"
+                            onClick={() => router.push(`/sessions/${session._id}`)}
+                        >
+                            <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                    <p className="font-bold text-gray-900 truncate">{getGroupName(session)}</p>
+                                    <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-500">
+                                        <span className="flex items-center gap-1">
+                                            <CalendarDays className="h-3 w-3" />
+                                            {formatDateShort(session.date)}
+                                        </span>
+                                        <span className="flex items-center gap-1">
+                                            <Clock className="h-3 w-3" />
+                                            {session.startTime}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border', STATUS_COLORS[session.status])}>
+                                        {STATUS_LABELS[session.status]}
+                                    </span>
+                                    <ArrowLeft className="h-4 w-4 text-gray-300" />
+                                </div>
+                            </div>
+                        </button>
+                    ))}
+                </div>
+            )}
+
+            {/* ── Desktop: Table ── */}
+            {!isLoading && sessions.length > 0 && (
+                <div className="hidden lg:block bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm">
                             <thead>
@@ -252,9 +314,7 @@ export default function SessionsPage() {
                                         className="hover:bg-gray-50/60 transition-colors cursor-pointer"
                                         onClick={() => router.push(`/sessions/${session._id}`)}
                                     >
-                                        <td className="px-4 py-3 font-medium text-gray-800">
-                                            {getGroupName(session)}
-                                        </td>
+                                        <td className="px-4 py-3 font-medium text-gray-800">{getGroupName(session)}</td>
                                         <td className="px-4 py-3 text-gray-600">
                                             <div className="flex items-center gap-1.5">
                                                 <CalendarDays className="h-3.5 w-3.5 text-gray-400" />
@@ -268,9 +328,7 @@ export default function SessionsPage() {
                                             </div>
                                         </td>
                                         <td className="px-4 py-3">
-                                            <span
-                                                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${STATUS_COLORS[session.status]}`}
-                                            >
+                                            <span className={cn('inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border', STATUS_COLORS[session.status])}>
                                                 {STATUS_LABELS[session.status]}
                                             </span>
                                         </td>
@@ -279,10 +337,7 @@ export default function SessionsPage() {
                                                 variant="ghost"
                                                 size="sm"
                                                 className="text-primary hover:text-primary/80 gap-1 text-xs"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    router.push(`/sessions/${session._id}`);
-                                                }}
+                                                onClick={(e) => { e.stopPropagation(); router.push(`/sessions/${session._id}`); }}
                                             >
                                                 {isAssistant && session.status !== 'COMPLETED' && session.status !== 'CANCELLED'
                                                     ? 'تسجيل الحضور'
@@ -295,37 +350,25 @@ export default function SessionsPage() {
                             </tbody>
                         </table>
                     </div>
-                )}
+                </div>
+            )}
 
-                {/* Pagination */}
-                {pagination && pagination.totalPages > 1 && (
-                    <div className="border-t border-gray-100 px-4 py-3 flex items-center justify-between text-sm text-gray-600">
-                        <span>
-                            {pagination.total} حصة — صفحة {pagination.page} من {pagination.totalPages}
-                        </span>
-                        <div className="flex gap-1">
-                            <Button
-                                variant="outline"
-                                size="icon"
-                                className="h-8 w-8"
-                                disabled={page === 1}
-                                onClick={() => setPage((p) => p - 1)}
-                            >
-                                <ChevronRight className="h-4 w-4" />
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="icon"
-                                className="h-8 w-8"
-                                disabled={page === pagination.totalPages}
-                                onClick={() => setPage((p) => p + 1)}
-                            >
-                                <ChevronLeft className="h-4 w-4" />
-                            </Button>
-                        </div>
+            {/* Pagination */}
+            {pagination && pagination.totalPages > 1 && (
+                <div className="mt-3 border border-gray-100 bg-white rounded-xl px-4 py-3 flex items-center justify-between text-sm text-gray-600 shadow-sm">
+                    <span className="text-xs sm:text-sm">
+                        {pagination.total} حصة — صفحة {pagination.page} من {pagination.totalPages}
+                    </span>
+                    <div className="flex gap-1">
+                        <Button variant="outline" size="icon" className="h-8 w-8" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>
+                            <ChevronRight className="h-4 w-4" />
+                        </Button>
+                        <Button variant="outline" size="icon" className="h-8 w-8" disabled={page === pagination.totalPages} onClick={() => setPage((p) => p + 1)}>
+                            <ChevronLeft className="h-4 w-4" />
+                        </Button>
                     </div>
-                )}
-            </div>
+                </div>
+            )}
         </div>
     );
 }
