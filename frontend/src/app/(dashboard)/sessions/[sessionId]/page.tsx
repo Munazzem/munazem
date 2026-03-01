@@ -16,6 +16,7 @@ import {
 import { fetchStudents } from '@/lib/api/students';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { QRScannerPanel } from '@/components/sessions/QRScannerPanel';
+import { BatchSubscriptionModal } from '@/components/payments/BatchSubscriptionModal';
 import { toast } from 'sonner';
 import {
     ArrowRight,
@@ -24,6 +25,7 @@ import {
     Clock,
     Users,
     AlertTriangle,
+    AlertCircle,
     Loader2,
     UserCheck,
     UserX,
@@ -32,6 +34,7 @@ import {
     MessageSquare,
     ExternalLink,
     Send,
+    Receipt,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -372,6 +375,7 @@ export default function SessionDetailPage() {
     const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
     const [editRecord, setEditRecord] = useState<IAttendanceRecord | null>(null);
     const [showWhatsApp, setShowWhatsApp] = useState(false);
+    const [showBatchSubscribe, setShowBatchSubscribe] = useState(false);
 
     // Fetch session
     const { data: session, isLoading: sessionLoading } = useQuery({
@@ -394,6 +398,22 @@ export default function SessionDetailPage() {
         queryFn: () => getSessionSnapshot(sessionId),
         enabled: session?.status === 'COMPLETED',
     });
+
+    // Fetch students for the group (includes hasActiveSubscription)
+    const groupId = typeof session?.groupId === 'object'
+        ? (session.groupId as any)._id
+        : session?.groupId ?? '';
+
+    const { data: groupStudentsData } = useQuery({
+        queryKey: ['students', { groupId, limit: 200 }],
+        queryFn: () => fetchStudents({ groupId, limit: 200 }),
+        enabled: !!groupId,
+    });
+
+    // Build a map: studentId → hasActiveSubscription
+    const subscriptionMap = new Map<string, boolean>(
+        (groupStudentsData?.data ?? []).map((s) => [s._id, s.hasActiveSubscription ?? true])
+    );
 
     const alreadyRecordedIds = new Set(
         attendanceRecords
@@ -472,11 +492,6 @@ export default function SessionDetailPage() {
         }
         await recordMutation.mutateAsync(studentId);
     }, [alreadyRecordedIds, recordMutation]);
-
-    const groupId =
-        typeof session?.groupId === 'object'
-            ? (session.groupId as any)._id
-            : session?.groupId ?? '';
 
     const groupName =
         typeof session?.groupId === 'object'
@@ -655,9 +670,20 @@ export default function SessionDetailPage() {
                                             )}
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium text-gray-800 truncate">
-                                                {student?.studentName ?? '—'}
-                                            </p>
+                                            <div className="flex items-center gap-2">
+                                                <p className="text-sm font-medium text-gray-800 truncate">
+                                                    {student?.studentName ?? '—'}
+                                                </p>
+                                                {subscriptionMap.get(student?._id ?? '') === false && (
+                                                    <span
+                                                        title="غير مشترك هذا الشهر"
+                                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200 shrink-0"
+                                                    >
+                                                        <AlertCircle className="h-2.5 w-2.5" />
+                                                        غير مشترك
+                                                    </span>
+                                                )}
+                                            </div>
                                             <p className="text-xs text-gray-400">
                                                 {student?.studentCode} · {' '}
                                                 {new Date(record.scannedAt).toLocaleTimeString('ar-EG', {
@@ -694,7 +720,17 @@ export default function SessionDetailPage() {
             {session.status === 'COMPLETED' && snapshot && (
                 <div className="mt-5 space-y-3">
                     <SnapshotSummary snapshot={snapshot} />
-                    <div className="flex justify-end">
+                    <div className="flex justify-end flex-wrap gap-2">
+                        {isAssistant && (
+                            <Button
+                                variant="outline"
+                                onClick={() => setShowBatchSubscribe(true)}
+                                className="gap-2 border-blue-200 text-blue-700 hover:bg-blue-50"
+                            >
+                                <Receipt className="h-4 w-4" />
+                                تسجيل اشتراكات الحاضرين
+                            </Button>
+                        )}
                         <Button
                             onClick={() => setShowWhatsApp(true)}
                             className="gap-2 bg-[#25D366] hover:bg-[#1ebe5d] text-white"
@@ -761,6 +797,14 @@ export default function SessionDetailPage() {
                     sessionId={sessionId}
                     open={showWhatsApp}
                     onClose={() => setShowWhatsApp(false)}
+                />
+            )}
+
+            {/* Batch Subscription Modal (after session completion) */}
+            {showBatchSubscribe && (
+                <BatchSubscriptionModal
+                    open={showBatchSubscribe}
+                    onOpenChange={setShowBatchSubscribe}
                 />
             )}
         </div>

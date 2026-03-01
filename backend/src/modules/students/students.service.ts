@@ -1,8 +1,9 @@
 import { StudentModel } from '../../database/models/student.model.js';
 import { GroupModel } from '../../database/models/group.model.js';
+import { TransactionModel } from '../../database/models/transaction.model.js';
 import { NotFoundException, BadRequestException, ConflictException } from '../../common/utils/response/error.responce.js';
 import type { CreateStudentDTO, UpdateStudentDTO } from '../../types/dto.types.js';
-import { GRADE_LETTER, GradeLevel } from '../../common/enums/enum.service.js';
+import { GRADE_LETTER, GradeLevel, TransactionType, TransactionCategory } from '../../common/enums/enum.service.js';
 import { nextSequence } from '../../database/models/counter.model.js';
 import crypto from 'crypto';
 
@@ -89,8 +90,8 @@ export class StudentService {
         const limit = Math.min(100, Math.max(1, parseInt(queryFilters.limit) || 20));
         const skip  = (page - 1) * limit;
 
-        // Run both queries in parallel for efficiency
-        const [data, total] = await Promise.all([
+        // Run queries in parallel for efficiency
+        const [students, total] = await Promise.all([
             StudentModel.find(filter)
                 .populate('groupId', 'name schedule')
                 .sort({ createdAt: -1 })
@@ -99,6 +100,29 @@ export class StudentService {
                 .lean(),
             StudentModel.countDocuments(filter)
         ]);
+
+        // Determine active subscription status for this month for each student
+        const now = new Date();
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const monthEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+        const studentIds = students.map((s: any) => s._id);
+
+        // Find all subscription transactions for these students this month
+        const activeSubStudentIds = await TransactionModel.distinct('studentId', {
+            teacherId,
+            studentId: { $in: studentIds },
+            type: TransactionType.INCOME,
+            category: TransactionCategory.SUBSCRIPTION,
+            date: { $gte: monthStart, $lte: monthEnd },
+        });
+
+        const activeSubSet = new Set(activeSubStudentIds.map((id: any) => id.toString()));
+
+        const data = students.map((s: any) => ({
+            ...s,
+            hasActiveSubscription: activeSubSet.has(s._id.toString()),
+        }));
 
         return {
             data,

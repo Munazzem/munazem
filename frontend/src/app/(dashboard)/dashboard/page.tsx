@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '@/lib/store/auth.store';
-import { Users, GraduationCap, Activity, TrendingUp, Receipt, Clock } from 'lucide-react';
+import { Users, GraduationCap, Activity, TrendingUp, Receipt, Clock, CalendarDays, UserCheck, CreditCard, Wallet } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchDashboardStats } from '@/lib/api/dashboard';
+import { fetchDailySummary } from '@/lib/api/reports';
 import type { DashboardData } from '@/types/dashboard.types';
 import { SuperAdminDashboard } from '@/components/dashboard/SuperAdminDashboard';
 import { cn } from '@/lib/utils';
@@ -99,6 +100,13 @@ export default function DashboardPage() {
         queryKey: ['dashboardSummary'],
         queryFn: fetchDashboardStats,
         enabled: user?.role === 'teacher' || user?.role === 'assistant',
+    });
+
+    const { data: dailySummary } = useQuery({
+        queryKey: ['dailySummary'],
+        queryFn: () => fetchDailySummary(),
+        enabled: user?.role === 'teacher' || user?.role === 'assistant',
+        refetchInterval: 5 * 60 * 1000, // refresh every 5 minutes
     });
 
     if (!isMounted) return <DashboardSkeleton />;
@@ -225,6 +233,66 @@ export default function DashboardPage() {
                                 <div className="text-center text-gray-400 text-sm mt-8">لا يوجد طلاب مسجلين بعد</div>
                             )}
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Daily Summary */}
+            {dailySummary && (
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                    <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+                        <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                            <CalendarDays className="h-5 w-5 text-primary" />
+                            ملخص اليوم
+                        </h3>
+                        <span className="text-xs text-gray-400">
+                            {new Date().toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}
+                        </span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-x-reverse divide-gray-50">
+                        <div className="p-5 text-center">
+                            <div className="flex justify-center mb-2">
+                                <div className="h-9 w-9 rounded-xl bg-blue-50 flex items-center justify-center">
+                                    <Activity className="h-4.5 w-4.5 text-blue-600" />
+                                </div>
+                            </div>
+                            <p className="text-2xl font-bold text-gray-900">{dailySummary.sessionsCount}</p>
+                            <p className="text-xs text-gray-500 mt-0.5">حصص منتهية</p>
+                        </div>
+                        <div className="p-5 text-center border-r border-gray-50">
+                            <div className="flex justify-center mb-2">
+                                <div className="h-9 w-9 rounded-xl bg-green-50 flex items-center justify-center">
+                                    <UserCheck className="h-4.5 w-4.5 text-green-600" />
+                                </div>
+                            </div>
+                            <p className="text-2xl font-bold text-gray-900">{dailySummary.totalPresent}</p>
+                            <p className="text-xs text-gray-500 mt-0.5">طالب حضر</p>
+                        </div>
+                        <div className="p-5 text-center border-r border-gray-50">
+                            <div className="flex justify-center mb-2">
+                                <div className="h-9 w-9 rounded-xl bg-indigo-50 flex items-center justify-center">
+                                    <CreditCard className="h-4.5 w-4.5 text-indigo-600" />
+                                </div>
+                            </div>
+                            <p className="text-2xl font-bold text-gray-900">{dailySummary.subscriptionsCount}</p>
+                            <p className="text-xs text-gray-500 mt-0.5">اشتراك سُجِّل</p>
+                        </div>
+                        {isTeacher && (
+                            <div className="p-5 text-center border-r border-gray-50">
+                                <div className="flex justify-center mb-2">
+                                    <div className="h-9 w-9 rounded-xl bg-emerald-50 flex items-center justify-center">
+                                        <Wallet className="h-4.5 w-4.5 text-emerald-600" />
+                                    </div>
+                                </div>
+                                <p className={cn(
+                                    'text-2xl font-bold',
+                                    dailySummary.financial.netBalance >= 0 ? 'text-emerald-700' : 'text-red-600'
+                                )}>
+                                    {dailySummary.financial.netBalance.toLocaleString('ar-EG')}
+                                </p>
+                                <p className="text-xs text-gray-500 mt-0.5">صافي مالي (ج.م)</p>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

@@ -12,7 +12,8 @@ import {
     Edit, 
     Trash2, 
     FileText,
-    Loader2
+    Loader2,
+    AlertCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -204,12 +205,23 @@ export default function StudentsPage() {
                                             <Badge variant="outline" className="bg-gray-50 text-gray-600">{stu.barcode || '-'}</Badge>
                                         </TableCell>
                                         <TableCell className="font-bold text-gray-900 border-r border-transparent">
-                                            <button
-                                                onClick={() => handleProfileClick(stu)}
-                                                className="hover:text-primary hover:underline transition-colors text-right"
-                                            >
-                                                {stu.studentName}
-                                            </button>
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={() => handleProfileClick(stu)}
+                                                    className="hover:text-primary hover:underline transition-colors text-right"
+                                                >
+                                                    {stu.studentName}
+                                                </button>
+                                                {stu.hasActiveSubscription === false && (
+                                                    <span
+                                                        title="غير مشترك هذا الشهر"
+                                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600 border border-red-200 shrink-0"
+                                                    >
+                                                        <AlertCircle className="h-2.5 w-2.5" />
+                                                        غير مشترك
+                                                    </span>
+                                                )}
+                                            </div>
                                         </TableCell>
                                         <TableCell>
                                             <div className="flex flex-col">

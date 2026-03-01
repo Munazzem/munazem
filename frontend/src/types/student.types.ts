@@ -26,6 +26,7 @@ export interface StudentWithGroup extends Omit<Student, 'groupId'> {
         name: string;
     };
     groupId: string | { _id: string; name: string };
+    hasActiveSubscription?: boolean;
 }
 
 // Pagination Metadata

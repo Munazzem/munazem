@@ -3,7 +3,7 @@ import { GroupModel }              from '../../database/models/group.model.js';
 import { AttendanceSnapshotModel } from '../../database/models/attendance-snapshot.model.js';
 import { TransactionModel }        from '../../database/models/transaction.model.js';
 import { SessionModel }            from '../../database/models/session.model.js';
-import { MonthlyLedgerModel }      from '../../database/models/ledger.model.js';
+import { DailyLedgerModel, MonthlyLedgerModel } from '../../database/models/ledger.model.js';
 import mongoose from 'mongoose';
 import { TransactionType, TransactionCategory, SessionStatus, UserRole } from '../../common/enums/enum.service.js';
 import { NotFoundException } from '../../common/utils/response/error.responce.js';
@@ -38,12 +38,23 @@ export class ReportsService {
 
         let presentCount = 0;
         let absentCount  = 0;
-        let lateCount    = 0;
 
-        for (const snap of snapshots) {
+        // Build attendance history (per snapshot, last 30 entries)
+        const attendanceHistory = snapshots.slice(0, 30).map((snap: any) => {
+            const isPresent = snap.presentStudents.some((s: any) => s.studentId.toString() === studentId);
+            const isAbsent  = snap.absentStudents.some((s: any)  => s.studentId.toString() === studentId);
+            const status    = isPresent ? 'PRESENT' : isAbsent ? 'ABSENT' : 'GUEST';
+            if (isPresent) presentCount++;
+            else if (isAbsent) absentCount++;
+            return { date: snap.date, status };
+        });
+
+        // Fix counts: iterate remaining snapshots not in history
+        for (const snap of snapshots.slice(30)) {
             if (snap.presentStudents.some((s: any) => s.studentId.toString() === studentId)) presentCount++;
             else if (snap.absentStudents.some((s: any) => s.studentId.toString() === studentId)) absentCount++;
         }
+
         const totalSessions  = presentCount + absentCount;
         const attendanceRate = totalSessions > 0
             ? Math.round((presentCount / totalSessions) * 100)
@@ -64,6 +75,14 @@ export class ReportsService {
         const subscriptions  = payments.filter(p => p.category === TransactionCategory.SUBSCRIPTION);
         const notebookSales  = payments.filter(p => p.category === TransactionCategory.NOTEBOOK_SALE);
 
+        // Active subscription this month?
+        const now = new Date();
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const monthEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+        const hasActiveSubscription = subscriptions.some(
+            s => new Date(s.date) >= monthStart && new Date(s.date) <= monthEnd
+        );
+
         // Generate Barcode Image using the studentCode (or barcode if they have a physical card)
         const codeToEncode = student.barcode || (student as any).studentCode || student._id.toString().substring(0, 10);
         let barcodeImageBase64 = '';
@@ -77,20 +96,23 @@ export class ReportsService {
             student: {
                 ...student,
                 groupName: group?.name ?? '—',
-                barcodeImageBase64,  // Useful for the print view natively on the frontend
+                barcodeImageBase64,
+                hasActiveSubscription,
             },
             attendance: {
                 totalSessions,
                 presentCount,
                 absentCount,
                 attendanceRate: `${attendanceRate}%`,
+                history: attendanceHistory,
             },
             payments: {
                 totalPaid,
                 totalDiscount,
                 subscriptionsCount:  subscriptions.length,
                 notebookSalesCount:  notebookSales.length,
-                history:             payments,
+                subscriptions,
+                history: payments,
             },
         };
     }
@@ -363,6 +385,61 @@ export class ReportsService {
                 studentsPerGroup,
                 incomeTrend
             }
+        };
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // 5. Daily Summary — end-of-day recap for teacher/assistant
+    // ══════════════════════════════════════════════════════════════
+    static async getDailySummary(teacherId: string, dateStr?: string) {
+        const targetDate = dateStr ? new Date(dateStr) : new Date();
+        const dayStart = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 0, 0, 0, 0);
+        const dayEnd   = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 23, 59, 59, 999);
+
+        const tid = new mongoose.Types.ObjectId(teacherId);
+
+        // Sessions completed today
+        const completedSessions = await SessionModel.find({
+            teacherId: tid,
+            status: SessionStatus.COMPLETED,
+            date: { $gte: dayStart, $lte: dayEnd },
+        }, { _id: 1 }).lean();
+
+        const completedSessionIds = completedSessions.map(s => s._id);
+        const sessionsCount = completedSessions.length;
+
+        // Total students present in those sessions (from snapshots)
+        let totalPresent = 0;
+        if (completedSessionIds.length > 0) {
+            const snapshots = await AttendanceSnapshotModel.find(
+                { sessionId: { $in: completedSessionIds } },
+                { presentCount: 1 }
+            ).lean();
+            totalPresent = snapshots.reduce((sum, s) => sum + (s.presentCount ?? 0), 0);
+        }
+
+        // Subscriptions recorded today
+        const subscriptionsCount = await TransactionModel.countDocuments({
+            teacherId: tid,
+            type: TransactionType.INCOME,
+            category: TransactionCategory.SUBSCRIPTION,
+            date: { $gte: dayStart, $lte: dayEnd },
+        });
+
+        // Daily financial summary
+        const dateKey = dayStart.toISOString().split('T')[0]; // YYYY-MM-DD
+        const dailyLedger = await DailyLedgerModel.findOne({ teacherId: tid, date: dateKey }).lean();
+
+        return {
+            date: dateKey,
+            sessionsCount,
+            totalPresent,
+            subscriptionsCount,
+            financial: {
+                totalIncome:   dailyLedger?.totalIncome   ?? 0,
+                totalExpenses: dailyLedger?.totalExpenses ?? 0,
+                netBalance:    dailyLedger?.netBalance    ?? 0,
+            },
         };
     }
 }

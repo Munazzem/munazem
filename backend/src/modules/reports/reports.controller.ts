@@ -30,6 +30,21 @@ reportsRouter.get(
     }
 );
 
+// ─── GET /reports/daily-summary — End-of-day recap for teacher & assistant
+reportsRouter.get(
+    '/daily-summary',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const user = (req as any).user;
+            const teacherId = user.role === UserRole.assistant ? user.teacherId : user.userId;
+            const date = req.query['date'] as string | undefined;
+            const data = await ReportsService.getDailySummary(teacherId, date);
+            return SuccessResponse({ res, data, message: 'تم جلب ملخص اليوم' });
+        } catch (error) { next(error); }
+    }
+);
+
 // Apply Teacher-only restriction for the rest of the deeper financial/attendance reports
 reportsRouter.use(authorizeRoles(UserRole.teacher));
 
