@@ -125,6 +125,27 @@ export class AIExamService {
             throw BadRequestException({ message: 'لم يُولِّد الذكاء الاصطناعي أسئلة — حاول مجدداً' });
         }
 
+        // 3b. Normalize question types — AI sometimes returns short aliases
+        const typeAliasMap: Record<string, string> = {
+            'TF':          'TRUE_FALSE',
+            'TRUE-FALSE':  'TRUE_FALSE',
+            'TRUE/FALSE':  'TRUE_FALSE',
+            'TRUEFALSE':   'TRUE_FALSE',
+            'BOOL':        'TRUE_FALSE',
+            'BOOLEAN':     'TRUE_FALSE',
+            'essay':       'ESSAY',
+            'OPEN':        'ESSAY',
+            'OPEN_ENDED':  'ESSAY',
+            'mcq':         'MCQ',
+            'MULTIPLE_CHOICE': 'MCQ',
+            'MULTIPLE-CHOICE': 'MCQ',
+        };
+
+        parsed.questions = parsed.questions.map((q: any) => ({
+            ...q,
+            type: typeAliasMap[q.type] ?? (q.type as string)?.toUpperCase() ?? q.type,
+        }));
+
         // 4. Compute totalMarks
         const totalMarks = parsed.questions.reduce((sum: number, q: any) => sum + (q.marks ?? 2), 0);
 
