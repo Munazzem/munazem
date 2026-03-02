@@ -24,7 +24,8 @@ attendanceRouter.post(
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const user = (req as any).user;
-            const record = await AttendanceService.recordAttendance(user.userId, req.body);
+            const teacherId = resolveTeacherId(user);
+            const record = await AttendanceService.recordAttendance(user.userId, req.body, teacherId);
             return SuccessResponse({ res, data: record, message: 'تم تسجيل الحضور بنجاح', status: 201 });
         } catch (error) { next(error); }
     }
@@ -38,7 +39,8 @@ attendanceRouter.post(
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const user = (req as any).user;
-            const result = await AttendanceService.batchRecordAttendance(user.userId, req.body);
+            const teacherId = resolveTeacherId(user);
+            const result = await AttendanceService.batchRecordAttendance(user.userId, req.body, teacherId);
             return SuccessResponse({ res, data: result, message: `تم تسجيل ${result.inserted} من ${result.total} طالب` });
         } catch (error) { next(error); }
     }
@@ -130,9 +132,10 @@ attendanceRouter.patch(
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const user = (req as any).user;
+            const teacherId = resolveTeacherId(user);
             const attendanceId = req.params['id'] as string;
             const { status, notes } = req.body as { status: string; notes?: string };
-            const updated = await AttendanceService.updateAttendance(attendanceId, user.userId, status, notes);
+            const updated = await AttendanceService.updateAttendance(attendanceId, user.userId, status, teacherId, notes);
             return SuccessResponse({ res, data: updated, message: 'تم تحديث حالة الحضور بنجاح' });
         } catch (error) { next(error); }
     }

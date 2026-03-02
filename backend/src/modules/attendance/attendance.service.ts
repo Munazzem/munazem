@@ -10,9 +10,9 @@ import mongoose from 'mongoose';
 export class AttendanceService {
 
     // ─── Record single attendance (QR scan or manual) ──────────────
-    static async recordAttendance(scannedBy: string, data: RecordAttendanceDTO) {
-        // Verify session exists
-        const session = await SessionModel.findById(data.sessionId).lean();
+    static async recordAttendance(scannedBy: string, data: RecordAttendanceDTO, teacherId: string) {
+        // Verify session belongs to this teacher
+        const session = await SessionModel.findOne({ _id: data.sessionId, teacherId }).lean();
         if (!session) throw NotFoundException({ message: 'الحصة غير موجودة' });
         if (session.status === SessionStatus.COMPLETED) {
             throw BadRequestException({ message: 'انتهت هذه الحصة ولا يمكن تسجيل حضور عليها' });
@@ -21,11 +21,12 @@ export class AttendanceService {
             throw BadRequestException({ message: 'هذه الحصة مُلغاة' });
         }
 
-        // Resolve student — accept ObjectId, studentCode, or barcode
+        // Resolve student — scoped to this teacher to prevent cross-tenant scan
         const isObjectId = mongoose.Types.ObjectId.isValid(data.studentId) && data.studentId.length === 24;
         const student = isObjectId
-            ? await StudentModel.findById(data.studentId).lean()
+            ? await StudentModel.findOne({ _id: data.studentId, teacherId }).lean()
             : await StudentModel.findOne({
+                teacherId,
                 $or: [
                     { studentCode: data.studentId },
                     { barcode: data.studentId },
@@ -53,8 +54,8 @@ export class AttendanceService {
     }
 
     // ─── Batch record (all students at once — for fast manual entry) ─
-    static async batchRecordAttendance(scannedBy: string, data: BatchAttendanceDTO) {
-        const session = await SessionModel.findById(data.sessionId).lean();
+    static async batchRecordAttendance(scannedBy: string, data: BatchAttendanceDTO, teacherId: string) {
+        const session = await SessionModel.findOne({ _id: data.sessionId, teacherId }).lean();
         if (!session) throw NotFoundException({ message: 'الحصة غير موجودة' });
         if (session.status === SessionStatus.COMPLETED) {
             throw BadRequestException({ message: 'انتهت هذه الحصة ولا يمكن تسجيل حضور عليها' });
@@ -215,12 +216,13 @@ export class AttendanceService {
     }
 
     // ─── Update a single attendance record (manual edit by assistant) ──
-    static async updateAttendance(attendanceId: string, updatedBy: string, status: string, notes?: string) {
+    static async updateAttendance(attendanceId: string, updatedBy: string, status: string, teacherId: string, notes?: string) {
         const record = await AttendanceModel.findById(attendanceId).lean();
         if (!record) throw NotFoundException({ message: 'سجل الحضور غير موجود' });
 
-        const session = await SessionModel.findById(record.sessionId).lean();
-        if (!session) throw NotFoundException({ message: 'الحصة غير موجودة' });
+        // Verify the session belongs to this teacher before allowing edit
+        const session = await SessionModel.findOne({ _id: record.sessionId, teacherId }).lean();
+        if (!session) throw NotFoundException({ message: 'الحصة غير موجودة أو لا صلاحية لك عليها' });
         if (session.status === SessionStatus.COMPLETED) {
             throw BadRequestException({ message: 'لا يمكن تعديل حضور حصة مكتملة' });
         }

@@ -21,8 +21,8 @@ export class ReportsService {
         }).lean();
         if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
 
-        // Get group name
-        const group = await GroupModel.findById(student.groupId, { name: 1 }).lean();
+        // Get group name — scoped to same teacher for safety
+        const group = await GroupModel.findOne({ _id: student.groupId, teacherId }, { name: 1 }).lean();
 
         // Attendance: search all snapshots for sessions where this student appears
         const snapshots = await AttendanceSnapshotModel.find({

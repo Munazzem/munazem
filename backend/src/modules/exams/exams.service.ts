@@ -76,7 +76,12 @@ export class ExamsService {
         if (exam.status !== ExamStatus.DRAFT) {
             throw BadRequestException({ message: 'لا يمكن تعديل امتحان منشور أو مكتمل' });
         }
-        return await ExamModel.findByIdAndUpdate(examId, data, { new: true, runValidators: true }).lean();
+        // Use findOneAndUpdate with teacherId — never trust just examId
+        return await ExamModel.findOneAndUpdate(
+            { _id: examId, teacherId },
+            data,
+            { new: true, runValidators: true }
+        ).lean();
     }
 
     // ── Publish exam ─────────────────────────────────────────────────
@@ -84,7 +89,11 @@ export class ExamsService {
         const exam = await ExamModel.findOne({ _id: examId, teacherId }).lean();
         if (!exam) throw NotFoundException({ message: 'الامتحان غير موجود' });
         if (exam.questions.length === 0) throw BadRequestException({ message: 'لا يمكن نشر امتحان بدون أسئلة' });
-        return await ExamModel.findByIdAndUpdate(examId, { status: ExamStatus.PUBLISHED }, { new: true }).lean();
+        return await ExamModel.findOneAndUpdate(
+            { _id: examId, teacherId },
+            { status: ExamStatus.PUBLISHED },
+            { new: true }
+        ).lean();
     }
 
     // ── Delete exam ───────────────────────────────────────────────────
@@ -108,8 +117,12 @@ export class ExamsService {
             throw BadRequestException({ message: `الدرجة لا يمكن أن تتجاوز ${exam.totalMarks}` });
         }
 
-        const student = await StudentModel.findById(data.studentId, { studentName: 1, groupId: 1 }).lean();
-        if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
+        // Scope student lookup to this teacher — prevent recording results for another teacher's student
+        const student = await StudentModel.findOne(
+            { _id: data.studentId, teacherId },
+            { studentName: 1, groupId: 1 }
+        ).lean();
+        if (!student) throw NotFoundException({ message: 'الطالب غير موجود أو لا ينتمي لك' });
 
         const percentage = Math.round((data.score / exam.totalMarks) * 100);
         const grade      = computeGrade(percentage);
@@ -147,8 +160,9 @@ export class ExamsService {
         if (exam.status === ExamStatus.DRAFT) throw BadRequestException({ message: 'يجب نشر الامتحان أولاً' });
 
         const studentIds = data.results.map(r => r.studentId);
+        // Scope to this teacher — prevents injecting another teacher's students
         const students   = await StudentModel.find(
-            { _id: { $in: studentIds } },
+            { _id: { $in: studentIds }, teacherId },
             { studentName: 1, groupId: 1 }
         ).lean();
 
