@@ -14,6 +14,8 @@ import {
     LogOut,
     GraduationCap,
     ClipboardList,
+    FileText,
+    ShieldCheck,
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { useUIStore } from '@/lib/store/ui.store';
@@ -21,25 +23,31 @@ import { useUIStore } from '@/lib/store/ui.store';
 const getNavItems = (role?: string) => {
     if (role === 'superAdmin') {
         return [
-            { name: 'الرئيسية', href: '/dashboard', icon: LayoutDashboard },
+            { name: 'الرئيسية',           href: '/dashboard',              icon: LayoutDashboard },
             { name: 'الاشتراكات والخطط', href: '/dashboard/subscriptions', icon: BookOpen },
-            { name: 'إدارة المعلمين', href: '/dashboard/users', icon: Users },
-            { name: 'الإعدادات', href: '/dashboard/settings', icon: Settings },
+            { name: 'إدارة المعلمين',     href: '/dashboard/users',         icon: Users },
+            { name: 'الإعدادات',          href: '/dashboard/settings',      icon: Settings },
         ];
     }
-    
-    // Default for teachers and assistants
-   const teacherLinks = [
-    { name: 'لوحة التحكم', href: '/dashboard', icon: LayoutDashboard },
-    { name: 'المجموعات الدراسية', href: '/groups', icon: GraduationCap },
-    { name: 'إدارة الطلاب', href: '/students', icon: Users },
-        { name: 'الحصص والغياب', href: '/sessions', icon: CalendarCheck },
-        { name: 'الامتحانات', href: '/exams', icon: ClipboardList },
-        { name: 'الماليات', href: '/dashboard/payments', icon: Wallet },
-        { name: 'المتجر والمذكرات', href: '/dashboard/notebooks', icon: BookOpen },
-        { name: 'الإعدادات', href: '/dashboard/settings', icon: Settings },
+
+    const base = [
+        { name: 'لوحة التحكم',       href: '/dashboard',           icon: LayoutDashboard },
+        { name: 'المجموعات الدراسية', href: '/groups',              icon: GraduationCap   },
+        { name: 'إدارة الطلاب',      href: '/students',            icon: Users           },
+        { name: 'الحصص والغياب',     href: '/sessions',            icon: CalendarCheck   },
+        { name: 'الامتحانات',        href: '/exams',               icon: ClipboardList   },
+        { name: 'الماليات',          href: '/dashboard/payments',  icon: Wallet          },
+        { name: 'المتجر والمذكرات',  href: '/dashboard/notebooks', icon: BookOpen        },
+        { name: 'التقارير',          href: '/reports',             icon: FileText        },
+        { name: 'الإعدادات',         href: '/dashboard/settings',  icon: Settings        },
     ];
-    return teacherLinks;
+
+    // Teacher gets an extra Assistants Management link
+    if (role === 'teacher') {
+        base.splice(8, 0, { name: 'المساعدين', href: '/assistants', icon: ShieldCheck });
+    }
+
+    return base;
 };
 
 export function Sidebar() {

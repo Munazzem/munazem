@@ -42,6 +42,11 @@ export const downloadGroupReportPdf = async (groupId: string): Promise<Blob> => 
     return res as unknown as Blob;
 };
 
+export const fetchFinancialMonthlyReport = async (year: number, month: number) => {
+    const res = await apiClient.get(`/reports/financial/monthly?year=${year}&month=${month}`);
+    return (res as any).data;
+};
+
 export const downloadMonthlyReportPdf = async (year: number, month: number): Promise<Blob> => {
     const res = await apiClient.get(`/reports/financial/monthly/pdf?year=${year}&month=${month}`, {
         responseType: 'blob',
