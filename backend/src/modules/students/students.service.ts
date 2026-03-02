@@ -123,8 +123,9 @@ export class StudentService {
             // Check if search term is possibly a studentCode (e.g., "1A", "12C")
             // Or just a general string. We'll use regex for all to be safe and flexible.
             const searchTerm = queryFilters.search.trim();
-            const prefixRegex = new RegExp(`^${searchTerm}`, 'i'); // for phone, barcode, studentCode (start matching)
-            const anywhereRegex = new RegExp(searchTerm, 'i');     // for name (can be anywhere)
+            const escaped = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const prefixRegex = new RegExp(`^${escaped}`, 'i');
+            const anywhereRegex = new RegExp(escaped, 'i');
 
             filter.$or = [
                 { studentCode:  prefixRegex },

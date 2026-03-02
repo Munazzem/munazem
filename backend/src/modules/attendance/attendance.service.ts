@@ -90,8 +90,9 @@ export class AttendanceService {
         let matchFilter: any = {};
         if (search) {
             const searchTerm = search.trim();
-            const prefixRegex = new RegExp(`^${searchTerm}`, 'i');
-            const anywhereRegex = new RegExp(searchTerm, 'i');
+            const escaped = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const prefixRegex = new RegExp(`^${escaped}`, 'i');
+            const anywhereRegex = new RegExp(escaped, 'i');
             
             matchFilter.$or = [
                 { studentCode:  prefixRegex },
@@ -153,16 +154,24 @@ export class AttendanceService {
             }
         }
 
-        // Guest students (isGuest = true)
+        // Guest students (isGuest = true) — batch fetch to avoid N+1
         const guestRecords = attendanceRecords.filter(r => r.isGuest);
-        for (const r of guestRecords) {
-            const student = await StudentModel.findById(r.studentId, { studentName: 1 }).lean();
-            if (student) {
-                guestStudents.push({
-                    studentId:   student._id,
-                    studentName: student.studentName,
-                    scannedAt:   r.scannedAt,
-                });
+        if (guestRecords.length > 0) {
+            const guestIds = guestRecords.map(r => r.studentId);
+            const guestStudentDocs = await StudentModel.find(
+                { _id: { $in: guestIds } },
+                { studentName: 1 }
+            ).lean();
+            const guestMap = new Map(guestStudentDocs.map(s => [s._id.toString(), s]));
+            for (const r of guestRecords) {
+                const student = guestMap.get(r.studentId.toString());
+                if (student) {
+                    guestStudents.push({
+                        studentId:   student._id,
+                        studentName: student.studentName,
+                        scannedAt:   r.scannedAt,
+                    });
+                }
             }
         }
 

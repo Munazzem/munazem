@@ -33,10 +33,13 @@ apiClient.interceptors.response.use(
     (response) => response.data,
     (error) => {
         if (error.response?.status === 401) {
-            // Token expired or invalid
             if (typeof window !== 'undefined') {
                 Cookies.remove('token');
-                // Ideally trigger a context or Zustand store logout here
+                // Dynamically import to avoid circular dependency
+                import('@/lib/store/auth.store').then(({ useAuthStore }) => {
+                    useAuthStore.getState().logout();
+                });
+                window.location.href = '/login';
             }
         }
         return Promise.reject(error);

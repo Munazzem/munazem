@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Header } from '@/components/layout/Header';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
     return (
@@ -12,7 +13,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 <Header />
 
                 <div className="p-4 sm:p-8 flex-1 overflow-auto">
-                    {children}
+                    <ErrorBoundary>
+                        {children}
+                    </ErrorBoundary>
                 </div>
             </main>
         </div>

@@ -5,6 +5,8 @@ import { SessionStatus, UserRole } from '../../common/enums/enum.service.js';
 import { SuccessResponse } from '../../common/utils/response/success.responce.js';
 import { authenticate } from '../../middlewares/auth.middleware.js';
 import { authorizeRoles } from '../../middlewares/roles.middleware.js';
+import { validate } from '../../middlewares/validate.middleware.js';
+import { createSessionSchema, updateSessionStatusSchema } from '../../validation/session.validation.js';
 
 const sessionRouter = Router();
 
@@ -17,6 +19,7 @@ const resolveTeacherId = (user: any): string =>
 sessionRouter.post(
     '/',
     authorizeRoles(UserRole.teacher, UserRole.assistant),
+    validate(createSessionSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const teacherId = resolveTeacherId((req as any).user);
@@ -57,6 +60,7 @@ sessionRouter.get(
 sessionRouter.patch(
     '/:id/status',
     authorizeRoles(UserRole.teacher, UserRole.assistant),
+    validate(updateSessionStatusSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const teacherId = resolveTeacherId((req as any).user);

@@ -15,7 +15,12 @@ export const useAuthStore = create<AuthState>()(
             isAuthenticated: typeof window !== 'undefined' ? !!Cookies.get('token') : false,
             
             login: (user, token) => {
-                Cookies.set('token', token, { expires: 7, path: '/' }); 
+                Cookies.set('token', token, {
+                    expires: 1,
+                    path: '/',
+                    secure: process.env.NODE_ENV === 'production',
+                    sameSite: 'strict',
+                });
                 set({ user, token, isAuthenticated: true });
             },
             

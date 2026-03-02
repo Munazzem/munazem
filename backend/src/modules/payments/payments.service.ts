@@ -196,19 +196,19 @@ export class PaymentsService {
 
         const results: { studentId: string; studentName: string; paidAmount: number; status: 'success' | 'error'; error?: string }[] = [];
 
+        // Batch fetch all students to avoid N+1 queries
+        const studentDocs = await StudentModel.find(
+            { _id: { $in: data.studentIds }, teacherId },
+            { studentName: 1, gradeLevel: 1, teacherId: 1 }
+        ).lean();
+        const studentMap = new Map(studentDocs.map(s => [s._id.toString(), s]));
+
         for (const studentId of data.studentIds) {
             try {
-                const student = await StudentModel.findById(studentId, {
-                    studentName: 1, gradeLevel: 1, teacherId: 1
-                }).lean();
+                const student = studentMap.get(studentId);
 
                 if (!student) {
-                    results.push({ studentId, studentName: '', paidAmount: 0, status: 'error', error: 'الطالب غير موجود' });
-                    continue;
-                }
-
-                if (student.teacherId.toString() !== teacherId) {
-                    results.push({ studentId, studentName: student.studentName, paidAmount: 0, status: 'error', error: 'الطالب لا ينتمي إلى هذا المعلم' });
+                    results.push({ studentId, studentName: '', paidAmount: 0, status: 'error', error: 'الطالب غير موجود أو لا ينتمي إلى هذا المعلم' });
                     continue;
                 }
 

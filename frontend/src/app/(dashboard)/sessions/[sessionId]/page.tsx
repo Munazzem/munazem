@@ -17,7 +17,11 @@ import {
 import { downloadBlob } from '@/lib/utils/download';
 import { fetchStudents } from '@/lib/api/students';
 import { useAuthStore } from '@/lib/store/auth.store';
-import { QRScannerPanel } from '@/components/sessions/QRScannerPanel';
+import dynamic from 'next/dynamic';
+const QRScannerPanel = dynamic(
+    () => import('@/components/sessions/QRScannerPanel').then(m => m.QRScannerPanel),
+    { ssr: false }
+);
 import { BatchSubscriptionModal } from '@/components/payments/BatchSubscriptionModal';
 import { toast } from 'sonner';
 import {

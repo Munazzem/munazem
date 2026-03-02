@@ -5,6 +5,8 @@ import { UserRole, TransactionCategory } from '../../common/enums/enum.service.j
 import { SuccessResponse } from '../../common/utils/response/success.responce.js';
 import { authenticate } from '../../middlewares/auth.middleware.js';
 import { authorizeRoles } from '../../middlewares/roles.middleware.js';
+import { validate } from '../../middlewares/validate.middleware.js';
+import { recordSubscriptionSchema, batchSubscriptionSchema, recordExpenseSchema, recordNotebookSaleSchema, upsertPriceSettingsSchema } from '../../validation/payment.validation.js';
 
 const paymentsRouter = Router();
 
@@ -21,6 +23,7 @@ const resolveTeacherId = (user: any): string =>
 paymentsRouter.put(
     '/prices',
     authorizeRoles(UserRole.teacher),
+    validate(upsertPriceSettingsSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const teacherId = (req as any).user.userId;
@@ -51,6 +54,7 @@ paymentsRouter.get(
 paymentsRouter.post(
     '/subscription',
     authorizeRoles(UserRole.assistant),
+    validate(recordSubscriptionSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const user = (req as any).user;
@@ -64,6 +68,7 @@ paymentsRouter.post(
 paymentsRouter.post(
     '/subscription/batch',
     authorizeRoles(UserRole.assistant),
+    validate(batchSubscriptionSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const user = (req as any).user;
@@ -77,6 +82,7 @@ paymentsRouter.post(
 paymentsRouter.post(
     '/notebook',
     authorizeRoles(UserRole.assistant),
+    validate(recordNotebookSaleSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const user = (req as any).user;
@@ -94,6 +100,7 @@ paymentsRouter.post(
 paymentsRouter.post(
     '/expense',
     authorizeRoles(UserRole.teacher, UserRole.assistant),
+    validate(recordExpenseSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const user = (req as any).user;

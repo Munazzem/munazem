@@ -25,8 +25,12 @@ import { fetchExams, deleteExam } from '@/lib/api/exams';
 import type { IExam, ExamStatus } from '@/lib/api/exams';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { getAllowedGrades } from '@/lib/utils/grades';
+import dynamic from 'next/dynamic';
 import { CreateExamModal } from '@/components/exams/CreateExamModal';
-import { AIGenerateExamModal } from '@/components/exams/AIGenerateExamModal';
+const AIGenerateExamModal = dynamic(
+    () => import('@/components/exams/AIGenerateExamModal').then(m => m.AIGenerateExamModal),
+    { ssr: false }
+);
 import { cn } from '@/lib/utils';
 
 // ── Status helpers ──────────────────────────────────────────────────

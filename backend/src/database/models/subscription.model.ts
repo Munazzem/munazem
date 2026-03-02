@@ -45,4 +45,6 @@ const subscriptionSchema = new Schema<ISubscription>({
     timestamps: true
 });
 
+subscriptionSchema.index({ teacherId: 1, status: 1, endDate: 1 });
+
 export const SubscriptionModel: Model<ISubscription> = mongoose.model<ISubscription>('Subscription', subscriptionSchema);

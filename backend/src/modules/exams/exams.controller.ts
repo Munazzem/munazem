@@ -6,6 +6,8 @@ import { UserRole, QuestionType } from '../../common/enums/enum.service.js';
 import { SuccessResponse } from '../../common/utils/response/success.responce.js';
 import { authenticate }    from '../../middlewares/auth.middleware.js';
 import { authorizeRoles }  from '../../middlewares/roles.middleware.js';
+import { validate } from '../../middlewares/validate.middleware.js';
+import { createExamSchema, recordResultSchema, batchResultsSchema } from '../../validation/exam.validation.js';
 import multer from 'multer';
 
 const examsRouter = Router();
@@ -23,6 +25,7 @@ const resolveTeacherId = (user: any): string =>
 examsRouter.post(
     '/',
     authorizeRoles(UserRole.teacher, UserRole.assistant),
+    validate(createExamSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const teacherId = resolveTeacherId((req as any).user);
@@ -103,6 +106,7 @@ examsRouter.delete(
 examsRouter.post(
     '/:id/results',
     authorizeRoles(UserRole.teacher, UserRole.assistant),
+    validate(recordResultSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const user = (req as any).user;
@@ -121,6 +125,7 @@ examsRouter.post(
 examsRouter.post(
     '/:id/results/batch',
     authorizeRoles(UserRole.teacher, UserRole.assistant),
+    validate(batchResultsSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const user = (req as any).user;

@@ -5,6 +5,8 @@ import { UserRole } from '../../common/enums/enum.service.js';
 import { SuccessResponse } from '../../common/utils/response/success.responce.js';
 import { authenticate } from '../../middlewares/auth.middleware.js';
 import { authorizeRoles } from '../../middlewares/roles.middleware.js';
+import { validate } from '../../middlewares/validate.middleware.js';
+import { createNotebookSchema, updateNotebookSchema, restockNotebookSchema } from '../../validation/notebook.validation.js';
 
 const notebooksRouter = Router();
 
@@ -17,6 +19,7 @@ const resolveTeacherId = (user: any): string =>
 notebooksRouter.post(
     '/',
     authorizeRoles(UserRole.teacher, UserRole.assistant),
+    validate(createNotebookSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const teacherId = resolveTeacherId((req as any).user);
@@ -56,6 +59,7 @@ notebooksRouter.get(
 notebooksRouter.put(
     '/:id',
     authorizeRoles(UserRole.teacher, UserRole.assistant),
+    validate(updateNotebookSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const teacherId = resolveTeacherId((req as any).user);
@@ -69,6 +73,7 @@ notebooksRouter.put(
 notebooksRouter.patch(
     '/:id/restock',
     authorizeRoles(UserRole.teacher, UserRole.assistant),
+    validate(restockNotebookSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const teacherId = resolveTeacherId((req as any).user);

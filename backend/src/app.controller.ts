@@ -3,6 +3,7 @@ import cors from 'cors';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
+import mongoSanitize from 'express-mongo-sanitize';
 import { DBConnection } from './database/connection.js';
 import { globalErrorHandler } from './common/utils/response/error.responce.js';
 import { envVars } from '../config/env.service.js';
@@ -20,14 +21,37 @@ import examsRouter from './modules/exams/exams.controller.js';
 
 export const bootstrap = () => {
     const app = express();
-    app.use(helmet());           // Secure HTTP headers
+    app.use(helmet());
     app.use(express.json());
-    app.use(cors());
+    app.use(cors({
+        origin: envVars.frontendUrl,
+        credentials: true,
+    }));
+    app.use(mongoSanitize());
 
-    // Enable gzip compression for all HTTP responses to reduce payload size and improve latency.
     app.use(compression());
 
-    DBConnection() // Connect to MongoDB
+    DBConnection()
+
+    // Global rate limiter: 300 requests per 15 minutes per IP
+    const globalLimiter = rateLimit({
+        windowMs: 15 * 60 * 1000,
+        limit: 300,
+        message: { message: 'كثرة الطلبات، يرجى المحاولة لاحقاً' },
+        standardHeaders: true,
+        legacyHeaders: false,
+    });
+    app.use(globalLimiter);
+
+    // Strict limiter for AI exam generation: 3 requests per minute per IP
+    const aiLimiter = rateLimit({
+        windowMs: 60 * 1000,
+        limit: 3,
+        message: { message: 'تجاوزت حد توليد الامتحانات بالذكاء الاصطناعي، انتظر دقيقة' },
+        standardHeaders: true,
+        legacyHeaders: false,
+    });
+    app.use('/exams/ai/generate', aiLimiter);
 
     // Rate limit: max 10 login attempts per 15 minutes per IP
     const loginLimiter = rateLimit({

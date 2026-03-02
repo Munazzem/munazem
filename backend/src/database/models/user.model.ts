@@ -26,6 +26,7 @@ const userSchema = new Schema<IUserDocument>(
             type: String,
             required: [true, "كلمة المرور مطلوبة"],
             minlength: [6, "كلمة المرور يجب أن تكون 6 أحرف على الأقل"],
+            select: false,
         },
         role: {
             type: String,
@@ -53,6 +54,8 @@ const userSchema = new Schema<IUserDocument>(
         timestamps: true,
     },
 );
+
+userSchema.index({ teacherId: 1, role: 1, isActive: 1 });
 
 export const UserModel: Model<IUserDocument> =
     mongoose.models.User || mongoose.model<IUserDocument>("User", userSchema);

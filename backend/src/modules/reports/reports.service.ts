@@ -428,7 +428,7 @@ export class ReportsService {
 
         // Daily financial summary
         const dateKey = dayStart.toISOString().split('T')[0]; // YYYY-MM-DD
-        const dailyLedger = await DailyLedgerModel.findOne({ teacherId: tid, date: dateKey }).lean();
+        const dailyLedger = await DailyLedgerModel.findOne({ teacherId: tid, date: dateKey } as any).lean();
 
         return {
             date: dateKey,

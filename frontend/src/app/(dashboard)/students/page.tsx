@@ -23,7 +23,11 @@ import { Badge } from '@/components/ui/badge';
 import { AddStudentModal } from '@/components/students/AddStudentModal';
 import { BulkAddStudentsModal } from '@/components/students/BulkAddStudentsModal';
 import { EditStudentModal } from '@/components/students/EditStudentModal';
-import { StudentProfileModal } from '@/components/students/StudentProfileModal';
+import dynamic from 'next/dynamic';
+const StudentProfileModal = dynamic(
+    () => import('@/components/students/StudentProfileModal').then(m => m.StudentProfileModal),
+    { ssr: false }
+);
 import { getAllowedGrades } from '@/lib/utils/grades';
 import { toast } from 'sonner';
 import {

@@ -23,7 +23,11 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { fetchExamById, getExamResults, publishExam, deleteExam } from '@/lib/api/exams';
 import type { IExam, ExamStatus, IQuestion } from '@/lib/api/exams';
-import { BatchResultsModal } from '@/components/exams/BatchResultsModal';
+import dynamic from 'next/dynamic';
+const BatchResultsModal = dynamic(
+    () => import('@/components/exams/BatchResultsModal').then(m => m.BatchResultsModal),
+    { ssr: false }
+);
 import { useAuthStore } from '@/lib/store/auth.store';
 import { cn } from '@/lib/utils';
 

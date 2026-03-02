@@ -6,6 +6,8 @@ import { SuccessResponse } from '../../common/utils/response/success.responce.js
 import { authenticate } from '../../middlewares/auth.middleware.js';
 import { authorizeRoles } from '../../middlewares/roles.middleware.js';
 import { PdfService } from '../reports/pdf.service.js';
+import { validate } from '../../middlewares/validate.middleware.js';
+import { recordAttendanceSchema, batchRecordAttendanceSchema, updateAttendanceSchema } from '../../validation/attendance.validation.js';
 
 const attendanceRouter = Router();
 
@@ -18,6 +20,7 @@ const resolveTeacherId = (user: any): string =>
 attendanceRouter.post(
     '/',
     authorizeRoles(UserRole.teacher, UserRole.assistant),
+    validate(recordAttendanceSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const user = (req as any).user;
@@ -31,6 +34,7 @@ attendanceRouter.post(
 attendanceRouter.post(
     '/batch',
     authorizeRoles(UserRole.teacher, UserRole.assistant),
+    validate(batchRecordAttendanceSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const user = (req as any).user;
@@ -122,6 +126,7 @@ attendanceRouter.get(
 attendanceRouter.patch(
     '/:id',
     authorizeRoles(UserRole.assistant),
+    validate(updateAttendanceSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const user = (req as any).user;
