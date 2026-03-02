@@ -23,11 +23,27 @@ export const bootstrap = () => {
     const app = express();
     app.use(helmet());
     app.use(express.json());
+    const allowedOrigins = envVars.frontendUrl
+        .split(',')
+        .map(o => o.trim())
+        .filter(Boolean);
+
     app.use(cors({
-        origin: envVars.frontendUrl,
+        origin: (origin, callback) => {
+            // Allow requests with no origin (Postman, mobile apps, server-to-server)
+            if (!origin) return callback(null, true);
+            if (allowedOrigins.includes(origin)) return callback(null, true);
+            callback(new Error(`CORS: origin ${origin} not allowed`));
+        },
         credentials: true,
     }));
-    app.use(mongoSanitize());
+    // Express 5 makes req.query a read-only getter, so we cannot use mongoSanitize() middleware directly.
+    // Instead we manually sanitize body and params (query strings never carry $ operators from the frontend).
+    app.use((req: any, _res: any, next: any) => {
+        if (req.body)   mongoSanitize.sanitize(req.body);
+        if (req.params) mongoSanitize.sanitize(req.params);
+        next();
+    });
 
     app.use(compression());
 

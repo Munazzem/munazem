@@ -14,6 +14,7 @@ const questionSchema = z.object({
 export const createExamSchema = z.object({
   body: z.object({
     title:        z.string().min(1, 'عنوان الامتحان مطلوب').max(200),
+    date:         z.string().min(1, 'تاريخ الامتحان مطلوب'),
     gradeLevel:   z.nativeEnum(GradeLevel).optional(),
     groupIds:     z.array(objectId).optional(),
     passingMarks: z.number().positive().optional(),
