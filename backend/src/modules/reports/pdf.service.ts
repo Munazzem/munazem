@@ -258,13 +258,14 @@ export class PdfService {
             <div class="info-section">
                 <div class="info-block">
                     <p><strong>اسم الطالب:</strong> ${student.studentName}</p>
-                    <p><strong>رقم الهاتف:</strong> <span dir="ltr">${student.studentPhone}</span></p>
-                    <p><strong>المرحلة/الصف:</strong> ${student.gradeLevel}</p>
-                    <p><strong>المجموعة:</strong> ${student.groupName}</p>
+                    <p><strong>رقم الهاتف:</strong> <span dir="ltr">${student.studentPhone ?? '—'}</span></p>
+                    <p><strong>المرحلة/الصف:</strong> ${student.gradeLevel ?? '—'}</p>
+                    <p><strong>المجموعة:</strong> ${student.groupName ?? '—'}</p>
+                    <p><strong>كود الطالب:</strong> ${(student as any).studentCode ?? '—'}</p>
                 </div>
                 <div class="info-block">
-                    <p><strong>اسم ولي الأمر:</strong> ${student.parentName || '—'}</p>
-                    <p><strong>رقم ولي الأمر:</strong> <span dir="ltr">${student.parentPhone || '—'}</span></p>
+                    <p><strong>اسم ولي الأمر:</strong> ${student.parentName ?? '—'}</p>
+                    <p><strong>رقم ولي الأمر:</strong> <span dir="ltr">${(student as any).parentPhone ?? '—'}</span></p>
                     <p><strong>الحالة:</strong> ${student.isActive ? 'نشط' : 'غير نشط'}</p>
                 </div>
                 <!-- Dynamic Barcode Image Exported directly from getStudentReport -->
@@ -400,11 +401,12 @@ export class PdfService {
                     </tr>
                 </thead>
                 <tbody>
-                    ${report.dailySummaries.map((day: any) => `
+                    ${report.dailySummaries.length === 0 ? '<tr><td colspan="3">لا توجد بيانات يومية</td></tr>' :
+                    report.dailySummaries.map((day: any) => `
                         <tr>
-                            <td dir="ltr">${new Date(day.date).toLocaleDateString()}</td>
-                            <td style="color: green;">${day.income}</td>
-                            <td style="color: red;">${day.expense}</td>
+                            <td dir="ltr">${day.date ? new Date(day.date).toLocaleDateString('ar-EG') : '—'}</td>
+                            <td style="color: green;">${(day.totalIncome ?? day.income ?? 0).toLocaleString()} ج.م</td>
+                            <td style="color: red;">${(day.totalExpenses ?? day.expense ?? 0).toLocaleString()} ج.م</td>
                         </tr>
                     `).join('')}
                 </tbody>
@@ -421,9 +423,9 @@ export class PdfService {
 
         const content = `
             <div style="background: #f9f9f9; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                <p><strong>الصف والمرحلة:</strong> ${report.group.gradeLevel}</p>
-                <p><strong>المواعيد:</strong> ${report.group.schedule}</p>
-                <p><strong>عدد الطلاب المشتركين:</strong> ${report.group.totalStudents}</p>
+                <p><strong>الصف والمرحلة:</strong> ${report.group.gradeLevel ?? '—'}</p>
+                ${report.group.schedule ? `<p><strong>المواعيد:</strong> ${report.group.schedule}</p>` : ''}
+                <p><strong>عدد الطلاب:</strong> ${report.group.totalStudents ?? 0}</p>
             </div>
 
             <h3 class="section-title">مُلخص الغياب للمجموعة</h3>

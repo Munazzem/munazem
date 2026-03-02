@@ -16,8 +16,8 @@ export class ReportsService {
     // ══════════════════════════════════════════════════════════════
     static async getStudentReport(studentId: string, teacherId: string) {
         const student = await StudentModel.findOne({ _id: studentId, teacherId }, {
-            studentName: 1, parentName: 1, studentPhone: 1,
-            gradeLevel:  1, groupId: 1, isActive: 1,
+            studentName: 1, parentName: 1, studentPhone: 1, parentPhone: 1,
+            gradeLevel:  1, groupId: 1, isActive: 1, studentCode: 1,
         }).lean();
         if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
 

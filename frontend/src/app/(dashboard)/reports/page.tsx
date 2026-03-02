@@ -416,11 +416,13 @@ function EmptyState({ message }: { message: string }) {
 function StudentReportCard({ report, onDownloadPdf, pdfLoading, isTeacher }: {
     report: any; onDownloadPdf: () => void; pdfLoading: boolean; isTeacher: boolean;
 }) {
-    const student = report.student ?? {};
-    const attendance = report.attendanceSummary ?? {};
-    const subscriptions: any[] = report.subscriptions ?? [];
-    const payments: any[] = report.payments ?? [];
-    const exams: any[] = report.examHistory ?? [];
+    // Backend returns: { student, attendance, payments }
+    const student    = report.student    ?? {};
+    const attendance = report.attendance ?? {};
+    const payments   = report.payments   ?? {};
+
+    const payHistory: any[]  = payments.history       ?? [];
+    const subs: any[]        = payments.subscriptions ?? [];
 
     return (
         <div className="space-y-4">
@@ -435,9 +437,10 @@ function StudentReportCard({ report, onDownloadPdf, pdfLoading, isTeacher }: {
                         </div>
                         <div>
                             <h2 className="text-lg font-bold text-gray-900">{student.studentName ?? '—'}</h2>
-                            <p className="text-sm text-gray-500">{(student.groupId as any)?.name ?? '—'}</p>
-                            {student.phone && (
-                                <p className="text-xs text-gray-400 mt-0.5" dir="ltr">{student.phone}</p>
+                            <p className="text-sm text-gray-500">{student.groupName ?? '—'}</p>
+                            <p className="text-xs text-gray-400 mt-0.5">{student.gradeLevel ?? '—'}</p>
+                            {student.studentPhone && (
+                                <p className="text-xs text-gray-400 mt-0.5" dir="ltr">{student.studentPhone}</p>
                             )}
                         </div>
                     </div>
@@ -452,69 +455,89 @@ function StudentReportCard({ report, onDownloadPdf, pdfLoading, isTeacher }: {
 
             {/* Stats row */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <StatCard icon={CalendarCheck} label="الحضور"  value={attendance.present ?? 0}   color="green" />
-                <StatCard icon={CalendarCheck} label="الغياب"  value={attendance.absent  ?? 0}   color="red"   />
-                <StatCard icon={FileText}      label="الاشتراكات" value={subscriptions.length}    color="blue"  />
-                <StatCard icon={ClipboardListIcon} label="الامتحانات" value={exams.length}         color="purple" />
+                <StatCard icon={CalendarCheck}    label="إجمالي الحصص"    value={attendance.totalSessions  ?? 0} color="blue"   />
+                <StatCard icon={CalendarCheck}    label="حضور"             value={attendance.presentCount   ?? 0} color="green"  />
+                <StatCard icon={CalendarCheck}    label="غياب"             value={attendance.absentCount    ?? 0} color="red"    />
+                <StatCard icon={TrendingUp}       label="نسبة الحضور"      value={attendance.attendanceRate ?? '0%'} color="purple" />
             </div>
 
+            {/* Financial summary */}
+            {isTeacher && (
+                <div className="grid grid-cols-2 gap-3">
+                    <StatCard icon={Wallet}      label="إجمالي المدفوع"  value={`${(payments.totalPaid     ?? 0).toLocaleString()} ج`} color="green" />
+                    <StatCard icon={TrendingDown} label="إجمالي الخصومات" value={`${(payments.totalDiscount ?? 0).toLocaleString()} ج`} color="gray"  />
+                </div>
+            )}
+
+            {/* Attendance history */}
+            {attendance.history?.length > 0 && (
+                <SectionCard title={`سجل الحضور (آخر ${attendance.history.length} حصة)`}>
+                    <div className="flex flex-wrap gap-1.5 p-4">
+                        {attendance.history.map((h: any, i: number) => (
+                            <div
+                                key={i}
+                                title={h.date ? new Date(h.date).toLocaleDateString('ar-EG') : ''}
+                                className={cn(
+                                    'h-7 w-7 rounded-md text-xs font-bold flex items-center justify-center',
+                                    h.status === 'PRESENT' ? 'bg-green-100 text-green-700' :
+                                    h.status === 'ABSENT'  ? 'bg-red-100 text-red-600'    :
+                                    'bg-yellow-100 text-yellow-700'
+                                )}
+                            >
+                                {h.status === 'PRESENT' ? '✓' : h.status === 'ABSENT' ? '✗' : 'ز'}
+                            </div>
+                        ))}
+                    </div>
+                </SectionCard>
+            )}
+
             {/* Subscriptions */}
-            {subscriptions.length > 0 && (
-                <SectionCard title="الاشتراكات">
+            {isTeacher && subs.length > 0 && (
+                <SectionCard title={`الاشتراكات (${subs.length})`}>
                     <div className="divide-y divide-gray-50">
-                        {subscriptions.map((s: any, i: number) => (
+                        {subs.map((s: any, i: number) => (
                             <div key={i} className="flex items-center justify-between py-3 px-5 text-sm">
                                 <div>
-                                    <p className="font-medium text-gray-800">{s.planName ?? '—'}</p>
-                                    <p className="text-xs text-gray-400">
-                                        {s.startDate ? new Date(s.startDate).toLocaleDateString('ar-EG') : '—'}
-                                        {' → '}
-                                        {s.endDate   ? new Date(s.endDate).toLocaleDateString('ar-EG')   : '—'}
+                                    <p className="font-medium text-gray-800">{s.description ?? 'اشتراك'}</p>
+                                    <p className="text-xs text-gray-400" dir="ltr">
+                                        {s.date ? new Date(s.date).toLocaleDateString('ar-EG') : '—'}
                                     </p>
                                 </div>
-                                <Badge variant={s.isActive ? 'default' : 'outline'} className="text-xs">
-                                    {s.isActive ? 'فعّال' : 'منتهي'}
-                                </Badge>
+                                <span className="font-bold text-green-600">{(s.paidAmount ?? 0).toLocaleString()} ج</span>
                             </div>
                         ))}
                     </div>
                 </SectionCard>
             )}
 
-            {/* Payments */}
-            {isTeacher && payments.length > 0 && (
-                <SectionCard title="المدفوعات">
-                    <div className="divide-y divide-gray-50">
-                        {payments.map((p: any, i: number) => (
-                            <div key={i} className="flex items-center justify-between py-3 px-5 text-sm">
-                                <span className="text-gray-700">{p.description ?? p.type ?? '—'}</span>
-                                <span className="font-bold text-green-600">{(p.amount ?? 0).toLocaleString()} ج</span>
-                            </div>
-                        ))}
-                    </div>
-                </SectionCard>
-            )}
-
-            {/* Exams */}
-            {exams.length > 0 && (
-                <SectionCard title="الامتحانات">
-                    <div className="divide-y divide-gray-50">
-                        {exams.map((e: any, i: number) => (
-                            <div key={i} className="flex items-center justify-between py-3 px-5 text-sm">
-                                <div>
-                                    <p className="font-medium text-gray-800">{e.examId?.title ?? '—'}</p>
-                                    <p className="text-xs text-gray-400">
-                                        {e.date ? new Date(e.date).toLocaleDateString('ar-EG') : '—'}
-                                    </p>
-                                </div>
-                                <div className="text-left">
-                                    <p className="font-bold text-gray-800">{e.score} / {e.totalMarks}</p>
-                                    <Badge className={cn('text-xs', e.passed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700')}>
-                                        {e.passed ? 'ناجح' : 'راسب'}
-                                    </Badge>
-                                </div>
-                            </div>
-                        ))}
+            {/* Full payment history */}
+            {isTeacher && payHistory.length > 0 && (
+                <SectionCard title={`سجل المدفوعات (${payHistory.length})`}>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="bg-gray-50/50 border-b border-gray-50">
+                                    <th className="text-right px-5 py-2.5 text-xs font-semibold text-gray-500">التاريخ</th>
+                                    <th className="text-right px-4 py-2.5 text-xs font-semibold text-gray-500">التفاصيل</th>
+                                    <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">المدفوع</th>
+                                    <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">الخصم</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-50">
+                                {payHistory.map((p: any, i: number) => (
+                                    <tr key={i} className="hover:bg-gray-50/50">
+                                        <td className="px-5 py-3 text-xs text-gray-500" dir="ltr">
+                                            {p.date ? new Date(p.date).toLocaleDateString('ar-EG') : '—'}
+                                        </td>
+                                        <td className="px-4 py-3 text-gray-700">
+                                            {p.description ?? (p.category === 'SUBSCRIPTION' ? 'اشتراك' : p.category === 'NOTEBOOK_SALE' ? 'مذكرة' : '—')}
+                                        </td>
+                                        <td className="px-4 py-3 text-center font-bold text-green-600">{(p.paidAmount ?? 0).toLocaleString()} ج</td>
+                                        <td className="px-4 py-3 text-center text-gray-400">{(p.discountAmount ?? 0).toLocaleString()} ج</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
                 </SectionCard>
             )}
@@ -525,10 +548,16 @@ function StudentReportCard({ report, onDownloadPdf, pdfLoading, isTeacher }: {
 function GroupReportCard({ report, onDownloadPdf, pdfLoading, isTeacher }: {
     report: any; onDownloadPdf: () => void; pdfLoading: boolean; isTeacher: boolean;
 }) {
-    const group     = report.group ?? {};
-    const sessions: any[] = report.sessions ?? [];
-    const students: any[] = report.students ?? [];
-    const summary   = report.summary ?? {};
+    // Backend returns: { group, attendance, revenue }
+    const group      = report.group      ?? {};
+    const attendance = report.attendance ?? {};
+    const revenue    = report.revenue    ?? {};
+    const breakdown: any[] = revenue.breakdown ?? [];
+    const sessionsHistory: any[] = attendance.sessionsHistory ?? [];
+
+    const totalRevenue = breakdown
+        .filter((r: any) => r._id !== 'EXPENSE')
+        .reduce((s: number, r: any) => s + (r.total ?? 0), 0);
 
     return (
         <div className="space-y-4">
@@ -537,7 +566,10 @@ function GroupReportCard({ report, onDownloadPdf, pdfLoading, isTeacher }: {
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                     <div>
                         <h2 className="text-lg font-bold text-gray-900">{group.name ?? '—'}</h2>
-                        <p className="text-sm text-gray-500">{group.gradeLevel ?? '—'} · {students.length} طالب</p>
+                        <p className="text-sm text-gray-500">
+                            {group.gradeLevel ?? '—'} · {group.totalStudents ?? 0} طالب
+                            {group.schedule ? ` · ${group.schedule}` : ''}
+                        </p>
                     </div>
                     {isTeacher && (
                         <Button onClick={onDownloadPdf} disabled={pdfLoading} variant="outline" className="gap-2 shrink-0">
@@ -548,41 +580,125 @@ function GroupReportCard({ report, onDownloadPdf, pdfLoading, isTeacher }: {
                 </div>
             </div>
 
-            {/* Summary stats */}
-            {summary && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <StatCard icon={CalendarCheck} label="الحصص"      value={summary.totalSessions   ?? sessions.length}  color="blue"   />
-                    <StatCard icon={Users}         label="الطلاب"      value={students.length}                             color="green"  />
-                    <StatCard icon={TrendingUp}    label="متوسط الحضور" value={`${summary.avgAttendance ?? '—'}%`}          color="purple" />
-                    {isTeacher && (
-                        <StatCard icon={Wallet} label="الإيرادات" value={`${(summary.totalRevenue ?? 0).toLocaleString()} ج`} color="gray" />
-                    )}
-                </div>
+            {/* Stats */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <StatCard icon={CalendarCheck} label="الحصص المكتملة"  value={attendance.totalSessions   ?? 0}                    color="blue"   />
+                <StatCard icon={Users}         label="إجمالي الحضور"   value={attendance.totalPresences  ?? 0}                    color="green"  />
+                <StatCard icon={Users}         label="إجمالي الغياب"   value={attendance.totalAbsences   ?? 0}                    color="red"    />
+                <StatCard icon={TrendingUp}    label="متوسط الحضور"    value={attendance.avgAttendanceRate ?? '0%'}               color="purple" />
+            </div>
+
+            {/* Revenue (teacher only) */}
+            {isTeacher && breakdown.length > 0 && (
+                <SectionCard title="الإيرادات">
+                    <div className="p-4">
+                        <p className="text-sm text-gray-500 mb-3">
+                            إجمالي الإيرادات: <strong className="text-green-600">{totalRevenue.toLocaleString()} ج</strong>
+                        </p>
+                        <div className="divide-y divide-gray-50">
+                            {breakdown.map((r: any, i: number) => (
+                                <div key={i} className="flex items-center justify-between py-2.5 text-sm">
+                                    <span className="text-gray-700">{r._id ?? '—'}</span>
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-xs text-gray-400">{r.count} عملية</span>
+                                        <span className="font-bold text-green-600">{(r.total ?? 0).toLocaleString()} ج</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </SectionCard>
             )}
 
-            {/* Students table */}
-            {students.length > 0 && (
-                <SectionCard title="الطلاب">
+            {/* Sessions history */}
+            {sessionsHistory.length > 0 && (
+                <SectionCard title={`سجل الحصص (${sessionsHistory.length})`}>
+                    <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="bg-gray-50/50 border-b border-gray-50 sticky top-0">
+                                    <th className="text-right px-5 py-2.5 text-xs font-semibold text-gray-500">التاريخ</th>
+                                    <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">حضور</th>
+                                    <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">غياب</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-50">
+                                {sessionsHistory.map((s: any, i: number) => (
+                                    <tr key={i} className="hover:bg-gray-50/50">
+                                        <td className="px-5 py-2.5 text-gray-600 text-xs" dir="ltr">
+                                            {s.date ? new Date(s.date).toLocaleDateString('ar-EG') : '—'}
+                                        </td>
+                                        <td className="px-4 py-2.5 text-center text-green-600 font-medium">{s.presentCount ?? '—'}</td>
+                                        <td className="px-4 py-2.5 text-center text-red-500 font-medium">{s.absentCount ?? '—'}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </SectionCard>
+            )}
+        </div>
+    );
+}
+
+function FinancialReportCard({ report, month, year }: { report: any; month: number; year: number }) {
+    // Backend returns: { year, month, totalIncome, totalExpenses, netBalance, dailySummaries, breakdown }
+    const breakdown: any[]      = report.breakdown      ?? [];
+    const dailySummaries: any[] = report.dailySummaries ?? [];
+
+    return (
+        <div className="space-y-4">
+            {/* Summary cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                    <p className="text-xs text-gray-500 mb-1">إجمالي الإيرادات</p>
+                    <p className="text-2xl font-bold text-green-600">{(report.totalIncome ?? 0).toLocaleString()} ج</p>
+                    <p className="text-xs text-gray-400 mt-1">{MONTHS[month - 1]} {year}</p>
+                </div>
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                    <p className="text-xs text-gray-500 mb-1">إجمالي المصروفات</p>
+                    <p className="text-2xl font-bold text-red-500">{(report.totalExpenses ?? 0).toLocaleString()} ج</p>
+                    <p className="text-xs text-gray-400 mt-1">{MONTHS[month - 1]} {year}</p>
+                </div>
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                    <p className="text-xs text-gray-500 mb-1">الصافي</p>
+                    <p className={cn('text-2xl font-bold', (report.netBalance ?? 0) >= 0 ? 'text-primary' : 'text-red-500')}>
+                        {(report.netBalance ?? 0).toLocaleString()} ج
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">{MONTHS[month - 1]} {year}</p>
+                </div>
+            </div>
+
+            {/* Breakdown by category */}
+            {breakdown.length > 0 && (
+                <SectionCard title="تصنيف الحركات">
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm">
                             <thead>
                                 <tr className="bg-gray-50/50 border-b border-gray-50">
-                                    <th className="text-right px-5 py-2.5 text-xs font-semibold text-gray-500">الطالب</th>
-                                    <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">الحضور</th>
-                                    <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">الغياب</th>
-                                    <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">الاشتراك</th>
+                                    <th className="text-right px-5 py-2.5 text-xs font-semibold text-gray-500">النوع</th>
+                                    <th className="text-right px-4 py-2.5 text-xs font-semibold text-gray-500">البند</th>
+                                    <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">العدد</th>
+                                    <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">المبلغ</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
-                                {students.map((s: any, i: number) => (
+                                {breakdown.map((b: any, i: number) => (
                                     <tr key={i} className="hover:bg-gray-50/50">
-                                        <td className="px-5 py-3 font-medium text-gray-800">{s.studentName ?? '—'}</td>
-                                        <td className="px-4 py-3 text-center text-green-600 font-medium">{s.present ?? '—'}</td>
-                                        <td className="px-4 py-3 text-center text-red-500 font-medium">{s.absent ?? '—'}</td>
-                                        <td className="px-4 py-3 text-center">
-                                            <Badge variant={s.hasActiveSubscription ? 'default' : 'outline'} className="text-xs">
-                                                {s.hasActiveSubscription ? 'فعّال' : 'منتهي'}
+                                        <td className="px-5 py-3">
+                                            <Badge className={cn('text-xs', b._id?.type === 'INCOME'
+                                                ? 'bg-green-100 text-green-700 hover:bg-green-100'
+                                                : 'bg-red-100 text-red-600 hover:bg-red-100'
+                                            )}>
+                                                {b._id?.type === 'INCOME' ? 'إيرادات' : 'مصروفات'}
                                             </Badge>
+                                        </td>
+                                        <td className="px-4 py-3 text-gray-700">{b._id?.category ?? '—'}</td>
+                                        <td className="px-4 py-3 text-center text-gray-500">{b.count ?? 0}</td>
+                                        <td className={cn('px-4 py-3 text-center font-bold',
+                                            b._id?.type === 'INCOME' ? 'text-green-600' : 'text-red-500'
+                                        )}>
+                                            {(b.total ?? 0).toLocaleString()} ج
                                         </td>
                                     </tr>
                                 ))}
@@ -592,79 +708,33 @@ function GroupReportCard({ report, onDownloadPdf, pdfLoading, isTeacher }: {
                 </SectionCard>
             )}
 
-            {/* Sessions */}
-            {sessions.length > 0 && (
-                <SectionCard title={`الحصص (${sessions.length})`}>
-                    <div className="divide-y divide-gray-50 max-h-64 overflow-y-auto">
-                        {sessions.map((s: any, i: number) => (
-                            <div key={i} className="flex items-center justify-between py-3 px-5 text-sm">
-                                <span className="text-gray-700">{s.title ?? `حصة ${i + 1}`}</span>
-                                <span className="text-xs text-gray-400">
-                                    {s.date ? new Date(s.date).toLocaleDateString('ar-EG') : '—'}
-                                </span>
-                            </div>
-                        ))}
-                    </div>
-                </SectionCard>
-            )}
-        </div>
-    );
-}
-
-function FinancialReportCard({ report, month, year }: { report: any; month: number; year: number }) {
-    const summary    = report.summary ?? report;
-    const entries: any[] = report.entries ?? report.transactions ?? [];
-
-    return (
-        <div className="space-y-4">
-            {/* Summary */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                    <p className="text-xs text-gray-500 mb-1">إجمالي الإيرادات</p>
-                    <p className="text-2xl font-bold text-green-600">{(summary.totalIncome ?? 0).toLocaleString()} ج</p>
-                    <p className="text-xs text-gray-400 mt-1">{MONTHS[month - 1]} {year}</p>
-                </div>
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                    <p className="text-xs text-gray-500 mb-1">إجمالي المصروفات</p>
-                    <p className="text-2xl font-bold text-red-500">{(summary.totalExpenses ?? 0).toLocaleString()} ج</p>
-                    <p className="text-xs text-gray-400 mt-1">{MONTHS[month - 1]} {year}</p>
-                </div>
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                    <p className="text-xs text-gray-500 mb-1">الصافي</p>
-                    <p className={cn('text-2xl font-bold', (summary.netBalance ?? 0) >= 0 ? 'text-primary' : 'text-red-500')}>
-                        {(summary.netBalance ?? 0).toLocaleString()} ج
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">{MONTHS[month - 1]} {year}</p>
-                </div>
-            </div>
-
-            {/* Entries table */}
-            {entries.length > 0 && (
-                <SectionCard title="تفاصيل الحركات">
-                    <div className="overflow-x-auto">
+            {/* Daily summaries */}
+            {dailySummaries.length > 0 && (
+                <SectionCard title={`الملخص اليومي (${dailySummaries.length} يوم)`}>
+                    <div className="overflow-x-auto max-h-64 overflow-y-auto">
                         <table className="w-full text-sm">
                             <thead>
-                                <tr className="bg-gray-50/50 border-b border-gray-50">
-                                    <th className="text-right px-5 py-2.5 text-xs font-semibold text-gray-500">الوصف</th>
-                                    <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">النوع</th>
-                                    <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">المبلغ</th>
-                                    <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">التاريخ</th>
+                                <tr className="bg-gray-50/50 border-b border-gray-50 sticky top-0">
+                                    <th className="text-right px-5 py-2.5 text-xs font-semibold text-gray-500">اليوم</th>
+                                    <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">الإيرادات</th>
+                                    <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">المصروفات</th>
+                                    <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">الصافي</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
-                                {entries.map((e: any, i: number) => (
+                                {dailySummaries.map((d: any, i: number) => (
                                     <tr key={i} className="hover:bg-gray-50/50">
-                                        <td className="px-5 py-3 text-gray-700">{e.description ?? e.type ?? '—'}</td>
-                                        <td className="px-4 py-3 text-center">
-                                            <Badge variant="outline" className="text-xs">{e.type ?? '—'}</Badge>
+                                        <td className="px-5 py-2.5 text-xs text-gray-600" dir="ltr">
+                                            {d.date ? new Date(d.date).toLocaleDateString('ar-EG') : '—'}
                                         </td>
-                                        <td className={cn('px-4 py-3 text-center font-bold',
-                                            e.type === 'EXPENSE' ? 'text-red-500' : 'text-green-600'
-                                        )}>
-                                            {e.type === 'EXPENSE' ? '-' : '+'}{(e.amount ?? 0).toLocaleString()} ج
+                                        <td className="px-4 py-2.5 text-center text-green-600 font-medium">
+                                            {(d.totalIncome ?? d.income ?? 0).toLocaleString()} ج
                                         </td>
-                                        <td className="px-4 py-3 text-center text-xs text-gray-400">
-                                            {e.date ? new Date(e.date).toLocaleDateString('ar-EG') : '—'}
+                                        <td className="px-4 py-2.5 text-center text-red-500 font-medium">
+                                            {(d.totalExpenses ?? d.expense ?? 0).toLocaleString()} ج
+                                        </td>
+                                        <td className="px-4 py-2.5 text-center font-bold text-gray-700">
+                                            {((d.totalIncome ?? d.income ?? 0) - (d.totalExpenses ?? d.expense ?? 0)).toLocaleString()} ج
                                         </td>
                                     </tr>
                                 ))}
