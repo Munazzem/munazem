@@ -568,7 +568,9 @@ function GroupReportCard({ report, onDownloadPdf, pdfLoading, isTeacher }: {
                         <h2 className="text-lg font-bold text-gray-900">{group.name ?? '—'}</h2>
                         <p className="text-sm text-gray-500">
                             {group.gradeLevel ?? '—'} · {group.totalStudents ?? 0} طالب
-                            {group.schedule ? ` · ${group.schedule}` : ''}
+                            {Array.isArray(group.schedule) && group.schedule.length > 0
+                                ? ` · ${group.schedule.map((s: any) => `${s.day ?? ''} ${s.time ?? ''}`).join(' | ')}`
+                                : group.schedule ? ` · ${group.schedule}` : ''}
                         </p>
                     </div>
                     {isTeacher && (

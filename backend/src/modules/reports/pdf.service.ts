@@ -424,7 +424,9 @@ export class PdfService {
         const content = `
             <div style="background: #f9f9f9; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
                 <p><strong>الصف والمرحلة:</strong> ${report.group.gradeLevel ?? '—'}</p>
-                ${report.group.schedule ? `<p><strong>المواعيد:</strong> ${report.group.schedule}</p>` : ''}
+                ${Array.isArray(report.group.schedule) && report.group.schedule.length > 0
+                    ? `<p><strong>المواعيد:</strong> ${report.group.schedule.map((s: any) => `${s.day ?? ''} ${s.time ?? ''}`).join(' | ')}</p>`
+                    : report.group.schedule ? `<p><strong>المواعيد:</strong> ${report.group.schedule}</p>` : ''}
                 <p><strong>عدد الطلاب:</strong> ${report.group.totalStudents ?? 0}</p>
             </div>
 
