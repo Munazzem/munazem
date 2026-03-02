@@ -7,6 +7,7 @@ import mongoSanitize from 'express-mongo-sanitize';
 import { DBConnection } from './database/connection.js';
 import { globalErrorHandler } from './common/utils/response/error.responce.js';
 import { envVars } from '../config/env.service.js';
+import { resolveTenant } from './middlewares/tenant.middleware.js';
 import authRouter from './modules/authentication/auth.controller.js';
 import userRouter from './modules/users/users.controller.js';
 import subscriptionsRouter from './modules/subscriptions/subscriptions.controller.js';
@@ -47,6 +48,15 @@ export const bootstrap = () => {
 
     app.use(compression());
 
+    // Request timeout: 30s for normal requests, 120s for AI generation
+    app.use((req: any, res: any, next: any) => {
+        const timeout = req.path.includes('/exams/ai/') ? 120_000 : 30_000;
+        res.setTimeout(timeout, () => {
+            res.status(503).json({ message: 'انتهت مهلة الطلب، يرجى المحاولة مرة أخرى' });
+        });
+        next();
+    });
+
     DBConnection()
 
     // Global rate limiter: 300 requests per 15 minutes per IP
@@ -80,6 +90,11 @@ export const bootstrap = () => {
 
     app.use('/auth/login', loginLimiter);
     app.use('/auth', authRouter)          // Authentication routes
+
+    // Tenant isolation — runs after authenticate inside each router
+    // Resolves req.tenantId for all subsequent protected routes
+    app.use(resolveTenant);
+
     app.use('/users', userRouter)          // Users routes
     app.use('/subscriptions', subscriptionsRouter) // Subscriptions routes
     app.use('/groups', groupsRouter)
@@ -91,8 +106,17 @@ export const bootstrap = () => {
     app.use('/reports', reportsRouter)         // Reports routes
     app.use('/exams', examsRouter)              // Exams + AI Generation routes
 
-    app.get('/', (req, res) => {
-        res.send('Hello World!');
+    // Health check — used by Render to verify the server is alive
+    app.get('/health', (_req, res) => {
+        res.status(200).json({
+            status: 'ok',
+            uptime: Math.floor(process.uptime()),
+            timestamp: new Date().toISOString(),
+        });
+    });
+
+    app.get('/', (_req, res) => {
+        res.status(200).json({ status: 'ok', message: 'Monazem API is running' });
     });
 
     app.use('{*dummy}', (req, res) => {
