@@ -21,3 +21,8 @@ export const deleteUser = async (id: string): Promise<UserResponse> => {
     const response = await api.delete(`/users/${id}`);
     return (response as any).data;
 };
+
+export const paySalary = async (id: string, data: { amount: number; notes?: string }): Promise<any> => {
+    const response = await api.post(`/users/${id}/pay-salary`, data);
+    return (response as any).data;
+};

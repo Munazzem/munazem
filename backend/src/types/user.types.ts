@@ -9,6 +9,7 @@ export interface IUser {
   role:      UserRole;
   teacherId: Types.ObjectId | null;
   stage:     TeacherStage | null;   // إعدادي أو ثانوي — للمدرسين فقط
+  salary:    number | null;         // راتب شهري — للمساعدين فقط
   isActive:  boolean;
 }
 

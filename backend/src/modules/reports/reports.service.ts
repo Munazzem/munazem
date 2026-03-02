@@ -392,9 +392,16 @@ export class ReportsService {
     // 5. Daily Summary — end-of-day recap for teacher/assistant
     // ══════════════════════════════════════════════════════════════
     static async getDailySummary(teacherId: string, dateStr?: string) {
-        const targetDate = dateStr ? new Date(dateStr) : new Date();
-        const dayStart = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 0, 0, 0, 0);
-        const dayEnd   = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 23, 59, 59, 999);
+        // dateStr arrives as "YYYY-MM-DD" (local date chosen by the user).
+        // Parse as UTC midnight so MongoDB comparisons are correct
+        // regardless of the server's local timezone.
+        const dateKey = (dateStr ?? new Date().toISOString().split('T')[0])!;
+        const parts   = dateKey.split('-').map(Number);
+        const y = parts[0]!;
+        const m = parts[1]!;
+        const d = parts[2]!;
+        const dayStart = new Date(Date.UTC(y, m - 1, d, 0,  0,  0,   0));
+        const dayEnd   = new Date(Date.UTC(y, m - 1, d, 23, 59, 59, 999));
 
         const tid = new mongoose.Types.ObjectId(teacherId);
 
@@ -427,7 +434,6 @@ export class ReportsService {
         });
 
         // Daily financial summary
-        const dateKey = dayStart.toISOString().split('T')[0]; // YYYY-MM-DD
         const dailyLedger = await DailyLedgerModel.findOne({ teacherId: tid, date: dateKey } as any).lean();
 
         return {

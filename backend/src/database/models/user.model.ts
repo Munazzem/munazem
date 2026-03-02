@@ -45,6 +45,12 @@ const userSchema = new Schema<IUserDocument>(
             enum:    [...Object.values(TeacherStage), null],
             default: null,
         },
+        // Monthly salary — only relevant for assistants
+        salary: {
+            type:    Number,
+            default: null,
+            min:     0,
+        },
         isActive: {
             type: Boolean,
             default: true,

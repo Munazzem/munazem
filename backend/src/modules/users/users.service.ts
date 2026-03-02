@@ -1,8 +1,10 @@
 import mongoose from 'mongoose';
-import { UserModel } from '../../database/models/user.model.js';
-import { PasswordUtil } from '../../common/utils/password.util.js';
+import { UserModel }        from '../../database/models/user.model.js';
+import { PasswordUtil }     from '../../common/utils/password.util.js';
 import { UserRole } from '../../common/enums/enum.service.js';
-import { UnauthorizedException, BadRequestException, ErrorResponse } from '../../common/utils/response/error.responce.js';
+import { UnauthorizedException, BadRequestException, ErrorResponse, NotFoundException } from '../../common/utils/response/error.responce.js';
+import { PaymentsService } from '../payments/payments.service.js';
+import { TransactionCategory } from '../../common/enums/enum.service.js';
 
 export class UserService {
     static async createUser(creatorRole: string, creatorId: string, data: any) {
@@ -126,6 +128,29 @@ export class UserService {
             .lean();
 
         return updatedUser;
+    }
+
+    static async paySalary(teacherId: string, assistantId: string, amount: number, notes?: string) {
+        const assistant = await UserModel.findOne({
+            _id:       assistantId,
+            teacherId: teacherId,
+            role:      UserRole.assistant,
+        }).lean();
+
+        if (!assistant) throw NotFoundException({ message: 'المساعد غير موجود أو لا ينتمي إليك' });
+
+        // Reuse PaymentsService.recordExpense to keep ledger logic consistent
+        const tx = await PaymentsService.recordExpense(
+            teacherId,
+            teacherId, // createdBy = the teacher
+            {
+                category:    TransactionCategory.SALARY,
+                amount,
+                description: notes ?? `راتب ${assistant.name}`,
+            }
+        );
+
+        return tx;
     }
 
     static async deleteUser(requesterRole: string, requesterId: string, targetUserId: string) {

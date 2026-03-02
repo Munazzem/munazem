@@ -15,8 +15,10 @@ export class StudentService {
         if (parts.length < 2) {
             throw BadRequestException({ message: 'الرجاء إدخال الاسم الثنائي على الأقل (اسم الطالب واسم الأب)' });
         }
-        const studentName = parts[0] as string; // safe: length >= 2 guaranteed above
-        const parentName = parts.slice(1).join(' ');
+        // studentName = full name as entered (so "محمد أحمد علي" is stored and displayed in full)
+        // parentName  = everything after the first word (used for parent contact reference)
+        const studentName = parts.join(' ');
+        const parentName  = parts.slice(1).join(' ');
         return { studentName, parentName };
     }
 

@@ -1,4 +1,13 @@
-import puppeteer from 'puppeteer';
+import puppeteerCore from 'puppeteer-core';
+import chromium from '@sparticuz/chromium';
+
+// Windows/Linux local Chrome paths for development
+const LOCAL_CHROME_PATHS = [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium-browser',
+];
 import { ReportsService } from './reports.service.js';
 import { AttendanceService } from '../attendance/attendance.service.js';
 import { SessionService } from '../sessions/sessions.service.js';
@@ -109,17 +118,25 @@ export class PdfService {
     private static async renderPdf(html: string): Promise<Buffer> {
         let browser;
         try {
-            browser = await puppeteer.launch({
+            const fs = await import('fs');
+            const localChrome = LOCAL_CHROME_PATHS.find(p => fs.existsSync(p));
+
+            // Use local Chrome if available (dev), otherwise fall back to @sparticuz/chromium (production/Render)
+            const executablePath = localChrome ?? await chromium.executablePath();
+
+            browser = await puppeteerCore.launch({
+                executablePath,
+                args:     [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox'],
                 headless: true,
-                args: ['--no-sandbox', '--disable-setuid-sandbox']
             });
+
             const page = await browser.newPage();
             await page.setContent(html, { waitUntil: 'networkidle0' });
-            
+
             const pdfBuffer = await page.pdf({
-                format: 'A4',
+                format:          'A4',
                 printBackground: true,
-                margin: { top: '20px', bottom: '20px', left: '20px', right: '20px' }
+                margin: { top: '20px', bottom: '20px', left: '20px', right: '20px' },
             });
             return Buffer.from(pdfBuffer);
         } catch (error) {

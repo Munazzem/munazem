@@ -97,7 +97,7 @@ export function EditStudentModal({ student, open, onOpenChange }: EditStudentMod
   useEffect(() => {
       if (student && open) {
           form.reset({
-              fullName: `${student.studentName} ${student.parentName}`.trim(),
+              fullName: student.studentName,
               studentPhone: student.studentPhone,
               parentPhone: student.parentPhone,
               gradeLevel: student.gradeLevel,

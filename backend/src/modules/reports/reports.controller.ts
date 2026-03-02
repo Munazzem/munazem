@@ -45,15 +45,19 @@ reportsRouter.get(
     }
 );
 
-// Apply Teacher-only restriction for the rest of the deeper financial/attendance reports
-reportsRouter.use(authorizeRoles(UserRole.teacher));
+// All remaining routes: Teacher + Assistant (full access)
+reportsRouter.use(authorizeRoles(UserRole.teacher, UserRole.assistant));
+
+// Helper — resolves teacherId for both teacher and assistant
+const resolveTeacherId = (user: any): string =>
+    user.role === UserRole.assistant ? user.teacherId : user.userId;
 
 // ─── GET /reports/student/:studentId — Full student report
 reportsRouter.get(
     '/student/:studentId',
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const teacherId = (req as any).user.userId;
+            const teacherId = resolveTeacherId((req as any).user);
             const data = await ReportsService.getStudentReport(
                 req.params['studentId'] as string, teacherId
             );
@@ -67,11 +71,10 @@ reportsRouter.get(
     '/student/:studentId/pdf',
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const teacherId = (req as any).user.userId;
+            const teacherId = resolveTeacherId((req as any).user);
             const pdfBuffer = await PdfService.generateStudentReportPdf(
                 req.params['studentId'] as string, teacherId
             );
-            
             res.set({
                 'Content-Type': 'application/pdf',
                 'Content-Disposition': `attachment; filename=student-report-${req.params['studentId']}.pdf`,
@@ -87,7 +90,7 @@ reportsRouter.get(
     '/group/:groupId',
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const teacherId = (req as any).user.userId;
+            const teacherId = resolveTeacherId((req as any).user);
             const data = await ReportsService.getGroupReport(
                 req.params['groupId'] as string, teacherId
             );
@@ -101,11 +104,10 @@ reportsRouter.get(
     '/group/:groupId/pdf',
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const teacherId = (req as any).user.userId;
+            const teacherId = resolveTeacherId((req as any).user);
             const pdfBuffer = await PdfService.generateGroupReportPdf(
                 req.params['groupId'] as string, teacherId
             );
-            
             res.set({
                 'Content-Type': 'application/pdf',
                 'Content-Disposition': `attachment; filename=group-report-${req.params['groupId']}.pdf`,
@@ -121,7 +123,7 @@ reportsRouter.get(
     '/financial/monthly',
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const teacherId = (req as any).user.userId;
+            const teacherId = resolveTeacherId((req as any).user);
             const now   = new Date();
             const year  = parseInt(req.query['year']  as string) || now.getUTCFullYear();
             const month = parseInt(req.query['month'] as string) || (now.getUTCMonth() + 1);
@@ -136,13 +138,11 @@ reportsRouter.get(
     '/financial/monthly/pdf',
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const teacherId = (req as any).user.userId;
+            const teacherId = resolveTeacherId((req as any).user);
             const now   = new Date();
             const year  = parseInt(req.query['year']  as string) || now.getUTCFullYear();
             const month = parseInt(req.query['month'] as string) || (now.getUTCMonth() + 1);
-            
             const pdfBuffer = await PdfService.generateMonthlyFinancialPdf(teacherId, year, month);
-            
             res.set({
                 'Content-Type': 'application/pdf',
                 'Content-Disposition': `attachment; filename=financial-report-${year}-${month}.pdf`,
