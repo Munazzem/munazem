@@ -6,6 +6,7 @@ import { apiClient } from '@/lib/api/axios';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import Link from 'next/link';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -118,7 +119,17 @@ export default function LoginPage() {
                     </form>
                 </Form>
                 
-                <div className="mt-8 text-center text-xs text-gray-400">
+                <div className="mt-6 text-center">
+                    <Link
+                        href="/parent"
+                        className="inline-flex items-center gap-1.5 text-sm text-[#0f4c81] hover:underline font-medium"
+                    >
+                        <span>👨‍👧</span>
+                        بوابة ولي الأمر — تابع أداء ابنك
+                    </Link>
+                </div>
+
+                <div className="mt-4 text-center text-xs text-gray-400">
                     &copy; {new Date().getFullYear()} Monazem Platform. All rights reserved.
                 </div>
             </div>

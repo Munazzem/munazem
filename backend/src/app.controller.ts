@@ -7,6 +7,7 @@ import mongoSanitize from 'express-mongo-sanitize';
 import { DBConnection } from './database/connection.js';
 import { globalErrorHandler } from './common/utils/response/error.responce.js';
 import { envVars } from '../config/env.service.js';
+import { logger } from './common/utils/logger.util.js';
 import { resolveTenant } from './middlewares/tenant.middleware.js';
 import authRouter from './modules/authentication/auth.controller.js';
 import userRouter from './modules/users/users.controller.js';
@@ -18,7 +19,8 @@ import attendanceRouter from './modules/attendance/attendance.controller.js';
 import paymentsRouter from './modules/payments/payments.controller.js';
 import notebooksRouter from './modules/notebooks/notebooks.controller.js';
 import reportsRouter from './modules/reports/reports.controller.js';
-import examsRouter from './modules/exams/exams.controller.js';
+import examsRouter  from './modules/exams/exams.controller.js';
+import parentRouter from './modules/parent/parent.controller.js';
 
 export const bootstrap = () => {
     const app = express();
@@ -57,6 +59,28 @@ export const bootstrap = () => {
         next();
     });
 
+    // Lightweight request logging — after basic security & timeouts
+    app.use((req: any, res: any, next: any) => {
+        const start = process.hrtime.bigint();
+
+        res.on('finish', () => {
+            const end = process.hrtime.bigint();
+            const durationMs = Number(end - start) / 1_000_000;
+            const user = (req as any).user;
+
+            logger.info('request_completed', {
+                method: req.method,
+                path: req.path,
+                statusCode: res.statusCode,
+                durationMs: Math.round(durationMs),
+                userId: user?.userId ?? null,
+                role: user?.role ?? null,
+            });
+        });
+
+        next();
+    });
+
     DBConnection()
 
     // Global rate limiter: 300 requests per 15 minutes per IP
@@ -91,6 +115,9 @@ export const bootstrap = () => {
     app.use('/auth/login', loginLimiter);
     app.use('/auth', authRouter)          // Authentication routes
 
+    // Parent portal — public, no authentication required
+    app.use('/parent', parentRouter);
+
     // Tenant isolation — runs after authenticate inside each router
     // Resolves req.tenantId for all subsequent protected routes
     app.use(resolveTenant);
@@ -106,12 +133,18 @@ export const bootstrap = () => {
     app.use('/reports', reportsRouter)         // Reports routes
     app.use('/exams', examsRouter)              // Exams + AI Generation routes
 
-    // Health check — used by Render to verify the server is alive
+    // Health check — used by Render to verify the server is alive; includes basic process stats for monitoring
     app.get('/health', (_req, res) => {
+        const mem = process.memoryUsage();
         res.status(200).json({
             status: 'ok',
             uptime: Math.floor(process.uptime()),
             timestamp: new Date().toISOString(),
+            memory: {
+                heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),
+                heapTotalMB: Math.round(mem.heapTotal / 1024 / 1024),
+                rssMB: Math.round(mem.rss / 1024 / 1024),
+            },
         });
     });
 

@@ -8,6 +8,7 @@ import { fetchDashboardStats } from '@/lib/api/dashboard';
 import { fetchDailySummary } from '@/lib/api/reports';
 import type { DashboardData } from '@/types/dashboard.types';
 import { SuperAdminDashboard } from '@/components/dashboard/SuperAdminDashboard';
+import { OnboardingCard } from '@/components/dashboard/OnboardingCard';
 import { cn } from '@/lib/utils';
 import {
     BarChart,
@@ -127,6 +128,14 @@ export default function DashboardPage() {
 
     return (
         <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-500" dir="rtl">
+            {/* Onboarding — للمدرس الجديد بدون مجموعات أو طلاب */}
+            {isTeacher && (
+                <OnboardingCard
+                    totalGroups={stats?.totalGroups ?? 0}
+                    totalStudents={stats?.totalStudents ?? 0}
+                />
+            )}
+
             {/* Header */}
             <div>
                 <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">نظرة عامة</h1>
