@@ -1,13 +1,22 @@
 import { SubscriptionModel } from '../../database/models/subscription.model.js';
 import { UserModel } from '../../database/models/user.model.js';
 import type { ClientSession } from 'mongoose';
-import { UserRole } from '../../common/enums/enum.service.js';
+import {
+    UserRole,
+    SubscriptionStatus,
+    SubscriptionPlan,
+    PLAN_PRICES,
+    DURATION_LABELS,
+    type DurationMonths,
+} from '../../common/enums/enum.service.js';
 import { BadRequestException, NotFoundException } from '../../common/utils/response/error.responce.js';
 
 export class SubscriptionService {
-    static async createSubscription(teacherId: string, data: any, session?: ClientSession) {
-        // Validate teacher exists and is actually a Teacher
-        // [PERFORMANCE OPTIMIZATION] Using .lean() to speed up validation since we don't need to mutate 'teacher'
+    static async createSubscription(
+        teacherId: string,
+        data: { planTier: SubscriptionPlan; durationMonths: DurationMonths; paymentMethod?: string },
+        session?: ClientSession
+    ) {
         const teacher = await UserModel.findById(teacherId).session(session || null).lean();
         if (!teacher) {
             throw NotFoundException({ message: 'المعلم غير موجود' });
@@ -16,20 +25,37 @@ export class SubscriptionService {
             throw BadRequestException({ message: 'هذا الحساب لا يخص معلماً، لا يمكن إضافة اشتراك له' });
         }
 
-        // Create the subscription
-        const newSubscription = await SubscriptionModel.create([{
-            teacherId,
-            endDate: new Date(data.endDate),
-            amount: data.amount,
-            paymentMethod: data.paymentMethod
-        }], { session: session || null });
+        const pricePerMonth = PLAN_PRICES[data.planTier];
+        const amount = pricePerMonth * data.durationMonths;
 
-        // Extract the created doc from the array returned by .create()
+        // If the teacher has an active subscription, renew from its endDate; otherwise start from today
+        const activeSubscription = await SubscriptionModel.findOne({
+            teacherId,
+            status: SubscriptionStatus.ACTIVE,
+            endDate: { $gt: new Date() },
+        }).sort({ endDate: -1 }).session(session || null).lean();
+
+        const startDate = activeSubscription ? new Date(activeSubscription.endDate) : new Date();
+        const endDate = new Date(startDate);
+        endDate.setMonth(endDate.getMonth() + data.durationMonths);
+
+        const subscriptionData: Record<string, unknown> = {
+            teacherId,
+            planTier: data.planTier,
+            durationMonths: data.durationMonths,
+            startDate,
+            endDate,
+            amount,
+        };
+        if (data.paymentMethod) {
+            subscriptionData.paymentMethod = data.paymentMethod;
+        }
+
+        const newSubscription = await SubscriptionModel.create([subscriptionData], { session: session || null });
+
         const subscriptionDoc = newSubscription[0];
 
-        // Optionally, we could activate the teacher account if it was inactive
         if (!teacher.isActive) {
-            // [NOTE] Re-fetching without .lean() here because we need the Mongoose .save() method to mutate the document
             const teacherDoc = await UserModel.findById(teacherId).session(session || null);
             if (teacherDoc) {
                 teacherDoc.isActive = true;
@@ -41,8 +67,6 @@ export class SubscriptionService {
     }
 
     static async getAllSubscriptions() {
-        // [PERFORMANCE OPTIMIZATION] Using .lean() here is crucial because this query can return hundreds of subscriptions.
-        // It converts the Mongoose Documents into plain JSON objects, reducing the payload processing time by > 50%.
         return await SubscriptionModel.find()
             .populate('teacherId', 'name email phone')
             .sort({ createdAt: -1 })
@@ -50,9 +74,43 @@ export class SubscriptionService {
     }
 
     static async getTeacherSubscriptions(teacherId: string) {
-        // [PERFORMANCE OPTIMIZATION] Using .lean() for faster retrieval of plain JSON data.
         return await SubscriptionModel.find({ teacherId })
             .sort({ createdAt: -1 })
             .lean();
+    }
+
+    static getAvailablePlans() {
+        return [
+            {
+                tier: SubscriptionPlan.BASIC,
+                name: 'الباقة الأساسية',
+                pricePerMonth: PLAN_PRICES[SubscriptionPlan.BASIC],
+                durations: Object.entries(DURATION_LABELS).map(([months, label]) => ({
+                    months: Number(months),
+                    label,
+                    total: PLAN_PRICES[SubscriptionPlan.BASIC] * Number(months),
+                })),
+            },
+            {
+                tier: SubscriptionPlan.PRO,
+                name: 'الباقة الاحترافية',
+                pricePerMonth: PLAN_PRICES[SubscriptionPlan.PRO],
+                durations: Object.entries(DURATION_LABELS).map(([months, label]) => ({
+                    months: Number(months),
+                    label,
+                    total: PLAN_PRICES[SubscriptionPlan.PRO] * Number(months),
+                })),
+            },
+            {
+                tier: SubscriptionPlan.PREMIUM,
+                name: 'الباقة المتميزة',
+                pricePerMonth: PLAN_PRICES[SubscriptionPlan.PREMIUM],
+                durations: Object.entries(DURATION_LABELS).map(([months, label]) => ({
+                    months: Number(months),
+                    label,
+                    total: PLAN_PRICES[SubscriptionPlan.PREMIUM] * Number(months),
+                })),
+            },
+        ];
     }
 }

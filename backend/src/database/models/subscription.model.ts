@@ -1,13 +1,23 @@
 import mongoose, { Schema, Model } from 'mongoose';
 import type { ISubscription } from '../../types/subscription.types.js';
-import { SubscriptionStatus } from '../../common/enums/enum.service.js';
+import { SubscriptionStatus, SubscriptionPlan, DURATION_MONTHS } from '../../common/enums/enum.service.js';
 
 const subscriptionSchema = new Schema<ISubscription>({
     teacherId: { 
         type: Schema.Types.ObjectId, 
         ref: 'User', 
         required: true,
-        index: true // [PERFORMANCE OPTIMIZATION] Added index to speed up finding all subscriptions belonging to a specific teacher
+        index: true
+    },
+    planTier: {
+        type: String,
+        enum: Object.values(SubscriptionPlan),
+        required: true,
+    },
+    durationMonths: {
+        type: Number,
+        enum: [...DURATION_MONTHS],
+        required: true,
     },
     startDate: { 
         type: Date, 
@@ -34,5 +44,7 @@ const subscriptionSchema = new Schema<ISubscription>({
 }, {
     timestamps: true
 });
+
+subscriptionSchema.index({ teacherId: 1, status: 1, endDate: 1 });
 
 export const SubscriptionModel: Model<ISubscription> = mongoose.model<ISubscription>('Subscription', subscriptionSchema);

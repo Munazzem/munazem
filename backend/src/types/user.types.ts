@@ -1,18 +1,16 @@
 import { Document, Types } from 'mongoose';
-import { UserRole, SubscriptionStatus } from '../common/enums/enum.service.js'; 
+import { UserRole, TeacherStage } from '../common/enums/enum.service.js';
 
 export interface IUser {
-  name: string;
-  email:string;
-  phone: string;
+  name:      string;
+  email:     string;
+  phone:     string;
   password?: string;
-  role: UserRole;
+  role:      UserRole;
   teacherId: Types.ObjectId | null;
-  subscription?: {
-    status:SubscriptionStatus;
-    expiryDate: Date | null;
-  };
-  isActive: boolean;
+  stage:     TeacherStage | null;   // إعدادي أو ثانوي — للمدرسين فقط
+  salary:    number | null;         // راتب شهري — للمساعدين فقط
+  isActive:  boolean;
 }
 
 export interface IUserDocument extends IUser, Document {

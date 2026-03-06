@@ -1,10 +1,12 @@
 import type { Request, Response, NextFunction } from 'express';
 import { UnauthorizedException } from '../common/utils/response/error.responce.js';
 import { TokenUtil } from '../common/utils/token.util.js';
-import { UserModel } from '../database/models/user.model.js';
 import type { IJwtPayload } from '../types/auth.types.js';
 
-export const authenticate = async (req: Request, res: Response, next: NextFunction) => {
+// Threshold: issue fresh token if less than 5 minutes remain
+const SLIDING_THRESHOLD_SECONDS = 5 * 60;
+
+export const authenticate = (req: Request, res: Response, next: NextFunction) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -12,22 +14,30 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
     }
 
     const token = authHeader.split(' ')[1] as string;
-    
-    // Verify token structure and expiration
+
+    // Verify token signature and expiration — no DB call needed
     const payload = TokenUtil.verifyAccessToken(token) as IJwtPayload;
 
-    // Check if user still exists in DB and is active
-    const user = await UserModel.findById(payload.userId);
-    if (!user) {
-      throw UnauthorizedException({ message: 'المستخدم غير موجود' });
-    }
-    if (!user.isActive) {
+    // isActive is embedded in the JWT payload — zero DB cost
+    if (!payload.isActive) {
       throw UnauthorizedException({ message: 'تم إيقاف هذا الحساب، يرجى مراجعة الإدارة' });
     }
 
-    // Attach user payload to request for downstream handlers
+    // Attach payload to request for downstream handlers
     (req as any).user = payload;
-    
+
+    // ── Sliding Token ─────────────────────────────────────────────
+    // If the token is close to expiry, silently issue a new one.
+    // Frontend reads X-New-Token header and replaces the stored token.
+    if (payload.exp) {
+      const secondsLeft = payload.exp - Math.floor(Date.now() / 1000);
+      if (secondsLeft < SLIDING_THRESHOLD_SECONDS) {
+        const { iat, exp, ...cleanPayload } = payload;
+        const freshToken = TokenUtil.generateAccessToken(cleanPayload as IJwtPayload);
+        res.setHeader('X-New-Token', freshToken);
+      }
+    }
+
     next();
   } catch (error) {
     if (error instanceof Error && error.message.includes('jwt')) {

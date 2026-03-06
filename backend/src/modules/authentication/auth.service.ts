@@ -25,7 +25,8 @@ export const login = async (data: ILoginRequest): Promise<IAuthResponse> => {
     const payload = {
         userId: user._id.toString(),
         role: user.role,
-        teacherId: user.teacherId ? user.teacherId.toString() : null
+        teacherId: user.teacherId ? user.teacherId.toString() : null,
+        isActive: user.isActive
     };
 
     const token = TokenUtil.generateAccessToken(payload);
