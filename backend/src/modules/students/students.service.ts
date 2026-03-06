@@ -205,6 +205,14 @@ export class StudentService {
         const updatePayload: UpdatePayload = { ...data };
         delete (updatePayload as any).fullName;
 
+        // If groupId is being changed, make sure the new group belongs to this teacher
+        if (data.groupId) {
+            const group = await GroupModel.findOne({ _id: data.groupId, teacherId }).lean();
+            if (!group) {
+                throw NotFoundException({ message: 'المجموعة الجديدة غير موجودة أو لا صلاحية لك عليها' });
+            }
+        }
+
         if (data.fullName) {
             const { studentName, parentName } = this.parseFullName(data.fullName);
             updatePayload.studentName = studentName;
