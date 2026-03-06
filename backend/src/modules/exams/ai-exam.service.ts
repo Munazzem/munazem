@@ -80,6 +80,12 @@ export class AIExamService {
         },
         options: GenerateExamOptions
     ) {
+        if (!envVars.enableAIExams) {
+            throw BadRequestException({
+                message: 'ميزة توليد الامتحانات بالذكاء الاصطناعي متاحة في الخطة المدفوعة فقط حالياً',
+            });
+        }
+
         // 1. Extract text from PDF
         const pdfData = await pdfParse(pdfBuffer);
         const content = pdfData.text?.trim();

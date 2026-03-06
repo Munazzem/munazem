@@ -4,6 +4,8 @@ import { ExamsService }  from './exams.service.js';
 import { AIExamService } from './ai-exam.service.js';
 import { UserRole, QuestionType } from '../../common/enums/enum.service.js';
 import { SuccessResponse } from '../../common/utils/response/success.responce.js';
+import { BadRequestException } from '../../common/utils/response/error.responce.js';
+import { envVars } from '../../../config/env.service.js';
 import { authenticate }    from '../../middlewares/auth.middleware.js';
 import { authorizeRoles }  from '../../middlewares/roles.middleware.js';
 import { validate } from '../../middlewares/validate.middleware.js';
@@ -161,6 +163,12 @@ examsRouter.post(
     upload.single('pdf'),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
+            if (!envVars.enableAIExams) {
+                return next(BadRequestException({
+                    message: 'ميزة توليد الامتحانات بالذكاء الاصطناعي متاحة في الخطة المدفوعة فقط حالياً',
+                }));
+            }
+
             const teacherId = resolveTeacherId((req as any).user);
             if (!req.file) {
                 return next(new Error('الرجاء رفع ملف PDF'));
