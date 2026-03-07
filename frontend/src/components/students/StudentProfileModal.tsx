@@ -110,22 +110,11 @@ export function StudentProfileModal({ student, open, onOpenChange }: StudentProf
         }
     };
 
-    if (!student) return null;
-
-    const groupName =
-        typeof student.groupId === 'object' && student.groupId !== null
-            ? (student.groupId as { name: string }).name
-            : student.groupDetails?.name || '—';
-
-    const qrValue = student.barcode || student.studentCode || student._id;
-
-    const hasActiveSub = report?.student?.hasActiveSubscription ?? student.hasActiveSubscription;
-
-    // ── Group change (assistant only) ────────────────────────────────
+    // ── Group change (assistant only) ─────────────────────────────
     const currentGroupId =
-        typeof student.groupId === 'object' && student.groupId !== null
+        typeof student?.groupId === 'object' && student?.groupId !== null
             ? ((student.groupId as any)._id as string | undefined) ?? ''
-            : typeof student.groupId === 'string'
+            : typeof student?.groupId === 'string'
                 ? student.groupId
                 : '';
 
@@ -141,25 +130,22 @@ export function StudentProfileModal({ student, open, onOpenChange }: StudentProf
     }, [open, currentGroupId]);
 
     const { data: groupsData, isLoading: groupsLoading } = useQuery({
-        queryKey: ['teacherGroups_reassignStudent'],
-        queryFn: () => fetchGroups({ limit: 100 }),
-        enabled: isAssistant && open,
+        queryKey: ['teacherGroups_reassignStudent', student?.gradeLevel],
+        queryFn: () => fetchGroups({ limit: 100, gradeLevel: student?.gradeLevel }),
+        enabled: isAssistant && open && !!student?.gradeLevel,
         staleTime: 5 * 60 * 1000,
     });
-
-    const allGroups: { _id: string; name: string; gradeLevel: string }[] = groupsData?.data ?? [];
-    const availableGroups = allGroups.filter(g => g.gradeLevel === student.gradeLevel);
 
     const changeGroupMutation = useMutation({
         mutationFn: async () => {
             if (!newGroupId || newGroupId === currentGroupId) return null;
-            return await updateStudent(student._id, { groupId: newGroupId });
+            return await updateStudent(student!._id, { groupId: newGroupId });
         },
         onSuccess: (updated) => {
             if (updated) {
                 toast.success('تم نقل الطالب إلى المجموعة الجديدة بنجاح');
                 queryClient.invalidateQueries({ queryKey: ['students'] });
-                queryClient.invalidateQueries({ queryKey: ['studentReport', student._id] });
+                queryClient.invalidateQueries({ queryKey: ['studentReport', student?._id] });
             }
             setIsChangingGroup(false);
         },
@@ -167,6 +153,20 @@ export function StudentProfileModal({ student, open, onOpenChange }: StudentProf
             toast.error(err?.response?.data?.message ?? 'حدث خطأ أثناء نقل الطالب للمجموعة الجديدة');
         },
     });
+
+    if (!student) return null;
+
+    const groupName =
+        typeof student.groupId === 'object' && student.groupId !== null
+            ? (student.groupId as { name: string }).name
+            : student.groupDetails?.name || '—';
+
+    const qrValue = student.barcode || student.studentCode || student._id;
+
+    const hasActiveSub = report?.student?.hasActiveSubscription ?? student.hasActiveSubscription;
+
+    const allGroups: { _id: string; name: string; gradeLevel: string }[] = groupsData?.data ?? [];
+    const availableGroups = allGroups.filter(g => g.gradeLevel === student?.gradeLevel);
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>

@@ -2,7 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '@/lib/store/auth.store';
-import { Users, GraduationCap, Activity, TrendingUp, Receipt, Clock, CalendarDays, UserCheck, CreditCard, Wallet } from 'lucide-react';
+import { Users, GraduationCap, Activity, TrendingUp, Receipt, Clock, CalendarDays, UserCheck, CreditCard, Wallet, ArrowLeft, BookOpen, ClipboardList } from 'lucide-react';
+import Link from 'next/link';
+import { BulkSubscriptionModal } from '@/components/payments/BulkSubscriptionModal';
+import { QuickNotebookSaleModal } from '@/components/payments/QuickNotebookSaleModal';
 import { useQuery } from '@tanstack/react-query';
 import { fetchDashboardStats } from '@/lib/api/dashboard';
 import { fetchDailySummary } from '@/lib/api/reports';
@@ -94,6 +97,8 @@ const CAT_LABELS: Record<string, string> = {
 export default function DashboardPage() {
     const user = useAuthStore((state) => state.user);
     const [isMounted, setIsMounted] = useState(false);
+    const [showBulkSub,  setShowBulkSub]  = useState(false);
+    const [showNbSale,   setShowNbSale]   = useState(false);
 
     useEffect(() => { setIsMounted(true); }, []);
 
@@ -127,6 +132,7 @@ export default function DashboardPage() {
     const isTeacher = user?.role === 'teacher';
 
     return (
+        <>
         <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-500" dir="rtl">
             {/* Onboarding — للمدرس الجديد بدون مجموعات أو طلاب */}
             {isTeacher && (
@@ -150,33 +156,33 @@ export default function DashboardPage() {
                 </div>
             )}
 
-            {/* Stat Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <StatCard
-                    label="إجمالي الطلاب"
-                    value={stats?.totalStudents ?? 0}
-                    suffix="طالب"
-                    icon={Users}
-                    iconBg="bg-blue-50"
-                    iconColor="text-blue-600"
-                />
-                <StatCard
-                    label="مجموعات العمل"
-                    value={stats?.totalGroups ?? 0}
-                    suffix="مجموعة"
-                    icon={GraduationCap}
-                    iconBg="bg-indigo-50"
-                    iconColor="text-indigo-600"
-                />
-                <StatCard
-                    label="حصص الشهر"
-                    value={stats?.sessionsThisMonth ?? 0}
-                    suffix="حصة"
-                    icon={Activity}
-                    iconBg="bg-orange-50"
-                    iconColor="text-orange-600"
-                />
-                {isTeacher && (
+            {/* Stat Cards — Teacher only */}
+            {isTeacher && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <StatCard
+                        label="إجمالي الطلاب"
+                        value={stats?.totalStudents ?? 0}
+                        suffix="طالب"
+                        icon={Users}
+                        iconBg="bg-blue-50"
+                        iconColor="text-blue-600"
+                    />
+                    <StatCard
+                        label="مجموعات العمل"
+                        value={stats?.totalGroups ?? 0}
+                        suffix="مجموعة"
+                        icon={GraduationCap}
+                        iconBg="bg-indigo-50"
+                        iconColor="text-indigo-600"
+                    />
+                    <StatCard
+                        label="حصص الشهر"
+                        value={stats?.sessionsThisMonth ?? 0}
+                        suffix="حصة"
+                        icon={Activity}
+                        iconBg="bg-orange-50"
+                        iconColor="text-orange-600"
+                    />
                     <StatCard
                         label="إيرادات الشهر"
                         value={stats?.financial?.totalIncome ?? 0}
@@ -186,8 +192,131 @@ export default function DashboardPage() {
                         iconColor="text-green-600"
                         accent="bg-linear-to-r from-green-400 to-emerald-400"
                     />
-                )}
-            </div>
+                </div>
+            )}
+
+            {/* Quick Actions — Assistant only */}
+            {!isTeacher && (
+                <div>
+                    <h2 className="text-base font-bold text-gray-700 mb-3">الوصول السريع</h2>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <Link
+                            href="/students"
+                            className="group bg-white border border-gray-100 rounded-2xl p-4 shadow-sm hover:shadow-md hover:border-blue-200 transition-all flex flex-col items-center gap-3 text-center"
+                        >
+                            <div className="h-11 w-11 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 group-hover:bg-blue-100 transition-colors">
+                                <Users className="h-5 w-5" />
+                            </div>
+                            <div>
+                                <p className="font-bold text-gray-900 text-sm">الطلاب</p>
+                                <p className="text-xs text-gray-400 mt-0.5">إدارة الطلاب</p>
+                            </div>
+                            <ArrowLeft className="h-4 w-4 text-gray-300 group-hover:text-blue-500 transition-colors" />
+                        </Link>
+
+                        <Link
+                            href="/groups"
+                            className="group bg-white border border-gray-100 rounded-2xl p-4 shadow-sm hover:shadow-md hover:border-indigo-200 transition-all flex flex-col items-center gap-3 text-center"
+                        >
+                            <div className="h-11 w-11 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 group-hover:bg-indigo-100 transition-colors">
+                                <GraduationCap className="h-5 w-5" />
+                            </div>
+                            <div>
+                                <p className="font-bold text-gray-900 text-sm">المجموعات</p>
+                                <p className="text-xs text-gray-400 mt-0.5">إدارة المجموعات</p>
+                            </div>
+                            <ArrowLeft className="h-4 w-4 text-gray-300 group-hover:text-indigo-500 transition-colors" />
+                        </Link>
+
+                        <Link
+                            href="/sessions"
+                            className="group bg-white border border-gray-100 rounded-2xl p-4 shadow-sm hover:shadow-md hover:border-orange-200 transition-all flex flex-col items-center gap-3 text-center"
+                        >
+                            <div className="h-11 w-11 rounded-xl bg-orange-50 flex items-center justify-center text-orange-600 group-hover:bg-orange-100 transition-colors">
+                                <Activity className="h-5 w-5" />
+                            </div>
+                            <div>
+                                <p className="font-bold text-gray-900 text-sm">الحصص</p>
+                                <p className="text-xs text-gray-400 mt-0.5">تسجيل الحضور</p>
+                            </div>
+                            <ArrowLeft className="h-4 w-4 text-gray-300 group-hover:text-orange-500 transition-colors" />
+                        </Link>
+
+                        <Link
+                            href="/exams"
+                            className="group bg-white border border-gray-100 rounded-2xl p-4 shadow-sm hover:shadow-md hover:border-green-200 transition-all flex flex-col items-center gap-3 text-center"
+                        >
+                            <div className="h-11 w-11 rounded-xl bg-green-50 flex items-center justify-center text-green-600 group-hover:bg-green-100 transition-colors">
+                                <ClipboardList className="h-5 w-5" />
+                            </div>
+                            <div>
+                                <p className="font-bold text-gray-900 text-sm">الامتحانات</p>
+                                <p className="text-xs text-gray-400 mt-0.5">إدارة الامتحانات</p>
+                            </div>
+                            <ArrowLeft className="h-4 w-4 text-gray-300 group-hover:text-green-500 transition-colors" />
+                        </Link>
+                    </div>
+
+                    {/* Assistant quick payment buttons */}
+                    <div className="grid grid-cols-2 gap-3 mt-3">
+                        <button
+                            onClick={() => setShowBulkSub(true)}
+                            className="group bg-primary/5 border border-primary/20 rounded-2xl p-4 shadow-sm hover:shadow-md hover:bg-primary/10 transition-all flex flex-col items-center gap-3 text-center"
+                        >
+                            <div className="h-11 w-11 rounded-xl bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary/20 transition-colors">
+                                <CreditCard className="h-5 w-5" />
+                            </div>
+                            <div>
+                                <p className="font-bold text-gray-900 text-sm">اشتراك جماعي</p>
+                                <p className="text-xs text-gray-400 mt-0.5">دفع لمجموعة دفعة واحدة</p>
+                            </div>
+                        </button>
+
+                        <button
+                            onClick={() => setShowNbSale(true)}
+                            className="group bg-purple-50 border border-purple-100 rounded-2xl p-4 shadow-sm hover:shadow-md hover:bg-purple-100 transition-all flex flex-col items-center gap-3 text-center"
+                        >
+                            <div className="h-11 w-11 rounded-xl bg-purple-100 flex items-center justify-center text-purple-600 group-hover:bg-purple-200 transition-colors">
+                                <BookOpen className="h-5 w-5" />
+                            </div>
+                            <div>
+                                <p className="font-bold text-gray-900 text-sm">بيع مذكرة</p>
+                                <p className="text-xs text-gray-400 mt-0.5">بيع سريع لطالب</p>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Quick actions — Teacher only */}
+            {isTeacher && (
+                <div className="grid grid-cols-2 gap-3">
+                    <button
+                        onClick={() => setShowBulkSub(true)}
+                        className="group bg-primary/5 border border-primary/20 rounded-2xl p-4 shadow-sm hover:shadow-md hover:bg-primary/10 transition-all flex items-center gap-4"
+                    >
+                        <div className="h-11 w-11 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                            <CreditCard className="h-5 w-5" />
+                        </div>
+                        <div className="text-right">
+                            <p className="font-bold text-gray-900 text-sm">اشتراك جماعي</p>
+                            <p className="text-xs text-gray-400 mt-0.5">دفع لمجموعة دفعة واحدة</p>
+                        </div>
+                    </button>
+                    <button
+                        onClick={() => setShowNbSale(true)}
+                        className="group bg-purple-50 border border-purple-100 rounded-2xl p-4 shadow-sm hover:shadow-md hover:bg-purple-100 transition-all flex items-center gap-4"
+                    >
+                        <div className="h-11 w-11 rounded-xl bg-purple-100 flex items-center justify-center text-purple-600 shrink-0">
+                            <BookOpen className="h-5 w-5" />
+                        </div>
+                        <div className="text-right">
+                            <p className="font-bold text-gray-900 text-sm">بيع مذكرة</p>
+                            <p className="text-xs text-gray-400 mt-0.5">بيع سريع لطالب</p>
+                        </div>
+                    </button>
+                </div>
+            )}
 
             {/* Charts — Teacher only */}
             {isTeacher && stats?.charts && (
@@ -206,7 +335,7 @@ export default function DashboardPage() {
                                     <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} width={40}
                                         tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
                                     <Tooltip
-                                        formatter={(v: number) => [`${v.toLocaleString('ar-EG')} ج.م`, 'الإيرادات']}
+                                        formatter={(v: number | undefined) => [`${(v ?? 0).toLocaleString('ar-EG')} ج.م`, 'الإيرادات']}
                                         contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)', fontSize: 12, direction: 'rtl' }}
                                     />
                                     <Bar dataKey="income" fill="#0f4c81" radius={[6, 6, 0, 0]} maxBarSize={48} />
@@ -349,5 +478,10 @@ export default function DashboardPage() {
                 </div>
             )}
         </div>
+
+        {/* Modals */}
+        <BulkSubscriptionModal  open={showBulkSub} onOpenChange={setShowBulkSub} />
+        <QuickNotebookSaleModal open={showNbSale}  onOpenChange={setShowNbSale} />
+        </>
     );
 }

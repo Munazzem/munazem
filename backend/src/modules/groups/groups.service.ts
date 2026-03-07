@@ -36,13 +36,16 @@ export class GroupService {
         const limit = Math.min(100, Math.max(1, parseInt(queryFilters.limit) || 20));
         const skip  = (page - 1) * limit;
 
+        const filter: any = { teacherId };
+        if (queryFilters.gradeLevel) filter.gradeLevel = queryFilters.gradeLevel;
+
         const [groups, total] = await Promise.all([
-            GroupModel.find({ teacherId })
+            GroupModel.find(filter)
                 .sort({ createdAt: -1 })
                 .skip(skip)
                 .limit(limit)
                 .lean(),
-            GroupModel.countDocuments({ teacherId })
+            GroupModel.countDocuments(filter)
         ]);
 
         // Attach studentsCount to each group in one aggregation query
