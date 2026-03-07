@@ -325,7 +325,7 @@ function MonthlyTab() {
                             <XAxis dataKey="day" tick={{ fontSize: 10 }} />
                             <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}`} width={40} />
                             <Tooltip
-                                formatter={(value: number) => [`${value.toLocaleString('ar-EG')} ج`]}
+                                formatter={(value: any) => `${(value || 0).toLocaleString('ar-EG')} ج`}
                                 labelFormatter={(label) => `يوم ${label}`}
                             />
                             <Legend wrapperStyle={{ fontSize: 12 }} />

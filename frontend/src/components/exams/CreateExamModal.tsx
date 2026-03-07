@@ -20,7 +20,7 @@ import { getAllowedGrades } from '@/lib/utils/grades';
 const questionSchema = z.object({
     type:          z.enum(['MCQ', 'TRUE_FALSE', 'ESSAY']),
     text:          z.string().min(3, 'أدخل نص السؤال'),
-    marks:         z.number({ invalid_type_error: 'أدخل الدرجة' }).min(1),
+    marks:         z.number({ error: 'أدخل الدرجة' }).min(1),
     options:       z.array(z.string()).optional(),
     correctAnswer: z.string().optional(),
 });
@@ -28,7 +28,7 @@ const questionSchema = z.object({
 const schema = z.object({
     title:        z.string().min(3, 'أدخل عنوان الامتحان'),
     date:         z.string().min(1, 'أدخل التاريخ'),
-    passingMarks: z.number({ invalid_type_error: 'أدخل درجة النجاح' }).min(1),
+    passingMarks: z.number({ error: 'أدخل درجة النجاح' }).min(1),
     gradeLevel:   z.string().optional(),
     groupIds:     z.array(z.string()).optional(),
     questions:    z.array(questionSchema).optional(),
