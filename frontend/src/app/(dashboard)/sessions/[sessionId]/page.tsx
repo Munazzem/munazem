@@ -382,7 +382,6 @@ export default function SessionDetailPage() {
     const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
     const [editRecord, setEditRecord] = useState<IAttendanceRecord | null>(null);
     const [showWhatsApp, setShowWhatsApp] = useState(false);
-    const [showBatchSubscribe, setShowBatchSubscribe] = useState(false);
     const [pdfLoading, setPdfLoading] = useState(false);
 
     const handleDownloadAttendancePdf = async () => {
@@ -742,14 +741,7 @@ export default function SessionDetailPage() {
                     <SnapshotSummary snapshot={snapshot} />
                     <div className="flex flex-col sm:flex-row flex-wrap justify-end gap-2">
                         {isAssistant && (
-                            <Button
-                                variant="outline"
-                                onClick={() => setShowBatchSubscribe(true)}
-                                className="gap-2 border-blue-200 text-blue-700 hover:bg-blue-50 w-full sm:w-auto"
-                            >
-                                <Receipt className="h-4 w-4" />
-                                تسجيل اشتراكات الحاضرين
-                            </Button>
+                            <BatchSubscriptionModal />
                         )}
                         <Button
                             variant="outline"
@@ -830,14 +822,6 @@ export default function SessionDetailPage() {
                     sessionId={sessionId}
                     open={showWhatsApp}
                     onClose={() => setShowWhatsApp(false)}
-                />
-            )}
-
-            {/* Batch Subscription Modal (after session completion) */}
-            {showBatchSubscribe && (
-                <BatchSubscriptionModal
-                    open={showBatchSubscribe}
-                    onOpenChange={setShowBatchSubscribe}
                 />
             )}
         </div>
