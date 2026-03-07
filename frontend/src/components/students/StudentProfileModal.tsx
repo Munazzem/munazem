@@ -8,6 +8,8 @@ import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { recordSubscription } from '@/lib/api/payments';
 import { fetchStudentReport, downloadStudentReportPdf } from '@/lib/api/reports';
+import { fetchGroups } from '@/lib/api/groups';
+import { updateStudent } from '@/lib/api/students';
 import { downloadBlob } from '@/lib/utils/download';
 import {
     Dialog,
@@ -22,6 +24,13 @@ import {
     TabsList,
     TabsTrigger,
 } from '@/components/ui/tabs';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import {
     Phone,
     User,
@@ -101,6 +110,50 @@ export function StudentProfileModal({ student, open, onOpenChange }: StudentProf
         }
     };
 
+    // ── Group change (assistant only) ─────────────────────────────
+    const currentGroupId =
+        typeof student?.groupId === 'object' && student?.groupId !== null
+            ? ((student.groupId as any)._id as string | undefined) ?? ''
+            : typeof student?.groupId === 'string'
+                ? student.groupId
+                : '';
+
+    const [isChangingGroup, setIsChangingGroup] = useState(false);
+    const [newGroupId, setNewGroupId] = useState<string>(currentGroupId);
+
+    useEffect(() => {
+        if (open) {
+            setIsChangingGroup(false);
+            setNewGroupId(currentGroupId);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, currentGroupId]);
+
+    const { data: groupsData, isLoading: groupsLoading } = useQuery({
+        queryKey: ['teacherGroups_reassignStudent', student?.gradeLevel],
+        queryFn: () => fetchGroups({ limit: 100, gradeLevel: student?.gradeLevel }),
+        enabled: isAssistant && open && !!student?.gradeLevel,
+        staleTime: 5 * 60 * 1000,
+    });
+
+    const changeGroupMutation = useMutation({
+        mutationFn: async () => {
+            if (!newGroupId || newGroupId === currentGroupId) return null;
+            return await updateStudent(student!._id, { groupId: newGroupId });
+        },
+        onSuccess: (updated) => {
+            if (updated) {
+                toast.success('تم نقل الطالب إلى المجموعة الجديدة بنجاح');
+                queryClient.invalidateQueries({ queryKey: ['students'] });
+                queryClient.invalidateQueries({ queryKey: ['studentReport', student?._id] });
+            }
+            setIsChangingGroup(false);
+        },
+        onError: (err: any) => {
+            toast.error(err?.response?.data?.message ?? 'حدث خطأ أثناء نقل الطالب للمجموعة الجديدة');
+        },
+    });
+
     if (!student) return null;
 
     const groupName =
@@ -111,6 +164,9 @@ export function StudentProfileModal({ student, open, onOpenChange }: StudentProf
     const qrValue = student.barcode || student.studentCode || student._id;
 
     const hasActiveSub = report?.student?.hasActiveSubscription ?? student.hasActiveSubscription;
+
+    const allGroups: { _id: string; name: string; gradeLevel: string }[] = groupsData?.data ?? [];
+    const availableGroups = allGroups.filter(g => g.gradeLevel === student?.gradeLevel);
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -255,7 +311,77 @@ export function StudentProfileModal({ student, open, onOpenChange }: StudentProf
                             {/* Info panel */}
                             <div className="flex-1 px-6 py-5 space-y-3.5">
                                 <InfoItem icon={User}          label="ولي الأمر"    value={student.parentName} />
-                                <InfoItem icon={GraduationCap} label="المجموعة"    value={groupName} />
+                                <div className="space-y-1.5">
+                                    <InfoItem icon={GraduationCap} label="المجموعة" value={groupName} />
+                                    {isAssistant && (
+                                        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                                            {!isChangingGroup && (
+                                                <Button
+                                                    type="button"
+                                                    size="xs"
+                                                    variant="outline"
+                                                    className="border-dashed border-gray-300 text-[11px] h-7 px-2 text-gray-700 hover:border-primary hover:text-primary self-start"
+                                                    onClick={() => setIsChangingGroup(true)}
+                                                >
+                                                    نقل لمجموعة أخرى
+                                                </Button>
+                                            )}
+                                            {isChangingGroup && (
+                                                <div className="flex flex-col sm:flex-row gap-2 w-full">
+                                                    <Select
+                                                        value={newGroupId}
+                                                        onValueChange={setNewGroupId}
+                                                        disabled={groupsLoading || changeGroupMutation.isPending}
+                                                    >
+                                                        <SelectTrigger className="h-8 text-xs w-full sm:w-48">
+                                                            <SelectValue placeholder={groupsLoading ? 'جارِ تحميل المجموعات...' : 'اختر مجموعة جديدة'} />
+                                                        </SelectTrigger>
+                                                        <SelectContent dir="rtl">
+                                                            {availableGroups.map(g => (
+                                                                <SelectItem key={g._id} value={g._id}>
+                                                                    {g.name}
+                                                                </SelectItem>
+                                                            ))}
+                                                            {availableGroups.length === 0 && !groupsLoading && (
+                                                                <div className="px-3 py-2 text-[11px] text-gray-500">
+                                                                    لا توجد مجموعات أخرى في نفس المرحلة
+                                                                </div>
+                                                            )}
+                                                        </SelectContent>
+                                                    </Select>
+                                                    <div className="flex gap-1">
+                                                        <Button
+                                                            type="button"
+                                                            size="xs"
+                                                            disabled={!newGroupId || newGroupId === currentGroupId || changeGroupMutation.isPending}
+                                                            className="h-8 px-3 text-[11px]"
+                                                            onClick={() => changeGroupMutation.mutate()}
+                                                        >
+                                                            {changeGroupMutation.isPending ? (
+                                                                <Loader2 className="h-3 w-3 animate-spin" />
+                                                            ) : (
+                                                                'حفظ التحويل'
+                                                            )}
+                                                        </Button>
+                                                        <Button
+                                                            type="button"
+                                                            size="xs"
+                                                            variant="ghost"
+                                                            className="h-8 px-3 text-[11px] text-gray-500"
+                                                            disabled={changeGroupMutation.isPending}
+                                                            onClick={() => {
+                                                                setIsChangingGroup(false);
+                                                                setNewGroupId(currentGroupId);
+                                                            }}
+                                                        >
+                                                            إلغاء
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
                                 <InfoItem icon={Phone}         label="هاتف الطالب" value={student.studentPhone} ltr />
                                 <InfoItem icon={Phone}         label="هاتف الأسرة" value={student.parentPhone}  ltr />
                                 {student.studentCode && (

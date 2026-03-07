@@ -26,7 +26,8 @@
   },
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/main.ts"
+    "dev": "tsx watch src/main.ts",
+    "start": "npx tsx src/main.ts"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
