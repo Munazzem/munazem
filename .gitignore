@@ -1,0 +1,16 @@
+node_modules
+dist
+build
+.env
+.next
+walkthrough
+README_AR.md
+CHANGES.md
+
+# Test & dev scripts
+backend/test-*.ts
+backend/test-*.js
+
+# Internal docs (not for repo)
+backend/docs/BACKEND_FLOW_GUIDE_AR.md
+backend/docs/PRODUCTION.md
