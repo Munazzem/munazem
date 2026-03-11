@@ -7,10 +7,10 @@ import type { StudentWithGroup } from '@/types/student.types';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { recordSubscription } from '@/lib/api/payments';
-import { fetchStudentReport, downloadStudentReportPdf } from '@/lib/api/reports';
+import { fetchStudentReport, fetchStudentReportHtml } from '@/lib/api/reports';
 import { fetchGroups } from '@/lib/api/groups';
 import { updateStudent } from '@/lib/api/students';
-import { downloadBlob } from '@/lib/utils/download';
+import { printHtmlContent } from '@/lib/utils/print';
 import {
     Dialog,
     DialogContent,
@@ -101,8 +101,8 @@ export function StudentProfileModal({ student, open, onOpenChange }: StudentProf
         if (!student) return;
         setPdfLoading(true);
         try {
-            const blob = await downloadStudentReportPdf(student._id);
-            downloadBlob(blob, `تقرير-${student.studentName}.pdf`);
+            const html = await fetchStudentReportHtml(student._id);
+            printHtmlContent(html);
         } catch {
             toast.error('فشل تحميل التقرير');
         } finally {

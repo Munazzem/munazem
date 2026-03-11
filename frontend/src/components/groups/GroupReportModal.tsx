@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { fetchGroupReport, downloadGroupReportPdf } from '@/lib/api/reports';
-import { downloadBlob } from '@/lib/utils/download';
+import { fetchGroupReport, fetchGroupReportHtml } from '@/lib/api/reports';
+import { printHtmlContent } from '@/lib/utils/print';
 import { toast } from 'sonner';
 import {
     Dialog,
@@ -50,8 +50,8 @@ export function GroupReportModal({ groupId, groupName, open, onOpenChange }: Gro
         if (!groupId) return;
         setPdfLoading(true);
         try {
-            const blob = await downloadGroupReportPdf(groupId);
-            downloadBlob(blob, `تقرير-${groupName}.pdf`);
+            const html = await fetchGroupReportHtml(groupId);
+            printHtmlContent(html);
         } catch {
             toast.error('فشل تحميل التقرير');
         } finally {

@@ -28,25 +28,17 @@ import {
     fetchGroupReport,
     fetchFinancialMonthlyReport,
     fetchDailySummary,
-    downloadStudentReportPdf,
-    downloadGroupReportPdf,
-    downloadMonthlyReportPdf,
+    fetchStudentReportHtml,
+    fetchGroupReportHtml,
+    fetchMonthlyReportHtml,
 } from '@/lib/api/reports';
+import { printHtmlContent } from '@/lib/utils/print';
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 const MONTHS = [
     'يناير','فبراير','مارس','أبريل','مايو','يونيو',
     'يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر',
 ];
-
-function downloadBlob(blob: Blob, filename: string) {
-    const url = URL.createObjectURL(blob);
-    const a   = document.createElement('a');
-    a.href     = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-}
 
 // ── Tab type ─────────────────────────────────────────────────────────────────
 type Tab = 'daily' | 'student' | 'group' | 'financial';
@@ -115,8 +107,8 @@ export default function ReportsPage() {
         if (!selectedStudent) return;
         setPdfLoading(true);
         try {
-            const blob = await downloadStudentReportPdf(selectedStudent.id);
-            downloadBlob(blob, `تقرير-${selectedStudent.name}.pdf`);
+            const html = await fetchStudentReportHtml(selectedStudent.id);
+            printHtmlContent(html);
         } catch { toast.error('فشل تحميل التقرير'); }
         finally { setPdfLoading(false); }
     };
@@ -125,8 +117,8 @@ export default function ReportsPage() {
         if (!selectedGroup) return;
         setPdfLoading(true);
         try {
-            const blob = await downloadGroupReportPdf(selectedGroup.id);
-            downloadBlob(blob, `تقرير-${selectedGroup.name}.pdf`);
+            const html = await fetchGroupReportHtml(selectedGroup.id);
+            printHtmlContent(html);
         } catch { toast.error('فشل تحميل التقرير'); }
         finally { setPdfLoading(false); }
     };
@@ -134,8 +126,8 @@ export default function ReportsPage() {
     const handleFinancialPdf = async () => {
         setPdfLoading(true);
         try {
-            const blob = await downloadMonthlyReportPdf(finYear, finMonth);
-            downloadBlob(blob, `تقرير-مالي-${finYear}-${finMonth}.pdf`);
+            const html = await fetchMonthlyReportHtml(finYear, finMonth);
+            printHtmlContent(html);
         } catch { toast.error('فشل تحميل التقرير'); }
         finally { setPdfLoading(false); }
     };

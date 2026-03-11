@@ -351,6 +351,7 @@ function AddAssistantModal({
                             value={name}
                             onChange={(e) => setName(e.target.value)}
                             placeholder="اسم المساعد"
+                            autoComplete="off"
                         />
                         {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
                     </div>
@@ -362,6 +363,7 @@ function AddAssistantModal({
                             onChange={(e) => setPhone(e.target.value)}
                             placeholder="01xxxxxxxxx"
                             dir="ltr"
+                            autoComplete="off"
                         />
                         {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
                     </div>
@@ -374,6 +376,7 @@ function AddAssistantModal({
                             onChange={(e) => setPassword(e.target.value)}
                             placeholder="6 أحرف على الأقل"
                             dir="ltr"
+                            autoComplete="new-password"
                         />
                         {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
                     </div>
@@ -391,6 +394,7 @@ function AddAssistantModal({
                                 placeholder="0"
                                 dir="ltr"
                                 className="pl-10"
+                                autoComplete="off"
                             />
                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">ج</span>
                         </div>
