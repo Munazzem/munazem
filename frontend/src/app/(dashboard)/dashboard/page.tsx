@@ -289,34 +289,7 @@ export default function DashboardPage() {
             )}
 
             {/* Quick actions — Teacher only */}
-            {isTeacher && (
-                <div className="grid grid-cols-2 gap-3">
-                    <button
-                        onClick={() => setShowBulkSub(true)}
-                        className="group bg-primary/5 border border-primary/20 rounded-2xl p-4 shadow-sm hover:shadow-md hover:bg-primary/10 transition-all flex items-center gap-4"
-                    >
-                        <div className="h-11 w-11 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
-                            <CreditCard className="h-5 w-5" />
-                        </div>
-                        <div className="text-right">
-                            <p className="font-bold text-gray-900 text-sm">اشتراك جماعي</p>
-                            <p className="text-xs text-gray-400 mt-0.5">دفع لمجموعة دفعة واحدة</p>
-                        </div>
-                    </button>
-                    <button
-                        onClick={() => setShowNbSale(true)}
-                        className="group bg-purple-50 border border-purple-100 rounded-2xl p-4 shadow-sm hover:shadow-md hover:bg-purple-100 transition-all flex items-center gap-4"
-                    >
-                        <div className="h-11 w-11 rounded-xl bg-purple-100 flex items-center justify-center text-purple-600 shrink-0">
-                            <BookOpen className="h-5 w-5" />
-                        </div>
-                        <div className="text-right">
-                            <p className="font-bold text-gray-900 text-sm">بيع مذكرة</p>
-                            <p className="text-xs text-gray-400 mt-0.5">بيع سريع لطالب</p>
-                        </div>
-                    </button>
-                </div>
-            )}
+            {/* The user requested to hide or make "Group Subscription" and "Notebook Sale" read-only for Teachers. We will hide them. */}
 
             {/* Charts — Teacher only */}
             {isTeacher && stats?.charts && (

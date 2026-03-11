@@ -72,15 +72,13 @@ reportsRouter.get(
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const teacherId = resolveTeacherId((req as any).user);
-            const pdfBuffer = await PdfService.generateStudentReportPdf(
+            const htmlString = await PdfService.generateStudentReportPdf(
                 req.params['studentId'] as string, teacherId
             );
             res.set({
-                'Content-Type': 'application/pdf',
-                'Content-Disposition': `attachment; filename=student-report-${req.params['studentId']}.pdf`,
-                'Content-Length': pdfBuffer.length,
+                'Content-Type': 'text/html; charset=utf-8',
             });
-            res.send(pdfBuffer);
+            res.send(htmlString);
         } catch (error) { next(error); }
     }
 );
@@ -105,15 +103,13 @@ reportsRouter.get(
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const teacherId = resolveTeacherId((req as any).user);
-            const pdfBuffer = await PdfService.generateGroupReportPdf(
+            const htmlString = await PdfService.generateGroupReportPdf(
                 req.params['groupId'] as string, teacherId
             );
             res.set({
-                'Content-Type': 'application/pdf',
-                'Content-Disposition': `attachment; filename=group-report-${req.params['groupId']}.pdf`,
-                'Content-Length': pdfBuffer.length,
+                'Content-Type': 'text/html; charset=utf-8',
             });
-            res.send(pdfBuffer);
+            res.send(htmlString);
         } catch (error) { next(error); }
     }
 );
@@ -142,13 +138,11 @@ reportsRouter.get(
             const now   = new Date();
             const year  = parseInt(req.query['year']  as string) || now.getUTCFullYear();
             const month = parseInt(req.query['month'] as string) || (now.getUTCMonth() + 1);
-            const pdfBuffer = await PdfService.generateMonthlyFinancialPdf(teacherId, year, month);
+            const htmlString = await PdfService.generateMonthlyFinancialPdf(teacherId, year, month);
             res.set({
-                'Content-Type': 'application/pdf',
-                'Content-Disposition': `attachment; filename=financial-report-${year}-${month}.pdf`,
-                'Content-Length': pdfBuffer.length,
+                'Content-Type': 'text/html; charset=utf-8',
             });
-            res.send(pdfBuffer);
+            res.send(htmlString);
         } catch (error) { next(error); }
     }
 );

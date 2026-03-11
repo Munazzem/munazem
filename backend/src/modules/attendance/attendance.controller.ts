@@ -70,14 +70,12 @@ attendanceRouter.get(
             const teacherId = resolveTeacherId((req as any).user);
             const sessionId = req.params['sessionId'] as string;
             
-            const pdfBuffer = await PdfService.generateSessionAttendancePdf(sessionId, teacherId);
+            const htmlString = await PdfService.generateSessionAttendancePdf(sessionId, teacherId);
             
             res.set({
-                'Content-Type': 'application/pdf',
-                'Content-Disposition': `attachment; filename=attendance-${sessionId}.pdf`,
-                'Content-Length': pdfBuffer.length,
+                'Content-Type': 'text/html; charset=utf-8',
             });
-            res.send(pdfBuffer);
+            res.send(htmlString);
         } catch (error) { next(error); }
     }
 );

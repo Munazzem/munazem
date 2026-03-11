@@ -11,10 +11,10 @@ import {
     completeSession,
     getSessionSnapshot,
     getWhatsAppLinks,
-    downloadAttendancePdf,
+    fetchAttendanceHtml,
     type IWhatsAppLink,
 } from '@/lib/api/attendance';
-import { downloadBlob } from '@/lib/utils/download';
+import { printHtmlContent } from '@/lib/utils/print';
 import { fetchStudents } from '@/lib/api/students';
 import { useAuthStore } from '@/lib/store/auth.store';
 import dynamic from 'next/dynamic';
@@ -387,8 +387,8 @@ export default function SessionDetailPage() {
     const handleDownloadAttendancePdf = async () => {
         setPdfLoading(true);
         try {
-            const blob = await downloadAttendancePdf(sessionId);
-            downloadBlob(blob, `تقرير-حضور-${sessionId}.pdf`);
+            const html = await fetchAttendanceHtml(sessionId);
+            printHtmlContent(html);
         } catch {
             toast.error('فشل تحميل تقرير الحضور');
         } finally {

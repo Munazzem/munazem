@@ -124,7 +124,7 @@ export function EditTeacherModal({ open, onOpenChange, teacher }: EditTeacherMod
                 <FormItem>
                   <FormLabel>الاسم الرباعي <span className="text-red-500">*</span></FormLabel>
                   <FormControl>
-                    <Input placeholder="اسم المعلم" {...field} />
+                    <Input placeholder="اسم المعلم" autoComplete="off" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -138,7 +138,7 @@ export function EditTeacherModal({ open, onOpenChange, teacher }: EditTeacherMod
                 <FormItem>
                   <FormLabel>البريد الإلكتروني (اختياري)</FormLabel>
                   <FormControl>
-                    <Input dir="ltr" className="text-right" placeholder="teacher@monazem.com" {...field} />
+                    <Input dir="ltr" className="text-right" placeholder="teacher@monazem.com" autoComplete="off" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -153,7 +153,7 @@ export function EditTeacherModal({ open, onOpenChange, teacher }: EditTeacherMod
                     <FormItem>
                     <FormLabel>رقم الهاتف <span className="text-red-500">*</span></FormLabel>
                     <FormControl>
-                        <Input dir="ltr" className="text-right" placeholder="01X..." {...field} />
+                        <Input dir="ltr" className="text-right" placeholder="01X..." autoComplete="off" {...field} />
                     </FormControl>
                     <FormMessage />
                     </FormItem>
@@ -188,7 +188,7 @@ export function EditTeacherModal({ open, onOpenChange, teacher }: EditTeacherMod
                 <FormItem>
                   <FormLabel>تغيير كلمة المرور (اختياري)</FormLabel>
                   <FormControl>
-                    <Input type="password" dir="ltr" className="text-right" placeholder="اترك الحقل فارغاً إذا لم ترد التغيير" {...field} />
+                    <Input type="password" dir="ltr" className="text-right" placeholder="اترك الحقل فارغاً إذا لم ترد التغيير" autoComplete="new-password" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

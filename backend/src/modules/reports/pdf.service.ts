@@ -1,13 +1,5 @@
-import puppeteerCore from 'puppeteer-core';
-import chromium from '@sparticuz/chromium';
+// Removed Puppeteer imports and local chrome paths
 
-// Windows/Linux local Chrome paths for development
-const LOCAL_CHROME_PATHS = [
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-    '/usr/bin/google-chrome',
-    '/usr/bin/chromium-browser',
-];
 import { ReportsService } from './reports.service.js';
 import { AttendanceService } from '../attendance/attendance.service.js';
 import { SessionService } from '../sessions/sessions.service.js';
@@ -110,47 +102,23 @@ export class PdfService {
             <div class="footer">
                 <p>تم استخراج هذا التقرير آلياً من منصة "مُنظِّم" التعليمية - ${new Date().toLocaleString('ar-EG')}</p>
             </div>
+            <script>
+                // Auto-print when loaded
+                window.onload = function() {
+                    setTimeout(function() {
+                        window.print();
+                    }, 500);
+                }
+            </script>
         </body>
         </html>
         `;
     }
-
-    private static async renderPdf(html: string): Promise<Buffer> {
-        let browser;
-        try {
-            const fs = await import('fs');
-            const localChrome = LOCAL_CHROME_PATHS.find(p => fs.existsSync(p));
-
-            // Use local Chrome if available (dev), otherwise fall back to @sparticuz/chromium (production/Render)
-            const executablePath = localChrome ?? await chromium.executablePath();
-
-            browser = await puppeteerCore.launch({
-                executablePath,
-                args:     [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox'],
-                headless: true,
-            });
-
-            const page = await browser.newPage();
-            await page.setContent(html, { waitUntil: 'networkidle0' });
-
-            const pdfBuffer = await page.pdf({
-                format:          'A4',
-                printBackground: true,
-                margin: { top: '20px', bottom: '20px', left: '20px', right: '20px' },
-            });
-            return Buffer.from(pdfBuffer);
-        } catch (error) {
-            console.error('Puppeteer PDF Generation Error:', error);
-            throw error;
-        } finally {
-            if (browser) await browser.close();
-        }
-    }
     
     /**
-     * Generates a high-quality PDF report for a student using Puppeteer headless chrome.
+     * Generates a high-quality HTML report for a student, styled for printing.
      */
-    static async generateStudentReportPdf(studentId: string, teacherId: string): Promise<Buffer> {
+    static async generateStudentReportPdf(studentId: string, teacherId: string): Promise<string> {
         
         // 1. Fetch complete report data
         const reportData = await ReportsService.getStudentReport(studentId, teacherId);
@@ -356,17 +324,25 @@ export class PdfService {
                 <p>تم استخراج هذا التقرير آلياً من منصة "مُنظِّم" التعليمية - ${new Date().toLocaleString('ar-EG')}</p>
             </div>
 
+        <script>
+            // Auto-print when loaded
+            window.onload = function() {
+                setTimeout(function() {
+                    window.print();
+                }, 500);
+            }
+        </script>
         </body>
         </html>
         `;
 
-        return this.renderPdf(htmlContent);
+        return htmlContent;
     }
 
     // ─────────────────────────────────────────────────────────────────
     // 2. Financial Monthly Report PDF
     // ─────────────────────────────────────────────────────────────────
-    static async generateMonthlyFinancialPdf(teacherId: string, year: number, month: number): Promise<Buffer> {
+    static async generateMonthlyFinancialPdf(teacherId: string, year: number, month: number): Promise<string> {
         const report = await ReportsService.getFinancialMonthlyReport(teacherId, year, month);
 
         const content = `
@@ -429,13 +405,13 @@ export class PdfService {
                 </tbody>
             </table>
         `;
-        return this.renderPdf(this.wrapHtmlContent(`التقرير المالي - شهر ${month} لسنة ${year}`, content));
+        return this.wrapHtmlContent(`التقرير المالي - شهر ${month} لسنة ${year}`, content);
     }
 
     // ─────────────────────────────────────────────────────────────────
     // 3. Group Report PDF (List of Students and Stats)
     // ─────────────────────────────────────────────────────────────────
-    static async generateGroupReportPdf(groupId: string, teacherId: string): Promise<Buffer> {
+    static async generateGroupReportPdf(groupId: string, teacherId: string): Promise<string> {
         const report = await ReportsService.getGroupReport(groupId, teacherId);
 
         const content = `
@@ -488,13 +464,13 @@ export class PdfService {
                 </tbody>
             </table>
         `;
-        return this.renderPdf(this.wrapHtmlContent(`تقرير المجموعة: ${report.group.name}`, content));
+        return this.wrapHtmlContent(`تقرير المجموعة: ${report.group.name}`, content);
     }
 
     // ─────────────────────────────────────────────────────────────────
     // 4. Session Attendance List PDF
     // ─────────────────────────────────────────────────────────────────
-    static async generateSessionAttendancePdf(sessionId: string, teacherId: string): Promise<Buffer> {
+    static async generateSessionAttendancePdf(sessionId: string, teacherId: string): Promise<string> {
         const session = await SessionService.getSessionById(sessionId, teacherId);
         const attendanceList = await AttendanceService.getSessionAttendance(sessionId, teacherId);
 
@@ -538,6 +514,6 @@ export class PdfService {
                 </tbody>
             </table>
         `;
-        return this.renderPdf(this.wrapHtmlContent(`كشف غياب الحصة`, content));
+        return this.wrapHtmlContent(`كشف غياب الحصة`, content);
     }
 }

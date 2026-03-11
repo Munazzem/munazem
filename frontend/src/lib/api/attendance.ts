@@ -68,9 +68,7 @@ export const getGroupAttendanceHistory = async (
     return (res as any).data;
 };
 
-export const downloadAttendancePdf = async (sessionId: string): Promise<Blob> => {
-    const res = await apiClient.get(`/attendance/session/${sessionId}/pdf`, {
-        responseType: 'blob',
-    });
-    return res as unknown as Blob;
+export const fetchAttendanceHtml = async (sessionId: string): Promise<string> => {
+    const res = await apiClient.get(`/attendance/session/${sessionId}/pdf`);
+    return res as unknown as string;
 };
