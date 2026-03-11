@@ -3,8 +3,8 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getDailyLedger, getMonthlyLedger } from '@/lib/api/payments';
-import { downloadMonthlyReportPdf } from '@/lib/api/reports';
-import { downloadBlob } from '@/lib/utils/download';
+import { fetchMonthlyReportHtml } from '@/lib/api/reports';
+import { printHtmlContent } from '@/lib/utils/print';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { AddTransactionModal } from '@/components/payments/AddTransactionModal';
@@ -238,8 +238,8 @@ function MonthlyTab() {
     const handleDownloadPdf = async () => {
         setPdfLoading(true);
         try {
-            const blob = await downloadMonthlyReportPdf(year, month);
-            downloadBlob(blob, `التقرير-المالي-${year}-${month}.pdf`);
+            const html = await fetchMonthlyReportHtml(year, month);
+            printHtmlContent(html);
         } catch {
             toast.error('فشل تحميل التقرير');
         } finally {
