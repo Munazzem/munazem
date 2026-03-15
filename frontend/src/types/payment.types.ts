@@ -75,6 +75,8 @@ export interface IDailyLedger {
     totalIncome: number;
     totalExpenses: number;
     netBalance: number;
+    monthlyIncome: number;
+    monthlyExpenses: number;
 }
 
 export interface IDailySummary {

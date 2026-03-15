@@ -122,7 +122,7 @@ export default function StudentProfilePage() {
         if (!student) return;
         setCardLoading(true);
         try {
-            const html = await generateIdCardsHtml([student]);
+            const html = await generateIdCardsHtml([student], user?.centerName, user?.logoUrl);
             printHtmlContent(html);
         } catch {
             toast.error('فشل توليد الكارت الخاص بالطالب');

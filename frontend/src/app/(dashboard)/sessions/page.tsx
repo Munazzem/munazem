@@ -22,6 +22,7 @@ import {
     ChevronDown,
     ChevronUp,
 } from 'lucide-react';
+import { TableSkeleton } from '@/components/layout/skeletons/TableSkeleton';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -317,9 +318,8 @@ export default function SessionsPage() {
 
             {/* Loading */}
             {isLoading && (
-                <div className="flex items-center justify-center py-16 text-gray-400">
-                    <Loader2 className="h-6 w-6 animate-spin ml-2" />
-                    جارٍ التحميل...
+                <div className="p-4 sm:p-6 bg-white rounded-2xl border border-gray-100 shadow-sm mt-4">
+                    <TableSkeleton rows={10} columns={4} />
                 </div>
             )}
 

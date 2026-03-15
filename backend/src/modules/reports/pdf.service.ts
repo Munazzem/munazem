@@ -4,11 +4,15 @@ import { ReportsService } from './reports.service.js';
 import { AttendanceService } from '../attendance/attendance.service.js';
 import { SessionService } from '../sessions/sessions.service.js';
 import { NotFoundException } from '../../common/utils/response/error.responce.js';
+import { UserModel } from '../../database/models/user.model.js';
 
 export class PdfService {
 
     // Common HTML wrapper helper to avoid repetitive CSS
-    private static wrapHtmlContent(title: string, content: string): string {
+    private static wrapHtmlContent(title: string, content: string, centerName?: string, logoUrl?: string): string {
+        const headerText = centerName || 'منصة مُنظِّم — Monazem';
+        const logoImg = logoUrl ? `<img src="${logoUrl}" alt="Logo" style="max-height: 120px; margin-bottom: 15px; border-radius: 8px;" />` : '';
+
         return `
         <!DOCTYPE html>
         <html lang="ar" dir="rtl">
@@ -95,7 +99,8 @@ export class PdfService {
         </head>
         <body>
             <div class="header">
-                <h1>منصة مُنظِّم — Monazem</h1>
+                ${logoImg}
+                <h1>${headerText}</h1>
                 <h2>${title}</h2>
             </div>
             ${content}
@@ -120,6 +125,10 @@ export class PdfService {
      */
     static async generateStudentReportPdf(studentId: string, teacherId: string): Promise<string> {
         
+        const teacher = await UserModel.findById(teacherId).lean();
+        const centerName = teacher?.centerName || 'منصة مُنظِّم — Monazem';
+        const logoImg = teacher?.logoUrl ? `<img src="${teacher.logoUrl}" alt="Logo" style="max-height: 120px; margin-bottom: 15px; border-radius: 8px;" />` : '';
+
         // 1. Fetch complete report data
         const reportData = await ReportsService.getStudentReport(studentId, teacherId);
         if (!reportData) {
@@ -236,7 +245,8 @@ export class PdfService {
         <body>
 
             <div class="header">
-                <h1>منصة مُنظِّم — Monazem</h1>
+                ${logoImg}
+                <h1>${centerName}</h1>
                 <h2>تقرير شامل لبيانات الطالب الفنية والمالية</h2>
             </div>
 
@@ -343,6 +353,7 @@ export class PdfService {
     // 2. Financial Monthly Report PDF
     // ─────────────────────────────────────────────────────────────────
     static async generateMonthlyFinancialPdf(teacherId: string, year: number, month: number): Promise<string> {
+        const teacher = await UserModel.findById(teacherId).lean();
         const report = await ReportsService.getFinancialMonthlyReport(teacherId, year, month);
 
         const content = `
@@ -405,13 +416,14 @@ export class PdfService {
                 </tbody>
             </table>
         `;
-        return this.wrapHtmlContent(`التقرير المالي - شهر ${month} لسنة ${year}`, content);
+        return this.wrapHtmlContent(`التقرير المالي - شهر ${month} لسنة ${year}`, content, teacher?.centerName, teacher?.logoUrl);
     }
 
     // ─────────────────────────────────────────────────────────────────
     // 3. Group Report PDF (List of Students and Stats)
     // ─────────────────────────────────────────────────────────────────
     static async generateGroupReportPdf(groupId: string, teacherId: string): Promise<string> {
+        const teacher = await UserModel.findById(teacherId).lean();
         const report = await ReportsService.getGroupReport(groupId, teacherId);
 
         const content = `
@@ -464,13 +476,14 @@ export class PdfService {
                 </tbody>
             </table>
         `;
-        return this.wrapHtmlContent(`تقرير المجموعة: ${report.group.name}`, content);
+        return this.wrapHtmlContent(`تقرير المجموعة: ${report.group.name}`, content, teacher?.centerName, teacher?.logoUrl);
     }
 
     // ─────────────────────────────────────────────────────────────────
     // 4. Session Attendance List PDF
     // ─────────────────────────────────────────────────────────────────
     static async generateSessionAttendancePdf(sessionId: string, teacherId: string): Promise<string> {
+        const teacher = await UserModel.findById(teacherId).lean();
         const session = await SessionService.getSessionById(sessionId, teacherId);
         const attendanceList = await AttendanceService.getSessionAttendance(sessionId, teacherId);
 
@@ -514,6 +527,6 @@ export class PdfService {
                 </tbody>
             </table>
         `;
-        return this.wrapHtmlContent(`كشف غياب الحصة`, content);
+        return this.wrapHtmlContent(`كشف غياب الحصة`, content, teacher?.centerName, teacher?.logoUrl);
     }
 }

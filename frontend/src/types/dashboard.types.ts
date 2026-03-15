@@ -16,6 +16,7 @@ export interface DashboardData {
         incomeTrend: { month: string; income: number }[];
         studentsPerGroup: { groupName: string; studentCount: number }[];
         expensesBreakdown: { name: string; value: number }[];
+        attendanceTrend?: { date: string; rate: number }[];
     };
     recentActivities?: {
         type: string;

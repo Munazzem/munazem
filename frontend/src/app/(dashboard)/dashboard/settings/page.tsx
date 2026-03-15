@@ -1,14 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { fetchMe, updateMe, changePassword } from '@/lib/api/auth';
+import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
+import { fetchMe, updateMe, changePassword, updateSettings } from '@/lib/api/auth';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { toast } from 'sonner';
-import { Loader2, User, Lock, Phone, Mail, Save } from 'lucide-react';
+import { Loader2, User, Lock, Phone, Mail, Save, UploadCloud, Image as ImageIcon, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -41,7 +41,10 @@ const passwordSchema = z.object({
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
-    const storeUser = useAuthStore((s) => s.user);
+    const queryClient = useQueryClient();
+    const { user: storeUser, token, login: loginStore } = useAuthStore();
+    const isTeacher = storeUser?.role === 'teacher';
+    const isAssistant = storeUser?.role === 'assistant';
 
     const { data: meData, isLoading: meLoading } = useQuery({
         queryKey: ['me'],
@@ -61,6 +64,9 @@ export default function SettingsPage() {
                 phone: meData.phone || '',
                 email: meData.email || '',
             });
+            // Also sync branding states with current data
+            setCenterName(meData.centerName || '');
+            setLogoBase64(meData.logoUrl || null);
         }
     }, [meData, profileForm]);
 
@@ -84,6 +90,59 @@ export default function SettingsPage() {
         },
         onError: (e: any) => toast.error(e?.response?.data?.message || 'حدث خطأ'),
     });
+
+    // ── Branding Settings (Logo & Center Name) ────────────────────────────────
+    const [logoBase64, setLogoBase64] = useState<string | null>(storeUser?.logoUrl || null);
+    const [centerName, setCenterName] = useState(storeUser?.centerName || '');
+    const fileInputRef = useRef<any>(null);
+
+    const brandingMutation = useMutation({
+        mutationFn: updateSettings,
+        onSuccess: (updatedUser) => {
+            toast.success('تم حفظ إعدادات السنتر بنجاح');
+            if (storeUser && token) {
+                loginStore({ ...storeUser, ...updatedUser }, token);
+            }
+            queryClient.invalidateQueries({ queryKey: ['me'] });
+        },
+        onError: (e: any) => toast.error(e?.response?.data?.message || 'حدث خطأ أثناء حفظ الإعدادات'),
+    });
+
+    const compressImage = (file: File): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = (event) => {
+                const img = new Image();
+                img.src = event.target?.result as string;
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const MAX_WIDTH = 400;
+                    const MAX_HEIGHT = 400;
+                    let width = img.width;
+                    let height = img.height;
+                    if (width > height) { if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; } }
+                    else { if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; } }
+                    canvas.width = width; canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx?.drawImage(img, 0, 0, width, height);
+                    resolve(canvas.toDataURL('image/jpeg', 0.8));
+                };
+                img.onerror = (error) => reject(error);
+            };
+            reader.onerror = (error) => reject(error);
+        });
+    };
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (!file.type.startsWith('image/')) { toast.error('أرجو اختيار ملف صورة صالح'); return; }
+        try {
+            const compressed = await compressImage(file);
+            setLogoBase64(compressed);
+        } catch (error) { toast.error('فشل معالجة الصورة'); }
+    };
 
     return (
         <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-500 max-w-2xl" dir="rtl">
@@ -253,28 +312,72 @@ export default function SettingsPage() {
                 </div>
             </div>
 
-            {/* Account info */}
-            {meData && (
-                <div className="bg-gray-50 rounded-2xl border border-gray-100 px-6 py-4">
-                    <p className="text-xs text-gray-400 mb-2 font-semibold uppercase tracking-wide">معلومات الحساب</p>
-                    <div className="grid grid-cols-2 gap-3 text-sm">
-                        <div>
-                            <span className="text-gray-400">الدور: </span>
-                            <span className="font-semibold text-gray-700">
-                                {meData.role === 'superAdmin' ? 'مدير النظام' : meData.role === 'teacher' ? 'معلم' : 'مساعد'}
-                            </span>
+            {/* Branding Card (For Teachers & Assistants) */}
+            {(isTeacher || isAssistant) && (
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                    <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+                        <div className="h-9 w-9 rounded-xl bg-orange-100 flex items-center justify-center text-orange-600">
+                            <ImageIcon className="h-5 w-5" />
                         </div>
                         <div>
-                            <span className="text-gray-400">الحالة: </span>
-                            <span className={`font-semibold ${meData.isActive ? 'text-green-600' : 'text-red-500'}`}>
-                                {meData.isActive ? 'نشط' : 'غير نشط'}
-                            </span>
+                            <p className="font-bold text-gray-900 text-sm">إعدادات طباعة الفواتير والتقارير</p>
+                            <p className="text-xs text-gray-500">تخصيص اسم السنتر واللوجو الخاص بك</p>
                         </div>
-                        <div>
-                            <span className="text-gray-400">تاريخ الإنشاء: </span>
-                            <span className="font-semibold text-gray-700">
-                                {new Date(meData.createdAt).toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' })}
-                            </span>
+                    </div>
+
+                    <div className="p-6 space-y-6">
+                        <div className="space-y-2">
+                            <label className="text-sm font-semibold text-gray-700">اسم السنتر / المؤسسة</label>
+                            <Input 
+                                placeholder="مثال: سنتر التفوق التعليمي" 
+                                value={centerName} 
+                                onChange={(e) => setCenterName(e.target.value)}
+                                className="max-w-md"
+                            />
+                            <p className="text-[11px] text-gray-400">هذا الاسم سيظهر في أعلى كل تقرير مطبوع وكارت للطلاب</p>
+                        </div>
+
+                        <div className="space-y-3">
+                            <label className="text-sm font-semibold text-gray-700 block">شعار السنتر (Logo)</label>
+                            <div className="flex flex-col sm:flex-row items-center gap-6">
+                                <div className="w-24 h-24 rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden shrink-0 relative group">
+                                    {logoBase64 ? (
+                                        <>
+                                            <img src={logoBase64} alt="Center Logo" className="w-full h-full object-contain p-2" />
+                                            <button
+                                                type="button"
+                                                onClick={() => setLogoBase64(null)}
+                                                className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white"
+                                            >
+                                                <Trash2 className="w-5 h-5" />
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <ImageIcon className="w-8 h-8 text-gray-300" />
+                                    )}
+                                </div>
+
+                                <div className="space-y-2">
+                                    <input type="file" className="hidden" ref={fileInputRef} onChange={handleFileChange} accept="image/*" />
+                                    <Button variant="outline" onClick={() => fileInputRef.current.click()} className="gap-2 text-xs">
+                                        <UploadCloud className="h-4 w-4" /> اختيار شعار جديد
+                                    </Button>
+                                    <p className="text-[11px] text-gray-400 leading-relaxed max-w-sm">
+                                        يُفضل استخدام صورة مربعة ذات خلفية شفافة. سيتم تصغير الصورة أوتوماتيكياً للحفاظ على الأداء.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end pt-4 border-t border-gray-50">
+                            <Button 
+                                onClick={() => brandingMutation.mutate({ centerName, logoUrl: logoBase64 || '' })} 
+                                className="bg-orange-600 hover:bg-orange-700 gap-2"
+                                disabled={brandingMutation.isPending}
+                            >
+                                {brandingMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                                حفظ إعدادات السنتر
+                            </Button>
                         </div>
                     </div>
                 </div>

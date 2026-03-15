@@ -33,8 +33,17 @@ export const login = async (data: ILoginRequest): Promise<IAuthResponse> => {
     const refreshToken = TokenUtil.generateRefreshToken(payload);
 
     // Since we used .lean(), 'user' is already a plain JS object, so we don't need .toObject()
-    const userObject = { ...user };
+    const userObject: any = { ...user };
     delete userObject.password;
+
+    // BRANDING INHERITANCE: If assistant, merge teacher's center info
+    if (user.role === 'assistant' && user.teacherId) {
+        const teacher = await UserModel.findById(user.teacherId, { centerName: 1, logoUrl: 1 }).lean();
+        if (teacher) {
+            userObject.centerName = teacher.centerName;
+            userObject.logoUrl = teacher.logoUrl;
+        }
+    }
 
     return {
         message: 'تم تسجيل الدخول بنجاح',
