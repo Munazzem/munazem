@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchSessions, generateWeekSessions } from '@/lib/api/sessions';
+import { fetchSessions, generateMonthSessions } from '@/lib/api/sessions';
 import { fetchGroups } from '@/lib/api/groups';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { CreateSessionModal } from '@/components/sessions/CreateSessionModal';
@@ -19,6 +19,8 @@ import {
     Loader2,
     Wand2,
     ArrowLeft,
+    ChevronDown,
+    ChevronUp,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -29,6 +31,12 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import {
+    Accordion,
+    AccordionContent,
+    AccordionItem,
+    AccordionTrigger,
+} from "@/components/ui/accordion";
 import { Input } from '@/components/ui/input';
 import type { ISession, SessionStatus } from '@/types/session.types';
 import { cn } from '@/lib/utils';
@@ -51,7 +59,7 @@ export default function SessionsPage() {
     const router = useRouter();
     const user = useAuthStore((s) => s.user);
     const queryClient = useQueryClient();
-    const isAssistant = user?.role === 'assistant';
+    const canWrite = user?.role === 'assistant' || user?.role === 'teacher';
 
     const [page, setPage] = useState(1);
     const [groupFilter, setGroupFilter] = useState('');
@@ -59,12 +67,23 @@ export default function SessionsPage() {
     const [dateFilter, setDateFilter] = useState('');
     const [showFilters, setShowFilters] = useState(false);
 
+    // Month generation
+    const now = new Date();
+    const [showMonthPicker, setShowMonthPicker] = useState(false);
+    const [genYear,  setGenYear]  = useState(now.getFullYear());
+    const [genMonth, setGenMonth] = useState(now.getMonth() + 1);
+
+    const MONTH_NAMES = [
+        'يناير','فبراير','مارس','أبريل','مايو','يونيو',
+        'يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر',
+    ];
+
     const { data, isLoading, isFetching } = useQuery({
         queryKey: ['sessions', page, groupFilter, statusFilter, dateFilter],
         queryFn: () =>
             fetchSessions({
                 page,
-                limit: 15,
+                limit: 500,
                 groupId: groupFilter || undefined,
                 status: statusFilter || undefined,
                 date: dateFilter || undefined,
@@ -77,9 +96,11 @@ export default function SessionsPage() {
     });
 
     const generateMutation = useMutation({
-        mutationFn: generateWeekSessions,
+        mutationFn: ({ year, month }: { year: number; month: number }) =>
+            generateMonthSessions(year, month),
         onSuccess: (result) => {
             toast.success(result.message);
+            setShowMonthPicker(false);
             queryClient.invalidateQueries({ queryKey: ['sessions'] });
         },
         onError: (err: any) => {
@@ -87,14 +108,8 @@ export default function SessionsPage() {
         },
     });
 
-    const handleGenerateWeek = () => {
-        const today = new Date();
-        const day = today.getDay();
-        const diff = day >= 6 ? 0 : -(day + 1);
-        const saturday = new Date(today);
-        saturday.setDate(today.getDate() + diff);
-        const weekStart = saturday.toISOString().split('T')[0];
-        generateMutation.mutate(weekStart!);
+    const handleGenerateMonth = () => {
+        generateMutation.mutate({ year: genYear, month: genMonth });
     };
 
     const sessions = data?.data ?? [];
@@ -135,6 +150,16 @@ export default function SessionsPage() {
         return group?.name ?? '—';
     };
 
+    // Grouping the sessions by Group Name
+    const sessionsByGroup = sessions.reduce((acc, session) => {
+        const gName = getGroupName(session);
+        if (!acc[gName]) acc[gName] = [];
+        acc[gName].push(session);
+        return acc;
+    }, {} as Record<string, ISession[]>);
+
+    const groupKeys = Object.keys(sessionsByGroup);
+
     return (
         <div className="min-h-screen bg-gray-50/30 p-3 sm:p-4 lg:p-6" dir="rtl">
             {/* Header */}
@@ -145,26 +170,77 @@ export default function SessionsPage() {
                         الحصص والغياب
                     </h1>
                     <p className="text-xs sm:text-sm text-gray-500 mt-1">
-                        {isAssistant ? 'إدارة الحصص وتسجيل الحضور' : 'عرض الحصص وسجلات الحضور'}
+                        {canWrite ? 'إدارة الحصص وتسجيل الحضور' : 'عرض الحصص وسجلات الحضور'}
                     </p>
                 </div>
-                {isAssistant && (
-                    <div className="flex gap-2 shrink-0">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={handleGenerateWeek}
-                            disabled={generateMutation.isPending}
-                            className="gap-1.5 text-xs sm:text-sm"
-                        >
-                            {generateMutation.isPending ? (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                                <Wand2 className="h-3.5 w-3.5" />
+                {canWrite && (
+                    <div className="relative flex gap-2 shrink-0">
+                        <div className="relative">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setShowMonthPicker((v) => !v)}
+                                disabled={generateMutation.isPending}
+                                className="gap-1.5 text-xs sm:text-sm"
+                            >
+                                {generateMutation.isPending ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                    <Wand2 className="h-3.5 w-3.5" />
+                                )}
+                                <span className="hidden sm:inline">توليد حصص الشهر</span>
+                                <span className="sm:hidden">توليد</span>
+                                {showMonthPicker ? (
+                                    <ChevronUp className="h-3 w-3" />
+                                ) : (
+                                    <ChevronDown className="h-3 w-3" />
+                                )}
+                            </Button>
+
+                            {showMonthPicker && (
+                                <div className="absolute top-full mt-2 left-0 z-50 bg-white border border-gray-200 rounded-xl shadow-lg p-4 w-64" dir="rtl">
+                                    <p className="text-xs font-bold text-gray-600 mb-3">اختر الشهر للتوليد</p>
+                                    <div className="flex items-center justify-between mb-3">
+                                        <button onClick={() => setGenYear((y) => y - 1)} className="p-1 hover:text-primary rounded">
+                                            <ChevronRight className="h-4 w-4" />
+                                        </button>
+                                        <span className="font-bold text-gray-800 text-sm">{genYear}</span>
+                                        <button onClick={() => setGenYear((y) => y + 1)} className="p-1 hover:text-primary rounded">
+                                            <ChevronLeft className="h-4 w-4" />
+                                        </button>
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-1.5 mb-3">
+                                        {MONTH_NAMES.map((name, i) => (
+                                            <button
+                                                key={i}
+                                                onClick={() => setGenMonth(i + 1)}
+                                                className={cn(
+                                                    'py-1.5 rounded-lg text-xs font-medium transition-colors',
+                                                    genMonth === i + 1
+                                                        ? 'bg-primary text-white'
+                                                        : 'text-gray-600 hover:bg-gray-100'
+                                                )}
+                                            >
+                                                {name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <Button
+                                        className="w-full gap-1.5 text-xs"
+                                        size="sm"
+                                        onClick={handleGenerateMonth}
+                                        disabled={generateMutation.isPending}
+                                    >
+                                        {generateMutation.isPending ? (
+                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                        ) : (
+                                            <Wand2 className="h-3.5 w-3.5" />
+                                        )}
+                                        توليد {MONTH_NAMES[genMonth - 1]} {genYear}
+                                    </Button>
+                                </div>
                             )}
-                            <span className="hidden sm:inline">توليد حصص الأسبوع</span>
-                            <span className="sm:hidden">توليد</span>
-                        </Button>
+                        </div>
                         <CreateSessionModal />
                     </div>
                 )}
@@ -252,105 +328,117 @@ export default function SessionsPage() {
                 <div className="flex flex-col items-center justify-center py-16 text-gray-400 gap-3 bg-white rounded-xl border border-gray-100 shadow-sm">
                     <CalendarDays className="h-12 w-12 text-gray-200" />
                     <p className="text-sm">لا توجد حصص</p>
-                    {isAssistant && (
+                    {canWrite && (
                         <p className="text-xs text-gray-400">ابدأ بإنشاء حصة جديدة أو توليد حصص الأسبوع</p>
                     )}
                 </div>
             )}
 
-            {/* ── Mobile / Tablet: Card list ── */}
-            {!isLoading && sessions.length > 0 && (
-                <div className="lg:hidden space-y-3">
-                    {sessions.map((session) => (
-                        <button
-                            key={session._id}
-                            className="w-full text-right bg-white border border-gray-100 rounded-xl shadow-sm p-4 hover:border-primary/30 hover:shadow-md transition-all"
-                            onClick={() => router.push(`/sessions/${session._id}`)}
-                        >
-                            <div className="flex items-start justify-between gap-2">
-                                <div className="min-w-0">
-                                    <p className="font-bold text-gray-900 truncate">{getGroupName(session)}</p>
-                                    <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-500">
-                                        <span className="flex items-center gap-1">
-                                            <CalendarDays className="h-3 w-3" />
-                                            {formatDateShort(session.date)}
-                                        </span>
-                                        <span className="flex items-center gap-1">
-                                            <Clock className="h-3 w-3" />
-                                            {session.startTime}
-                                        </span>
+            {/* ── Desktop & Mobile Grouped View ── */}
+            {!isLoading && groupKeys.length > 0 && (
+                <Accordion type="multiple" className="space-y-4" defaultValue={groupKeys}>
+                    {groupKeys.map((groupName) => (
+                        <AccordionItem value={groupName} key={groupName} className="bg-white border border-gray-100 rounded-xl shadow-sm px-4">
+                            <AccordionTrigger className="hover:no-underline py-4">
+                                <div className="flex items-center gap-2">
+                                    <h2 className="text-xl font-bold text-primary">{groupName}</h2>
+                                    <Badge variant="secondary" className="bg-blue-50 text-blue-700">
+                                        {sessionsByGroup[groupName].length} حصص
+                                    </Badge>
+                                </div>
+                            </AccordionTrigger>
+                            <AccordionContent>
+                                {/* Mobile View (Cards) */}
+                                <div className="lg:hidden space-y-3 pt-4">
+                                    {sessionsByGroup[groupName].map((session) => (
+                                        <button
+                                            key={session._id}
+                                            className="w-full text-right bg-white border border-gray-100 rounded-xl shadow-sm p-4 hover:border-primary/30 hover:shadow-md transition-all"
+                                            onClick={() => router.push(`/sessions/${session._id}`)}
+                                        >
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="min-w-0">
+                                                    <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-500">
+                                                        <span className="flex items-center gap-1">
+                                                            <CalendarDays className="h-4 w-4 text-primary" />
+                                                            <span className="font-bold text-gray-800 text-sm">{formatDateShort(session.date)}</span>
+                                                        </span>
+                                                        <span className="flex items-center gap-1">
+                                                            <Clock className="h-4 w-4 text-primary" />
+                                                            <span className="font-bold text-gray-800 text-sm">{session.startTime}</span>
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <div className="flex flex-col items-end gap-2 shrink-0">
+                                                    <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border', STATUS_COLORS[session.status])}>
+                                                        {STATUS_LABELS[session.status]}
+                                                    </span>
+                                                    <ArrowLeft className="h-4 w-4 text-gray-300" />
+                                                </div>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {/* Desktop View (Table) */}
+                                <div className="hidden lg:block bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden mt-4">
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-sm">
+                                            <thead>
+                                                <tr className="border-b border-gray-100 bg-gray-50/50">
+                                                    <th className="px-4 py-3 text-right font-medium text-gray-600">التاريخ</th>
+                                                    <th className="px-4 py-3 text-right font-medium text-gray-600">الوقت</th>
+                                                    <th className="px-4 py-3 text-right font-medium text-gray-600">الحالة</th>
+                                                    <th className="px-4 py-3 text-right font-medium text-gray-600"></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-50">
+                                                {sessionsByGroup[groupName].map((session) => (
+                                                    <tr
+                                                        key={session._id}
+                                                        className="hover:bg-gray-50/60 transition-colors cursor-pointer"
+                                                        onClick={() => router.push(`/sessions/${session._id}`)}
+                                                    >
+                                                        <td className="px-4 py-3 text-gray-700 font-bold">
+                                                            <div className="flex items-center gap-1.5">
+                                                                <CalendarDays className="h-4 w-4 text-primary" />
+                                                                {formatDate(session.date)}
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-gray-700 font-bold">
+                                                            <div className="flex items-center gap-1.5">
+                                                                <Clock className="h-4 w-4 text-primary" />
+                                                                {session.startTime}
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-3">
+                                                            <span className={cn('inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border', STATUS_COLORS[session.status])}>
+                                                                {STATUS_LABELS[session.status]}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-left">
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="text-primary hover:text-primary/80 gap-1 text-xs"
+                                                                onClick={(e) => { e.stopPropagation(); router.push(`/sessions/${session._id}`); }}
+                                                            >
+                                                                {canWrite && session.status !== 'COMPLETED' && session.status !== 'CANCELLED'
+                                                                    ? 'تسجيل الحضور'
+                                                                    : 'عرض التفاصيل'}
+                                                                <ChevronLeft className="h-3.5 w-3.5" />
+                                                            </Button>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                    <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border', STATUS_COLORS[session.status])}>
-                                        {STATUS_LABELS[session.status]}
-                                    </span>
-                                    <ArrowLeft className="h-4 w-4 text-gray-300" />
-                                </div>
-                            </div>
-                        </button>
+                            </AccordionContent>
+                        </AccordionItem>
                     ))}
-                </div>
-            )}
-
-            {/* ── Desktop: Table ── */}
-            {!isLoading && sessions.length > 0 && (
-                <div className="hidden lg:block bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead>
-                                <tr className="border-b border-gray-100 bg-gray-50/50">
-                                    <th className="px-4 py-3 text-right font-medium text-gray-600">المجموعة</th>
-                                    <th className="px-4 py-3 text-right font-medium text-gray-600">التاريخ</th>
-                                    <th className="px-4 py-3 text-right font-medium text-gray-600">الوقت</th>
-                                    <th className="px-4 py-3 text-right font-medium text-gray-600">الحالة</th>
-                                    <th className="px-4 py-3 text-right font-medium text-gray-600"></th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-50">
-                                {sessions.map((session) => (
-                                    <tr
-                                        key={session._id}
-                                        className="hover:bg-gray-50/60 transition-colors cursor-pointer"
-                                        onClick={() => router.push(`/sessions/${session._id}`)}
-                                    >
-                                        <td className="px-4 py-3 font-medium text-gray-800">{getGroupName(session)}</td>
-                                        <td className="px-4 py-3 text-gray-600">
-                                            <div className="flex items-center gap-1.5">
-                                                <CalendarDays className="h-3.5 w-3.5 text-gray-400" />
-                                                {formatDate(session.date)}
-                                            </div>
-                                        </td>
-                                        <td className="px-4 py-3 text-gray-600">
-                                            <div className="flex items-center gap-1.5">
-                                                <Clock className="h-3.5 w-3.5 text-gray-400" />
-                                                {session.startTime}
-                                            </div>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            <span className={cn('inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border', STATUS_COLORS[session.status])}>
-                                                {STATUS_LABELS[session.status]}
-                                            </span>
-                                        </td>
-                                        <td className="px-4 py-3 text-left">
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                className="text-primary hover:text-primary/80 gap-1 text-xs"
-                                                onClick={(e) => { e.stopPropagation(); router.push(`/sessions/${session._id}`); }}
-                                            >
-                                                {isAssistant && session.status !== 'COMPLETED' && session.status !== 'CANCELLED'
-                                                    ? 'تسجيل الحضور'
-                                                    : 'عرض التفاصيل'}
-                                                <ChevronLeft className="h-3.5 w-3.5" />
-                                            </Button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+                </Accordion>
             )}
 
             {/* Pagination */}

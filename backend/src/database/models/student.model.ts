@@ -53,6 +53,10 @@ const studentSchema = new Schema<IStudent>({
     isActive: {
         type: Boolean,
         default: true
+    },
+    monthlySessionsQuota: {
+        type: Number,
+        default: 8
     }
 }, {
     timestamps: true
