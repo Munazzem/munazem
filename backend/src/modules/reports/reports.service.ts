@@ -1,11 +1,12 @@
 import { StudentModel }            from '../../database/models/student.model.js';
 import { GroupModel }              from '../../database/models/group.model.js';
+import { AttendanceModel }         from '../../database/models/attendance.model.js';
 import { AttendanceSnapshotModel } from '../../database/models/attendance-snapshot.model.js';
 import { TransactionModel }        from '../../database/models/transaction.model.js';
 import { SessionModel }            from '../../database/models/session.model.js';
 import { DailyLedgerModel, MonthlyLedgerModel } from '../../database/models/ledger.model.js';
 import mongoose from 'mongoose';
-import { TransactionType, TransactionCategory, SessionStatus, UserRole } from '../../common/enums/enum.service.js';
+import { TransactionType, TransactionCategory, SessionStatus, UserRole, AttendanceStatus } from '../../common/enums/enum.service.js';
 import { NotFoundException } from '../../common/utils/response/error.responce.js';
 import { BarcodeUtil } from '../../common/utils/barcode.util.js';
 
@@ -83,6 +84,41 @@ export class ReportsService {
             s => new Date(s.date) >= monthStart && new Date(s.date) <= monthEnd
         );
 
+        // Calculate monthly session usage (Attendance records this month)
+        // 1. Get all scheduled/completed sessions for the group this month
+        const groupSessions = await SessionModel.find({
+            groupId: student.groupId,
+            teacherId,
+            date: { $gte: monthStart, $lte: monthEnd }
+        }).sort({ date: 1, startTime: 1 }).lean();
+
+        // 2. Get attendance for these sessions
+        const attendedRecords = await AttendanceModel.find({
+            studentId,
+            sessionId: { $in: groupSessions.map(s => s._id) as any },
+            status: { $in: [AttendanceStatus.PRESENT, AttendanceStatus.LATE] }
+        }).lean();
+
+        const attendedSessionIds = new Set(attendedRecords.map(a => a.sessionId?.toString()));
+
+        // 3. Map them together
+        const monthlySessions = groupSessions.map(s => ({
+            sessionId: s._id,
+            date:      s.date,
+            status:    attendedSessionIds.has(s._id.toString()) ? AttendanceStatus.PRESENT : AttendanceStatus.ABSENT,
+        }));
+
+        // 4. Manual records this month (not linked to group sessions)
+        const manualRecordsCount = await AttendanceModel.countDocuments({
+            studentId,
+            sessionId: { $exists: false },
+            type:      'MANUAL',
+            scannedAt: { $gte: monthStart, $lte: monthEnd },
+            status:    { $in: [AttendanceStatus.PRESENT, AttendanceStatus.LATE] }
+        });
+
+        const usedSessionsThisMonth = attendedRecords.length + manualRecordsCount;
+
         // Generate Barcode Image using the studentCode (or barcode if they have a physical card)
         const codeToEncode = student.barcode || (student as any).studentCode || student._id.toString().substring(0, 10);
         let barcodeImageBase64 = '';
@@ -98,6 +134,10 @@ export class ReportsService {
                 groupName: group?.name ?? '—',
                 barcodeImageBase64,
                 hasActiveSubscription,
+                monthlySessionsQuota: student.monthlySessionsQuota,
+                usedSessionsThisMonth,
+                monthlySessions, // Send the real session list
+                manualRecordsCount,
             },
             attendance: {
                 totalSessions,

@@ -34,8 +34,18 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
-interface StudentRow extends BulkStudentInput {
-    id: string; // local key
+// Each row only needs name + phones (gradeLevel & groupId are shared)
+interface StudentRow {
+    id: string;
+    fullName: string;
+    studentPhone: string;
+    parentPhone: string;
+}
+
+interface Group {
+    _id: string;
+    name: string;
+    gradeLevel: string;
 }
 
 const PHONE_REGEX = /^01[0-2,5]{1}[0-9]{8}$/;
@@ -46,8 +56,6 @@ function emptyRow(): StudentRow {
         fullName: '',
         studentPhone: '',
         parentPhone: '',
-        gradeLevel: '',
-        groupId: '',
     };
 }
 
@@ -56,23 +64,13 @@ function validateRow(row: StudentRow): string[] {
     if (row.fullName.trim().length < 5) errors.push('الاسم يجب 5 أحرف على الأقل');
     if (!PHONE_REGEX.test(row.studentPhone)) errors.push('هاتف الطالب غير صحيح');
     if (!PHONE_REGEX.test(row.parentPhone)) errors.push('هاتف ولي الأمر غير صحيح');
-    if (!row.gradeLevel) errors.push('اختر المرحلة');
-    if (!row.groupId) errors.push('اختر المجموعة');
     return errors;
-}
-
-interface Group {
-    _id: string;
-    name: string;
-    gradeLevel: string;
 }
 
 // ─── Single Row Component ─────────────────────────────────────────
 function StudentRowForm({
     row,
     index,
-    groups,
-    allowedGrades,
     onChange,
     onRemove,
     canRemove,
@@ -80,19 +78,13 @@ function StudentRowForm({
 }: {
     row: StudentRow;
     index: number;
-    groups: Group[];
-    allowedGrades: string[];
     onChange: (id: string, field: keyof StudentRow, value: string) => void;
     onRemove: (id: string) => void;
     canRemove: boolean;
     result?: BulkStudentResult;
 }) {
-    const filteredGroups = row.gradeLevel
-        ? groups.filter((g) => g.gradeLevel === row.gradeLevel)
-        : [];
-
     const rowErrors = validateRow(row);
-    const isDirty = row.fullName || row.studentPhone || row.parentPhone;
+    const isDirty = !!(row.fullName || row.studentPhone || row.parentPhone);
 
     return (
         <div className={cn(
@@ -134,10 +126,9 @@ function StudentRowForm({
                 )}
             </div>
 
-            {/* Fields */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {/* Full Name */}
-                <div className="sm:col-span-2">
+            {/* Fields — only name + phones */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="sm:col-span-3">
                     <Input
                         placeholder="الاسم الثلاثي أو الرباعي *"
                         value={row.fullName}
@@ -146,8 +137,6 @@ function StudentRowForm({
                         className={cn('text-sm', isDirty && row.fullName.trim().length < 5 && 'border-red-300')}
                     />
                 </div>
-
-                {/* Student Phone */}
                 <Input
                     placeholder="هاتف الطالب 01x..."
                     value={row.studentPhone}
@@ -156,8 +145,6 @@ function StudentRowForm({
                     dir="ltr"
                     className={cn('text-sm text-right', isDirty && !PHONE_REGEX.test(row.studentPhone) && 'border-red-300')}
                 />
-
-                {/* Parent Phone */}
                 <Input
                     placeholder="هاتف ولي الأمر 01x..."
                     value={row.parentPhone}
@@ -166,47 +153,8 @@ function StudentRowForm({
                     dir="ltr"
                     className={cn('text-sm text-right', isDirty && !PHONE_REGEX.test(row.parentPhone) && 'border-red-300')}
                 />
-
-                {/* Grade Level */}
-                <Select
-                    value={row.gradeLevel}
-                    onValueChange={(v) => {
-                        onChange(row.id, 'gradeLevel', v);
-                        onChange(row.id, 'groupId', ''); // reset group on grade change
-                    }}
-                    disabled={!!result}
-                >
-                    <SelectTrigger className="h-9 text-sm">
-                        <SelectValue placeholder="المرحلة الدراسية *" />
-                    </SelectTrigger>
-                    <SelectContent dir="rtl">
-                        {allowedGrades.map((g) => (
-                            <SelectItem key={g} value={g}>{g}</SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
-
-                {/* Group */}
-                <Select
-                    value={row.groupId}
-                    onValueChange={(v) => onChange(row.id, 'groupId', v)}
-                    disabled={!!result || !row.gradeLevel}
-                >
-                    <SelectTrigger className="h-9 text-sm">
-                        <SelectValue placeholder={!row.gradeLevel ? 'اختر المرحلة أولاً' : 'المجموعة *'} />
-                    </SelectTrigger>
-                    <SelectContent dir="rtl">
-                        {filteredGroups.map((g) => (
-                            <SelectItem key={g._id} value={g._id}>{g.name}</SelectItem>
-                        ))}
-                        {filteredGroups.length === 0 && row.gradeLevel && (
-                            <div className="p-2 text-xs text-center text-gray-400">لا توجد مجموعات في هذه المرحلة</div>
-                        )}
-                    </SelectContent>
-                </Select>
             </div>
 
-            {/* Inline errors (only if touched and has problems) */}
             {isDirty && !result && rowErrors.length > 0 && (
                 <p className="text-xs text-red-500">{rowErrors.join(' · ')}</p>
             )}
@@ -220,6 +168,10 @@ export function BulkAddStudentsModal() {
     const [rows, setRows] = useState<StudentRow[]>([emptyRow()]);
     const [results, setResults] = useState<BulkStudentResult[] | null>(null);
     const [showAll, setShowAll] = useState(false);
+
+    // Shared fields
+    const [sharedGrade, setSharedGrade] = useState('');
+    const [sharedGroupId, setSharedGroupId] = useState('');
 
     const queryClient = useQueryClient();
     const user = useAuthStore((s) => s.user);
@@ -235,6 +187,10 @@ export function BulkAddStudentsModal() {
     const availableGrades = Array.from(
         new Set(groups.map((g) => g.gradeLevel).filter((g) => allowedGrades.includes(g)))
     );
+
+    const filteredGroups = sharedGrade
+        ? groups.filter((g) => g.gradeLevel === sharedGrade)
+        : [];
 
     const mutation = useMutation({
         mutationFn: bulkCreateStudents,
@@ -271,14 +227,25 @@ export function BulkAddStudentsModal() {
     };
 
     const handleSubmit = () => {
-        // Validate all rows
+        if (!sharedGrade) {
+            toast.error('يرجى اختيار المرحلة الدراسية أولاً');
+            return;
+        }
+        if (!sharedGroupId) {
+            toast.error('يرجى اختيار المجموعة أولاً');
+            return;
+        }
         const invalidRows = rows.filter((r) => validateRow(r).length > 0);
         if (invalidRows.length > 0) {
             toast.error(`يوجد ${invalidRows.length} صف به بيانات ناقصة أو غير صحيحة`);
             return;
         }
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const payload = rows.map(({ id, ...rest }) => rest);
+        // Merge shared gradeLevel + groupId into each row
+        const payload: BulkStudentInput[] = rows.map(({ id, ...rest }) => ({
+            ...rest,
+            gradeLevel: sharedGrade,
+            groupId: sharedGroupId,
+        }));
         mutation.mutate(payload);
     };
 
@@ -286,25 +253,20 @@ export function BulkAddStudentsModal() {
         setRows([emptyRow()]);
         setResults(null);
         setShowAll(false);
+        setSharedGrade('');
+        setSharedGroupId('');
     };
 
     const handleClose = (v: boolean) => {
-        if (!v) {
-            handleReset();
-        }
+        if (!v) handleReset();
         setOpen(v);
     };
 
-    const allValid = rows.every((r) => validateRow(r).length === 0);
+    const rowsValid = rows.every((r) => validateRow(r).length === 0);
     const isDone = results !== null;
-
-    // Summary
     const successCount = results?.filter((r) => r.success).length ?? 0;
     const failCount    = results?.filter((r) => !r.success).length ?? 0;
-
-    const displayedRows = isDone
-        ? rows
-        : showAll ? rows : rows.slice(0, 10);
+    const displayedRows = isDone ? rows : showAll ? rows : rows.slice(0, 10);
 
     return (
         <Dialog open={open} onOpenChange={handleClose}>
@@ -315,19 +277,59 @@ export function BulkAddStudentsModal() {
                 </Button>
             </DialogTrigger>
 
-            <DialogContent
-                className="max-w-2xl w-full max-h-[90vh] flex flex-col"
-                dir="rtl"
-            >
+            <DialogContent className="max-w-2xl w-full max-h-[90vh] flex flex-col" dir="rtl">
                 <DialogHeader className="shrink-0">
                     <DialogTitle className="flex items-center gap-2 text-lg">
                         <Users className="h-5 w-5 text-primary" />
                         إضافة طلاب متعددين
                     </DialogTitle>
                     <p className="text-xs text-gray-500 mt-1">
-                        أضف حتى 50 طالب دفعة واحدة. الحقول المميزة بـ * مطلوبة.
+                        اختر المرحلة والمجموعة مرة واحدة لجميع الطلاب، ثم أضف بياناتهم.
                     </p>
                 </DialogHeader>
+
+                {/* ── Shared gradeLevel + groupId ── */}
+                {!isDone && (
+                    <div className="shrink-0 bg-blue-50 border border-blue-100 rounded-xl p-4 space-y-3">
+                        <p className="text-xs font-bold text-blue-700">إعدادات مشتركة لجميع الطلاب</p>
+                        <div className="grid grid-cols-2 gap-3">
+                            <Select
+                                value={sharedGrade}
+                                onValueChange={(v) => {
+                                    setSharedGrade(v);
+                                    setSharedGroupId('');
+                                }}
+                            >
+                                <SelectTrigger className="h-9 text-sm bg-white">
+                                    <SelectValue placeholder="المرحلة الدراسية *" />
+                                </SelectTrigger>
+                                <SelectContent dir="rtl">
+                                    {availableGrades.map((g) => (
+                                        <SelectItem key={g} value={g}>{g}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+
+                            <Select
+                                value={sharedGroupId}
+                                onValueChange={setSharedGroupId}
+                                disabled={!sharedGrade}
+                            >
+                                <SelectTrigger className="h-9 text-sm bg-white">
+                                    <SelectValue placeholder={!sharedGrade ? 'اختر المرحلة أولاً' : 'المجموعة *'} />
+                                </SelectTrigger>
+                                <SelectContent dir="rtl">
+                                    {filteredGroups.map((g) => (
+                                        <SelectItem key={g._id} value={g._id}>{g.name}</SelectItem>
+                                    ))}
+                                    {filteredGroups.length === 0 && sharedGrade && (
+                                        <div className="p-2 text-xs text-center text-gray-400">لا توجد مجموعات</div>
+                                    )}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+                )}
 
                 {/* Results Summary Bar */}
                 {isDone && (
@@ -358,8 +360,6 @@ export function BulkAddStudentsModal() {
                             key={row.id}
                             row={row}
                             index={isDone ? idx : rows.indexOf(row)}
-                            groups={groups}
-                            allowedGrades={availableGrades}
                             onChange={handleChange}
                             onRemove={removeRow}
                             canRemove={rows.length > 1}
@@ -367,7 +367,6 @@ export function BulkAddStudentsModal() {
                         />
                     ))}
 
-                    {/* Show more rows link */}
                     {!isDone && rows.length > 10 && !showAll && (
                         <button
                             onClick={() => setShowAll(true)}
@@ -393,18 +392,14 @@ export function BulkAddStudentsModal() {
                     )}
 
                     <div className="flex gap-2">
-                        <Button
-                            variant="outline"
-                            className="flex-1"
-                            onClick={() => handleClose(false)}
-                        >
+                        <Button variant="outline" className="flex-1" onClick={() => handleClose(false)}>
                             {isDone ? 'إغلاق' : 'إلغاء'}
                         </Button>
                         {!isDone && (
                             <Button
                                 className="flex-1 gap-2 font-bold"
                                 onClick={handleSubmit}
-                                disabled={mutation.isPending || !allValid || rows.length === 0}
+                                disabled={mutation.isPending || !rowsValid || rows.length === 0 || !sharedGrade || !sharedGroupId}
                             >
                                 {mutation.isPending ? (
                                     <>

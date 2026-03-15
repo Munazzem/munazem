@@ -3,11 +3,12 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { fetchStudents, deleteStudent } from '@/lib/api/students';
+import { fetchGroups } from '@/lib/api/groups';
 import type { StudentWithGroup } from '@/types/student.types';
+import type { Group } from '@/types/group.types';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { 
     Search, 
-    Filter, 
     MoreVertical, 
     Edit, 
     Trash2, 
@@ -15,7 +16,14 @@ import {
     Loader2,
     AlertCircle,
     Phone,
+    Users,
+    ChevronRight,
+    ArrowRight,
+    Printer,
+    CheckSquare,
+    QrCode,
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,20 +31,10 @@ import { Badge } from '@/components/ui/badge';
 import { AddStudentModal } from '@/components/students/AddStudentModal';
 import { BulkAddStudentsModal } from '@/components/students/BulkAddStudentsModal';
 import { EditStudentModal } from '@/components/students/EditStudentModal';
-import dynamic from 'next/dynamic';
-const StudentProfileModal = dynamic(
-    () => import('@/components/students/StudentProfileModal').then(m => m.StudentProfileModal),
-    { ssr: false }
-);
-import { getAllowedGrades } from '@/lib/utils/grades';
 import { toast } from 'sonner';
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/select';
+import { fetchStudentReportHtml } from '@/lib/api/reports';
+import { printHtmlContent } from '@/lib/utils/print';
+import { generateIdCardsHtml } from '@/lib/utils/printIdCard';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -54,29 +52,389 @@ import {
     TableRow,
 } from "@/components/ui/table";
 
+// ─── Group Cards View ─────────────────────────────────────────────────────────
+function GroupCardsView({
+    onSelectGroup,
+    canWrite,
+}: {
+    onSelectGroup: (group: Group) => void;
+    canWrite: boolean;
+}) {
+    const { data, isLoading } = useQuery({
+        queryKey: ['groups', { limit: 100 }],
+        queryFn: () => fetchGroups({ limit: 100 }),
+    });
+
+    const groups = data?.data ?? [];
+
+    if (isLoading) {
+        return (
+            <div className="flex justify-center items-center py-20 text-primary">
+                <Loader2 className="h-8 w-8 animate-spin" />
+            </div>
+        );
+    }
+
+    if (groups.length === 0) {
+        return (
+            <div className="py-16 text-center text-gray-400 bg-white rounded-xl border border-gray-100 shadow-sm">
+                لا توجد مجموعات بعد.
+            </div>
+        );
+    }
+
+    return (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {groups.map((group) => (
+                <button
+                    key={group._id}
+                    onClick={() => onSelectGroup(group)}
+                    className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-primary/30 transition-all text-right flex flex-col gap-3 group"
+                >
+                    <div className="flex items-start justify-between">
+                        <div>
+                            <p className="text-xs text-gray-400 font-medium mb-1">{group.gradeLevel}</p>
+                            <h3 className="text-lg font-bold text-gray-900 group-hover:text-primary transition-colors">
+                                {group.name}
+                            </h3>
+                        </div>
+                        <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                            <Users className="h-5 w-5 text-primary" />
+                        </div>
+                    </div>
+                    <div className="flex items-center justify-between mt-auto pt-3 border-t border-gray-100">
+                        <span className="text-sm text-gray-500">
+                            {group.studentsCount ?? 0} / {group.capacity} طالب
+                        </span>
+                        <ChevronRight className="h-4 w-4 text-gray-400 group-hover:text-primary transition-colors" />
+                    </div>
+                </button>
+            ))}
+        </div>
+    );
+}
+
+// ─── Students List (inside a group or from search) ───────────────────────────
+function StudentsList({
+    students,
+    canWrite,
+    onProfile,
+    onEdit,
+    onDelete,
+    selectedIds,
+    onToggleSelect,
+    onToggleAll,
+}: {
+    students: StudentWithGroup[];
+    canWrite: boolean;
+    onProfile: (stu: StudentWithGroup) => void;
+    onEdit: (stu: StudentWithGroup) => void;
+    onDelete: (id: string, name: string) => void;
+    selectedIds: Set<string>;
+    onToggleSelect: (id: string) => void;
+    onToggleAll: (ids: string[]) => void;
+}) {
+    const ActionsMenu = ({ stu }: { stu: StudentWithGroup }) => (
+        <DropdownMenu dir="rtl">
+            <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="h-8 w-8 p-0 text-gray-500 hover:text-primary">
+                    <MoreVertical className="h-4 w-4" />
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40 font-medium">
+                <DropdownMenuLabel className="text-xs text-gray-500">الإجراءات</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                    className="cursor-pointer text-gray-700 focus:text-primary"
+                    onClick={() => onProfile(stu)}
+                >
+                    <FileText className="mr-2 h-4 w-4 ml-2" /> بروفايل الطالب
+                </DropdownMenuItem>
+                {canWrite && (
+                    <>
+                        <DropdownMenuItem
+                            className="cursor-pointer text-gray-700 focus:text-primary"
+                            onClick={() => onEdit(stu)}
+                        >
+                            <Edit className="mr-2 h-4 w-4 ml-2" /> تعديل البيانات
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                            className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50"
+                            onClick={() => onDelete(stu._id, stu.studentName)}
+                        >
+                            <Trash2 className="mr-2 h-4 w-4 ml-2" /> حذف الطالب
+                        </DropdownMenuItem>
+                    </>
+                )}
+            </DropdownMenuContent>
+        </DropdownMenu>
+    );
+
+    if (students.length === 0) {
+        return (
+            <div className="py-16 text-center text-gray-400 bg-white rounded-xl border border-gray-100 shadow-sm">
+                لا يوجد طلاب.
+            </div>
+        );
+    }
+
+    const allSelected = students.length > 0 && students.every(s => selectedIds.has(s._id));
+
+    return (
+        <>
+            {/* Mobile */}
+            <div className="lg:hidden space-y-3">
+                {students.map((stu) => {
+                    const groupName = typeof stu.groupId === 'object' && stu.groupId !== null
+                        ? (stu.groupId as { name: string }).name
+                        : stu.groupDetails?.name || 'بدون مجموعة';
+                    return (
+                        <div key={stu._id} className="bg-white border border-gray-100 rounded-xl shadow-sm p-4">
+                            <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    {/* Checkbox */}
+                                    <input
+                                        type="checkbox"
+                                        className="h-4 w-4 rounded border-gray-300 text-primary cursor-pointer shrink-0"
+                                        checked={selectedIds.has(stu._id)}
+                                        onChange={() => onToggleSelect(stu._id)}
+                                        onClick={(e) => e.stopPropagation()}
+                                    />
+                                    <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                                        <span className="text-sm font-extrabold text-primary">
+                                            {stu.studentName.charAt(0)}
+                                        </span>
+                                    </div>
+                                    <div className="min-w-0">
+                                        <button
+                                            onClick={() => onProfile(stu)}
+                                            className="font-bold text-gray-900 hover:text-primary transition-colors text-right leading-tight block"
+                                        >
+                                            {stu.studentName}
+                                        </button>
+                                        <p className="text-xs text-gray-500 mt-0.5 truncate">{stu.gradeLevel}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    {stu.hasActiveSubscription === false && (
+                                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600 border border-red-200">
+                                            <AlertCircle className="h-2.5 w-2.5" /> غير مشترك
+                                        </span>
+                                    )}
+                                    <Badge className={cn(
+                                        "text-xs font-medium pointer-events-none",
+                                        stu.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
+                                    )}>
+                                        {stu.isActive ? 'نشط' : 'موقوف'}
+                                    </Badge>
+                                    <ActionsMenu stu={stu} />
+                                </div>
+                            </div>
+                            <div className="mt-3 pt-3 border-t border-gray-50 flex flex-wrap items-center gap-4 text-xs text-gray-500">
+                                <div className="flex items-center gap-1.5">
+                                    <Phone className="h-3 w-3 shrink-0" />
+                                    <span dir="ltr">{stu.studentPhone}</span>
+                                </div>
+                                <div className="truncate flex-1 min-w-0">
+                                    المجموعة: <span className="font-medium text-gray-700">{groupName}</span>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+
+            {/* Desktop Table */}
+            <div className="hidden lg:block bg-white border border-gray-100 rounded-xl shadow-sm overflow-hidden">
+                <div className="overflow-x-auto">
+                    <Table>
+                        <TableHeader className="bg-gray-50/50">
+                            <TableRow>
+                                <TableHead className="w-[40px] text-center">
+                                    <input
+                                        type="checkbox"
+                                        className="h-4 w-4 rounded border-gray-300 text-primary cursor-pointer"
+                                        checked={allSelected}
+                                        onChange={() => onToggleAll(students.map(s => s._id))}
+                                    />
+                                </TableHead>
+                                <TableHead className="text-right font-bold text-gray-600">اسم الطالب</TableHead>
+                                <TableHead className="text-right font-bold text-gray-600">المرحلة / المجموعة</TableHead>
+                                <TableHead className="text-right font-bold text-gray-600">رقم الطالب</TableHead>
+                                <TableHead className="text-right font-bold text-gray-600">الحالة</TableHead>
+                                <TableHead className="text-center font-bold text-gray-600 w-[60px]">إجراء</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {students.map((stu) => (
+                                <TableRow key={stu._id} className="hover:bg-gray-50/50 transition-colors">
+                                <TableCell className="text-center">
+                                    <input
+                                        type="checkbox"
+                                        className="h-4 w-4 rounded border-gray-300 text-primary cursor-pointer"
+                                        checked={selectedIds.has(stu._id)}
+                                        onChange={() => onToggleSelect(stu._id)}
+                                    />
+                                </TableCell>
+                                    <TableCell className="font-bold text-gray-900">
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={() => onProfile(stu)}
+                                                className="hover:text-primary hover:underline transition-colors text-right"
+                                            >
+                                                {stu.studentName}
+                                            </button>
+                                            {stu.hasActiveSubscription === false && (
+                                                <span
+                                                    title="غير مشترك هذا الشهر"
+                                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600 border border-red-200 shrink-0"
+                                                >
+                                                    <AlertCircle className="h-2.5 w-2.5" /> غير مشترك
+                                                </span>
+                                            )}
+                                        </div>
+                                    </TableCell>
+                                    <TableCell>
+                                        <div className="flex flex-col">
+                                            <span className="text-sm font-medium text-gray-900">{stu.gradeLevel}</span>
+                                            <span className="text-xs text-gray-500 mt-1">
+                                                {typeof stu.groupId === 'object' && stu.groupId !== null
+                                                    ? (stu.groupId as { name: string }).name
+                                                    : stu.groupDetails?.name || 'بدون مجموعة'}
+                                            </span>
+                                        </div>
+                                    </TableCell>
+                                    <TableCell>
+                                        <span dir="ltr" className="text-sm text-gray-600 inline-block">{stu.studentPhone}</span>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Badge className={cn(
+                                            "font-medium pointer-events-none",
+                                            stu.isActive ? "bg-green-100 text-green-700 hover:bg-green-100" : "bg-gray-100 text-gray-600"
+                                        )}>
+                                            {stu.isActive ? 'نشط' : 'موقوف'}
+                                        </Badge>
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                        <ActionsMenu stu={stu} />
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </div>
+            </div>
+        </>
+    );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 export default function StudentsPage() {
     const user = useAuthStore(state => state.user);
-    const isAssistant = user?.role === 'assistant';
-
-    const allowedGrades = getAllowedGrades(user?.stage);
+    const canWrite = user?.role === 'assistant' || user?.role === 'teacher';
 
     const [searchTerm, setSearchTerm] = useState('');
-    const [gradeFilter, setGradeFilter] = useState('');
     const [page, setPage] = useState(1);
     const limit = 20;
+
+    // Which group is selected (null = show group cards)
+    const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
 
     const [selectedStudent, setSelectedStudent] = useState<StudentWithGroup | null>(null);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
-    const [profileStudent, setProfileStudent] = useState<StudentWithGroup | null>(null);
-    const [isProfileOpen, setIsProfileOpen] = useState(false);
+    const router = useRouter();
+
+    // Bulk selection
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [bulkPrinting, setBulkPrinting] = useState(false);
+
+    const handleToggleSelect = (id: string) => {
+        setSelectedIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id); else next.add(id);
+            return next;
+        });
+    };
+
+    const handleToggleAll = (ids: string[]) => {
+        setSelectedIds((prev) => {
+            const allSelected = ids.every((id) => prev.has(id));
+            if (allSelected) {
+                const next = new Set(prev);
+                ids.forEach((id) => next.delete(id));
+                return next;
+            } else {
+                return new Set([...prev, ...ids]);
+            }
+        });
+    };
+
+    const handleBulkPrint = async () => {
+        if (selectedIds.size === 0) return;
+        setBulkPrinting(true);
+        try {
+            const htmlParts: string[] = [];
+            for (const id of selectedIds) {
+                try {
+                    const html = await fetchStudentReportHtml(id);
+                    htmlParts.push(html);
+                } catch {
+                    // skip failed reports
+                }
+            }
+            if (htmlParts.length === 0) {
+                toast.error('فشل تحميل التقارير');
+                return;
+            }
+            const combined = htmlParts.join('<div style="page-break-after:always"></div>');
+            printHtmlContent(combined);
+            toast.success(`تم طباعة ${htmlParts.length} تقرير`);
+        } catch {
+            toast.error('حدث خطأ أثناء الطباعة');
+        } finally {
+            setBulkPrinting(false);
+        }
+    };
+
+    const [bulkCardsPrinting, setBulkCardsPrinting] = useState(false);
+    const handleBulkPrintCards = async () => {
+        if (selectedIds.size === 0) return;
+        setBulkCardsPrinting(true);
+        try {
+            // Find selected students from the current page's students list
+            const selectedStudents = students.filter(s => selectedIds.has(s._id));
+            if (selectedStudents.length === 0) {
+                toast.error('لم يتم العثور على بيانات الطلاب المحددين');
+                return;
+            }
+            const html = await generateIdCardsHtml(selectedStudents);
+            printHtmlContent(html);
+            toast.success(`تم طباعة ${selectedStudents.length} كارت`);
+        } catch {
+            toast.error('حدث خطأ أثناء طباعة الكروت');
+        } finally {
+            setBulkCardsPrinting(false);
+        }
+    };
 
     const queryClient = useQueryClient();
 
+    // Show students when: searching OR a group is selected
+    const isSearching = searchTerm.trim().length > 0;
+    const showStudents = isSearching || !!selectedGroup;
+
     const { data, isLoading, isError } = useQuery({
-        queryKey: ['students', { page, limit, search: searchTerm }],
-        queryFn: () => fetchStudents({ page, limit, search: searchTerm }),
+        queryKey: ['students', { page, limit, search: searchTerm, groupId: selectedGroup?._id }],
+        queryFn: () => fetchStudents({
+            page,
+            limit,
+            search: searchTerm || undefined,
+            groupId: selectedGroup?._id,
+        }),
         placeholderData: keepPreviousData,
+        enabled: showStudents,
     });
 
     const deleteMutation = useMutation({
@@ -103,64 +461,55 @@ export default function StudentsPage() {
     };
 
     const handleProfileClick = (student: StudentWithGroup) => {
-        setProfileStudent(student);
-        setIsProfileOpen(true);
+        router.push(`/students/${student._id}`);
     };
 
-    const rawStudents = data?.data || [];
-    const students = gradeFilter
-        ? rawStudents.filter((s: StudentWithGroup) => s.gradeLevel === gradeFilter)
-        : rawStudents;
-    const pagination = data?.pagination;
+    const handleSelectGroup = (group: Group) => {
+        setSelectedGroup(group);
+        setPage(1);
+        setSelectedIds(new Set()); // clear selection on group change
+    };
 
-    const ActionsMenu = ({ stu }: { stu: StudentWithGroup }) => (
-        <DropdownMenu dir="rtl">
-            <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="h-8 w-8 p-0 text-gray-500 hover:text-primary">
-                    <MoreVertical className="h-4 w-4" />
-                </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-40 font-medium">
-                <DropdownMenuLabel className="text-xs text-gray-500">الإجراءات</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                    className="cursor-pointer text-gray-700 focus:text-primary"
-                    onClick={() => handleProfileClick(stu)}
-                >
-                    <FileText className="mr-2 h-4 w-4 ml-2" /> بروفايل الطالب
-                </DropdownMenuItem>
-                {isAssistant && (
-                    <>
-                        <DropdownMenuItem 
-                            className="cursor-pointer text-gray-700 focus:text-primary"
-                            onClick={() => handleEditClick(stu)}
-                        >
-                            <Edit className="mr-2 h-4 w-4 ml-2" /> تعديل البيانات
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem 
-                            className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50"
-                            onClick={() => handleDelete(stu._id, stu.studentName)}
-                        >
-                            <Trash2 className="mr-2 h-4 w-4 ml-2" /> حذف الطالب
-                        </DropdownMenuItem>
-                    </>
-                )}
-            </DropdownMenuContent>
-        </DropdownMenu>
-    );
+    const handleBack = () => {
+        setSelectedGroup(null);
+        setPage(1);
+        setSelectedIds(new Set()); // clear selection on back
+    };;
+
+    const students = data?.data || [];
+    const pagination = data?.pagination;
 
     return (
         <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-500" dir="rtl">
-            {/* Header & Actions */}
+            {/* Header */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <div>
-                    <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">إدارة الطلاب</h1>
-                    <p className="text-sm text-gray-500 mt-0.5">
-                        {pagination?.total || 0} طالب مسجل
-                    </p>
+                    {selectedGroup && !isSearching ? (
+                        <div>
+                            <button
+                                onClick={handleBack}
+                                className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-primary transition-colors mb-1"
+                            >
+                                <ArrowRight className="h-4 w-4" />
+                                كل المجموعات
+                            </button>
+                            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">
+                                {selectedGroup.name}
+                            </h1>
+                            <p className="text-sm text-gray-500 mt-0.5">
+                                {selectedGroup.gradeLevel} · {pagination?.total ?? 0} طالب
+                            </p>
+                        </div>
+                    ) : (
+                        <div>
+                            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">إدارة الطلاب</h1>
+                            <p className="text-sm text-gray-500 mt-0.5">
+                                {isSearching ? `${pagination?.total ?? 0} نتيجة` : 'اختر مجموعة'}
+                            </p>
+                        </div>
+                    )}
                 </div>
-                {isAssistant && (
+                {canWrite && (
                     <div className="flex gap-2 flex-wrap">
                         <BulkAddStudentsModal />
                         <AddStudentModal />
@@ -168,15 +517,15 @@ export default function StudentsPage() {
                 )}
             </div>
 
-            {/* Filters Bar */}
-            <div className="bg-white p-3 sm:p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
-                <div className="relative flex-1">
+            {/* Search Bar */}
+            <div className="bg-white p-3 sm:p-4 rounded-xl border border-gray-100 shadow-sm">
+                <div className="relative">
                     <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-400">
                         <Search size={16} />
                     </div>
-                    <Input 
+                    <Input
                         type="text"
-                        placeholder="ابحث بالاسم أو الهاتف أو الباركود..."
+                        placeholder="ابحث بالاسم أو الهاتف أو الباركود في كل الطلاب..."
                         className="pl-4 pr-9 border-gray-200 bg-gray-50 focus-visible:ring-primary focus-visible:bg-white text-sm"
                         value={searchTerm}
                         onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
@@ -185,210 +534,106 @@ export default function StudentsPage() {
                         }}
                     />
                 </div>
-                <Select
-                    value={gradeFilter}
-                    onValueChange={(val) => { setGradeFilter(val === 'ALL' ? '' : val); setPage(1); }}
-                    dir="rtl"
-                >
-                    <SelectTrigger className="w-full sm:w-48 border-gray-200 bg-gray-50 text-gray-700 text-sm">
-                        <Filter size={14} className="ml-2 text-gray-400 shrink-0" />
-                        <SelectValue placeholder="كل المراحل" />
-                    </SelectTrigger>
-                    <SelectContent dir="rtl">
-                        <SelectItem value="ALL">كل المراحل</SelectItem>
-                        {allowedGrades.map((g) => (
-                            <SelectItem key={g} value={g}>{g}</SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
             </div>
 
-            {/* Loading / Error */}
-            {isLoading && (
-                <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-                    <Loader2 className="h-8 w-8 animate-spin mb-3 text-primary" />
-                    جاري تحميل البيانات...
-                </div>
-            )}
-            {isError && (
-                <div className="p-6 text-center text-red-500 font-medium bg-red-50 rounded-xl border border-red-100">
-                    حدث خطأ أثناء تحميل البيانات. يرجى المحاولة مرة أخرى.
-                </div>
-            )}
-            {!isLoading && !isError && students.length === 0 && (
-                <div className="py-16 text-center text-gray-400 bg-white rounded-xl border border-gray-100 shadow-sm">
-                    لا يوجد طلاب بناءً على معايير البحث الحالية.
-                </div>
-            )}
-
-            {/* ── Mobile / Tablet: Card list (hidden on lg+) ── */}
-            {!isLoading && !isError && students.length > 0 && (
-                <div className="lg:hidden space-y-3">
-                    {students.map((stu: StudentWithGroup) => {
-                        const groupName = typeof stu.groupId === 'object' && stu.groupId !== null
-                            ? (stu.groupId as { name: string }).name
-                            : stu.groupDetails?.name || 'بدون مجموعة';
-                        return (
-                            <div
-                                key={stu._id}
-                                className="bg-white border border-gray-100 rounded-xl shadow-sm p-4"
-                            >
-                                <div className="flex items-start justify-between gap-2">
-                                    {/* Avatar + name */}
-                                    <div className="flex items-center gap-3 min-w-0">
-                                        <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                                            <span className="text-sm font-extrabold text-primary">
-                                                {stu.studentName.charAt(0)}
-                                            </span>
-                                        </div>
-                                        <div className="min-w-0">
-                                            <button
-                                                onClick={() => handleProfileClick(stu)}
-                                                className="font-bold text-gray-900 hover:text-primary transition-colors text-right leading-tight block"
-                                            >
-                                                {stu.studentName}
-                                            </button>
-                                            <p className="text-xs text-gray-500 mt-0.5 truncate">{stu.gradeLevel}</p>
-                                        </div>
-                                    </div>
-                                    {/* Actions + status */}
-                                    <div className="flex items-center gap-2 shrink-0">
-                                        {stu.hasActiveSubscription === false && (
-                                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600 border border-red-200">
-                                                <AlertCircle className="h-2.5 w-2.5" />
-                                                غير مشترك
-                                            </span>
-                                        )}
-                                        <Badge className={cn(
-                                            "text-xs font-medium pointer-events-none",
-                                            stu.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
-                                        )}>
-                                            {stu.isActive ? 'نشط' : 'موقوف'}
-                                        </Badge>
-                                        <ActionsMenu stu={stu} />
-                                    </div>
-                                </div>
-
-                                {/* Details row */}
-                                <div className="mt-3 pt-3 border-t border-gray-50 grid grid-cols-2 gap-2 text-xs text-gray-500">
-                                    <div className="flex items-center gap-1.5">
-                                        <Phone className="h-3 w-3 shrink-0" />
-                                        <span dir="ltr">{stu.studentPhone}</span>
-                                    </div>
-                                    <div className="truncate">
-                                        المجموعة: <span className="font-medium text-gray-700">{groupName}</span>
-                                    </div>
-                                    <div className="truncate col-span-2">
-                                        ولي الأمر: <span className="font-medium text-gray-700">{stu.parentName}</span>
-                                        <span dir="ltr" className="mr-2 text-gray-400">{stu.parentPhone}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
-
-            {/* ── Desktop: Full Table (hidden below lg) ── */}
-            {!isLoading && !isError && students.length > 0 && (
-                <div className="hidden lg:block bg-white border border-gray-100 rounded-xl shadow-sm overflow-hidden">
-                    <div className="overflow-x-auto">
-                        <Table>
-                            <TableHeader className="bg-gray-50/50">
-                                <TableRow>
-                                    <TableHead className="w-[80px] text-right font-bold text-gray-600">الباركود</TableHead>
-                                    <TableHead className="text-right font-bold text-gray-600">اسم الطالب</TableHead>
-                                    <TableHead className="text-right font-bold text-gray-600">المرحلة / المجموعة</TableHead>
-                                    <TableHead className="text-right font-bold text-gray-600">رقم الطالب</TableHead>
-                                    <TableHead className="text-right font-bold text-gray-600">ولي الأمر</TableHead>
-                                    <TableHead className="text-right font-bold text-gray-600">الحالة</TableHead>
-                                    <TableHead className="text-center font-bold text-gray-600 w-[60px]">إجراء</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {students.map((stu: StudentWithGroup) => (
-                                    <TableRow key={stu._id} className="hover:bg-gray-50/50 transition-colors">
-                                        <TableCell className="font-mono text-xs text-gray-500 font-medium">
-                                            <Badge variant="outline" className="bg-gray-50 text-gray-600">{stu.barcode || '-'}</Badge>
-                                        </TableCell>
-                                        <TableCell className="font-bold text-gray-900">
-                                            <div className="flex items-center gap-2">
-                                                <button
-                                                    onClick={() => handleProfileClick(stu)}
-                                                    className="hover:text-primary hover:underline transition-colors text-right"
-                                                >
-                                                    {stu.studentName}
-                                                </button>
-                                                {stu.hasActiveSubscription === false && (
-                                                    <span
-                                                        title="غير مشترك هذا الشهر"
-                                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600 border border-red-200 shrink-0"
-                                                    >
-                                                        <AlertCircle className="h-2.5 w-2.5" />
-                                                        غير مشترك
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </TableCell>
-                                        <TableCell>
-                                            <div className="flex flex-col">
-                                                <span className="text-sm font-medium text-gray-900">{stu.gradeLevel}</span>
-                                                <span className="text-xs text-gray-500 mt-1">
-                                                    {typeof stu.groupId === 'object' && stu.groupId !== null
-                                                        ? (stu.groupId as { name: string }).name
-                                                        : stu.groupDetails?.name || 'بدون مجموعة'}
-                                                </span>
-                                            </div>
-                                        </TableCell>
-                                        <TableCell>
-                                            <span dir="ltr" className="text-sm text-gray-600 inline-block">{stu.studentPhone}</span>
-                                        </TableCell>
-                                        <TableCell>
-                                            <div className="flex flex-col">
-                                                <span className="text-sm text-gray-900">{stu.parentName}</span>
-                                                <span dir="ltr" className="text-xs text-gray-500 mt-1 inline-block">{stu.parentPhone}</span>
-                                            </div>
-                                        </TableCell>
-                                        <TableCell>
-                                            <Badge
-                                                className={cn(
-                                                    "font-medium pointer-events-none",
-                                                    stu.isActive ? "bg-green-100 text-green-700 hover:bg-green-100" : "bg-gray-100 text-gray-600"
-                                                )}
-                                            >
-                                                {stu.isActive ? 'نشط' : 'موقوف'}
-                                            </Badge>
-                                        </TableCell>
-                                        <TableCell className="text-center">
-                                            <ActionsMenu stu={stu} />
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    </div>
-                </div>
-            )}
-
-            {/* Pagination */}
-            {pagination && pagination.totalPages > 1 && (
-                <div className="p-3 sm:p-4 bg-white rounded-xl border border-gray-100 shadow-sm flex items-center justify-between">
-                    <p className="text-sm text-gray-500">
-                        صفحة <span className="font-bold text-gray-900">{pagination.page}</span> من <span className="font-bold text-gray-900">{pagination.totalPages}</span>
-                    </p>
+            {/* Bulk print toolbar — shown when students are selected */}
+            {showStudents && selectedIds.size > 0 && (
+                <div className="bg-primary/10 border border-primary/20 rounded-xl px-4 py-2.5 flex items-center justify-between gap-3">
+                    <span className="text-sm font-medium text-primary">
+                        <CheckSquare className="h-4 w-4 inline ml-1.5" />
+                        {selectedIds.size} طالب محدد
+                    </span>
                     <div className="flex gap-2">
-                        <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-                            السابق
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs gap-1.5 border-primary/30 text-primary"
+                            onClick={() => setSelectedIds(new Set())}
+                        >
+                            إلغاء
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))} disabled={page === pagination.totalPages}>
-                            التالي
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs gap-1.5 text-gray-700 bg-white border-gray-200 hover:bg-gray-50"
+                            onClick={handleBulkPrintCards}
+                            disabled={bulkCardsPrinting}
+                        >
+                            {bulkCardsPrinting ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                                <QrCode className="h-3.5 w-3.5" />
+                            )}
+                            طباعة الكروت
+                        </Button>
+                        <Button
+                            size="sm"
+                            className="text-xs gap-1.5"
+                            onClick={handleBulkPrint}
+                            disabled={bulkPrinting}
+                        >
+                            {bulkPrinting ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                                <Printer className="h-3.5 w-3.5" />
+                            )}
+                            طباعة التقارير
                         </Button>
                     </div>
                 </div>
+            )}
+
+            {/* Group Cards OR Students List */}
+            {!showStudents ? (
+                /* ── Groups view ── */
+                <GroupCardsView onSelectGroup={handleSelectGroup} canWrite={canWrite} />
+            ) : (
+                /* ── Students list ── */
+                <>
+                    {isLoading && (
+                        <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+                            <Loader2 className="h-8 w-8 animate-spin mb-3 text-primary" />
+                            جاري تحميل البيانات...
+                        </div>
+                    )}
+                    {isError && (
+                        <div className="p-6 text-center text-red-500 font-medium bg-red-50 rounded-xl border border-red-100">
+                            حدث خطأ أثناء تحميل البيانات.
+                        </div>
+                    )}
+                    {!isLoading && !isError && (
+                        <StudentsList
+                            students={students}
+                            canWrite={canWrite}
+                            onProfile={handleProfileClick}
+                            onEdit={handleEditClick}
+                            onDelete={handleDelete}
+                            selectedIds={selectedIds}
+                            onToggleSelect={handleToggleSelect}
+                            onToggleAll={handleToggleAll}
+                        />
+                    )}
+
+                    {/* Pagination */}
+                    {pagination && pagination.totalPages > 1 && (
+                        <div className="p-3 sm:p-4 bg-white rounded-xl border border-gray-100 shadow-sm flex items-center justify-between">
+                            <p className="text-sm text-gray-500">
+                                صفحة <span className="font-bold text-gray-900">{pagination.page}</span> من <span className="font-bold text-gray-900">{pagination.totalPages}</span>
+                            </p>
+                            <div className="flex gap-2">
+                                <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
+                                    السابق
+                                </Button>
+                                <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))} disabled={page === pagination.totalPages}>
+                                    التالي
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+                </>
             )}
 
             <EditStudentModal open={isEditModalOpen} onOpenChange={setIsEditModalOpen} student={selectedStudent} />
-            <StudentProfileModal open={isProfileOpen} onOpenChange={setIsProfileOpen} student={profileStudent} />
         </div>
     );
 }

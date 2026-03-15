@@ -3,7 +3,8 @@ import { AttendanceStatus } from '../common/enums/enum.service.js';
 
 export interface IAttendance {
     studentId:   Types.ObjectId;
-    sessionId:   Types.ObjectId;
+    sessionId?:  Types.ObjectId;
+    type:        'SESSION' | 'MANUAL';
     status:      AttendanceStatus;
     isGuest:     boolean;           // طالب من مجموعة تانية
     scannedAt:   Date;

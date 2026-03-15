@@ -15,6 +15,14 @@ export interface Student {
     barcode?: string;
     studentCode?: string;
     isActive: boolean;
+    monthlySessionsQuota: number;
+    usedSessionsThisMonth?: number;
+    monthlySessions?: {
+        sessionId: string;
+        date: string;
+        status: string;
+    }[];
+    manualRecordsCount?: number;
     createdAt?: string;
     updatedAt?: string;
 }
@@ -27,6 +35,8 @@ export interface StudentWithGroup extends Omit<Student, 'groupId'> {
     };
     groupId: string | { _id: string; name: string };
     hasActiveSubscription?: boolean;
+    monthlySessionsQuota: number;
+    usedSessionsThisMonth?: number;
 }
 
 // Pagination Metadata
@@ -54,4 +64,7 @@ export interface CreateStudentDTO {
 }
 
 // Data Transfer Object for Updating a Student
-export type UpdateStudentDTO = Partial<CreateStudentDTO> & { isActive?: boolean };
+export type UpdateStudentDTO = Partial<CreateStudentDTO> & { 
+    isActive?: boolean;
+    monthlySessionsQuota?: number;
+};

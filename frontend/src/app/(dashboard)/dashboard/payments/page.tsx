@@ -70,7 +70,7 @@ function StatCard({
 }
 
 // ─── Daily Tab ────────────────────────────────────────────────────
-function DailyTab({ isAssistant }: { isAssistant: boolean }) {
+function DailyTab({ canWrite }: { canWrite: boolean }) {
     const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]!);
 
     const { data: ledger, isLoading, refetch } = useQuery({
@@ -115,7 +115,7 @@ function DailyTab({ isAssistant }: { isAssistant: boolean }) {
                         <ChevronLeft className="h-4 w-4" />
                     </Button>
                 </div>
-                {isAssistant && (
+                {canWrite && (
                     <div className="flex gap-2">
                         <BatchSubscriptionModal />
                         <AddTransactionModal onSuccess={() => refetch()} />
@@ -173,6 +173,9 @@ function DailyTab({ isAssistant }: { isAssistant: boolean }) {
                                         {CATEGORY_LABELS[tx.category as TransactionCategory] ?? tx.category}
                                         {tx.studentName && ` · ${tx.studentName}`}
                                     </p>
+                                    {tx.description && (
+                                        <p className="text-xs text-gray-400 mt-0.5 italic">{tx.description}</p>
+                                    )}
                                     <p className="text-xs text-gray-400 mt-0.5">{formatTime(tx.time)}</p>
                                 </div>
                             ))}
@@ -184,7 +187,7 @@ function DailyTab({ isAssistant }: { isAssistant: boolean }) {
                                 <thead>
                                     <tr className="border-b border-gray-50 bg-gray-50/50">
                                         <th className="px-4 py-3 text-right font-medium text-gray-600">النوع</th>
-                                        <th className="px-4 py-3 text-right font-medium text-gray-600">الفئة</th>
+                                        <th className="px-4 py-3 text-right font-medium text-gray-600">الفئة / الملاحظات</th>
                                         <th className="px-4 py-3 text-right font-medium text-gray-600">الطالب</th>
                                         <th className="px-4 py-3 text-right font-medium text-gray-600">المبلغ</th>
                                         <th className="px-4 py-3 text-right font-medium text-gray-600">الوقت</th>
@@ -204,7 +207,10 @@ function DailyTab({ isAssistant }: { isAssistant: boolean }) {
                                                 </span>
                                             </td>
                                             <td className="px-4 py-3 text-gray-600">
-                                                {CATEGORY_LABELS[tx.category as TransactionCategory] ?? tx.category}
+                                                <p>{CATEGORY_LABELS[tx.category as TransactionCategory] ?? tx.category}</p>
+                                                {tx.description && (
+                                                    <p className="text-xs text-gray-400 mt-0.5 italic">{tx.description}</p>
+                                                )}
                                             </td>
                                             <td className="px-4 py-3 text-gray-700">{tx.studentName ?? '—'}</td>
                                             <td className="px-4 py-3 font-semibold text-gray-800">
@@ -358,7 +364,7 @@ function PricesTab() {
 // ─── Main Page ────────────────────────────────────────────────────
 export default function PaymentsPage() {
     const user = useAuthStore((s) => s.user);
-    const isAssistant = user?.role === 'assistant';
+    const canWrite = user?.role === 'assistant' || user?.role === 'teacher';
     const isTeacher = user?.role === 'teacher';
 
     const [activeTab, setActiveTab] = useState<Tab>('daily');
@@ -378,7 +384,7 @@ export default function PaymentsPage() {
                     الماليات
                 </h1>
                 <p className="text-xs sm:text-sm text-gray-500 mt-1">
-                    {isAssistant ? 'تسجيل المعاملات المالية ومتابعة الجارد اليومي' : 'متابعة الإيرادات والمصروفات'}
+                    {canWrite ? 'تسجيل المعاملات المالية ومتابعة الجارد اليومي' : 'متابعة الإيرادات والمصروفات'}
                 </p>
             </div>
 
@@ -403,7 +409,7 @@ export default function PaymentsPage() {
             </div>
 
             {/* Tab Content */}
-            {activeTab === 'daily' && <DailyTab isAssistant={isAssistant} />}
+            {activeTab === 'daily' && <DailyTab canWrite={canWrite} />}
             {activeTab === 'monthly' && isTeacher && <MonthlyTab />}
             {activeTab === 'prices' && isTeacher && <PricesTab />}
         </div>
