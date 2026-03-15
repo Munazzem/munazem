@@ -52,7 +52,7 @@ attendanceSchema.index(
     { studentId: 1, sessionId: 1 },
     { 
         unique: true, 
-        partialFilterExpression: { sessionId: { $exists: true, $ne: null } } 
+        partialFilterExpression: { sessionId: { $exists: true, $type: 'objectId' } } 
     }
 );
 
