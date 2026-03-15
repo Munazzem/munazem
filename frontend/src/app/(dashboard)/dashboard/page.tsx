@@ -14,6 +14,8 @@ import { SuperAdminDashboard } from '@/components/dashboard/SuperAdminDashboard'
 import { OnboardingCard } from '@/components/dashboard/OnboardingCard';
 import { cn } from '@/lib/utils';
 import {
+    AreaChart,
+    Area,
     BarChart,
     Bar,
     XAxis,
@@ -21,34 +23,41 @@ import {
     CartesianGrid,
     Tooltip,
     ResponsiveContainer,
+    PieChart,
+    Pie,
+    Cell,
+    LineChart,
+    Line,
+    Legend
 } from 'recharts';
+import { Skeleton } from '@/components/ui/skeleton';
 
 // ── Skeleton ──────────────────────────────────────────────────────
 const DashboardSkeleton = () => (
     <div className="space-y-6 animate-pulse">
         <div>
-            <div className="h-8 w-48 bg-gray-200 rounded-md mb-2" />
-            <div className="h-4 w-64 bg-gray-100 rounded-md" />
+            <Skeleton className="h-8 w-48 mb-2" />
+            <Skeleton className="h-4 w-64" />
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {[1, 2, 3, 4].map((i) => (
                 <div key={i} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm h-32 flex flex-col justify-between">
                     <div className="flex justify-between items-center">
-                        <div className="h-4 w-24 bg-gray-100 rounded" />
-                        <div className="h-10 w-10 bg-gray-100 rounded-xl" />
+                        <Skeleton className="h-4 w-24" />
+                        <Skeleton className="h-10 w-10 rounded-xl" />
                     </div>
-                    <div className="h-8 w-16 bg-gray-200 rounded mt-4" />
+                    <Skeleton className="h-8 w-16 mt-4" />
                 </div>
             ))}
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
-            <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-6 h-72">
-                <div className="h-6 w-48 bg-gray-200 rounded mb-6" />
-                <div className="h-48 bg-gray-100 rounded-lg w-full" />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 h-[320px]">
+                <Skeleton className="h-6 w-48 mb-6" />
+                <Skeleton className="h-[200px] w-full" />
             </div>
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 h-72">
-                <div className="h-6 w-32 bg-gray-200 rounded mb-6" />
-                {[1,2,3,4].map(i => <div key={i} className="h-8 bg-gray-100 rounded mb-2" />)}
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 h-[320px]">
+                <Skeleton className="h-6 w-48 mb-6" />
+                <Skeleton className="h-[200px] w-full" />
             </div>
         </div>
     </div>
@@ -82,7 +91,6 @@ function StatCard({
     );
 }
 
-// ── Category labels ───────────────────────────────────────────────
 const CAT_LABELS: Record<string, string> = {
     SUBSCRIPTION: 'اشتراك',
     NOTEBOOK_SALE: 'مذكرة',
@@ -92,6 +100,8 @@ const CAT_LABELS: Record<string, string> = {
     SUPPLIES: 'مستلزمات',
     OTHER_EXPENSE: 'مصاريف',
 };
+
+const CHART_COLORS = ['#0f4c81', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1'];
 
 // ── Main Page ─────────────────────────────────────────────────────
 export default function DashboardPage() {
@@ -291,58 +301,140 @@ export default function DashboardPage() {
             {/* Quick actions — Teacher only */}
             {/* The user requested to hide or make "Group Subscription" and "Notebook Sale" read-only for Teachers. We will hide them. */}
 
-            {/* Charts — Teacher only */}
+            {/* Charts Section */}
             {isTeacher && stats?.charts && (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-                    {/* Income Trend — Bar Chart via recharts */}
-                    <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6">
-                        <h3 className="font-bold text-gray-900 mb-4 sm:mb-5 flex items-center gap-2 text-sm sm:text-base">
-                            <TrendingUp className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
-                            اتجاه الإيرادات (آخر 6 أشهر)
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                    
+                    {/* 1. Income Trend — AreaChart */}
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6 overflow-hidden">
+                        <h3 className="font-bold text-gray-900 mb-6 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <TrendingUp className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+                                اتجاه الإيرادات
+                            </div>
+                            <span className="text-xs font-normal text-gray-400">آخر 6 أشهر</span>
                         </h3>
-                        {stats.charts.incomeTrend?.length > 0 ? (
-                            <ResponsiveContainer width="100%" height={200}>
-                                <BarChart data={stats.charts.incomeTrend} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                        <div className="h-[240px] w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={stats.charts.incomeTrend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                    <defs>
+                                        <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#0f4c81" stopOpacity={0.1}/>
+                                            <stop offset="95%" stopColor="#0f4c81" stopOpacity={0}/>
+                                        </linearGradient>
+                                    </defs>
                                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
                                     <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} />
-                                    <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} width={40}
-                                        tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
+                                    <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} tickFormatter={(v) => v >= 1000 ? `${(v/1000).toFixed(0)}k` : v} />
                                     <Tooltip
-                                        formatter={(v: number | undefined) => [`${(v ?? 0).toLocaleString('ar-EG')} ج.م`, 'الإيرادات']}
+                                        formatter={(v: number | string | undefined | (number | string)[]) => [`${Number(v || 0).toLocaleString('ar-EG')} ج.م`, 'الإيرادات']}
                                         contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)', fontSize: 12, direction: 'rtl' }}
                                     />
-                                    <Bar dataKey="income" fill="#0f4c81" radius={[6, 6, 0, 0]} maxBarSize={48} />
-                                </BarChart>
+                                    <Area type="monotone" dataKey="income" stroke="#0f4c81" strokeWidth={3} fillOpacity={1} fill="url(#colorIncome)" />
+                                </AreaChart>
                             </ResponsiveContainer>
-                        ) : (
-                            <div className="flex items-center justify-center h-40 text-gray-400 text-sm">
-                                لا توجد بيانات مالية سابقة لعرضها
-                            </div>
-                        )}
+                        </div>
                     </div>
 
-                    {/* Students Per Group */}
-                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6 flex flex-col">
-                        <h3 className="font-bold text-gray-900 mb-4 sm:mb-5 flex items-center gap-2 text-sm sm:text-base">
-                            <Users className="h-4 w-4 sm:h-5 sm:w-5 text-indigo-500" />
-                            توزيع الطلاب
+                    {/* 2. Attendance Trend — LineChart */}
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6 overflow-hidden">
+                        <h3 className="font-bold text-gray-900 mb-6 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <Activity className="h-4 w-4 sm:h-5 sm:w-5 text-orange-500" />
+                                مستويات الحضور
+                            </div>
+                            <span className="text-xs font-normal text-gray-400">آخر 8 حصص</span>
                         </h3>
-                        <div className="flex-1 overflow-y-auto space-y-3">
-                            {stats.charts.studentsPerGroup?.length > 0 ? (
-                                stats.charts.studentsPerGroup.map((g, idx) => (
-                                    <div key={idx} className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2 min-w-0">
-                                            <div className="h-2 w-2 rounded-full bg-indigo-400 shrink-0" />
-                                            <span className="text-sm text-gray-700 truncate">{g.groupName}</span>
-                                        </div>
-                                        <span className="text-sm font-bold text-gray-900 bg-gray-50 px-2 py-0.5 rounded-md shrink-0 mr-2">
-                                            {g.studentCount}
-                                        </span>
-                                    </div>
-                                ))
+                        <div className="h-[240px] w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <LineChart data={stats.charts.attendanceTrend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} />
+                                    <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} />
+                                    <Tooltip
+                                        formatter={(v: number | string | undefined | (number | string)[]) => [`${v}%`, 'نسبة الحضور']}
+                                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)', fontSize: 12, direction: 'rtl' }}
+                                    />
+                                    <Line type="stepAfter" dataKey="rate" stroke="#f97316" strokeWidth={3} dot={{ r: 4, fill: '#f97316' }} activeDot={{ r: 6 }} />
+                                </LineChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+
+                    {/* 3. Students Distribution — Donut Chart */}
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6">
+                        <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                            <Users className="h-4 w-4 sm:h-5 sm:w-5 text-indigo-500" />
+                            توزيع الطلاب على المجموعات
+                        </h3>
+                        <div className="h-[280px] w-full relative">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie
+                                        data={stats.charts.studentsPerGroup}
+                                        innerRadius={60}
+                                        outerRadius={80}
+                                        paddingAngle={5}
+                                        dataKey="studentCount"
+                                        nameKey="groupName"
+                                    >
+                                        {(stats.charts.studentsPerGroup || []).map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip 
+                                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)', fontSize: 12 }}
+                                    />
+                                    <Legend iconType="circle" wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
+                                </PieChart>
+                            </ResponsiveContainer>
+                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 mt-[-15px] text-center pointer-events-none">
+                                <p className="text-2xl font-bold text-gray-900">{stats.totalStudents}</p>
+                                <p className="text-[10px] text-gray-400">إجمالي الطلاب</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* 4. Expenses Breakdown — Donut Chart */}
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6">
+                        <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                            <CreditCard className="h-4 w-4 sm:h-5 sm:w-5 text-red-500" />
+                            تحليل المصروفات (هذا الشهر)
+                        </h3>
+                        <div className="h-[280px] w-full relative">
+                            {stats.charts.expensesBreakdown?.length > 0 ? (
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie
+                                            data={stats.charts.expensesBreakdown.map(e => ({ ...e, name: CAT_LABELS[e.name] || e.name }))}
+                                            innerRadius={60}
+                                            outerRadius={80}
+                                            paddingAngle={5}
+                                            dataKey="value"
+                                        >
+                                            {stats.charts.expensesBreakdown.map((entry, index) => (
+                                                <Cell key={`cell-${index}`} fill={CHART_COLORS[(index + 3) % CHART_COLORS.length]} />
+                                            ))}
+                                        </Pie>
+                                        <Tooltip 
+                                            formatter={(v: number | string | undefined | (number | string)[]) => [`${Number(v || 0).toLocaleString('ar-EG')} ج.م`, 'المبلغ']}
+                                            contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)', fontSize: 12 }}
+                                        />
+                                        <Legend iconType="circle" wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
+                                    </PieChart>
+                                </ResponsiveContainer>
                             ) : (
-                                <div className="text-center text-gray-400 text-sm mt-8">لا يوجد طلاب مسجلين بعد</div>
+                                <div className="flex flex-col items-center justify-center h-full text-gray-400 text-sm">
+                                    <div className="bg-gray-50 p-4 rounded-full mb-2">
+                                        <ArrowLeft className="h-6 w-6 opacity-20" />
+                                    </div>
+                                    لا توجد مصاريف مسجلة هذا الشهر
+                                </div>
                             )}
+                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 mt-[-15px] text-center pointer-events-none">
+                                <p className="text-xl font-bold text-red-600">{stats.financial?.totalExpenses.toLocaleString('ar-EG')}</p>
+                                <p className="text-[10px] text-gray-400 font-medium">ج.م مصاريف</p>
+                            </div>
                         </div>
                     </div>
                 </div>

@@ -1,7 +1,11 @@
 import QRCode from 'qrcode';
 import type { StudentWithGroup } from '@/types/student.types';
 
-export const generateIdCardsHtml = async (students: StudentWithGroup[]): Promise<string> => {
+export const generateIdCardsHtml = async (
+    students: StudentWithGroup[],
+    centerName?: string,
+    logoUrl?: string
+): Promise<string> => {
     // Generate QR codes for all students
     const studentsWithQr = await Promise.all(
         students.map(async (stu) => {
@@ -21,10 +25,14 @@ export const generateIdCardsHtml = async (students: StudentWithGroup[]): Promise
             ? (stu.groupId as { name: string }).name
             : stu.groupDetails?.name || 'بدون مجموعة';
 
+        const headerText = centerName || 'منصة مُنظِّم';
+        const logoImg = logoUrl ? `<img src="${logoUrl}" alt="Logo" style="max-height: 80px; margin-bottom: 10px; border-radius: 8px;" />` : '';
+
         return `
             <div class="page">
                 <div class="header">
-                    <h1>منصة مُنظِّم</h1>
+                    ${logoImg}
+                    <h1 style="font-size: ${logoUrl ? '28px' : '36px'}">${headerText}</h1>
                     <p>بطاقة تعريف طالب</p>
                 </div>
                 

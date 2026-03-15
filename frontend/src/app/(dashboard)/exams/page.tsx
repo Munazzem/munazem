@@ -16,7 +16,9 @@ import {
     CheckCircle2,
     Clock,
     BookOpen,
+    ArrowRight,
 } from 'lucide-react';
+import { TableSkeleton } from '@/components/layout/skeletons/TableSkeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -168,8 +170,8 @@ export default function ExamsPage() {
             {/* Table — Desktop */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                 {isLoading ? (
-                    <div className="flex justify-center items-center h-64">
-                        <Loader2 className="h-10 w-10 animate-spin text-primary" />
+                    <div className="p-4 sm:p-6 bg-white rounded-2xl border border-gray-100 shadow-sm">
+                        <TableSkeleton rows={8} columns={5} />
                     </div>
                 ) : isError ? (
                     <div className="p-8 text-center text-red-500 font-bold">حدث خطأ أثناء تحميل البيانات.</div>

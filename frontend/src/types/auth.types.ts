@@ -8,6 +8,8 @@ export interface User {
     role: 'superAdmin' | 'teacher' | 'assistant';
     stage?: 'PREPARATORY' | 'SECONDARY' | null;
     teacherId?: string | null;
+    centerName?: string;
+    logoUrl?: string;
 }
 
 export interface AuthState {

@@ -35,6 +35,16 @@ export class AttendanceService {
         if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
 
         try {
+            // Check for existing record to prevent duplicates regardless of DB index state
+            const existing = await AttendanceModel.findOne({
+                studentId: student._id,
+                sessionId: data.sessionId
+            }).lean();
+            
+            if (existing) {
+                throw ConflictException({ message: 'تم تسجيل حضور هذا الطالب بالفعل في هذه الحصة' });
+            }
+
             // Auto-detect guest: student not in this session's group
             const isGuest = student.groupId?.toString() !== session.groupId?.toString();
 

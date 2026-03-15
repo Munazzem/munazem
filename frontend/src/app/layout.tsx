@@ -12,6 +12,10 @@ const cairo = Cairo({
 export const metadata: Metadata = {
   title: "منصة مُنظِّم — Monazem",
   description: "المنصة الأذكى لإدارة السناتر التعليمية",
+  icons: {
+    icon: '/favicon.png',
+    apple: '/favicon.png',
+  }
 };
 
 export default function RootLayout({

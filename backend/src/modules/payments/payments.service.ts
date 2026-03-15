@@ -369,10 +369,23 @@ export class PaymentsService {
 
     // ── Get Daily Ledger ────────────────────────────────────────────
     static async getDailyLedger(teacherId: string, date: string) {
-        const day = startOfDay(new Date(date));
-        const ledger = await DailyLedgerModel.findOne({ teacherId, date: day }).lean();
-        if (!ledger) return { date: day, transactions: [], totalIncome: 0, totalExpenses: 0, netBalance: 0 };
-        return ledger;
+        const dayDate = new Date(date);
+        const day = startOfDay(dayDate);
+        const year = dayDate.getUTCFullYear();
+        const month = dayDate.getUTCMonth() + 1;
+
+        const [ledger, monthlyLedger] = await Promise.all([
+            DailyLedgerModel.findOne({ teacherId, date: day }).lean(),
+            MonthlyLedgerModel.findOne({ teacherId, year, month }, { totalIncome: 1, totalExpenses: 1 }).lean(),
+        ]);
+
+        const base = ledger || { date: day, transactions: [], totalIncome: 0, totalExpenses: 0, netBalance: 0 };
+        
+        return {
+            ...base,
+            monthlyIncome: monthlyLedger?.totalIncome ?? 0,
+            monthlyExpenses: monthlyLedger?.totalExpenses ?? 0,
+        };
     }
 
     // ── Get Monthly Ledger ──────────────────────────────────────────

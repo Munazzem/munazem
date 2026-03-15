@@ -16,6 +16,7 @@ import {
     AlertCircle,
     Banknote,
 } from 'lucide-react';
+import { TableSkeleton } from '@/components/layout/skeletons/TableSkeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -115,8 +116,8 @@ function AssistantsContent() {
             {/* Table */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                 {isLoading ? (
-                    <div className="flex justify-center items-center h-48">
-                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <div className="p-4 sm:p-6 bg-white rounded-2xl border border-gray-100 shadow-sm">
+                        <TableSkeleton rows={6} columns={4} />
                     </div>
                 ) : assistants.length === 0 ? (
                     <div className="p-12 text-center">

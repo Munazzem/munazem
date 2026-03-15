@@ -23,6 +23,8 @@ import {
     CheckSquare,
     QrCode,
 } from 'lucide-react';
+import { TableSkeleton } from '@/components/layout/skeletons/TableSkeleton';
+import { CardSkeleton } from '@/components/layout/skeletons/CardSkeleton';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -68,11 +70,7 @@ function GroupCardsView({
     const groups = data?.data ?? [];
 
     if (isLoading) {
-        return (
-            <div className="flex justify-center items-center py-20 text-primary">
-                <Loader2 className="h-8 w-8 animate-spin" />
-            </div>
-        );
+        return <CardSkeleton count={6} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" />;
     }
 
     if (groups.length === 0) {
@@ -409,7 +407,7 @@ export default function StudentsPage() {
                 toast.error('لم يتم العثور على بيانات الطلاب المحددين');
                 return;
             }
-            const html = await generateIdCardsHtml(selectedStudents);
+            const html = await generateIdCardsHtml(selectedStudents, user?.centerName, user?.logoUrl);
             printHtmlContent(html);
             toast.success(`تم طباعة ${selectedStudents.length} كارت`);
         } catch {
@@ -591,9 +589,8 @@ export default function StudentsPage() {
                 /* ── Students list ── */
                 <>
                     {isLoading && (
-                        <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-                            <Loader2 className="h-8 w-8 animate-spin mb-3 text-primary" />
-                            جاري تحميل البيانات...
+                        <div className="p-4 sm:p-6 bg-white rounded-2xl border border-gray-100 shadow-sm">
+                            <TableSkeleton rows={8} columns={6} />
                         </div>
                     )}
                     {isError && (

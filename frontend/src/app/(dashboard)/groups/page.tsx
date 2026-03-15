@@ -16,6 +16,7 @@ import {
     Loader2,
     FileText,
 } from 'lucide-react';
+import { CardSkeleton } from '@/components/layout/skeletons/CardSkeleton';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -154,9 +155,7 @@ export default function GroupsPage() {
             </div>
 
             {isLoading ? (
-                <div className="flex justify-center items-center h-64 text-primary">
-                    <Loader2 className="h-10 w-10 animate-spin" />
-                </div>
+                <CardSkeleton count={8} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6" />
             ) : isError ? (
                 <div className="bg-red-50 text-red-600 p-6 rounded-xl border border-red-100 text-center font-bold">
                     حدث خطأ أثناء تحميل بيانات المجموعات.
@@ -173,7 +172,7 @@ export default function GroupsPage() {
                                 <div className="flex items-center gap-2">
                                     <h2 className="text-xl font-bold text-primary">{grade}</h2>
                                     <Badge variant="secondary" className="bg-blue-50 text-blue-700">
-                                        {groupsByGrade[grade].length} محجموعات
+                                        {groupsByGrade[grade].length} مجموعات
                                     </Badge>
                                 </div>
                             </AccordionTrigger>

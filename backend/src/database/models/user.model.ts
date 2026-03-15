@@ -55,6 +55,13 @@ const userSchema = new Schema<IUserDocument>(
             type: Boolean,
             default: true,
         },
+        centerName: {
+            type: String,
+            trim: true,
+        },
+        logoUrl: {
+            type: String,
+        },
     },
     {
         timestamps: true,

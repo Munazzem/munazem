@@ -386,6 +386,7 @@ export class ReportsService {
             const d = new Date(Date.UTC(year, month - 1 - i, 1));
             last6Months.push({ year: d.getUTCFullYear(), month: d.getUTCMonth() + 1 });
         }
+
         const incomeTrendPromise = MonthlyLedgerModel.find(
             {
                 teacherId,
@@ -396,16 +397,35 @@ export class ReportsService {
         .sort({ year: 1, month: 1 })
         .lean();
 
-        const [expensesBreakdown, studentsPerGroup, rawIncomeTrend] = await Promise.all([
+        // d. Attendance Trend (Last 8 Sessions)
+        const attendanceTrendPromise = AttendanceSnapshotModel.find(
+            { teacherId },
+            { date: 1, presentCount: 1, absentCount: 1 }
+        )
+        .sort({ date: -1 })
+        .limit(8)
+        .lean();
+
+        const [expensesBreakdown, studentsPerGroup, rawIncomeTrend, rawAttendanceSnapshots] = await Promise.all([
             expensesBreakdownPromise,
             studentsPerGroupPromise,
-            incomeTrendPromise
+            incomeTrendPromise,
+            attendanceTrendPromise
         ]);
+
+        // Format attendance trend (Chronological order)
+        const attendanceTrend = (rawAttendanceSnapshots as any[]).reverse().map((s: any) => {
+            const total = (s.presentCount || 0) + (s.absentCount || 0);
+            return {
+                date: new Date(s.date).toLocaleDateString('ar-EG', { day: 'numeric', month: 'numeric' }),
+                rate: total > 0 ? Math.round((s.presentCount / total) * 100) : 0
+            };
+        });
 
         // Format the income trend for the chart — Arabic month names
         const monthNamesAr = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
         // Fill in months with zero income so every month in the range has an entry
-        const rawMap = new Map(rawIncomeTrend.map(l => [`${l.year}-${l.month}`, l.totalIncome]));
+        const rawMap = new Map((rawIncomeTrend as any[]).map((l: any) => [`${l.year}-${l.month}`, l.totalIncome]));
         const incomeTrend = last6Months.map(({ year: y, month: m }) => ({
             month: monthNamesAr[m - 1] ?? String(m),
             income: rawMap.get(`${y}-${m}`) ?? 0,
@@ -423,7 +443,8 @@ export class ReportsService {
             charts: {
                 expensesBreakdown,
                 studentsPerGroup,
-                incomeTrend
+                incomeTrend,
+                attendanceTrend
             }
         };
     }

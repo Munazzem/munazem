@@ -58,7 +58,9 @@ export default function LoginPage() {
         <div className="min-h-screen flex items-center justify-center bg-[#f9f9fb] px-4">
             <div className="w-full max-w-md p-8 bg-white border border-gray-100 rounded-2xl shadow-sm">
                 <div className="text-center mb-10">
-                    <h1 className="text-4xl font-extrabold text-[#0f4c81] tracking-tight">مُنظِّم</h1>
+                    <div className="flex justify-center mb-4">
+                        <img src="/logo.png" alt="Monazem Logo" className="w-35 h-35 rounded-2xl border border-gray-100 shadow-sm" />
+                    </div>
                     <p className="text-gray-500 mt-2 text-sm">نظام الإدارة التعليمي الذكي</p>
                 </div>
                 
