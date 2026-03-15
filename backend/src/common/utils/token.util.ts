@@ -4,13 +4,11 @@ import type { IJwtPayload } from "../../types/auth.types.js";
 
 const JWT_SECRET = envVars.jwtSecret;
 const REFRESH_SECRET = envVars.jwtRefreshSecret;
-
 if (!JWT_SECRET || !REFRESH_SECRET) {
   throw new Error(
     "Critical: JWT Secrets are missing from environment variables!",
   );
 }
-
 export class TokenUtil {
   static generateAccessToken(
     payload: IJwtPayload,
@@ -20,7 +18,6 @@ export class TokenUtil {
       expiresIn: expiresIn as any,
     });
   }
-
   static generateRefreshToken(
     payload: IJwtPayload,
     expiresIn: string | number = "1y",
