@@ -36,7 +36,7 @@ export class SessionService {
     // Get all sessions for a teacher (paginated), optionally filtered by groupId or date
     static async getSessionsByTeacher(teacherId: string, queryFilters: any = {}) {
         const page  = Math.max(1, parseInt(queryFilters.page)  || 1);
-        const limit = Math.min(100, Math.max(1, parseInt(queryFilters.limit) || 20));
+        const limit = Math.min(500, Math.max(1, parseInt(queryFilters.limit) || 20));
         const skip  = (page - 1) * limit;
 
         const filter: any = { teacherId };
@@ -110,9 +110,12 @@ export class SessionService {
         // Arabic day name → JS getUTCDay() (0 = Sunday)
         const dayMap: Record<string, number> = {
             'الأحد':     0,
+            'الاحد':     0,
             'الاثنين':   1,
+            'الإثنين':   1,
             'الثلاثاء':  2,
             'الأربعاء':  3,
+            'الاربعاء':  3,
             'الخميس':    4,
             'الجمعة':    5,
             'السبت':     6,
@@ -176,6 +179,86 @@ export class SessionService {
             createdCount,
             skippedCount,
             message: `تم إنشاء ${createdCount} حصة، تم تجاهل ${skippedCount} حصة موجودة مسبقاً`,
+        };
+    }
+
+    // ─── Auto-generate month sessions from group schedules ───────────
+    // year: full year e.g. 2026, month: 1-12
+    static async generateMonthSessions(teacherId: string, year: number, month: number) {
+        const dayMap: Record<string, number> = {
+            'الأحد':     0,
+            'الاحد':     0,
+            'الاثنين':   1,
+            'الإثنين':   1,
+            'الثلاثاء':  2,
+            'الأربعاء':  3,
+            'الاربعاء':  3,
+            'الخميس':    4,
+            'الجمعة':    5,
+            'السبت':     6,
+        };
+
+        // First and last day of the month (UTC)
+        const monthStart = new Date(Date.UTC(year, month - 1, 1));
+        const monthEnd   = new Date(Date.UTC(year, month, 1)); // exclusive
+
+        // Get all groups with schedule
+        const groups = await GroupModel.find(
+            { teacherId },
+            { _id: 1, schedule: 1 }
+        ).lean();
+
+        let createdCount = 0;
+        let skippedCount = 0;
+
+        for (const group of groups) {
+            if (!group.schedule || group.schedule.length === 0) continue;
+
+            for (const slot of group.schedule) {
+                const targetDay = dayMap[slot.day];
+                if (targetDay === undefined) continue;
+
+                // Iterate over every occurrence of that weekday in the month
+                const firstOccurrence = new Date(monthStart);
+                const diff = (targetDay - monthStart.getUTCDay() + 7) % 7;
+                firstOccurrence.setUTCDate(monthStart.getUTCDate() + diff);
+
+                let sessionDate = new Date(firstOccurrence);
+                while (sessionDate < monthEnd) {
+                    const nextDay = new Date(sessionDate);
+                    nextDay.setUTCDate(sessionDate.getUTCDate() + 1);
+
+                    const existing = await SessionModel.findOne({
+                        groupId: group._id,
+                        date: { $gte: sessionDate, $lt: nextDay },
+                    }).lean();
+
+                    if (existing) {
+                        skippedCount++;
+                    } else {
+                        await SessionModel.create({
+                            groupId:   group._id,
+                            teacherId,
+                            date:      new Date(sessionDate),
+                            startTime: slot.time,
+                            status:    SessionStatus.SCHEDULED,
+                        });
+                        createdCount++;
+                    }
+
+                    // Advance to next week
+                    sessionDate = new Date(sessionDate);
+                    sessionDate.setUTCDate(sessionDate.getUTCDate() + 7);
+                }
+            }
+        }
+
+        return {
+            year,
+            month,
+            createdCount,
+            skippedCount,
+            message: `تم إنشاء ${createdCount} حصة لشهر ${month}/${year}، تجاهل ${skippedCount} موجودة`,
         };
     }
 }

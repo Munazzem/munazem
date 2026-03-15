@@ -31,6 +31,21 @@ attendanceRouter.post(
     }
 );
 
+// ─── POST /attendance/manual/:studentId — Record manual quota attendance
+attendanceRouter.post(
+    '/manual/:studentId',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const user = (req as any).user;
+            const teacherId = resolveTeacherId(user);
+            const studentId = req.params['studentId'] as string;
+            const record = await AttendanceService.recordManualAttendance(user.userId, studentId, teacherId);
+            return SuccessResponse({ res, data: record, message: 'تم تسجيل الحصة بنجاح', status: 201 });
+        } catch (error) { next(error); }
+    }
+);
+
 // ─── POST /attendance/batch — Batch record attendance
 attendanceRouter.post(
     '/batch',
@@ -70,14 +85,12 @@ attendanceRouter.get(
             const teacherId = resolveTeacherId((req as any).user);
             const sessionId = req.params['sessionId'] as string;
             
-            const pdfBuffer = await PdfService.generateSessionAttendancePdf(sessionId, teacherId);
+            const htmlString = await PdfService.generateSessionAttendancePdf(sessionId, teacherId);
             
             res.set({
-                'Content-Type': 'application/pdf',
-                'Content-Disposition': `attachment; filename=attendance-${sessionId}.pdf`,
-                'Content-Length': pdfBuffer.length,
+                'Content-Type': 'text/html; charset=utf-8',
             });
-            res.send(pdfBuffer);
+            res.send(htmlString);
         } catch (error) { next(error); }
     }
 );

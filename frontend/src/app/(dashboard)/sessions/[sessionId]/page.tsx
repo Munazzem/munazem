@@ -11,10 +11,10 @@ import {
     completeSession,
     getSessionSnapshot,
     getWhatsAppLinks,
-    downloadAttendancePdf,
+    fetchAttendanceHtml,
     type IWhatsAppLink,
 } from '@/lib/api/attendance';
-import { downloadBlob } from '@/lib/utils/download';
+import { printHtmlContent } from '@/lib/utils/print';
 import { fetchStudents } from '@/lib/api/students';
 import { useAuthStore } from '@/lib/store/auth.store';
 import dynamic from 'next/dynamic';
@@ -376,20 +376,19 @@ export default function SessionDetailPage() {
     const router = useRouter();
     const user = useAuthStore((s) => s.user);
     const queryClient = useQueryClient();
-    const isAssistant = user?.role === 'assistant';
+    const canWrite = user?.role === 'assistant' || user?.role === 'teacher';
 
     const [searchQuery, setSearchQuery] = useState('');
     const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
     const [editRecord, setEditRecord] = useState<IAttendanceRecord | null>(null);
     const [showWhatsApp, setShowWhatsApp] = useState(false);
-    const [showBatchSubscribe, setShowBatchSubscribe] = useState(false);
     const [pdfLoading, setPdfLoading] = useState(false);
 
     const handleDownloadAttendancePdf = async () => {
         setPdfLoading(true);
         try {
-            const blob = await downloadAttendancePdf(sessionId);
-            downloadBlob(blob, `تقرير-حضور-${sessionId}.pdf`);
+            const html = await fetchAttendanceHtml(sessionId);
+            printHtmlContent(html);
         } catch {
             toast.error('فشل تحميل تقرير الحضور');
         } finally {
@@ -576,7 +575,7 @@ export default function SessionDetailPage() {
                         )}>
                             {STATUS_LABELS[session.status]}
                         </span>
-                        {isAssistant && isSessionActive && (
+                        {canWrite && isSessionActive && (
                             <Button
                                 size="sm"
                                 variant="destructive"
@@ -610,7 +609,7 @@ export default function SessionDetailPage() {
             {/* Main Content */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-5">
                 {/* Left Panel — QR Scanner (assistant only, active sessions) */}
-                {isAssistant && isSessionActive && (
+                {canWrite && isSessionActive && (
                     <div className="bg-white rounded-xl border border-gray-100 p-3 sm:p-5 shadow-sm">
                         <QRScannerPanel
                             sessionId={sessionId}
@@ -637,7 +636,7 @@ export default function SessionDetailPage() {
                 {/* Right Panel — Live Attendance List */}
                 <div className={cn(
                     'bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden',
-                    (!isAssistant || !isSessionActive) && 'lg:col-span-2'
+                    (!canWrite || !isSessionActive) && 'lg:col-span-2'
                 )}>
                     <div className="flex items-center justify-between px-3 sm:px-5 py-3 sm:py-4 border-b border-gray-100">
                         <h3 className="font-semibold text-gray-800 flex items-center gap-2">
@@ -662,7 +661,7 @@ export default function SessionDetailPage() {
                         <div className="flex flex-col items-center justify-center py-12 text-gray-400 gap-2">
                             <Users className="h-10 w-10 text-gray-200" />
                             <p className="text-sm">لم يُسجَّل حضور بعد</p>
-                            {isAssistant && isSessionActive && (
+                            {canWrite && isSessionActive && (
                                 <p className="text-xs">استخدم الكاميرا أو البحث اليدوي لتسجيل الحضور</p>
                             )}
                         </div>
@@ -718,7 +717,7 @@ export default function SessionDetailPage() {
                                         )}>
                                             {ATTENDANCE_LABELS[record.status]}
                                         </span>
-                                        {isAssistant && isSessionActive && (
+                                        {canWrite && isSessionActive && (
                                             <Button
                                                 variant="ghost"
                                                 size="icon"
@@ -741,15 +740,8 @@ export default function SessionDetailPage() {
                 <div className="mt-3 sm:mt-5 space-y-3">
                     <SnapshotSummary snapshot={snapshot} />
                     <div className="flex flex-col sm:flex-row flex-wrap justify-end gap-2">
-                        {isAssistant && (
-                            <Button
-                                variant="outline"
-                                onClick={() => setShowBatchSubscribe(true)}
-                                className="gap-2 border-blue-200 text-blue-700 hover:bg-blue-50 w-full sm:w-auto"
-                            >
-                                <Receipt className="h-4 w-4" />
-                                تسجيل اشتراكات الحاضرين
-                            </Button>
+                        {canWrite && (
+                            <BatchSubscriptionModal />
                         )}
                         <Button
                             variant="outline"
@@ -830,14 +822,6 @@ export default function SessionDetailPage() {
                     sessionId={sessionId}
                     open={showWhatsApp}
                     onClose={() => setShowWhatsApp(false)}
-                />
-            )}
-
-            {/* Batch Subscription Modal (after session completion) */}
-            {showBatchSubscribe && (
-                <BatchSubscriptionModal
-                    open={showBatchSubscribe}
-                    onOpenChange={setShowBatchSubscribe}
                 />
             )}
         </div>

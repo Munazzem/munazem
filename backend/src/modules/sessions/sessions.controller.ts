@@ -86,4 +86,22 @@ sessionRouter.post(
     }
 );
 
+// ─── POST /sessions/generate-month?year=2026&month=3 — Auto-generate sessions for a full month
+sessionRouter.post(
+    '/generate-month',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = resolveTeacherId((req as any).user);
+            const year  = parseInt(req.query['year']  as string) || new Date().getFullYear();
+            const month = parseInt(req.query['month'] as string) || (new Date().getMonth() + 1);
+            if (month < 1 || month > 12) {
+                return res.status(400).json({ message: 'قيمة الشهر يجب أن تكون بين 1 و 12' });
+            }
+            const result = await SessionService.generateMonthSessions(teacherId, year, month);
+            return SuccessResponse({ res, data: result, message: result.message });
+        } catch (error) { next(error); }
+    }
+);
+
 export default sessionRouter;

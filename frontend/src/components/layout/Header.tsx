@@ -23,11 +23,13 @@ export function Header() {
                 if (fresh?._id || fresh?.id) {
                     // Map DB user to the User type used in the store
                     const mapped = {
-                        id:        fresh._id ?? fresh.id,
-                        name:      fresh.name,
-                        role:      fresh.role,
-                        stage:     fresh.stage ?? null,
-                        teacherId: fresh.teacherId ?? null,
+                        id:         fresh._id ?? fresh.id,
+                        name:       fresh.name,
+                        role:       fresh.role,
+                        stage:      fresh.stage ?? null,
+                        teacherId:  fresh.teacherId ?? null,
+                        centerName: fresh.centerName,
+                        logoUrl:    fresh.logoUrl,
                     };
                     login(mapped, token);
                 }
@@ -58,7 +60,12 @@ export function Header() {
     }
 
     return (
-        <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-gray-100 bg-white/80 backdrop-blur-md px-4 sm:px-6">
+        <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-gray-100 bg-white/80 backdrop-blur-md px-4 sm:px-6 relative">
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2">
+                <img src="/logo.png" alt="Monazem Logo" className="h-9 w-9 rounded-lg border border-gray-100 shadow-sm" />
+                <span className="text-lg font-bold text-primary hidden md:block">مُنظِّم</span>
+            </div>
+            
             <div className="flex items-center gap-4">
                 {/* Mobile Menu Toggle */}
                 <button 

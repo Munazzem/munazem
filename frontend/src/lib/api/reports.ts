@@ -23,11 +23,9 @@ export const fetchStudentReport = async (studentId: string) => {
     return (res as any).data;
 };
 
-export const downloadStudentReportPdf = async (studentId: string): Promise<Blob> => {
-    const res = await apiClient.get(`/reports/student/${studentId}/pdf`, {
-        responseType: 'blob',
-    });
-    return res as unknown as Blob;
+export const fetchStudentReportHtml = async (studentId: string): Promise<string> => {
+    const res = await apiClient.get(`/reports/student/${studentId}/pdf`);
+    return res as unknown as string;
 };
 
 export const fetchGroupReport = async (groupId: string) => {
@@ -35,11 +33,9 @@ export const fetchGroupReport = async (groupId: string) => {
     return (res as any).data;
 };
 
-export const downloadGroupReportPdf = async (groupId: string): Promise<Blob> => {
-    const res = await apiClient.get(`/reports/group/${groupId}/pdf`, {
-        responseType: 'blob',
-    });
-    return res as unknown as Blob;
+export const fetchGroupReportHtml = async (groupId: string): Promise<string> => {
+    const res = await apiClient.get(`/reports/group/${groupId}/pdf`);
+    return res as unknown as string;
 };
 
 export const fetchFinancialMonthlyReport = async (year: number, month: number) => {
@@ -47,9 +43,7 @@ export const fetchFinancialMonthlyReport = async (year: number, month: number) =
     return (res as any).data;
 };
 
-export const downloadMonthlyReportPdf = async (year: number, month: number): Promise<Blob> => {
-    const res = await apiClient.get(`/reports/financial/monthly/pdf?year=${year}&month=${month}`, {
-        responseType: 'blob',
-    });
-    return res as unknown as Blob;
+export const fetchMonthlyReportHtml = async (year: number, month: number): Promise<string> => {
+    const res = await apiClient.get(`/reports/financial/monthly/pdf?year=${year}&month=${month}`);
+    return res as unknown as string;
 };

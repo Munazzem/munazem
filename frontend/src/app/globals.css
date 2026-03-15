@@ -45,6 +45,7 @@ body {
   background-color: var(--background);
   font-family: var(--font-sans);
   direction: rtl; /* For Arabic Language */
+  overflow-x: hidden; /* Fix horizontal scroll on mobile view */
 }
 
 @theme inline {

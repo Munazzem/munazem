@@ -16,6 +16,7 @@ import {
     AlertCircle,
     Banknote,
 } from 'lucide-react';
+import { TableSkeleton } from '@/components/layout/skeletons/TableSkeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -115,8 +116,8 @@ function AssistantsContent() {
             {/* Table */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                 {isLoading ? (
-                    <div className="flex justify-center items-center h-48">
-                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <div className="p-4 sm:p-6 bg-white rounded-2xl border border-gray-100 shadow-sm">
+                        <TableSkeleton rows={6} columns={4} />
                     </div>
                 ) : assistants.length === 0 ? (
                     <div className="p-12 text-center">
@@ -351,6 +352,7 @@ function AddAssistantModal({
                             value={name}
                             onChange={(e) => setName(e.target.value)}
                             placeholder="اسم المساعد"
+                            autoComplete="off"
                         />
                         {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
                     </div>
@@ -362,6 +364,7 @@ function AddAssistantModal({
                             onChange={(e) => setPhone(e.target.value)}
                             placeholder="01xxxxxxxxx"
                             dir="ltr"
+                            autoComplete="off"
                         />
                         {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
                     </div>
@@ -374,6 +377,7 @@ function AddAssistantModal({
                             onChange={(e) => setPassword(e.target.value)}
                             placeholder="6 أحرف على الأقل"
                             dir="ltr"
+                            autoComplete="new-password"
                         />
                         {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
                     </div>
@@ -391,6 +395,7 @@ function AddAssistantModal({
                                 placeholder="0"
                                 dir="ltr"
                                 className="pl-10"
+                                autoComplete="off"
                             />
                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">ج</span>
                         </div>

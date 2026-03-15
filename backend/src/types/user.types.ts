@@ -11,6 +11,8 @@ export interface IUser {
   stage:     TeacherStage | null;   // إعدادي أو ثانوي — للمدرسين فقط
   salary:    number | null;         // راتب شهري — للمساعدين فقط
   isActive:  boolean;
+  centerName?: string;              // اسم السنتر — للمدرسين فقط
+  logoUrl?:    string;              // لوجو السنتر — للمدرسين فقط
 }
 
 export interface IUserDocument extends IUser, Document {

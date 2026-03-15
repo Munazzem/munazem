@@ -36,7 +36,19 @@ router.get('/me', authenticate, async (req: Request, res: Response, next: NextFu
         const userId = (req as any).user.userId;
         const user = await UserModel.findById(userId).select('-password').lean();
         if (!user) throw UnauthorizedException({ message: 'المستخدم غير موجود' });
-        SuccessResponse({ res, message: 'تم جلب بيانات الحساب', data: user });
+
+        const userObject: any = { ...user };
+
+        // BRANDING INHERITANCE: If assistant, merge teacher's center info
+        if (user.role === 'assistant' && user.teacherId) {
+            const teacher = await UserModel.findById(user.teacherId, { centerName: 1, logoUrl: 1 }).lean();
+            if (teacher) {
+                userObject.centerName = teacher.centerName;
+                userObject.logoUrl = teacher.logoUrl;
+            }
+        }
+
+        SuccessResponse({ res, message: 'تم جلب بيانات الحساب', data: userObject });
     } catch (error) {
         next(error);
     }
@@ -60,6 +72,49 @@ router.patch('/me', authenticate, async (req: Request, res: Response, next: Next
         ).select('-password').lean();
 
         SuccessResponse({ res, message: 'تم تحديث بيانات الحساب بنجاح', data: updated });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// PATCH /auth/settings — update teacher's specific settings (centerName, logoUrl)
+router.patch('/settings', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { userId, role, teacherId } = (req as any).user;
+        const { centerName, logoUrl } = req.body;
+
+        // Determine which user document to update (the teacher's document)
+        const targetUserId = role === 'teacher' ? userId : teacherId;
+        
+        if (!targetUserId) {
+            throw UnauthorizedException({ message: 'غير مصرح لك بتعديل الإعدادات' });
+        }
+
+        const updatedTeacher = await UserModel.findByIdAndUpdate(
+            targetUserId,
+            { 
+                ...(centerName !== undefined && { centerName }), 
+                ...(logoUrl !== undefined && { logoUrl }) 
+            },
+            { new: true }
+        ).select('-password').lean();
+
+        if (!updatedTeacher) {
+            throw BadRequestException({ message: 'المعلم غير موجود' });
+        }
+
+        // If updated by assistant, return merged data so frontend store is accurate
+        let responseData: any = { ...updatedTeacher };
+        if (role === 'assistant') {
+            const assistant = await UserModel.findById(userId).select('-password').lean();
+            responseData = {
+                ...assistant,
+                centerName: updatedTeacher.centerName,
+                logoUrl: updatedTeacher.logoUrl
+            };
+        }
+
+        SuccessResponse({ res, message: 'تم حفظ الإعدادات بنجاح', data: responseData });
     } catch (error) {
         next(error);
     }

@@ -12,6 +12,7 @@ export interface IStudent {
     groupId: Types.ObjectId;
     teacherId: Types.ObjectId;
     isActive: boolean;
+    monthlySessionsQuota: number;
     createdAt?: Date;
     updatedAt?: Date;
 }

@@ -12,8 +12,13 @@ const attendanceSchema = new Schema<IAttendanceDocument>({
     sessionId: {
         type: Schema.Types.ObjectId,
         ref: 'Session',
-        required: true,
         index: true,
+    },
+    type: {
+        type: String,
+        enum: ['SESSION', 'MANUAL'],
+        default: 'SESSION',
+        required: true,
     },
     status: {
         type: String,
@@ -42,7 +47,14 @@ const attendanceSchema = new Schema<IAttendanceDocument>({
 });
 
 // Critical: prevent duplicate attendance record for the same student in the same session
-attendanceSchema.index({ studentId: 1, sessionId: 1 }, { unique: true });
+// We use partialFilterExpression to allow multiple MANUAL records (sessionId: null)
+attendanceSchema.index(
+    { studentId: 1, sessionId: 1 },
+    { 
+        unique: true, 
+        partialFilterExpression: { sessionId: { $exists: true, $type: 'objectId' } } 
+    }
+);
 
 export const AttendanceModel: Model<IAttendanceDocument> =
     mongoose.model<IAttendanceDocument>('Attendance', attendanceSchema);

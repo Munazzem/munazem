@@ -20,7 +20,7 @@ export class UserService {
             data.stage = null; // Assistants don't have a stage
         }
 
-        if (creatorRole === UserRole.superAdmin) {
+        if (creatorRole === UserRole.superAdmin || creatorRole === 'SUPER_ADMIN') {
             // Force the role to Teacher (ignoring whatever was sent)
             data.role = UserRole.teacher;
             data.teacherId = null;
@@ -70,7 +70,7 @@ export class UserService {
     static async getUsers(requesterRole: string, requesterId: string, query: any) {
         let filter: any = {};
 
-        if (requesterRole === UserRole.superAdmin) {
+        if (requesterRole === UserRole.superAdmin || requesterRole === 'SUPER_ADMIN') {
             filter.role = UserRole.teacher;
         } else if (requesterRole === UserRole.teacher) {
             filter.role = UserRole.assistant;
@@ -108,7 +108,7 @@ export class UserService {
             throw UnauthorizedException({ message: 'هذا المستخدم لا يتبع لك' });
         }
 
-        if (requesterRole === UserRole.superAdmin && targetUser.role !== UserRole.teacher) {
+        if ((requesterRole === UserRole.superAdmin || requesterRole === 'SUPER_ADMIN') && targetUser.role !== UserRole.teacher) {
             throw UnauthorizedException({ message: 'يمكنك فقط تعديل بيانات المعلمين' });
         }
 
@@ -169,7 +169,7 @@ export class UserService {
             throw UnauthorizedException({ message: 'هذا المستخدم لا يتبع لك' });
         }
 
-        if (requesterRole === UserRole.superAdmin && targetUser.role !== UserRole.teacher) {
+        if ((requesterRole === UserRole.superAdmin || requesterRole === 'SUPER_ADMIN') && targetUser.role !== UserRole.teacher) {
             throw UnauthorizedException({ message: 'يمكنك فقط حذف المعلمين' });
         }
 

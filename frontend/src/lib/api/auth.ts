@@ -17,3 +17,9 @@ export const changePassword = async (data: { currentPassword: string; newPasswor
     const res = await apiClient.patch('/auth/change-password', data);
     return (res as any).data;
 };
+
+// PATCH /auth/settings (teacher only)
+export const updateSettings = async (data: { centerName?: string; logoUrl?: string }) => {
+    const res = await apiClient.patch('/auth/settings', data);
+    return (res as any).data;
+};

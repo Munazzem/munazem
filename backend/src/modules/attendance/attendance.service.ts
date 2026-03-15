@@ -35,13 +35,27 @@ export class AttendanceService {
         if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
 
         try {
+            // Check for existing record to prevent duplicates regardless of DB index state
+            const existing = await AttendanceModel.findOne({
+                studentId: student._id,
+                sessionId: data.sessionId
+            }).lean();
+            
+            if (existing) {
+                throw ConflictException({ message: 'تم تسجيل حضور هذا الطالب بالفعل في هذه الحصة' });
+            }
+
+            // Auto-detect guest: student not in this session's group
+            const isGuest = student.groupId?.toString() !== session.groupId?.toString();
+
             const record = await AttendanceModel.create({
                 studentId: student._id,
                 sessionId: data.sessionId,
                 status:    data.status,
-                isGuest:   data.isGuest ?? false,
+                isGuest,
                 scannedAt: new Date(),
                 scannedBy,
+                type:      'SESSION',
                 ...(data.notes ? { notes: data.notes } : {}),
             });
             return record;
@@ -51,6 +65,45 @@ export class AttendanceService {
             }
             throw error;
         }
+    }
+
+    // ─── Record manual manual quota attendance (checkbox) ──────────
+    static async recordManualAttendance(scannedBy: string, studentId: string, teacherId: string) {
+        const student = await StudentModel.findOne({ _id: studentId, teacherId }).lean();
+        if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
+
+        const now = new Date();
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const monthEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+        // Find all sessions for the group this month
+        const sessions = await SessionModel.find({
+            groupId: student.groupId,
+            teacherId,
+            date: { $gte: monthStart, $lte: monthEnd }
+        }).sort({ date: 1, startTime: 1 }).lean();
+
+        // Get existing attendance for this student in these sessions
+        const sessionIds = sessions.map(s => s._id);
+        const existingAttendance = await AttendanceModel.find({
+            studentId: student._id,
+            sessionId: { $in: sessionIds as any },
+            status: { $in: [AttendanceStatus.PRESENT, AttendanceStatus.LATE] }
+        }).lean();
+
+        const attendedSessionIds = new Set(existingAttendance.map(a => a.sessionId?.toString()));
+
+        // Find earliest unattended session
+        const nextSession = sessions.find(s => !attendedSessionIds.has(s._id.toString()));
+
+        return await AttendanceModel.create({
+            studentId: student._id,
+            ...(nextSession ? { sessionId: nextSession._id } : {}),
+            status:    AttendanceStatus.PRESENT,
+            type:      nextSession ? 'SESSION' : 'MANUAL',
+            scannedAt: new Date(),
+            scannedBy,
+        });
     }
 
     // ─── Batch record (all students at once — for fast manual entry) ─
@@ -220,11 +273,17 @@ export class AttendanceService {
         const record = await AttendanceModel.findById(attendanceId).lean();
         if (!record) throw NotFoundException({ message: 'سجل الحضور غير موجود' });
 
-        // Verify the session belongs to this teacher before allowing edit
-        const session = await SessionModel.findOne({ _id: record.sessionId, teacherId }).lean();
-        if (!session) throw NotFoundException({ message: 'الحصة غير موجودة أو لا صلاحية لك عليها' });
-        if (session.status === SessionStatus.COMPLETED) {
-            throw BadRequestException({ message: 'لا يمكن تعديل حضور حصة مكتملة' });
+        // Verify the session belongs to this teacher before allowing edit (if session-based)
+        if (record.sessionId) {
+            const session = await SessionModel.findOne({ _id: record.sessionId as any, teacherId }).lean();
+            if (!session) throw NotFoundException({ message: 'الحصة غير موجودة أو لا صلاحية لك عليها' });
+            if (session.status === SessionStatus.COMPLETED) {
+                throw BadRequestException({ message: 'لا يمكن تعديل حضور حصة مكتملة' });
+            }
+        } else {
+            // For manual records, just verify the student belongs to the teacher
+            const student = await StudentModel.findOne({ _id: record.studentId, teacherId }).lean();
+            if (!student) throw NotFoundException({ message: 'الطالب غير موجود أو لا صلاحية لك عليه' });
         }
 
         if (!Object.values(AttendanceStatus).includes(status as AttendanceStatus)) {
