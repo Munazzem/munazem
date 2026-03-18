@@ -57,6 +57,14 @@ const studentSchema = new Schema<IStudent>({
     monthlySessionsQuota: {
         type: Number,
         default: 8
+    },
+    excusedUntil: {
+        type: Date,
+        default: null
+    },
+    excusedSessionsCount: {
+        type: Number,
+        default: 0
     }
 }, {
     timestamps: true

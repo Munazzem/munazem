@@ -18,6 +18,7 @@ import {
     Filter,
     Pencil,
 } from 'lucide-react';
+import { TableSkeleton } from '@/components/layout/skeletons/TableSkeleton';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -44,6 +45,7 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { AddNotebookModal } from '@/components/notebooks/AddNotebookModal';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 // ── Restock Dialog ────────────────────────────────────────────────
 function RestockDialog({
@@ -184,6 +186,7 @@ export default function NotebooksPage() {
     const [page, setPage] = useState(1);
     const [restockNb, setRestockNb] = useState<INotebook | null>(null);
     const [editNb, setEditNb] = useState<INotebook | null>(null);
+    const [confirmDeleteNb, setConfirmDeleteNb] = useState<INotebook | null>(null);
     const limit = 20;
 
     const queryClient = useQueryClient();
@@ -204,9 +207,7 @@ export default function NotebooksPage() {
     });
 
     const handleDelete = (nb: INotebook) => {
-        if (window.confirm(`هل أنت متأكد من حذف "${nb.name}"؟`)) {
-            deleteMutation.mutate(nb._id);
-        }
+        setConfirmDeleteNb(nb);
     };
 
     const notebooks: INotebook[] = (data as any)?.data ?? (data as any) ?? [];
@@ -258,8 +259,8 @@ export default function NotebooksPage() {
             {/* Table */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                 {isLoading ? (
-                    <div className="flex justify-center items-center h-64">
-                        <Loader2 className="h-10 w-10 animate-spin text-primary" />
+                    <div className="p-6">
+                        <TableSkeleton rows={8} columns={5} />
                     </div>
                 ) : isError ? (
                     <div className="p-8 text-center text-red-500 font-bold">حدث خطأ أثناء تحميل البيانات.</div>
@@ -372,6 +373,18 @@ export default function NotebooksPage() {
             {/* Dialogs */}
             <RestockDialog notebook={restockNb} open={restockNb !== null} onOpenChange={(v) => { if (!v) setRestockNb(null); }} />
             <EditNotebookDialog notebook={editNb} open={editNb !== null} onOpenChange={(v) => { if (!v) setEditNb(null); }} />
+            <ConfirmDialog
+                open={confirmDeleteNb !== null}
+                onOpenChange={(v) => { if (!v) setConfirmDeleteNb(null); }}
+                title={`حذف "${confirmDeleteNb?.name}"؟`}
+                description="سيتم حذف المذكرة من النظام نهائياً."
+                confirmLabel="حذف"
+                variant="danger"
+                onConfirm={() => {
+                    if (confirmDeleteNb) deleteMutation.mutate(confirmDeleteNb._id);
+                    setConfirmDeleteNb(null);
+                }}
+            />
         </div>
     );
 }

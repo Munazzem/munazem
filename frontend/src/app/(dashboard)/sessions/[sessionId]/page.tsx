@@ -15,7 +15,7 @@ import {
     type IWhatsAppLink,
 } from '@/lib/api/attendance';
 import { printHtmlContent } from '@/lib/utils/print';
-import { fetchStudents } from '@/lib/api/students';
+import { fetchStudents, updateStudent } from '@/lib/api/students';
 import { useAuthStore } from '@/lib/store/auth.store';
 import dynamic from 'next/dynamic';
 const QRScannerPanel = dynamic(
@@ -23,6 +23,11 @@ const QRScannerPanel = dynamic(
     { ssr: false }
 );
 import { BatchSubscriptionModal } from '@/components/payments/BatchSubscriptionModal';
+import { SetExcuseModal } from '@/components/sessions/SetExcuseModal';
+import { EditAttendanceDialog } from '@/components/sessions/EditAttendanceDialog';
+import { StudentSearchResults } from '@/components/sessions/StudentSearchResults';
+import { SnapshotSummary } from '@/components/sessions/SnapshotSummary';
+import { WhatsAppLinksDialog } from '@/components/sessions/WhatsAppLinksDialog';
 import { toast } from 'sonner';
 import {
     ArrowRight,
@@ -43,7 +48,10 @@ import {
     Receipt,
     FileDown,
 } from 'lucide-react';
+import { ReportCardSkeleton } from '@/components/layout/skeletons/ReportCardSkeleton';
+import { TableSkeleton } from '@/components/layout/skeletons/TableSkeleton';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
     Dialog,
@@ -66,12 +74,14 @@ const ATTENDANCE_LABELS: Record<AttendanceStatus, string> = {
     PRESENT: 'حاضر',
     ABSENT: 'غائب',
     LATE: 'متأخر',
+    EXCUSED: 'مُستأذن',
 };
 
 const ATTENDANCE_COLORS: Record<AttendanceStatus, string> = {
     PRESENT: 'bg-green-100 text-green-700 border-green-200',
     ABSENT: 'bg-red-100 text-red-600 border-red-200',
     LATE: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+    EXCUSED: 'bg-blue-100 text-blue-700 border-blue-200',
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -88,288 +98,6 @@ const STATUS_LABELS: Record<string, string> = {
     CANCELLED: 'ملغية',
 };
 
-// ─── Edit Attendance Dialog ───────────────────────────────────────────────────
-function EditAttendanceDialog({
-    record,
-    onClose,
-    onSave,
-}: {
-    record: IAttendanceRecord;
-    onClose: () => void;
-    onSave: (status: AttendanceStatus, notes?: string) => void;
-}) {
-    const [status, setStatus] = useState<AttendanceStatus>(record.status);
-
-    return (
-        <Dialog open onOpenChange={onClose}>
-            <DialogContent className="sm:max-w-[360px]" dir="rtl">
-                <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2">
-                        <Edit2 className="h-4 w-4 text-primary" />
-                        تعديل حضور الطالب
-                    </DialogTitle>
-                </DialogHeader>
-                <div className="py-2">
-                    <p className="text-sm text-gray-600 mb-3">
-                        الطالب: <span className="font-semibold">{(record.studentId as any)?.studentName ?? '—'}</span>
-                    </p>
-                    <Select value={status} onValueChange={(v) => setStatus(v as AttendanceStatus)}>
-                        <SelectTrigger>
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {(Object.keys(ATTENDANCE_LABELS) as AttendanceStatus[]).map((s) => (
-                                <SelectItem key={s} value={s}>
-                                    {ATTENDANCE_LABELS[s]}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                </div>
-                <DialogFooter className="gap-2">
-                    <Button variant="outline" onClick={onClose}>إلغاء</Button>
-                    <Button onClick={() => onSave(status)}>حفظ</Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
-    );
-}
-
-// ─── Student Search Results Panel ────────────────────────────────────────────
-function StudentSearchResults({
-    sessionId,
-    groupId,
-    search,
-    alreadyRecordedIds,
-    onRecord,
-    onClose,
-}: {
-    sessionId: string;
-    groupId: string;
-    search: string;
-    alreadyRecordedIds: Set<string>;
-    onRecord: (studentId: string) => void;
-    onClose: () => void;
-}) {
-    const { data } = useQuery({
-        queryKey: ['students-search', groupId, search],
-        queryFn: () => fetchStudents({ groupId, search, limit: 10 }),
-        enabled: search.length >= 1,
-    });
-
-    const students = data?.data ?? [];
-
-    if (students.length === 0) return null;
-
-    return (
-        <div className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
-            <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50">
-                <span className="text-xs text-gray-500">نتائج البحث</span>
-                <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xs">✕</button>
-            </div>
-            <ul className="divide-y divide-gray-50 max-h-48 overflow-y-auto">
-                {students.map((student) => {
-                    const already = alreadyRecordedIds.has(student._id);
-                    return (
-                        <li key={student._id}>
-                            <button
-                                className={cn(
-                                    'w-full flex items-center justify-between px-3 py-2.5 text-sm text-right transition-colors',
-                                    already
-                                        ? 'bg-green-50 text-green-700 cursor-default'
-                                        : 'hover:bg-primary/5 text-gray-700'
-                                )}
-                                onClick={() => !already && onRecord(student._id)}
-                                disabled={already}
-                            >
-                                <span className="font-medium">{student.studentName}</span>
-                                <span className="text-xs text-gray-400">{student.studentCode}</span>
-                                {already && (
-                                    <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full mr-2">
-                                        مسجل
-                                    </span>
-                                )}
-                            </button>
-                        </li>
-                    );
-                })}
-            </ul>
-        </div>
-    );
-}
-
-// ─── Snapshot Summary ─────────────────────────────────────────────────────────
-function SnapshotSummary({ snapshot }: { snapshot: IAttendanceSnapshot }) {
-    const rate = snapshot.totalCount > 0
-        ? Math.round((snapshot.presentCount / snapshot.totalCount) * 100)
-        : 0;
-
-    return (
-        <div className="bg-white rounded-xl border border-gray-100 p-3 sm:p-5 shadow-sm">
-            <h3 className="font-semibold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2 text-sm sm:text-base">
-                <CalendarCheck className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
-                ملخص الحصة
-            </h3>
-            <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-4">
-                <div className="text-center bg-green-50 rounded-lg p-2 sm:p-3">
-                    <p className="text-xl sm:text-2xl font-bold text-green-700">{snapshot.presentCount}</p>
-                    <p className="text-[11px] sm:text-xs text-green-600 mt-1">حاضر</p>
-                </div>
-                <div className="text-center bg-red-50 rounded-lg p-2 sm:p-3">
-                    <p className="text-xl sm:text-2xl font-bold text-red-600">{snapshot.absentCount}</p>
-                    <p className="text-[11px] sm:text-xs text-red-500 mt-1">غائب</p>
-                </div>
-                <div className="text-center bg-blue-50 rounded-lg p-2 sm:p-3">
-                    <p className="text-xl sm:text-2xl font-bold text-blue-700">{rate}%</p>
-                    <p className="text-[11px] sm:text-xs text-blue-600 mt-1">نسبة الحضور</p>
-                </div>
-            </div>
-
-            {snapshot.absentStudents.length > 0 && (
-                <div>
-                    <p className="text-xs font-medium text-gray-500 mb-2">الغائبون:</p>
-                    <div className="flex flex-wrap gap-1.5">
-                        {snapshot.absentStudents.map((s) => (
-                            <span
-                                key={s.studentId}
-                                className="text-xs bg-red-50 text-red-600 px-2 py-0.5 rounded-full border border-red-100"
-                            >
-                                {s.studentName}
-                            </span>
-                        ))}
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-}
-
-// ─── WhatsApp Links Dialog ────────────────────────────────────────────────────
-function WhatsAppLinksDialog({
-    sessionId,
-    open,
-    onClose,
-}: {
-    sessionId: string;
-    open: boolean;
-    onClose: () => void;
-}) {
-    const { data: links = [], isLoading } = useQuery({
-        queryKey: ['whatsapp-links', sessionId],
-        queryFn: () => getWhatsAppLinks(sessionId),
-        enabled: open,
-    });
-
-    const present = links.filter((l) => l.status === 'PRESENT');
-    const absent  = links.filter((l) => l.status === 'ABSENT');
-
-    return (
-        <Dialog open={open} onOpenChange={onClose}>
-            <DialogContent className="sm:max-w-[520px] max-h-[85vh] overflow-hidden flex flex-col" dir="rtl">
-                <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2">
-                        <MessageSquare className="h-5 w-5 text-green-600" />
-                        إرسال رسائل واتساب لأولياء الأمور
-                    </DialogTitle>
-                </DialogHeader>
-
-                {isLoading ? (
-                    <div className="flex items-center justify-center py-10 text-gray-400">
-                        <Loader2 className="h-5 w-5 animate-spin ml-2" />
-                        جارٍ التحميل...
-                    </div>
-                ) : (
-                    <div className="overflow-y-auto flex-1 -mx-6 px-6">
-                        {/* Summary */}
-                        <div className="flex gap-3 mb-4">
-                            <div className="flex-1 bg-green-50 rounded-lg p-3 text-center border border-green-100">
-                                <p className="text-lg font-bold text-green-700">{present.length}</p>
-                                <p className="text-xs text-green-600">حاضر</p>
-                            </div>
-                            <div className="flex-1 bg-red-50 rounded-lg p-3 text-center border border-red-100">
-                                <p className="text-lg font-bold text-red-600">{absent.length}</p>
-                                <p className="text-xs text-red-500">غائب</p>
-                            </div>
-                            <div className="flex-1 bg-gray-50 rounded-lg p-3 text-center border border-gray-100">
-                                <p className="text-lg font-bold text-gray-700">{links.length}</p>
-                                <p className="text-xs text-gray-500">إجمالي</p>
-                            </div>
-                        </div>
-
-                        {/* Absent first (priority) */}
-                        {absent.length > 0 && (
-                            <div className="mb-4">
-                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                                    الغائبون — {absent.length}
-                                </p>
-                                <ul className="space-y-1.5">
-                                    {absent.map((l) => (
-                                        <li key={l.studentId}>
-                                            <a
-                                                href={l.whatsappLink}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border border-red-100 bg-red-50 hover:bg-red-100 transition-colors group"
-                                            >
-                                                <div className="flex items-center gap-2">
-                                                    <UserX className="h-4 w-4 text-red-400 shrink-0" />
-                                                    <span className="text-sm font-medium text-gray-800">{l.studentName}</span>
-                                                </div>
-                                                <div className="flex items-center gap-1.5 text-xs text-green-700 font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <Send className="h-3.5 w-3.5" />
-                                                    فتح واتساب
-                                                    <ExternalLink className="h-3 w-3" />
-                                                </div>
-                                            </a>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
-
-                        {/* Present */}
-                        {present.length > 0 && (
-                            <div>
-                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                                    الحاضرون — {present.length}
-                                </p>
-                                <ul className="space-y-1.5">
-                                    {present.map((l) => (
-                                        <li key={l.studentId}>
-                                            <a
-                                                href={l.whatsappLink}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border border-green-100 bg-green-50 hover:bg-green-100 transition-colors group"
-                                            >
-                                                <div className="flex items-center gap-2">
-                                                    <UserCheck className="h-4 w-4 text-green-500 shrink-0" />
-                                                    <span className="text-sm font-medium text-gray-800">{l.studentName}</span>
-                                                </div>
-                                                <div className="flex items-center gap-1.5 text-xs text-green-700 font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <Send className="h-3.5 w-3.5" />
-                                                    فتح واتساب
-                                                    <ExternalLink className="h-3 w-3" />
-                                                </div>
-                                            </a>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                <div className="pt-4 border-t border-gray-100 mt-2">
-                    <p className="text-xs text-gray-400 text-center">
-                        اضغط على اسم الطالب لفتح محادثة واتساب مع ولي الأمر
-                    </p>
-                </div>
-            </DialogContent>
-        </Dialog>
-    );
-}
-
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function SessionDetailPage() {
     const { sessionId } = useParams<{ sessionId: string }>();
@@ -383,6 +111,10 @@ export default function SessionDetailPage() {
     const [editRecord, setEditRecord] = useState<IAttendanceRecord | null>(null);
     const [showWhatsApp, setShowWhatsApp] = useState(false);
     const [pdfLoading, setPdfLoading] = useState(false);
+
+    // Excused Absence State
+    const [excuseStudent, setExcuseStudent] = useState<any | null>(null);
+    const [showAllStudents, setShowAllStudents] = useState(false);
 
     const handleDownloadAttendancePdf = async () => {
         setPdfLoading(true);
@@ -489,6 +221,33 @@ export default function SessionDetailPage() {
         },
     });
 
+    // Record excuse
+    const setExcuseMutation = useMutation({
+        mutationFn: async ({ studentId, count }: { studentId: string; count: number }) => {
+            // 1. Update student excusedSessionsCount
+            await updateStudent(studentId, { excusedSessionsCount: count });
+            
+            // 2. Record attendance as EXCUSED for this session
+            await ensureInProgress();
+            return recordAttendance({
+                sessionId,
+                studentId,
+                status: 'EXCUSED',
+                notes: `مُستأذن لـ ${count} حصص (بدءاً من هذه الحصة)`
+            });
+        },
+        onSuccess: (record) => {
+            const name = (record.studentId as any)?.studentName ?? 'الطالب';
+            toast.success(`تم تسجيل إذن غياب لـ ${name}`);
+            queryClient.invalidateQueries({ queryKey: ['attendance', sessionId] });
+            queryClient.invalidateQueries({ queryKey: ['student_detail'] });
+            setExcuseStudent(null);
+        },
+        onError: (err: any) => {
+            toast.error(err?.response?.data?.message ?? 'حدث خطأ أثناء حفظ الإذن');
+        }
+    });
+
     // Complete session
     const completeMutation = useMutation({
         mutationFn: () => completeSession(sessionId),
@@ -521,11 +280,7 @@ export default function SessionDetailPage() {
         session?.status === 'SCHEDULED' || session?.status === 'IN_PROGRESS';
 
     if (sessionLoading) {
-        return (
-            <div className="flex items-center justify-center min-h-screen">
-                <Loader2 className="h-6 w-6 animate-spin text-primary" />
-            </div>
-        );
+        return <div className="p-6"><ReportCardSkeleton /></div>;
     }
 
     if (!session) {
@@ -635,102 +390,165 @@ export default function SessionDetailPage() {
 
                 {/* Right Panel — Live Attendance List */}
                 <div className={cn(
-                    'bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden',
+                    'flex flex-col gap-3',
                     (!canWrite || !isSessionActive) && 'lg:col-span-2'
                 )}>
-                    <div className="flex items-center justify-between px-3 sm:px-5 py-3 sm:py-4 border-b border-gray-100">
-                        <h3 className="font-semibold text-gray-800 flex items-center gap-2">
-                            <Users className="h-5 w-5 text-primary" />
-                            قائمة الحضور
-                            {session.status === 'IN_PROGRESS' && (
-                                <span className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
-                                    <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-                                    مباشر
-                                </span>
-                            )}
-                        </h3>
-                        <span className="text-sm text-gray-400">{attendanceRecords.length} سجل</span>
-                    </div>
+                    {/* Attendance List */}
+                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                        <div className="flex items-center justify-between px-3 sm:px-5 py-3 sm:py-4 border-b border-gray-100">
+                            <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+                                <Users className="h-5 w-5 text-primary" />
+                                قائمة الحضور
+                                {session.status === 'IN_PROGRESS' && (
+                                    <span className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                                        <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                                        مباشر
+                                    </span>
+                                )}
+                            </h3>
+                            <span className="text-sm text-gray-400">{attendanceRecords.length} سجل</span>
+                        </div>
 
-                    {attendanceLoading ? (
-                        <div className="flex items-center justify-center py-10 text-gray-400">
-                            <Loader2 className="h-5 w-5 animate-spin ml-2" />
-                            تحميل...
-                        </div>
-                    ) : attendanceRecords.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-12 text-gray-400 gap-2">
-                            <Users className="h-10 w-10 text-gray-200" />
-                            <p className="text-sm">لم يُسجَّل حضور بعد</p>
-                            {canWrite && isSessionActive && (
-                                <p className="text-xs">استخدم الكاميرا أو البحث اليدوي لتسجيل الحضور</p>
-                            )}
-                        </div>
-                    ) : (
-                        <ul className="divide-y divide-gray-50">
-                            {attendanceRecords.map((record) => {
-                                const student = record.studentId as any;
-                                return (
-                                    <li
-                                        key={record._id}
-                                        className="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-2.5 sm:py-3 hover:bg-gray-50/60 transition-colors"
-                                    >
-                                        <div className={cn(
-                                            'w-8 h-8 rounded-full flex items-center justify-center shrink-0',
-                                            record.status === 'PRESENT' ? 'bg-green-100' :
-                                            record.status === 'LATE' ? 'bg-yellow-100' : 'bg-red-100'
-                                        )}>
-                                            {record.status === 'ABSENT' ? (
-                                                <UserX className="h-4 w-4 text-red-500" />
-                                            ) : (
-                                                <UserCheck className={cn(
-                                                    'h-4 w-4',
-                                                    record.status === 'LATE' ? 'text-yellow-600' : 'text-green-600'
-                                                )} />
-                                            )}
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2">
-                                                <p className="text-sm font-medium text-gray-800 truncate">
-                                                    {student?.studentName ?? '—'}
-                                                </p>
-                                                {subscriptionMap.get(student?._id ?? '') === false && (
-                                                    <span
-                                                        title="غير مشترك هذا الشهر"
-                                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200 shrink-0"
-                                                    >
-                                                        <AlertCircle className="h-2.5 w-2.5" />
-                                                        غير مشترك
-                                                    </span>
+                        {attendanceLoading ? (
+                            <div className="p-5">
+                                <TableSkeleton rows={10} columns={4} />
+                            </div>
+                        ) : attendanceRecords.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-12 text-gray-400 gap-2">
+                                <Users className="h-10 w-10 text-gray-200" />
+                                <p className="text-sm">لم يُسجَّل حضور بعد</p>
+                                {canWrite && isSessionActive && (
+                                    <p className="text-xs">استخدم الكاميرا أو البحث اليدوي لتسجيل الحضور</p>
+                                )}
+                            </div>
+                        ) : (
+                            <ul className="divide-y divide-gray-50">
+                                {attendanceRecords.map((record) => {
+                                    const student = record.studentId as any;
+                                    return (
+                                        <li
+                                            key={record._id}
+                                            className="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-2.5 sm:py-3 hover:bg-gray-50/60 transition-colors"
+                                        >
+                                            <div className={cn(
+                                                'w-8 h-8 rounded-full flex items-center justify-center shrink-0',
+                                                record.status === 'PRESENT' ? 'bg-green-100' :
+                                                record.status === 'LATE' ? 'bg-yellow-100' : 
+                                                record.status === 'EXCUSED' ? 'bg-blue-100' : 'bg-red-100'
+                                            )}>
+                                                {record.status === 'ABSENT' ? (
+                                                    <UserX className="h-4 w-4 text-red-500" />
+                                                ) : record.status === 'EXCUSED' ? (
+                                                    <Clock className="h-4 w-4 text-blue-600" />
+                                                ) : (
+                                                    <UserCheck className={cn(
+                                                        'h-4 w-4',
+                                                        record.status === 'LATE' ? 'text-yellow-600' : 'text-green-600'
+                                                    )} />
                                                 )}
                                             </div>
-                                            <p className="text-xs text-gray-400">
-                                                {student?.studentCode} · {' '}
-                                                {new Date(record.scannedAt).toLocaleTimeString('ar-EG', {
-                                                    hour: '2-digit',
-                                                    minute: '2-digit',
-                                                })}
-                                            </p>
-                                        </div>
-                                        <span className={cn(
-                                            'text-xs px-2 py-0.5 rounded-full border font-medium',
-                                            ATTENDANCE_COLORS[record.status]
-                                        )}>
-                                            {ATTENDANCE_LABELS[record.status]}
-                                        </span>
-                                        {canWrite && isSessionActive && (
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-7 w-7 text-gray-400 hover:text-gray-600"
-                                                onClick={() => setEditRecord(record)}
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-2">
+                                                    <p className="text-sm font-medium text-gray-800 truncate">
+                                                        {student?.studentName ?? '—'}
+                                                    </p>
+                                                    {subscriptionMap.get(student?._id ?? '') === false && (
+                                                        <span
+                                                            title="غير مشترك هذا الشهر"
+                                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200 shrink-0"
+                                                        >
+                                                            <AlertCircle className="h-2.5 w-2.5" />
+                                                            غير مشترك
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p className="text-xs text-gray-400">
+                                                    {student?.studentCode} · {' '}
+                                                    {new Date(record.scannedAt).toLocaleTimeString('ar-EG', {
+                                                        hour: '2-digit',
+                                                        minute: '2-digit',
+                                                    })}
+                                                </p>
+                                            </div>
+                                            <span className={cn(
+                                                'text-xs px-2 py-0.5 rounded-full border font-medium',
+                                                ATTENDANCE_COLORS[record.status]
+                                            )}>
+                                                {ATTENDANCE_LABELS[record.status]}
+                                            </span>
+                                            {canWrite && isSessionActive && (
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-7 w-7 text-gray-400 hover:text-gray-600"
+                                                    onClick={() => setEditRecord(record)}
+                                                >
+                                                    <Edit2 className="h-3.5 w-3.5" />
+                                                </Button>
+                                            )}
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        )}
+                    </div>
+
+                    {/* Missing Students Section */}
+                    {canWrite && isSessionActive && (groupStudentsData?.data?.length ?? 0) > 0 && (
+                        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                            <button
+                                onClick={() => setShowAllStudents(!showAllStudents)}
+                                className="w-full flex items-center justify-between px-3 sm:px-5 py-3 border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                            >
+                                <h3 className="font-semibold text-gray-700 flex items-center gap-2">
+                                    <UserX className="h-5 w-5 text-gray-400" />
+                                    طلاب لم يحضروا بعد
+                                    <Badge variant="outline" className="mr-2 text-gray-400 border-gray-200">
+                                        {(groupStudentsData?.data ?? []).filter(s => !alreadyRecordedIds.has(s._id)).length}
+                                    </Badge>
+                                </h3>
+                                <div className="flex items-center gap-2 h-7 w-7 rounded-lg bg-gray-50 text-gray-400">
+                                    <Edit2 className={cn("h-4 w-4 mx-auto transition-transform", showAllStudents ? "rotate-180" : "")} />
+                                </div>
+                            </button>
+
+                            {showAllStudents && (
+                                <ul className="divide-y divide-gray-50 max-h-[300px] overflow-y-auto">
+                                    {(groupStudentsData?.data ?? [])
+                                        .filter(s => !alreadyRecordedIds.has(s._id))
+                                        .map((student) => (
+                                            <li
+                                                key={student._id}
+                                                className="flex items-center justify-between px-3 sm:px-5 py-2.5 hover:bg-gray-50/60 transition-colors"
                                             >
-                                                <Edit2 className="h-3.5 w-3.5" />
-                                            </Button>
-                                        )}
-                                    </li>
-                                );
-                            })}
-                        </ul>
+                                                <div className="min-w-0">
+                                                    <p className="text-sm font-medium text-gray-700 truncate">{student.studentName}</p>
+                                                    <p className="text-[10px] text-gray-400">{student.studentCode}</p>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        className="h-8 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 gap-1.5"
+                                                        onClick={() => setExcuseStudent(student)}
+                                                    >
+                                                        <CalendarCheck className="h-3.5 w-3.5" />
+                                                        تسجيل إذن
+                                                    </Button>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        className="h-8 text-xs text-primary hover:bg-primary/5"
+                                                        onClick={() => recordMutation.mutate(student._id)}
+                                                    >
+                                                        تحضير
+                                                    </Button>
+                                                </div>
+                                            </li>
+                                        ))}
+                                </ul>
+                            )}
+                        </div>
                     )}
                 </div>
             </div>
@@ -765,6 +583,16 @@ export default function SessionDetailPage() {
                         </Button>
                     </div>
                 </div>
+            )}
+
+            {/* Set Excuse Modal */}
+            {excuseStudent && (
+                <SetExcuseModal
+                    student={excuseStudent}
+                    onClose={() => setExcuseStudent(null)}
+                    onSave={(count) => setExcuseMutation.mutate({ studentId: excuseStudent._id, count })}
+                    isSaving={setExcuseMutation.isPending}
+                />
             )}
 
             {/* Complete Session Confirm Dialog */}

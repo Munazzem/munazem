@@ -47,6 +47,7 @@ import {
     AccordionItem,
     AccordionTrigger,
 } from "@/components/ui/accordion";
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 export default function GroupsPage() {
     const user = useAuthStore(state => state.user);
@@ -61,6 +62,9 @@ export default function GroupsPage() {
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [reportGroupId, setReportGroupId] = useState<string | null>(null);
     const [reportGroupName, setReportGroupName] = useState('');
+
+    const [isConfirmDeleteDialogOpen, setIsConfirmDeleteDialogOpen] = useState(false);
+    const [groupToDelete, setGroupToDelete] = useState<{ id: string; name: string } | null>(null);
 
     const queryClient = useQueryClient();
 
@@ -88,17 +92,18 @@ export default function GroupsPage() {
         onSuccess: () => {
             toast.success('تم حذف المجموعة بنجاح');
             queryClient.invalidateQueries({ queryKey: ['groups'] });
+            setIsConfirmDeleteDialogOpen(false);
+            setGroupToDelete(null);
         },
         onError: (error: { response?: { data?: { message?: string } } } | Error) => {
             const err = error as { response?: { data?: { message?: string } } };
-            
+            toast.error(err.response?.data?.message || 'فشل حذف المجموعة.');
         }
     });
 
-    const handleDelete = (id: string, name: string) => {
-        if (window.confirm(`هل أنت متأكد من حذف ${name}؟ سيؤدي ذلك إلى التأثير على الطلاب المسجلين بها.`)) {
-            deleteMutation.mutate(id);
-        }
+    const handleDeleteClick = (id: string, name: string) => {
+        setGroupToDelete({ id, name });
+        setIsConfirmDeleteDialogOpen(true);
     };
 
     const handleEditClick = (group: Group) => {
@@ -176,7 +181,7 @@ export default function GroupsPage() {
                     لا توجد مجموعات لعرضها.
                 </div>
             ) : (
-                <Accordion type="multiple" className="space-y-4" defaultValue={gradeKeys}>
+                <Accordion type="multiple" className="space-y-4">
                     {gradeKeys.map((grade) => (
                         <AccordionItem value={grade} key={grade} className="bg-white border border-gray-100 rounded-xl shadow-sm px-4">
                             <AccordionTrigger className="hover:no-underline py-4">
@@ -210,7 +215,7 @@ export default function GroupsPage() {
                                                                     <DropdownMenuItem className="cursor-pointer focus:text-primary" onClick={() => handleEditClick(group)}>
                                                                         <Edit className="mr-2 h-4 w-4 ml-2" /> تعديل المجموعة
                                                                     </DropdownMenuItem>
-                                                                    <DropdownMenuItem className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50" onClick={() => handleDelete(group._id, group.name)}>
+                                                                    <DropdownMenuItem className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50" onClick={() => handleDeleteClick(group._id, group.name)}>
                                                                         <Trash2 className="mr-2 h-4 w-4 ml-2" /> حذف المجموعة
                                                                     </DropdownMenuItem>
                                                                 </>
@@ -283,6 +288,18 @@ export default function GroupsPage() {
                 groupName={reportGroupName}
                 open={reportGroupId !== null}
                 onOpenChange={(v) => { if (!v) setReportGroupId(null); }}
+            />
+
+            <ConfirmDialog
+                open={isConfirmDeleteDialogOpen}
+                onOpenChange={setIsConfirmDeleteDialogOpen}
+                title={`حذف "${groupToDelete?.name}"؟`}
+                description="سيؤدي ذلك إلى التأثير على الطلاب المسجلين بها. هذا الإجراء لا يمكن التراجع عنه."
+                confirmLabel="حذف"
+                variant="danger"
+                onConfirm={() => {
+                    if (groupToDelete) deleteMutation.mutate(groupToDelete.id);
+                }}
             />
         </div>
     );

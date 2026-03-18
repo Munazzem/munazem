@@ -15,7 +15,8 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import { QrCode, User, Phone, Hash, TrendingUp, Check } from 'lucide-react';
+import { QrCode, User, Phone, Hash, TrendingUp, Check, Clock } from 'lucide-react';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 interface Props {
     studentId: string;
@@ -51,6 +52,8 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
 
     const [isChangingGroup, setIsChangingGroup] = useState(false);
     const [newGroupId, setNewGroupId] = useState<string>('');
+    // Confirm attendance dialog state
+    const [attendanceConfirm, setAttendanceConfirm] = useState<{ label: string } | null>(null);
 
     useEffect(() => {
         setNewGroupId(currentGroupId);
@@ -119,6 +122,7 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
     const attendancePercentage = Math.round((usedSessionsThisMonth / monthlySessionsQuota) * 100) || 0;
 
     return (
+        <>
         <div className="flex flex-col sm:flex-row h-full">
             {/* QR Panel */}
             <div className="w-full sm:w-[240px] shrink-0 bg-[#f0f6ff] flex flex-col items-center justify-center gap-4 p-6 border-b sm:border-b-0 sm:border-l border-blue-100">
@@ -207,6 +211,25 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
                     {student.studentCode && (
                         <InfoItem icon={Hash} label="الكود" value={student.studentCode} ltr />
                     )}
+                    {student.excusedSessionsCount && student.excusedSessionsCount > 0 ? (
+                        <div className="flex flex-col gap-1 p-3 bg-blue-50 rounded-xl border border-blue-100 animate-pulse">
+                            <span className="text-[10px] sm:text-xs font-bold text-blue-400 flex items-center gap-1.5 uppercase tracking-wide">
+                                <Clock className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-blue-500" /> متبقي استئذان لـ
+                            </span>
+                            <span className="text-[13px] sm:text-[15px] font-bold text-blue-800">
+                                {student.excusedSessionsCount} حصص قادمة
+                            </span>
+                        </div>
+                    ) : student.excusedUntil && (
+                        <div className="flex flex-col gap-1 p-3 bg-blue-50 rounded-xl border border-blue-100">
+                            <span className="text-[10px] sm:text-xs font-bold text-blue-400 flex items-center gap-1.5 uppercase tracking-wide">
+                                <Check className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-blue-500" /> مُستأذن حتى
+                            </span>
+                            <span className="text-[13px] sm:text-[15px] font-bold text-blue-800">
+                                {new Date(student.excusedUntil).toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' })}
+                            </span>
+                        </div>
+                    )}
                 </div>
 
                 {/* Monthly Session Quota */}
@@ -276,8 +299,8 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
                                                 : "bg-gray-50 border-gray-200 text-gray-400 hover:border-[#0f4c81] hover:text-[#0f4c81]"
                                         )}
                                         onClick={() => {
-                                            if (!isPresent && canWrite && window.confirm(`تسجيل حضور حصة يوم ${dateStr}؟`)) {
-                                                recordManualMutation.mutate();
+                                            if (!isPresent && canWrite) {
+                                                setAttendanceConfirm({ label: `حضور حصة يوم ${dateStr}` });
                                             }
                                         }}
                                     >
@@ -310,8 +333,8 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
                                                 : "bg-gray-50 border-gray-200 text-gray-300 hover:border-[#0f4c81] hover:text-[#0f4c81]"
                                         )}
                                         onClick={() => {
-                                            if (!isManualFilled && canWrite && window.confirm('تسجيل حضور حصة إضافية؟')) {
-                                                recordManualMutation.mutate();
+                                            if (!isManualFilled && canWrite) {
+                                                setAttendanceConfirm({ label: 'حضور حصة إضافية' });
                                             }
                                         }}
                                     >
@@ -328,5 +351,17 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
                 </div>
             </div>
         </div>
+
+        <ConfirmDialog
+            open={attendanceConfirm !== null}
+            onOpenChange={(v) => { if (!v) setAttendanceConfirm(null); }}
+            title={`تسجيل ${attendanceConfirm?.label}?`}
+            confirmLabel="تسجيل"
+            onConfirm={() => {
+                recordManualMutation.mutate();
+                setAttendanceConfirm(null);
+            }}
+        />
+        </>
     );
 }

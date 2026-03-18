@@ -19,6 +19,8 @@ import {
     AlertTriangle,
     MessageCircle,
 } from 'lucide-react';
+import { ReportCardSkeleton } from '@/components/layout/skeletons/ReportCardSkeleton';
+import { TableSkeleton } from '@/components/layout/skeletons/TableSkeleton';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { fetchExamById, getExamResults, publishExam, deleteExam } from '@/lib/api/exams';
@@ -30,6 +32,7 @@ const BatchResultsModal = dynamic(
 );
 import { useAuthStore } from '@/lib/store/auth.store';
 import { cn } from '@/lib/utils';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 // ── Status helpers ─────────────────────────────────────────────────
 const STATUS_MAP: Record<ExamStatus, { label: string; className: string; icon: React.ElementType }> = {
@@ -77,6 +80,7 @@ export default function ExamDetailPage() {
 
     const [activeTab,       setActiveTab]       = useState<Tab>('questions');
     const [showBatchModal,  setShowBatchModal]  = useState(false);
+    const [confirmDelete,   setConfirmDelete]   = useState(false);
 
     const { data: exam, isLoading: examLoading, isError: examError } = useQuery({
         queryKey: ['exam', examId],
@@ -110,11 +114,7 @@ export default function ExamDetailPage() {
     });
 
     if (examLoading) {
-        return (
-            <div className="flex justify-center items-center h-64">
-                <Loader2 className="h-10 w-10 animate-spin text-primary" />
-            </div>
-        );
+        return <div className="p-6"><ReportCardSkeleton /></div>;
     }
 
     if (examError || !exam) {
@@ -185,7 +185,7 @@ export default function ExamDetailPage() {
                             </Button>
                             <Button
                                 variant="destructive"
-                                onClick={() => { if (window.confirm('حذف هذا الامتحان؟')) deleteMutation.mutate(); }}
+                                onClick={() => setConfirmDelete(true)}
                                 disabled={deleteMutation.isPending}
                                 className="gap-2"
                             >
@@ -305,8 +305,8 @@ export default function ExamDetailPage() {
             {activeTab === 'results' && (
                 <div className="space-y-4">
                     {resultsLoading ? (
-                        <div className="flex justify-center items-center h-40">
-                            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                        <div className="p-5 bg-white rounded-2xl border border-gray-100 shadow-sm">
+                            <TableSkeleton rows={10} columns={5} />
                         </div>
                     ) : (
                         <>
@@ -461,6 +461,16 @@ export default function ExamDetailPage() {
                     }}
                 />
             )}
+
+            <ConfirmDialog
+                open={confirmDelete}
+                onOpenChange={setConfirmDelete}
+                title="حذف الامتحان؟"
+                description="سيتم حذف الامتحان وكل نتائجه نهائياً."
+                confirmLabel="حذف"
+                variant="danger"
+                onConfirm={() => deleteMutation.mutate()}
+            />
         </div>
     );
 }

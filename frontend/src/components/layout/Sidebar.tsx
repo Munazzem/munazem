@@ -71,7 +71,7 @@ export function Sidebar() {
 
     if (!isMounted) {
         return (
-            <aside className="hidden sm:flex fixed right-0 top-0 z-40 h-screen w-64 bg-white border-l border-gray-100 shadow-sm flex-col">
+            <aside className="hidden sm:flex fixed right-0 top-0 z-40 h-[100dvh] w-64 bg-white border-l border-gray-100 shadow-sm flex-col">
                 <div className="flex h-16 items-center justify-center border-b border-gray-100 px-6">
                     <div className="flex items-center gap-2">
                         <div className="w-8 h-8 bg-gray-200 rounded-lg animate-pulse" />
@@ -99,7 +99,7 @@ export function Sidebar() {
             
             <aside 
                 className={cn(
-                    "fixed right-0 top-0 z-40 h-screen w-64 bg-white border-l border-gray-100 shadow-sm flex flex-col transition-transform duration-300 ease-in-out sm:translate-x-0",
+                    "fixed right-0 top-0 z-40 h-[100dvh] w-64 bg-white border-l border-gray-100 shadow-sm flex flex-col overflow-hidden transition-transform duration-300 ease-in-out sm:translate-x-0",
                     isSidebarOpen ? "translate-x-0" : "translate-x-full"
                 )}
             >
@@ -122,7 +122,7 @@ export function Sidebar() {
             </div>
 
             {/* Navigation Links */}
-            <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+            <div className="flex-1 overflow-y-auto min-h-0 py-4 px-3 space-y-1">
                 {navItems.map((item) => {
                     const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
                     return (

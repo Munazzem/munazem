@@ -1,5 +1,5 @@
 export type SessionStatus = 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
-export type AttendanceStatus = 'PRESENT' | 'ABSENT' | 'LATE';
+export type AttendanceStatus = 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED';
 
 export interface ISession {
     _id: string;

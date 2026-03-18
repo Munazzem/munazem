@@ -52,6 +52,7 @@ import {
     ArrowRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 export default function StudentProfilePage() {
     const params = useParams();
@@ -62,6 +63,7 @@ export default function StudentProfilePage() {
     const user = useAuthStore((s) => s.user);
     const canWrite = user?.role === 'assistant' || user?.role === 'teacher';
     const queryClient = useQueryClient();
+    const [confirmSubscribeOpen, setConfirmSubscribeOpen] = useState(false);
 
     // Fetch the single student (we use fetchStudents with search by ID for now, or just trust the report)
     // Actually, report brings back student data anyway, but let's fetch students list filtered by ID.
@@ -220,11 +222,7 @@ export default function StudentProfilePage() {
                             <Button
                                 className="flex-1 sm:flex-none h-9 text-xs gap-1.5 bg-[#0f4c81] hover:bg-[#0f4c81]/90 font-bold shadow-md"
                                 disabled={subscribeMutation.isPending}
-                                onClick={() => {
-                                    if (window.confirm('تأكيد تسجيل الاشتراك لهذا الطالب؟')) {
-                                        subscribeMutation.mutate();
-                                    }
-                                }}
+                                onClick={() => setConfirmSubscribeOpen(true)}
                             >
                                 {subscribeMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CreditCard className="h-3.5 w-3.5" />}
                                 تسجيل اشتراك
@@ -301,6 +299,18 @@ export default function StudentProfilePage() {
                     )}
                 </Tabs>
             </div>
+
+            <ConfirmDialog
+                open={confirmSubscribeOpen}
+                onOpenChange={setConfirmSubscribeOpen}
+                title="تسجيل اشتراك جديد؟"
+                description={`هل تريد تسجيل اشتراك جديد للطالب ${student?.studentName}؟`}
+                confirmLabel="تسجيل"
+                onConfirm={() => {
+                    subscribeMutation.mutate();
+                    setConfirmSubscribeOpen(false);
+                }}
+            />
         </div>
     );
 }

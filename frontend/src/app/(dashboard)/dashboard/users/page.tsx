@@ -9,9 +9,10 @@ import {
     Search, 
     MoreVertical, 
     Edit, 
-    Trash2, 
+    Trash2,
     Loader2,
 } from 'lucide-react';
+import { CardSkeleton } from '@/components/layout/skeletons/CardSkeleton';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,6 +30,7 @@ import { AddTeacherModal } from '@/components/users/AddTeacherModal';
 import { EditTeacherModal } from '@/components/users/EditTeacherModal';
 import Link from 'next/link';
 import { ExternalLink } from 'lucide-react';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 export default function UsersPage() {
     const user = useAuthStore(state => state.user);
@@ -36,6 +38,8 @@ export default function UsersPage() {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedTeacher, setSelectedTeacher] = useState<IUser | null>(null);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+    const [pendingDeleteTeacher, setPendingDeleteTeacher] = useState<{ id: string; name: string } | null>(null);
 
     const queryClient = useQueryClient();
 
@@ -56,9 +60,8 @@ export default function UsersPage() {
     });
 
     const handleDelete = (id: string, name: string) => {
-        if (window.confirm(`هل أنت متأكد من حذف المعلم ${name}؟`)) {
-            deleteMutation.mutate(id);
-        }
+        setPendingDeleteTeacher({ id, name });
+        setConfirmDeleteOpen(true);
     };
 
     const handleEditClick = (teacher: IUser) => {
@@ -104,9 +107,7 @@ export default function UsersPage() {
             </div>
 
             {isLoading ? (
-                <div className="flex justify-center items-center h-64 text-primary">
-                    <Loader2 className="h-10 w-10 animate-spin" />
-                </div>
+                <CardSkeleton count={6} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5" />
             ) : isError ? (
                 <div className="bg-red-50 text-red-600 p-6 rounded-xl border border-red-100 text-center font-bold">
                     حدث خطأ أثناء تحميل بيانات المعلمين.
@@ -171,6 +172,20 @@ export default function UsersPage() {
             )}
 
             <EditTeacherModal open={isEditModalOpen} onOpenChange={setIsEditModalOpen} teacher={selectedTeacher} />
+
+            <ConfirmDialog
+                open={confirmDeleteOpen}
+                onOpenChange={setConfirmDeleteOpen}
+                title={`حذف "${pendingDeleteTeacher?.name}"؟`}
+                description="سيتم حذف حساب المعلم وكل بياناته نهائياً."
+                confirmLabel="حذف"
+                variant="danger"
+                onConfirm={() => {
+                    if (pendingDeleteTeacher) deleteMutation.mutate(pendingDeleteTeacher.id);
+                    setConfirmDeleteOpen(false);
+                    setPendingDeleteTeacher(null);
+                }}
+            />
         </div>
     );
 }

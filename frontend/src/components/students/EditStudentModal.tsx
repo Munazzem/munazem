@@ -45,6 +45,8 @@ const formSchema = z.object({
   groupId: z.string().min(1, { message: 'الرجاء اختيار المجموعة' }),
   barcode: z.string().optional(),
   isActive: z.boolean().optional(),
+  excusedUntil: z.string().optional().nullable(),
+  excusedSessionsCount: z.number().int().min(0).optional(),
 });
 
 // Types for fetched groups
@@ -73,6 +75,8 @@ export function EditStudentModal({ student, open, onOpenChange }: EditStudentMod
       groupId: '',
       barcode: '',
       isActive: true,
+      excusedUntil: '',
+      excusedSessionsCount: 0,
     },
   });
 
@@ -104,6 +108,8 @@ export function EditStudentModal({ student, open, onOpenChange }: EditStudentMod
               groupId: typeof student.groupId === 'string' ? student.groupId : (student.groupId?._id || ''),
               barcode: student.barcode || '',
               isActive: student.isActive,
+              excusedUntil: student.excusedUntil ? student.excusedUntil.split('T')[0] : '',
+              excusedSessionsCount: student.excusedSessionsCount || 0,
           });
       }
   }, [student, open, form]);
@@ -257,7 +263,7 @@ export function EditStudentModal({ student, open, onOpenChange }: EditStudentMod
                 render={({ field }) => (
                     <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm h-10 mt-2 sm:mt-0">
                         <div className="space-y-0.5">
-                            <FormLabel className="text-sm font-bold text-gray-700">تفعيل حساب الطالب</FormLabel>
+                            <FormLabel className="text-sm font-bold text-gray-700">تفعيل الحساب</FormLabel>
                         </div>
                         <FormControl>
                             <input 
@@ -271,6 +277,30 @@ export function EditStudentModal({ student, open, onOpenChange }: EditStudentMod
                 )}
                 />
             </div>
+
+            <FormField
+              control={form.control}
+              name="excusedSessionsCount"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-blue-600 font-bold">عدد حصص الاستئذان المتبقية</FormLabel>
+                  <FormControl>
+                    <Input 
+                        type="number" 
+                        min={0}
+                        max={100}
+                        {...field} 
+                        onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                        className="bg-blue-50/50 border-blue-100 focus:border-blue-400 font-bold text-center" 
+                    />
+                  </FormControl>
+                  <DialogDescription className="text-[10px] mt-1">
+                    يتم خصم حصة واحدة تلقائياً عند غياب الطالب في كل حصة قادمة.
+                  </DialogDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             <Button 
                 type="submit" 

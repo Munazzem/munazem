@@ -336,7 +336,7 @@ export default function SessionsPage() {
 
             {/* ── Desktop & Mobile Grouped View ── */}
             {!isLoading && groupKeys.length > 0 && (
-                <Accordion type="multiple" className="space-y-4" defaultValue={groupKeys}>
+                <Accordion type="multiple" className="space-y-4">
                     {groupKeys.map((groupName) => (
                         <AccordionItem value={groupName} key={groupName} className="bg-white border border-gray-100 rounded-xl shadow-sm px-4">
                             <AccordionTrigger className="hover:no-underline py-4">
