@@ -72,7 +72,7 @@ export function BatchSubscriptionModal() {
             }
         },
         onError: (err: any) => {
-            toast.error(err?.response?.data?.message ?? 'حدث خطأ');
+            
         },
     });
 

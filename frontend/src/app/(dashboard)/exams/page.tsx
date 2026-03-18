@@ -85,7 +85,7 @@ export default function ExamsPage() {
             toast.success('تم حذف الامتحان');
             queryClient.invalidateQueries({ queryKey: ['exams'] });
         },
-        onError: (err: any) => toast.error(err?.response?.data?.message ?? 'حدث خطأ'),
+        
     });
 
     const exams: IExam[] = (data as any)?.data ?? [];

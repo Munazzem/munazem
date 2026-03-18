@@ -206,7 +206,7 @@ export function BulkAddStudentsModal() {
             }
         },
         onError: (err: any) => {
-            toast.error(err?.response?.data?.message ?? 'حدث خطأ غير متوقع');
+            
         },
     });
 

@@ -94,10 +94,10 @@ router.use(authenticate);
 // Teachers and Assistants have Read permissions (GET)
 // ============================================
 
-router.post('/', authorizeRoles(UserRole.assistant), validate(createStudentSchema), StudentController.createStudent);
-router.post('/bulk', authorizeRoles(UserRole.assistant), validate(bulkCreateStudentsSchema), StudentController.bulkCreateStudents);
-router.put('/:id', authorizeRoles(UserRole.assistant), validate(updateStudentSchema), StudentController.updateStudent);
-router.delete('/:id', authorizeRoles(UserRole.assistant), StudentController.deleteStudent);
+router.post('/', authorizeRoles(UserRole.assistant, UserRole.teacher), validate(createStudentSchema), StudentController.createStudent);
+router.post('/bulk', authorizeRoles(UserRole.assistant, UserRole.teacher), validate(bulkCreateStudentsSchema), StudentController.bulkCreateStudents);
+router.put('/:id', authorizeRoles(UserRole.assistant, UserRole.teacher), validate(updateStudentSchema), StudentController.updateStudent);
+router.delete('/:id', authorizeRoles(UserRole.assistant, UserRole.teacher), StudentController.deleteStudent);
 
 router.get('/', authorizeRoles(UserRole.teacher, UserRole.assistant), StudentController.getStudents);
 router.get('/:id', authorizeRoles(UserRole.teacher, UserRole.assistant), StudentController.getStudentById);

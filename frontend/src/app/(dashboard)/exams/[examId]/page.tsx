@@ -96,7 +96,7 @@ export default function ExamDetailPage() {
             queryClient.invalidateQueries({ queryKey: ['exam', examId] });
             queryClient.invalidateQueries({ queryKey: ['exams'] });
         },
-        onError: (err: any) => toast.error(err?.response?.data?.message ?? 'حدث خطأ'),
+        
     });
 
     const deleteMutation = useMutation({
@@ -106,7 +106,7 @@ export default function ExamDetailPage() {
             queryClient.invalidateQueries({ queryKey: ['exams'] });
             router.push('/exams');
         },
-        onError: (err: any) => toast.error(err?.response?.data?.message ?? 'حدث خطأ'),
+        
     });
 
     if (examLoading) {

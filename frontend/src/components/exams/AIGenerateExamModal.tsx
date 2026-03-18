@@ -86,7 +86,7 @@ export function AIGenerateExamModal({ open, onOpenChange }: Props) {
             onOpenChange(false);
             router.push(`/exams/${res.exam._id}`);
         },
-        onError: (err: any) => toast.error(err?.response?.data?.message ?? err?.message ?? 'حدث خطأ'),
+        
     });
 
     const toggleGroup = (id: string) =>

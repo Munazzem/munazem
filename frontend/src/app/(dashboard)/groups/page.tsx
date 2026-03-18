@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { fetchGroups, deleteGroup } from '@/lib/api/groups';
 import type { Group } from '@/types/group.types';
 import { useAuthStore } from '@/lib/store/auth.store';
@@ -54,8 +54,7 @@ export default function GroupsPage() {
 
     const [searchTerm, setSearchTerm] = useState('');
     const [gradeFilter, setGradeFilter] = useState('');
-    const [page, setPage] = useState(1);
-    const limit = 500;
+    const limit = 20; // Lower limit for pagination is better for performance when infinite scroll is applied
     const allowedGrades = getAllowedGrades(user?.stage);
 
     const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
@@ -65,10 +64,23 @@ export default function GroupsPage() {
 
     const queryClient = useQueryClient();
 
-    const { data, isLoading, isError } = useQuery({
-        queryKey: ['groups', { page, limit, search: searchTerm }],
-        queryFn: () => fetchGroups({ page, limit, search: searchTerm }),
-        placeholderData: keepPreviousData,
+    const { 
+        data, 
+        isLoading, 
+        isError,
+        fetchNextPage,
+        hasNextPage,
+        isFetchingNextPage
+    } = useInfiniteQuery({
+        queryKey: ['groups', { limit, search: searchTerm }],
+        queryFn: ({ pageParam = 1 }) => fetchGroups({ page: pageParam, limit, search: searchTerm }),
+        getNextPageParam: (lastPage) => {
+            if (lastPage.pagination.page < lastPage.pagination.totalPages) {
+                return lastPage.pagination.page + 1;
+            }
+            return undefined;
+        },
+        initialPageParam: 1,
     });
 
     const deleteMutation = useMutation({
@@ -79,7 +91,7 @@ export default function GroupsPage() {
         },
         onError: (error: { response?: { data?: { message?: string } } } | Error) => {
             const err = error as { response?: { data?: { message?: string } } };
-            toast.error(err.response?.data?.message || 'حدث خطأ أثناء الحذف');
+            
         }
     });
 
@@ -94,11 +106,11 @@ export default function GroupsPage() {
         setIsEditModalOpen(true);
     };
 
-    const rawGroups = data?.data || [];
+    const rawGroups = data?.pages.flatMap(page => page.data) || [];
     const filteredGroups = gradeFilter
         ? rawGroups.filter((g) => g.gradeLevel === gradeFilter)
         : rawGroups;
-    const pagination = data?.pagination;
+    const pagination = data?.pages[0]?.pagination;
 
     // Grouping the groups by Grade Level
     const groupsByGrade = filteredGroups.reduce((acc, group) => {
@@ -132,13 +144,12 @@ export default function GroupsPage() {
                         value={searchTerm}
                         onChange={(e) => {
                             setSearchTerm(e.target.value);
-                            setPage(1);
                         }}
                     />
                 </div>
                 <Select
                     value={gradeFilter}
-                    onValueChange={(val) => { setGradeFilter(val === 'ALL' ? '' : val); setPage(1); }}
+                    onValueChange={(val) => { setGradeFilter(val === 'ALL' ? '' : val); }}
                     dir="rtl"
                 >
                     <SelectTrigger className="w-full sm:w-48 border-gray-200 bg-gray-50 text-gray-700 text-sm">
@@ -244,15 +255,24 @@ export default function GroupsPage() {
                 </Accordion>
             )}
 
-            {pagination && pagination.totalPages > 1 && (
-                <div className="flex items-center justify-between bg-white p-4 rounded-xl shadow-sm border border-gray-100 mt-6">
-                    <p className="text-sm text-gray-500">
-                        صفحة <span className="font-bold text-gray-900">{pagination.page}</span> من <span className="font-bold text-gray-900">{pagination.totalPages}</span>
+            {/* Load More Button */}
+            {hasNextPage && (
+                <div className="flex flex-col items-center mt-6 p-4">
+                    <p className="text-sm text-gray-500 mb-3">
+                        عرض {rawGroups.length} من {pagination?.total ?? 0} مجموعة
                     </p>
-                    <div className="flex gap-2">
-                        <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>السابق</Button>
-                        <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))} disabled={page === pagination.totalPages}>التالي</Button>
-                    </div>
+                    <Button 
+                        variant="outline" 
+                        onClick={() => fetchNextPage()} 
+                        disabled={isFetchingNextPage}
+                        className="w-full sm:w-auto min-w-[200px] border-primary/30 text-primary hover:bg-primary/5"
+                    >
+                        {isFetchingNextPage ? (
+                            <><Loader2 className="mr-2 h-4 w-4 animate-spin ml-2" /> جاري التحميل...</>
+                        ) : (
+                            'عرض المزيد من المجموعات'
+                        )}
+                    </Button>
                 </div>
             )}
 

@@ -82,14 +82,7 @@ export function Header() {
             </div>
 
             <div className="flex items-center gap-4">
-                {/* Notifications Button */}
-                <button className="relative p-2 text-gray-500 hover:bg-gray-50 rounded-full transition-colors">
-                    <Bell className="h-5 w-5" />
-                    <span className="absolute top-1 right-1 flex h-2.5 w-2.5">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
-                    </span>
-                </button>
+
 
                 {/* User Profile Snippet */}
                 <div className="flex items-center gap-3 border-r border-gray-200 pr-4">

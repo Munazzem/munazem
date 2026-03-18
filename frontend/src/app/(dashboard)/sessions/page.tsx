@@ -105,7 +105,7 @@ export default function SessionsPage() {
             queryClient.invalidateQueries({ queryKey: ['sessions'] });
         },
         onError: (err: any) => {
-            toast.error(err?.response?.data?.message ?? 'حدث خطأ');
+            
         },
     });
 

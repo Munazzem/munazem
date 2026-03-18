@@ -83,9 +83,9 @@ router.use(authenticate);
 // Teachers and Assistants have Read permissions (GET)
 // ============================================
 
-router.post('/', authorizeRoles(UserRole.assistant), validate(createGroupSchema), GroupController.createGroup);
-router.put('/:id', authorizeRoles(UserRole.assistant), validate(updateGroupSchema), GroupController.updateGroup);
-router.delete('/:id', authorizeRoles(UserRole.assistant), GroupController.deleteGroup);
+router.post('/', authorizeRoles(UserRole.assistant, UserRole.teacher), validate(createGroupSchema), GroupController.createGroup);
+router.put('/:id', authorizeRoles(UserRole.assistant, UserRole.teacher), validate(updateGroupSchema), GroupController.updateGroup);
+router.delete('/:id', authorizeRoles(UserRole.assistant, UserRole.teacher), GroupController.deleteGroup);
 
 router.get('/', authorizeRoles(UserRole.teacher, UserRole.assistant), GroupController.getGroups);
 router.get('/:id', authorizeRoles(UserRole.teacher, UserRole.assistant), GroupController.getGroupById);
