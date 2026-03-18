@@ -4,6 +4,9 @@ import { Toaster } from "sonner";
 import { Providers } from "./providers";
 import "./globals.css";
 import { OfflineIndicator } from "@/components/ui/offline-indicator";
+import { PWAEventListener } from "@/components/pwa/PWAEventListener";
+import { InstallPrompt } from "@/components/ui/InstallPrompt";
+import { CacheWarmer } from "@/components/pwa/CacheWarmer";
 
 const cairo = Cairo({
   variable: "--font-cairo",
@@ -48,8 +51,11 @@ export default function RootLayout({
       <body className={`${cairo.variable} antialiased bg-[#fdfdfd] text-[#111111]`}>
         <Providers>
             {children}
+            <PWAEventListener />
+            <CacheWarmer />
             <Toaster position="top-center" richColors theme="light" />
             <OfflineIndicator />
+            <InstallPrompt />
         </Providers>
       </body>
     </html>

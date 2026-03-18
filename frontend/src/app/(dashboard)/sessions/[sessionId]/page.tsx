@@ -175,9 +175,15 @@ export default function SessionDetailPage() {
     // Start session (mark IN_PROGRESS) when recording first attendance
     const ensureInProgress = useCallback(async () => {
         if (session?.status === 'SCHEDULED') {
-            await updateSessionStatus(sessionId, 'IN_PROGRESS');
-            queryClient.invalidateQueries({ queryKey: ['session', sessionId] });
-            queryClient.invalidateQueries({ queryKey: ['sessions'] });
+            try {
+                // Optimistically update session status
+                queryClient.setQueryData(['session', sessionId], (old: any) => ({ ...old, status: 'IN_PROGRESS' }));
+                await updateSessionStatus(sessionId, 'IN_PROGRESS');
+                queryClient.invalidateQueries({ queryKey: ['session', sessionId] });
+                queryClient.invalidateQueries({ queryKey: ['sessions'] });
+            } catch (err) {
+                console.error('Failed to update session status:', err);
+            }
         }
     }, [session?.status, sessionId, queryClient]);
 
@@ -191,19 +197,51 @@ export default function SessionDetailPage() {
                 status: 'PRESENT',
             });
         },
+        onMutate: async (studentId) => {
+            // Cancel outgoing refetches
+            await queryClient.cancelQueries({ queryKey: ['attendance', sessionId] });
+
+            // Snapshot previous value
+            const previousAttendance = queryClient.getQueryData<IAttendanceRecord[]>(['attendance', sessionId]) || [];
+
+            // Find student info for optimistic record
+            const student = groupStudentsData?.data?.find(s => s._id === studentId);
+            
+            // Create optimistic record
+            const optimisticRecord: any = {
+                _id: `temp-${Date.now()}`,
+                studentId: student || { _id: studentId, studentName: 'جاري التحميل...', studentCode: '...' },
+                sessionId,
+                status: 'PRESENT',
+                scannedAt: new Date().toISOString(),
+                createdAt: new Date().toISOString(),
+            };
+
+            // Update cache
+            queryClient.setQueryData(['attendance', sessionId], [...previousAttendance, optimisticRecord]);
+
+            return { previousAttendance };
+        },
         onSuccess: (record) => {
             const name = (record.studentId as any)?.studentName ?? 'الطالب';
             toast.success(`تم تسجيل حضور ${name}`);
-            queryClient.invalidateQueries({ queryKey: ['attendance', sessionId] });
-            setSearchQuery('');
         },
-        onError: (err: any) => {
-            const msg = err?.response?.data?.message ?? 'حدث خطأ';
+        onError: (err: any, studentId, context) => {
+            // Rollback optimistic update
+            if (context?.previousAttendance) {
+                queryClient.setQueryData(['attendance', sessionId], context.previousAttendance);
+            }
+
+            const msg = err?.response?.data?.message ?? 'حدث خطأ (قد يكون بسبب انقطاع الاتصال)';
             if (msg.includes('بالفعل')) {
                 toast.warning('تم تسجيل حضور هذا الطالب مسبقاً');
             } else {
                 toast.error(msg);
             }
+        },
+        onSettled: () => {
+            queryClient.invalidateQueries({ queryKey: ['attendance', sessionId] });
+            setSearchQuery('');
         },
     });
 
@@ -268,7 +306,8 @@ export default function SessionDetailPage() {
             toast.warning('تم تسجيل هذا الطالب مسبقاً');
             return;
         }
-        await recordMutation.mutateAsync(studentId);
+        // Use non-async mutate for instant UI feedback, but match the expected Promise return type
+        recordMutation.mutate(studentId);
     }, [alreadyRecordedIds, recordMutation]);
 
     const groupName =
@@ -468,6 +507,12 @@ export default function SessionDetailPage() {
                                                         hour: '2-digit',
                                                         minute: '2-digit',
                                                     })}
+                                                    {record._id.toString().startsWith('temp-') && (
+                                                        <span className="flex items-center gap-1 text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded mr-2 inline-flex">
+                                                            <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                                                            جاري المزامنة...
+                                                        </span>
+                                                    )}
                                                 </p>
                                             </div>
                                             <span className={cn(

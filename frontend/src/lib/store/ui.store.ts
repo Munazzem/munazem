@@ -8,4 +8,6 @@ export const useUIStore = create<UIState>((set) => ({
     isSidebarOpen: false,
     toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
     setSidebarOpen: (isOpen) => set({ isSidebarOpen: isOpen }),
+    deferredPrompt: null,
+    setDeferredPrompt: (prompt) => set({ deferredPrompt: prompt }),
 }));

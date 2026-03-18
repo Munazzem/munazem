@@ -49,8 +49,8 @@ export function OfflineIndicator() {
         <>
             <WifiOff className="h-5 w-5 animate-pulse" />
             <div className="flex flex-col">
-                <span className="text-sm font-bold">أنت غير متصل بالإنترنت</span>
-                <span className="text-[10px] opacity-80">التغييرات ستحفظ محلياً حتى يعود الاتصال</span>
+                <span className="text-sm font-bold">أنت تصفح "مُنظِّم" بدون إنترنت</span>
+                <span className="text-[10px] opacity-80">البيانات الحالية هي نسخة مخزنة. سيتم حفظ التغييرات عند عودة الاتصال.</span>
             </div>
         </>
       ) : (

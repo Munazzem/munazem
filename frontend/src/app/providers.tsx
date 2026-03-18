@@ -1,7 +1,9 @@
 'use client';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useState } from 'react';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
+import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
+import { useState, useEffect } from 'react';
 
 /**
  * Global Providers Wrapper
@@ -14,6 +16,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
             new QueryClient({
                 defaultOptions: {
                     queries: {
+                        gcTime: 1000 * 60 * 60 * 24, // 24 hours
                         staleTime: 60 * 1000, // 1 minute stale time by default
                         refetchOnWindowFocus: false,
                         retry: 1,
@@ -22,9 +25,32 @@ export function Providers({ children }: { children: React.ReactNode }) {
             })
     );
 
+    const [persister, setPersister] = useState<any>(null);
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const storagePersister = createSyncStoragePersister({
+                storage: window.localStorage,
+            });
+            setPersister(storagePersister);
+        }
+    }, []);
+
+    // Fallback to standard QueryClientProvider during SSR or before persister is ready
+    if (!persister) {
+        return (
+            <QueryClientProvider client={queryClient}>
+                {children}
+            </QueryClientProvider>
+        );
+    }
+
     return (
-        <QueryClientProvider client={queryClient}>
+        <PersistQueryClientProvider
+            client={queryClient}
+            persistOptions={{ persister }}
+        >
             {children}
-        </QueryClientProvider>
+        </PersistQueryClientProvider>
     );
 }
