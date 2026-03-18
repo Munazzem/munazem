@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Camera, CameraOff, Search, UserCheck, Loader2 } from 'lucide-react';
+import { Html5Qrcode } from 'html5-qrcode';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -38,7 +39,6 @@ export function QRScannerPanel({
         setCameraError(null);
 
         try {
-            const { Html5Qrcode } = await import('html5-qrcode');
             const scanner = new Html5Qrcode(SCANNER_ID);
             scannerRef.current = scanner;
 
