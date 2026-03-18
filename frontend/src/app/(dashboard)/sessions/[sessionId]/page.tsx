@@ -485,7 +485,7 @@ export default function SessionDetailPage() {
             setEditRecord(null);
         },
         onError: (err: any) => {
-            toast.error(err?.response?.data?.message ?? 'حدث خطأ');
+            
         },
     });
 
@@ -500,7 +500,7 @@ export default function SessionDetailPage() {
             setShowCompleteConfirm(false);
         },
         onError: (err: any) => {
-            toast.error(err?.response?.data?.message ?? 'حدث خطأ');
+            
         },
     });
 

@@ -88,7 +88,7 @@ export function EditTeacherModal({ open, onOpenChange, teacher }: EditTeacherMod
       onOpenChange(false);
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.message || 'حدث خطأ أثناء التحديث');
+      
     },
   });
 

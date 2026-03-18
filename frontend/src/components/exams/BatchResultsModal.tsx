@@ -98,7 +98,7 @@ export function BatchResultsModal({ exam, open, onOpenChange, onSuccess }: Props
             toast.success(`تم إدخال ${res.inserted} نتيجة من ${res.total}`);
             onSuccess?.();
         },
-        onError: (err: any) => toast.error(err?.response?.data?.message ?? err?.message ?? 'حدث خطأ'),
+        
     });
 
     const updateScore = (idx: number, val: string) => {

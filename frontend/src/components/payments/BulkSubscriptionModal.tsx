@@ -117,7 +117,7 @@ export function BulkSubscriptionModal({ open, onOpenChange }: Props) {
             }
         },
         onError: (err: any) => {
-            toast.error(err?.response?.data?.message ?? 'حدث خطأ أثناء تسجيل الاشتراكات');
+            
         },
     });
 

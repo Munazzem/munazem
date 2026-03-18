@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { fetchStudents, deleteStudent } from '@/lib/api/students';
 import { fetchGroups } from '@/lib/api/groups';
 import type { StudentWithGroup } from '@/types/student.types';
@@ -333,7 +333,6 @@ export default function StudentsPage() {
     const canWrite = user?.role === 'assistant' || user?.role === 'teacher';
 
     const [searchTerm, setSearchTerm] = useState('');
-    const [page, setPage] = useState(1);
     const limit = 20;
 
     // Which group is selected (null = show group cards)
@@ -423,16 +422,29 @@ export default function StudentsPage() {
     const isSearching = searchTerm.trim().length > 0;
     const showStudents = isSearching || !!selectedGroup;
 
-    const { data, isLoading, isError } = useQuery({
-        queryKey: ['students', { page, limit, search: searchTerm, groupId: selectedGroup?._id }],
-        queryFn: () => fetchStudents({
-            page,
+    const { 
+        data, 
+        isLoading, 
+        isError,
+        fetchNextPage,
+        hasNextPage,
+        isFetchingNextPage
+    } = useInfiniteQuery({
+        queryKey: ['students', { limit, search: searchTerm, groupId: selectedGroup?._id }],
+        queryFn: ({ pageParam = 1 }) => fetchStudents({
+            page: pageParam,
             limit,
             search: searchTerm || undefined,
             groupId: selectedGroup?._id,
         }),
-        placeholderData: keepPreviousData,
-        enabled: showStudents,
+        getNextPageParam: (lastPage) => {
+            if (lastPage.pagination.page < lastPage.pagination.totalPages) {
+                return lastPage.pagination.page + 1;
+            }
+            return undefined;
+        },
+        initialPageParam: 1,
+        enabled: showStudents === true, // Only fetch when needed
     });
 
     const deleteMutation = useMutation({
@@ -443,7 +455,7 @@ export default function StudentsPage() {
         },
         onError: (error: { response?: { data?: { message?: string } } } | Error) => {
             const err = error as { response?: { data?: { message?: string } } };
-            toast.error(err.response?.data?.message || 'حدث خطأ أثناء الحذف');
+            
         }
     });
 
@@ -464,18 +476,16 @@ export default function StudentsPage() {
 
     const handleSelectGroup = (group: Group) => {
         setSelectedGroup(group);
-        setPage(1);
         setSelectedIds(new Set()); // clear selection on group change
     };
 
     const handleBack = () => {
         setSelectedGroup(null);
-        setPage(1);
         setSelectedIds(new Set()); // clear selection on back
-    };;
+    };
 
-    const students = data?.data || [];
-    const pagination = data?.pagination;
+    const students = data?.pages.flatMap(page => page.data) || [];
+    const pagination = data?.pages[0]?.pagination;
 
     return (
         <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-500" dir="rtl">
@@ -528,7 +538,7 @@ export default function StudentsPage() {
                         value={searchTerm}
                         onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                             setSearchTerm(e.target.value);
-                            setPage(1);
+                            setSelectedIds(new Set());
                         }}
                     />
                 </div>
@@ -611,20 +621,24 @@ export default function StudentsPage() {
                         />
                     )}
 
-                    {/* Pagination */}
-                    {pagination && pagination.totalPages > 1 && (
-                        <div className="p-3 sm:p-4 bg-white rounded-xl border border-gray-100 shadow-sm flex items-center justify-between">
-                            <p className="text-sm text-gray-500">
-                                صفحة <span className="font-bold text-gray-900">{pagination.page}</span> من <span className="font-bold text-gray-900">{pagination.totalPages}</span>
+                    {/* Load More Button */}
+                    {hasNextPage && (
+                        <div className="flex flex-col items-center mt-6 p-4">
+                            <p className="text-sm text-gray-500 mb-3">
+                                عرض {students.length} من {pagination?.total ?? 0} طالب
                             </p>
-                            <div className="flex gap-2">
-                                <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-                                    السابق
-                                </Button>
-                                <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))} disabled={page === pagination.totalPages}>
-                                    التالي
-                                </Button>
-                            </div>
+                            <Button 
+                                variant="outline" 
+                                onClick={() => fetchNextPage()} 
+                                disabled={isFetchingNextPage}
+                                className="w-full sm:w-auto min-w-[200px] border-primary/30 text-primary hover:bg-primary/5"
+                            >
+                                {isFetchingNextPage ? (
+                                    <><Loader2 className="mr-2 h-4 w-4 animate-spin ml-2" /> جاري التحميل...</>
+                                ) : (
+                                    'عرض المزيد من الطلاب'
+                                )}
+                            </Button>
                         </div>
                     )}
                 </>

@@ -98,7 +98,7 @@ export function AddSubscriptionModal() {
             setOpen(false);
         },
         onError: (error: any) => {
-            toast.error(error?.response?.data?.message || 'حدث خطأ أثناء الإضافة');
+            
         },
     });
 

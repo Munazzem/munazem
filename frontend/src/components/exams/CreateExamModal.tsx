@@ -92,7 +92,7 @@ export function CreateExamModal({ open, onOpenChange }: Props) {
             reset();
             onOpenChange(false);
         },
-        onError: (err: any) => toast.error(err?.response?.data?.message ?? 'حدث خطأ'),
+        
     });
 
     const addQuestion = () => {

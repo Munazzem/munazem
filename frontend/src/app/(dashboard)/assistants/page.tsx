@@ -80,7 +80,7 @@ function AssistantsContent() {
             queryClient.invalidateQueries({ queryKey: ['assistants'] });
             setDeleteTarget(null);
         },
-        onError: (err: any) => toast.error(err?.response?.data?.message ?? 'حدث خطأ'),
+        
     });
 
     return (
@@ -310,7 +310,7 @@ function AddAssistantModal({
             setName(''); setPhone(''); setPassword(''); setSalary('');
             onSuccess();
         },
-        onError: (err: any) => toast.error(err?.response?.data?.message ?? 'حدث خطأ'),
+        
     });
 
     const validate = () => {
@@ -440,7 +440,7 @@ function PaySalaryModal({
             toast.success(`تم تسجيل راتب ${assistant.name} بنجاح`);
             onSuccess();
         },
-        onError: (err: any) => toast.error(err?.response?.data?.message ?? 'حدث خطأ'),
+        
     });
 
     const handleSubmit = (e: React.FormEvent) => {

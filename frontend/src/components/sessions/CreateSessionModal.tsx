@@ -78,7 +78,7 @@ export function CreateSessionModal({ onSuccess }: CreateSessionModalProps) {
             onSuccess?.();
         },
         onError: (err: any) => {
-            toast.error(err?.response?.data?.message ?? 'حدث خطأ أثناء إنشاء الحصة');
+            
         },
     });
 

@@ -103,7 +103,7 @@ export function AddStudentModal() {
     },
     onError: (error: { response?: { data?: { message?: string } } } | Error) => {
         const err = error as { response?: { data?: { message?: string } } };
-      toast.error(err.response?.data?.message || 'حدث خطأ أثناء إضافة الطالب');
+      
     },
   });
 

@@ -66,7 +66,7 @@ function RestockDialog({
             onOpenChange(false);
             setQty(1);
         },
-        onError: (err: any) => toast.error(err?.response?.data?.message ?? 'حدث خطأ'),
+        
     });
 
     return (
@@ -129,7 +129,7 @@ function EditNotebookDialog({
             queryClient.invalidateQueries({ queryKey: ['notebooks'] });
             onOpenChange(false);
         },
-        onError: (err: any) => toast.error(err?.response?.data?.message ?? 'حدث خطأ'),
+        
     });
 
     // Sync when notebook changes
@@ -200,7 +200,7 @@ export default function NotebooksPage() {
             toast.success('تم حذف المذكرة بنجاح');
             queryClient.invalidateQueries({ queryKey: ['notebooks'] });
         },
-        onError: (err: any) => toast.error(err?.response?.data?.message ?? 'حدث خطأ'),
+        
     });
 
     const handleDelete = (nb: INotebook) => {

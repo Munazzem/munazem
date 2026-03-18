@@ -46,9 +46,7 @@ export default function LoginPage() {
             }
         } catch (error: { response?: { data?: { message?: string } } } | unknown) {
             const err = error as { response?: { data?: { message?: string } } };
-            toast.error('فشل تسجيل الدخول', {
-                description: err.response?.data?.message || 'تأكد من رقم الهاتف وكلمة المرور',
-            });
+            
         } finally {
             setIsLoading(false);
         }

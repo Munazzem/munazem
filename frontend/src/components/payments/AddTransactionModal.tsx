@@ -109,19 +109,19 @@ export function AddTransactionModal({ onSuccess }: AddTransactionModalProps) {
     const subscriptionMutation = useMutation({
         mutationFn: recordSubscription,
         onSuccess: () => { toast.success('تم تسجيل الاشتراك بنجاح'); invalidateAndClose(); },
-        onError: (err: any) => toast.error(err?.response?.data?.message ?? 'حدث خطأ'),
+        
     });
 
     const notebookMutation = useMutation({
         mutationFn: recordNotebookSale,
         onSuccess: () => { toast.success('تم تسجيل بيع المذكرة بنجاح'); invalidateAndClose(); },
-        onError: (err: any) => toast.error(err?.response?.data?.message ?? 'حدث خطأ'),
+        
     });
 
     const expenseMutation = useMutation({
         mutationFn: recordExpense,
         onSuccess: () => { toast.success('تم تسجيل المصروف بنجاح'); invalidateAndClose(); },
-        onError: (err: any) => toast.error(err?.response?.data?.message ?? 'حدث خطأ'),
+        
     });
 
     const isPending = subscriptionMutation.isPending || notebookMutation.isPending || expenseMutation.isPending;

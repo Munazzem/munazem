@@ -73,7 +73,7 @@ export default function SettingsPage() {
     const profileMutation = useMutation({
         mutationFn: updateMe,
         onSuccess: () => toast.success('تم تحديث البيانات بنجاح'),
-        onError: (e: any) => toast.error(e?.response?.data?.message || 'حدث خطأ'),
+        
     });
 
     // ── Password form ─────────────────────────────────────────────────────────
@@ -88,7 +88,7 @@ export default function SettingsPage() {
             toast.success('تم تغيير كلمة المرور بنجاح');
             passwordForm.reset();
         },
-        onError: (e: any) => toast.error(e?.response?.data?.message || 'حدث خطأ'),
+        
     });
 
     // ── Branding Settings (Logo & Center Name) ────────────────────────────────
@@ -105,7 +105,7 @@ export default function SettingsPage() {
             }
             queryClient.invalidateQueries({ queryKey: ['me'] });
         },
-        onError: (e: any) => toast.error(e?.response?.data?.message || 'حدث خطأ أثناء حفظ الإعدادات'),
+        
     });
 
     const compressImage = (file: File): Promise<string> => {

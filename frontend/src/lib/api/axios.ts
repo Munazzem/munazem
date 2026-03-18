@@ -1,5 +1,6 @@
 import axios from 'axios';
 import Cookies from 'js-cookie';
+import { toast } from 'sonner';
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -32,14 +33,20 @@ apiClient.interceptors.request.use((config) => {
 apiClient.interceptors.response.use(
     (response) => response.data,
     (error) => {
-        if (error.response?.status === 401) {
-            if (typeof window !== 'undefined') {
+        // Prevent showing toast from server side requests if applicable
+        if (typeof window !== 'undefined') {
+            if (error.response?.status === 401) {
                 Cookies.remove('token');
                 // Dynamically import to avoid circular dependency
                 import('@/lib/store/auth.store').then(({ useAuthStore }) => {
                     useAuthStore.getState().logout();
                 });
                 window.location.href = '/login';
+            } else if (!error.config?.headers?.['x-skip-error-toast']) {
+                // Determine error message safely
+                const errorMsg = error.response?.data?.message || 'تعذر الاتصال بالخادم، حاول مرة أخرى لاحقاً';
+                // Show toast for other errors
+                toast.error(errorMsg);
             }
         }
         return Promise.reject(error);

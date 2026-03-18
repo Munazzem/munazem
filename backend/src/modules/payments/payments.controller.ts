@@ -50,43 +50,46 @@ paymentsRouter.get(
 // STUDENT TRANSACTIONS — Assistant (write) / Teacher (read)
 // ════════════════════════════════════════════════════════════════
 
-// POST /payments/subscription — Record student subscription (Assistant only)
+// POST /payments/subscription — Record student subscription (Assistant + Teacher)
 paymentsRouter.post(
     '/subscription',
-    authorizeRoles(UserRole.assistant),
+    authorizeRoles(UserRole.assistant, UserRole.teacher),
     validate(recordSubscriptionSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const user = (req as any).user;
-            const transaction = await PaymentsService.recordSubscription(user.teacherId, user.userId, req.body);
+            const teacherId = resolveTeacherId(user);
+            const transaction = await PaymentsService.recordSubscription(teacherId, user.userId, req.body);
             return SuccessResponse({ res, data: transaction, message: 'تم تسجيل الاشتراك بنجاح', status: 201 });
         } catch (error) { next(error); }
     }
 );
 
-// POST /payments/subscription/batch — Record multiple subscriptions at once (Assistant only)
+// POST /payments/subscription/batch — Record multiple subscriptions at once (Assistant + Teacher)
 paymentsRouter.post(
     '/subscription/batch',
-    authorizeRoles(UserRole.assistant),
+    authorizeRoles(UserRole.assistant, UserRole.teacher),
     validate(batchSubscriptionSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const user = (req as any).user;
-            const result = await PaymentsService.recordBatchSubscription(user.teacherId, user.userId, req.body);
+            const teacherId = resolveTeacherId(user);
+            const result = await PaymentsService.recordBatchSubscription(teacherId, user.userId, req.body);
             return SuccessResponse({ res, data: result, message: `تم تسجيل ${result.successCount} اشتراك بنجاح`, status: 201 });
         } catch (error) { next(error); }
     }
 );
 
-// POST /payments/notebook — Record notebook sale (Assistant only)
+// POST /payments/notebook — Record notebook sale (Assistant + Teacher)
 paymentsRouter.post(
     '/notebook',
-    authorizeRoles(UserRole.assistant),
+    authorizeRoles(UserRole.assistant, UserRole.teacher),
     validate(recordNotebookSaleSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const user = (req as any).user;
-            const transaction = await PaymentsService.recordNotebookSale(user.teacherId, user.userId, req.body);
+            const teacherId = resolveTeacherId(user);
+            const transaction = await PaymentsService.recordNotebookSale(teacherId, user.userId, req.body);
             return SuccessResponse({ res, data: transaction, message: 'تم تسجيل بيع المذكرة بنجاح', status: 201 });
         } catch (error) { next(error); }
     }

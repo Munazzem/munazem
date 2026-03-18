@@ -51,7 +51,7 @@ export function PriceSettingsModal() {
             queryClient.invalidateQueries({ queryKey: ['price-settings'] });
             setOpen(false);
         },
-        onError: (err: any) => toast.error(err?.response?.data?.message ?? 'حدث خطأ'),
+        
     });
 
     const handleSave = () => {

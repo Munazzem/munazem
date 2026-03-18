@@ -120,7 +120,7 @@ export function EditStudentModal({ student, open, onOpenChange }: EditStudentMod
     },
     onError: (error: { response?: { data?: { message?: string } } } | Error) => {
         const err = error as { response?: { data?: { message?: string } } };
-      toast.error(err.response?.data?.message || 'حدث خطأ أثناء التحديث');
+      
     },
   });
 
@@ -156,7 +156,7 @@ export function EditStudentModal({ student, open, onOpenChange }: EditStudentMod
               )}
             />
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <FormField
                 control={form.control}
                 name="studentPhone"
@@ -186,7 +186,7 @@ export function EditStudentModal({ student, open, onOpenChange }: EditStudentMod
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <FormField
                 control={form.control}
                 name="gradeLevel"
@@ -236,7 +236,7 @@ export function EditStudentModal({ student, open, onOpenChange }: EditStudentMod
                 />
             </div>
 
-            <div className="grid grid-cols-2 gap-4 items-end">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:items-end">
                 <FormField
                 control={form.control}
                 name="barcode"
@@ -255,7 +255,7 @@ export function EditStudentModal({ student, open, onOpenChange }: EditStudentMod
                 control={form.control}
                 name="isActive"
                 render={({ field }) => (
-                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm h-10">
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm h-10 mt-2 sm:mt-0">
                         <div className="space-y-0.5">
                             <FormLabel className="text-sm font-bold text-gray-700">تفعيل حساب الطالب</FormLabel>
                         </div>

@@ -101,7 +101,7 @@ export function RenewSubscriptionModal({ open, onOpenChange, subscription }: Pro
             onOpenChange(false);
         },
         onError: (error: any) => {
-            toast.error(error?.response?.data?.message || 'حدث خطأ أثناء التجديد');
+            
         },
     });
 
