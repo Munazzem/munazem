@@ -198,6 +198,9 @@ export class SessionService {
             'السبت':     6,
         };
 
+        const now = new Date();
+        const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+
         // First and last day of the month (UTC)
         const monthStart = new Date(Date.UTC(year, month - 1, 1));
         const monthEnd   = new Date(Date.UTC(year, month, 1)); // exclusive
@@ -214,17 +217,27 @@ export class SessionService {
         for (const group of groups) {
             if (!group.schedule || group.schedule.length === 0) continue;
 
+            // Count existing sessions for this group in this month to respect the 8-session limit
+            let groupSessionCount = await SessionModel.countDocuments({
+                groupId: group._id,
+                date: { $gte: monthStart, $lt: monthEnd }
+            });
+
             for (const slot of group.schedule) {
                 const targetDay = dayMap[slot.day];
                 if (targetDay === undefined) continue;
 
-                // Iterate over every occurrence of that weekday in the month
-                const firstOccurrence = new Date(monthStart);
-                const diff = (targetDay - monthStart.getUTCDay() + 7) % 7;
-                firstOccurrence.setUTCDate(monthStart.getUTCDate() + diff);
+                // Find the first occurrence of that weekday in the month
+                const startDayToUse = monthStart > today ? monthStart : today;
+                const diff = (targetDay - startDayToUse.getUTCDay() + 7) % 7;
+                
+                const firstOccurrence = new Date(startDayToUse);
+                firstOccurrence.setUTCDate(startDayToUse.getUTCDate() + diff);
 
                 let sessionDate = new Date(firstOccurrence);
                 while (sessionDate < monthEnd) {
+                    if (groupSessionCount >= 8) break;
+
                     const nextDay = new Date(sessionDate);
                     nextDay.setUTCDate(sessionDate.getUTCDate() + 1);
 
@@ -244,6 +257,7 @@ export class SessionService {
                             status:    SessionStatus.SCHEDULED,
                         });
                         createdCount++;
+                        groupSessionCount++;
                     }
 
                     // Advance to next week
@@ -258,7 +272,7 @@ export class SessionService {
             month,
             createdCount,
             skippedCount,
-            message: `تم إنشاء ${createdCount} حصة لشهر ${month}/${year}، تجاهل ${skippedCount} موجودة`,
+            message: `تم إنشاء ${createdCount} حصة لشهر ${month}/${year}، تجاهل ${skippedCount} موجودة (الحد الأقصى 8 حصص لكل مجموعة)`,
         };
     }
 }

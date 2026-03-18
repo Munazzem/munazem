@@ -16,6 +16,8 @@ export interface Student {
     studentCode?: string;
     isActive: boolean;
     monthlySessionsQuota: number;
+    excusedUntil?: string; // ISO Date string (compatibility)
+    excusedSessionsCount?: number; // عدد حصص الاستئذان المتبقية
     usedSessionsThisMonth?: number;
     monthlySessions?: {
         sessionId: string;
@@ -37,6 +39,8 @@ export interface StudentWithGroup extends Omit<Student, 'groupId'> {
     hasActiveSubscription?: boolean;
     monthlySessionsQuota: number;
     usedSessionsThisMonth?: number;
+    excusedUntil?: string;
+    excusedSessionsCount?: number;
 }
 
 // Pagination Metadata
@@ -61,10 +65,13 @@ export interface CreateStudentDTO {
     gradeLevel: string;
     groupId: string;
     barcode?: string;
+    excusedUntil?: string | null;
 }
 
 // Data Transfer Object for Updating a Student
 export type UpdateStudentDTO = Partial<CreateStudentDTO> & { 
     isActive?: boolean;
     monthlySessionsQuota?: number;
+    excusedUntil?: string | null;
+    excusedSessionsCount?: number;
 };

@@ -16,6 +16,8 @@ import {
     ChevronDown,
     Search,
 } from 'lucide-react';
+import { StatsSkeleton } from '@/components/layout/skeletons/StatsSkeleton';
+import { ReportCardSkeleton } from '@/components/layout/skeletons/ReportCardSkeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -187,7 +189,7 @@ export default function ReportsPage() {
                     </div>
 
                     {dailyLoading ? (
-                        <div className="flex justify-center py-16"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+                        <StatsSkeleton count={6} />
                     ) : dailyData ? (
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                             <StatCard icon={CalendarCheck} label="الحصص" value={dailyData.sessionsCount} color="blue" />
@@ -247,10 +249,9 @@ export default function ReportsPage() {
                         )}
                     </div>
 
-                    {/* Report */}
                     {selectedStudent && (
                         studentReportLoading ? (
-                            <div className="flex justify-center py-16"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+                            <ReportCardSkeleton />
                         ) : studentReport ? (
                             <StudentReportCard
                                 report={studentReport}
@@ -303,10 +304,9 @@ export default function ReportsPage() {
                         )}
                     </div>
 
-                    {/* Report */}
                     {selectedGroup && (
                         groupReportLoading ? (
-                            <div className="flex justify-center py-16"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+                            <ReportCardSkeleton />
                         ) : groupReport ? (
                             <GroupReportCard
                                 report={groupReport}
@@ -358,7 +358,7 @@ export default function ReportsPage() {
 
                     {/* Data */}
                     {finLoading ? (
-                        <div className="flex justify-center py-16"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+                        <StatsSkeleton count={3} />
                     ) : finReport ? (
                         <FinancialReportCard report={finReport} month={finMonth} year={finYear} />
                     ) : (

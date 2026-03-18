@@ -25,15 +25,24 @@ export const generateIdCardsHtml = async (
             ? (stu.groupId as { name: string }).name
             : stu.groupDetails?.name || 'بدون مجموعة';
 
-        const headerText = centerName || 'منصة مُنظِّم';
-        const logoImg = logoUrl ? `<img src="${logoUrl}" alt="Logo" style="max-height: 80px; margin-bottom: 10px; border-radius: 8px;" />` : '';
+        const centerLabel = centerName || 'اسم السنتر';
+        const centerLogo = logoUrl ? `<img src="${logoUrl}" alt="Center Logo" />` : '';
 
         return `
             <div class="page">
                 <div class="header">
-                    ${logoImg}
-                    <h1 style="font-size: ${logoUrl ? '28px' : '36px'}">${headerText}</h1>
-                    <p>بطاقة تعريف طالب</p>
+                    <div class="header-top">
+                        <div class="brand-item platform-brand">
+                            <span>منصة مُنظِّم</span>
+                            <img src="/logo.png" alt="منظم" />
+                        </div>
+                        <div class="header-divider"></div>
+                        <div class="brand-item center-brand">
+                            <span>${centerLabel}</span>
+                            ${centerLogo}
+                        </div>
+                    </div>
+                    <p class="subtitle">بطاقة تعريف طالب</p>
                 </div>
                 
                 <div class="content">
@@ -107,7 +116,7 @@ export const generateIdCardsHtml = async (
 
                 .page {
                     width: 210mm;
-                    height: 296mm; /* slightly less than 297mm to prevent overflow blank page */
+                    height: 295mm; /* slightly less to prevent overflow */
                     background: white;
                     box-shadow: 0 10px 25px rgba(0,0,0,0.1);
                     display: flex;
@@ -116,6 +125,12 @@ export const generateIdCardsHtml = async (
                     overflow: hidden;
                     page-break-after: always;
                     page-break-inside: avoid;
+                    break-inside: avoid;
+                }
+
+                .page:last-child {
+                    page-break-after: auto !important;
+                    break-after: auto !important;
                 }
 
                 @media print {
@@ -140,20 +155,56 @@ export const generateIdCardsHtml = async (
                 .header {
                     background-color: #0f4c81;
                     color: white;
-                    text-align: center;
-                    padding: 30px 20px;
+                    padding: 25px 20px;
                     border-bottom: 8px solid #0a365c;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
                 }
-                .header h1 {
-                    margin: 0;
-                    font-size: 36px;
+                
+                .header-top {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 30px;
+                    width: 100%;
+                    margin-bottom: 10px;
+                }
+
+                .brand-item {
+                    display: flex;
+                    align-items: center;
+                    gap: 15px;
+                }
+
+                .brand-item img {
+                    height: 60px;
+                    width: 60px;
+                    object-fit: contain;
+                    border-radius: 8px;
+                    background: white;
+                    padding: 4px;
+                    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                }
+
+                .brand-item span {
+                    font-size: 28px;
                     font-weight: 800;
-                    letter-spacing: 1px;
+                    letter-spacing: 0.5px;
                 }
-                .header p {
-                    margin: 5px 0 0 0;
-                    font-size: 20px;
+
+                .header-divider {
+                    width: 2px;
+                    height: 50px;
+                    background-color: rgba(255, 255, 255, 0.2);
+                }
+
+                .subtitle {
+                    margin: 10px 0 0 0;
+                    font-size: 18px;
                     color: #bae6fd;
+                    font-weight: 700;
+                    letter-spacing: 2px;
                 }
 
                 /* Content */

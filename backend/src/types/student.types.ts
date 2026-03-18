@@ -13,6 +13,8 @@ export interface IStudent {
     teacherId: Types.ObjectId;
     isActive: boolean;
     monthlySessionsQuota: number;
+    excusedUntil?: Date; // تاريخ نهاية الإذن (للتوافق القديم)
+    excusedSessionsCount?: number; // عدد حصص الاستئذان المتبقية
     createdAt?: Date;
     updatedAt?: Date;
 }

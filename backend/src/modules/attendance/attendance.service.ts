@@ -191,20 +191,58 @@ export class AttendanceService {
         const absentStudents:  any[] = [];
         const guestStudents:   any[] = [];
 
-        // Regular students
         for (const student of allStudents) {
             const record = attendedSet.get(student._id.toString());
+            
             if (record && record.status !== AttendanceStatus.ABSENT) {
                 presentStudents.push({
                     studentId:   student._id,
                     studentName: student.studentName,
                     scannedAt:   record.scannedAt,
+                    status:      record.status, // might be LATE or EXCUSED
                 });
             } else {
-                absentStudents.push({
-                    studentId:   student._id,
-                    studentName: student.studentName,
-                });
+                // If student is absent, check if they are "Excused" (on leave)
+                // Priority 1: Session count excuse
+                // Priority 2: Date-based excuse (for compatibility)
+                const hasSessionExcuse = (student.excusedSessionsCount || 0) > 0;
+                const matchesDateExcuse = student.excusedUntil && new Date(student.excusedUntil) >= session.date;
+                const isExcused = hasSessionExcuse || matchesDateExcuse;
+                
+                if (isExcused) {
+                    presentStudents.push({
+                        studentId:   student._id,
+                        studentName: student.studentName,
+                        scannedAt:   session.date,
+                        status:      AttendanceStatus.EXCUSED,
+                    });
+                    
+                    // Also create an actual attendance record as EXCUSED if it doesn't exist
+                    if (!record) {
+                        await AttendanceModel.create({
+                            studentId: student._id,
+                            sessionId: session._id,
+                            status:    AttendanceStatus.EXCUSED,
+                            type:      'SESSION',
+                            notes:     hasSessionExcuse 
+                                ? `مُستأذن (متبقي ${student.excusedSessionsCount} حصص قبل هذه)` 
+                                : 'مُستأذن تلقائياً بناءً على تاريخ الإذن',
+                        });
+                    }
+
+                    // Decrement session count if it was a session-based excuse
+                    if (hasSessionExcuse) {
+                        await StudentModel.updateOne(
+                            { _id: student._id },
+                            { $inc: { excusedSessionsCount: -1 } }
+                        );
+                    }
+                } else {
+                    absentStudents.push({
+                        studentId:   student._id,
+                        studentName: student.studentName,
+                    });
+                }
             }
         }
 

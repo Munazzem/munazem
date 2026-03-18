@@ -34,6 +34,7 @@ const AIGenerateExamModal = dynamic(
     { ssr: false }
 );
 import { cn } from '@/lib/utils';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 // ── Status helpers ──────────────────────────────────────────────────
 const STATUS_MAP: Record<ExamStatus, { label: string; className: string; icon: React.ElementType }> = {
@@ -66,6 +67,7 @@ export default function ExamsPage() {
     const [page,          setPage]          = useState(1);
     const [showCreate,    setShowCreate]    = useState(false);
     const [showAI,        setShowAI]        = useState(false);
+    const [confirmDeleteExam, setConfirmDeleteExam] = useState<IExam | null>(null);
     const limit = 20;
 
     const { data, isLoading, isError } = useQuery({
@@ -251,9 +253,7 @@ export default function ExamsPage() {
                                                             variant="ghost"
                                                             size="sm"
                                                             className="h-8 px-2 text-gray-400 hover:text-red-500"
-                                                            onClick={() => {
-                                                                if (window.confirm(`حذف "${exam.title}"؟`)) deleteMutation.mutate(exam._id);
-                                                            }}
+                                                            onClick={() => setConfirmDeleteExam(exam)}
                                                         >
                                                             <Trash2 className="h-4 w-4" />
                                                         </Button>
@@ -321,6 +321,18 @@ export default function ExamsPage() {
             {AI_ENABLED && (
                 <AIGenerateExamModal open={showAI}  onOpenChange={setShowAI} />
             )}
+            <ConfirmDialog
+                open={confirmDeleteExam !== null}
+                onOpenChange={(v) => { if (!v) setConfirmDeleteExam(null); }}
+                title={`حذف "${confirmDeleteExam?.title}"؟`}
+                description="سيتم حذف الامتحان وكل نتائجه."
+                confirmLabel="حذف"
+                variant="danger"
+                onConfirm={() => {
+                    if (confirmDeleteExam) deleteMutation.mutate(confirmDeleteExam._id);
+                    setConfirmDeleteExam(null);
+                }}
+            />
         </div>
     );
 }
