@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchUsers, deleteUser } from '@/lib/api/users';
+import { fetchUsers, deleteUser, updateUser } from '@/lib/api/users';
 import type { IUser } from '@/types/user.types';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { 
@@ -11,7 +11,10 @@ import {
     Edit, 
     Trash2,
     Loader2,
+    ShieldBan,
+    ShieldCheck
 } from 'lucide-react';
+
 import { CardSkeleton } from '@/components/layout/skeletons/CardSkeleton';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -55,9 +58,46 @@ export default function UsersPage() {
             queryClient.invalidateQueries({ queryKey: ['users'] });
         },
         onError: (error: any) => {
-            
+            toast.error(error?.response?.data?.message || 'حدث خطأ أثناء الحذف');
         }
     });
+
+    const updateMutation = useMutation({
+        mutationFn: updateUser,
+        onMutate: async ({ id, data }) => {
+            await queryClient.cancelQueries({ queryKey: ['users'] });
+            const previousUsers = queryClient.getQueryData(['users', { search: searchTerm }]);
+            queryClient.setQueryData(['users', { search: searchTerm }], (old: any) => {
+                if (!old?.data) return old;
+                return {
+                    ...old,
+                    data: old.data.map((u: any) => 
+                        u._id === id ? { ...u, ...data } : u
+                    )
+                };
+            });
+            return { previousUsers };
+        },
+        onSuccess: (_, variables) => {
+            toast.success(variables.data.isActive ? 'تم تفعيل حساب المعلم' : 'تم إيقاف حساب المعلم مؤقتاً');
+        },
+        onError: (error: any, _, context) => {
+            if (context?.previousUsers) {
+                queryClient.setQueryData(['users', { search: searchTerm }], context.previousUsers);
+            }
+            toast.error(error?.response?.data?.message || 'حدث خطأ أثناء لتحديث');
+        },
+        onSettled: () => {
+            queryClient.invalidateQueries({ queryKey: ['users'] });
+        }
+    });
+
+    const handleToggleActive = (teacher: IUser) => {
+        updateMutation.mutate({
+            id: teacher._id,
+            data: { isActive: !teacher.isActive }
+        });
+    };
 
     const handleDelete = (id: string, name: string) => {
         setPendingDeleteTeacher({ id, name });
@@ -146,6 +186,13 @@ export default function UsersPage() {
                                             <DropdownMenuItem className="cursor-pointer focus:text-primary" onClick={() => handleEditClick(teacher)}>
                                                 <Edit className="mr-2 h-4 w-4 ml-2" /> تعديل بيانات المعلم
                                             </DropdownMenuItem>
+                                            <DropdownMenuItem className="cursor-pointer focus:text-primary" onClick={() => handleToggleActive(teacher)}>
+                                                {teacher.isActive ? (
+                                                    <><ShieldBan className="mr-2 h-4 w-4 ml-2" /> إيقاف الحساب</>
+                                                ) : (
+                                                    <><ShieldCheck className="mr-2 h-4 w-4 ml-2" /> تفعيل الحساب</>
+                                                )}
+                                            </DropdownMenuItem>
                                             <DropdownMenuItem className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50" onClick={() => handleDelete(teacher._id, teacher.name)}>
                                                 <Trash2 className="mr-2 h-4 w-4 ml-2" /> حذف المعلم
                                             </DropdownMenuItem>
@@ -155,9 +202,10 @@ export default function UsersPage() {
                             </div>
 
                             <div className="mt-6 pt-4 border-t border-gray-100 flex items-center justify-between">
-                                <Badge variant={teacher.isActive ? 'default' : 'secondary'} className={cn("pointer-events-none", teacher.isActive ? "bg-green-100 text-green-700 hover:bg-green-100" : "bg-gray-100 text-gray-600")}>
-                                    {teacher.isActive ? 'نشط' : 'غير نشط'}
+                                <Badge variant={teacher.isActive ? 'default' : 'secondary'} className={cn("pointer-events-none", teacher.isActive ? "bg-green-100 text-green-700 hover:bg-green-100 border-green-200" : "bg-gray-100 text-gray-500 border-gray-200")}>
+                                    {teacher.isActive ? 'نشط' : 'موقوف'}
                                 </Badge>
+
                                 <Link
                                     href={`/dashboard/users/${teacher._id}`}
                                     className="text-xs text-primary hover:underline flex items-center gap-1"

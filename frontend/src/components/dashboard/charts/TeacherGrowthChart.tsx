@@ -1,20 +1,19 @@
 'use client';
 
-import { Activity } from 'lucide-react';
+import { Users } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { ApexOptions } from 'apexcharts';
-import { CHART_COLORS } from '../constants';
 
 const ReactApexChart = dynamic(() => import('react-apexcharts'), { ssr: false });
 
-interface AttendanceTrendChartProps {
-    data: any[];
+interface TeacherGrowthChartProps {
+    data: { month: string; newTeachers: number }[];
 }
 
-export function AttendanceTrendChart({ data }: AttendanceTrendChartProps) {
+export function TeacherGrowthChart({ data }: TeacherGrowthChartProps) {
     const series = [{
-        name: 'نسبة الحضور',
-        data: data.map(item => item.rate)
+        name: 'انضمام جديد',
+        data: data.map(item => item.newTeachers)
     }];
 
     const options: ApexOptions = {
@@ -25,28 +24,28 @@ export function AttendanceTrendChart({ data }: AttendanceTrendChartProps) {
             zoom: { enabled: false },
             dropShadow: {
                 enabled: true,
-                top: 4,
+                top: 8,
                 left: 0,
-                blur: 3,
+                blur: 4,
                 opacity: 0.1,
-                color: CHART_COLORS[7]
+                color: '#8b5cf6'
             }
         },
-        colors: [CHART_COLORS[7]],
+        colors: ['#8b5cf6'], // Violet color for contrast
         dataLabels: { enabled: false },
         stroke: { 
-            curve: 'stepline', // 'stepline' matches the previous 'stepAfter' look
-            width: 3 
+            curve: 'smooth', // 'smooth' creates the curved line chart
+            width: 4 
         },
         markers: {
-            size: 4,
+            size: 5,
             colors: ['#fff'],
-            strokeColors: CHART_COLORS[7],
+            strokeColors: '#8b5cf6',
             strokeWidth: 2,
-            hover: { size: 6 }
+            hover: { size: 7 }
         },
         xaxis: {
-            categories: data.map(item => item.date),
+            categories: data.map(item => item.month),
             labels: {
                 style: { colors: '#9ca3af', fontFamily: 'inherit', fontWeight: 500 }
             },
@@ -57,11 +56,9 @@ export function AttendanceTrendChart({ data }: AttendanceTrendChartProps) {
         yaxis: {
             labels: {
                 style: { colors: '#9ca3af', fontFamily: 'inherit', fontWeight: 500 },
-                formatter: (value) => `${value}%`
+                formatter: (value) => Math.round(value).toString()
             },
-            min: 0,
-            max: 100,
-            tickAmount: 5
+            min: 0
         },
         grid: {
             borderColor: '#f3f4f6',
@@ -73,7 +70,7 @@ export function AttendanceTrendChart({ data }: AttendanceTrendChartProps) {
         tooltip: {
             theme: 'light',
             y: {
-                formatter: (val) => `${val}%`
+                formatter: (val) => `${val} معلم`
             },
             style: { fontFamily: 'inherit' }
         }
@@ -83,10 +80,10 @@ export function AttendanceTrendChart({ data }: AttendanceTrendChartProps) {
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6 overflow-hidden hover:shadow-md transition-all duration-300">
             <h3 className="font-bold text-gray-900 mb-6 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                    <Activity className="h-4 w-4 sm:h-5 sm:w-5 text-orange-500" />
-                    مستويات الحضور
+                    <Users className="h-4 w-4 sm:h-5 sm:w-5 text-violet-500" />
+                    نمو انضمام المعلمين
                 </div>
-                <span className="text-xs font-normal text-gray-400 bg-gray-50 border border-gray-100 px-3 py-1 rounded-full">آخر 8 حصص</span>
+                <span className="text-xs font-normal text-gray-400 bg-gray-50 border border-gray-100 px-3 py-1 rounded-full">آخر 6 أشهر</span>
             </h3>
             <div className="h-[280px] w-full" dir="ltr">
                 <ReactApexChart options={options} series={series} type="line" height="100%" />

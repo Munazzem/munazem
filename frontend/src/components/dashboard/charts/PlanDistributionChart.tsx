@@ -1,20 +1,27 @@
 'use client';
 
-import { Users } from 'lucide-react';
+import { Layers } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { ApexOptions } from 'apexcharts';
-import { CHART_COLORS } from '../constants';
 
 const ReactApexChart = dynamic(() => import('react-apexcharts'), { ssr: false });
 
-interface StudentsDistributionChartProps {
-    data: any[];
-    totalStudents: number;
+const PLAN_COLORS: Record<string, string> = {
+    'أساسية': '#3b82f6',    // blue
+    'احترافية': '#8b5cf6',  // violet
+    'متميزة': '#f59e0b',    // amber
+    'أخرى': '#9ca3af'       // gray
+};
+
+interface PlanDistributionChartProps {
+    data: { name: string; value: number }[];
+    total: number;
 }
 
-export function StudentsDistributionChart({ data, totalStudents }: StudentsDistributionChartProps) {
-    const series = data.map(item => item.studentCount);
-    const labels = data.map(item => item.groupName);
+export function PlanDistributionChart({ data, total }: PlanDistributionChartProps) {
+    const series = data.map(item => item.value);
+    const labels = data.map(item => item.name);
+    const colors = data.map(item => PLAN_COLORS[item.name] || PLAN_COLORS['أخرى']);
 
     const options: ApexOptions = {
         chart: {
@@ -22,7 +29,7 @@ export function StudentsDistributionChart({ data, totalStudents }: StudentsDistr
             fontFamily: 'inherit',
         },
         labels: labels,
-        colors: CHART_COLORS,
+        colors: colors,
         dataLabels: {
             enabled: false
         },
@@ -48,10 +55,10 @@ export function StudentsDistributionChart({ data, totalStudents }: StudentsDistr
                         total: {
                             show: true,
                             showAlways: true,
-                            label: 'إجمالي الطلاب',
+                            label: 'إجمالي الباقات',
                             color: '#9ca3af',
                             fontSize: '12px',
-                            formatter: () => totalStudents.toLocaleString('en-US')
+                            formatter: () => total.toString()
                         }
                     }
                 }
@@ -63,12 +70,12 @@ export function StudentsDistributionChart({ data, totalStudents }: StudentsDistr
             width: 3
         },
         legend: {
-            show: false // We use our custom HTML legend beneath the chart
+            show: false // We use our custom HTML legend below
         },
         tooltip: {
             theme: 'light',
             y: {
-                formatter: (val) => `${val} طالب`
+                formatter: (val) => `${val} معلم`
             },
             style: { fontFamily: 'inherit' }
         }
@@ -77,8 +84,8 @@ export function StudentsDistributionChart({ data, totalStudents }: StudentsDistr
     return (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6 hover:shadow-md transition-all duration-300 flex flex-col">
             <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <Users className="h-4 w-4 sm:h-5 sm:w-5 text-indigo-500" />
-                توزيع الطلاب على المجموعات
+                <Layers className="h-4 w-4 sm:h-5 sm:w-5 text-indigo-500" />
+                توزيع باقات المعلمين
             </h3>
             
             <div className="flex-1 flex flex-col justify-center items-center relative min-h-[220px]" dir="ltr">
@@ -96,8 +103,8 @@ export function StudentsDistributionChart({ data, totalStudents }: StudentsDistr
             <div className="mt-4 flex flex-wrap justify-center gap-x-4 gap-y-2 max-h-[100px] overflow-y-auto pt-4 border-t border-gray-50 shrink-0">
                 {data.map((entry, index) => (
                     <div key={index} className="flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded-full">
-                        <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }} />
-                        <span className="text-xs text-gray-600 font-medium truncate max-w-[100px]">{entry.groupName}</span>
+                        <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: PLAN_COLORS[entry.name] || PLAN_COLORS['أخرى'] }} />
+                        <span className="text-xs text-gray-600 font-medium">{entry.name} <span className="text-gray-400 ml-1">({entry.value})</span></span>
                     </div>
                 ))}
             </div>

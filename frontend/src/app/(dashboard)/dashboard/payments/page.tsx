@@ -25,16 +25,10 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-    BarChart,
-    Bar,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-    Legend,
-    ResponsiveContainer,
-} from 'recharts';
+import dynamic from 'next/dynamic';
+import { ApexOptions } from 'apexcharts';
+
+const ReactApexChart = dynamic(() => import('react-apexcharts'), { ssr: false });
 import { cn } from '@/lib/utils';
 import { CATEGORY_LABELS, type TransactionCategory } from '@/types/payment.types';
 
@@ -402,20 +396,51 @@ function MonthlyTab() {
                         لا توجد بيانات لهذا الشهر
                     </div>
                 ) : (
-                    <ResponsiveContainer width="100%" height={220}>
-                        <BarChart data={chartData} margin={{ top: 0, right: 0, left: -10, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                            <XAxis dataKey="day" tick={{ fontSize: 10 }} />
-                            <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}`} width={40} />
-                            <Tooltip
-                                formatter={(value: any) => `${(value || 0).toLocaleString('ar-EG')} ج`}
-                                labelFormatter={(label) => `يوم ${label}`}
-                            />
-                            <Legend wrapperStyle={{ fontSize: 12 }} />
-                            <Bar dataKey="دخل" fill="#22c55e" radius={[3, 3, 0, 0]} />
-                            <Bar dataKey="مصروف" fill="#ef4444" radius={[3, 3, 0, 0]} />
-                        </BarChart>
-                    </ResponsiveContainer>
+                    <div className="h-[220px] w-full" dir="ltr">
+                        <ReactApexChart
+                            type="bar"
+                            height="100%"
+                            series={[
+                                { name: 'دخل', data: chartData.map(d => d.دخل) },
+                                { name: 'مصروف', data: chartData.map(d => d.مصروف) }
+                            ]}
+                            options={{
+                                chart: { fontFamily: 'inherit', toolbar: { show: false }, stacked: false },
+                                colors: ['#22c55e', '#ef4444'], // Green and Red
+                                plotOptions: { bar: { borderRadius: 4, columnWidth: '60%' } },
+                                dataLabels: { enabled: false },
+                                stroke: { width: 1, colors: ['transparent'] },
+                                xaxis: {
+                                    categories: chartData.map(d => d.day),
+                                    labels: { style: { colors: '#9ca3af', fontFamily: 'inherit' } },
+                                    axisBorder: { show: false },
+                                    axisTicks: { show: false }
+                                },
+                                yaxis: {
+                                    labels: {
+                                        style: { colors: '#9ca3af', fontFamily: 'inherit' },
+                                        formatter: (val) => Math.round(val).toString()
+                                    }
+                                },
+                                grid: {
+                                    borderColor: '#f3f4f6',
+                                    strokeDashArray: 4,
+                                    yaxis: { lines: { show: true } },
+                                    xaxis: { lines: { show: false } }
+                                },
+                                tooltip: {
+                                    theme: 'light',
+                                    y: { formatter: (val) => `${val.toLocaleString('ar-EG')} ج` }
+                                },
+                                legend: {
+                                    position: 'top',
+                                    horizontalAlign: 'right',
+                                    fontFamily: 'inherit',
+                                    markers: { radius: 12 }
+                                }
+                            } as ApexOptions}
+                        />
+                    </div>
                 )}
             </div>
         </div>
