@@ -18,6 +18,9 @@ import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { ISubscription } from '@/types/subscription.types';
+import { IncomeTrendChart } from '@/components/dashboard/charts/IncomeTrendChart';
+import { PlanDistributionChart } from './charts/PlanDistributionChart';
+import { TeacherGrowthChart } from './charts/TeacherGrowthChart';
 
 // ── Skeleton ──────────────────────────────────────────────────────
 const SuperAdminSkeleton = () => (
@@ -114,6 +117,56 @@ export function SuperAdminDashboard() {
         PENDING: { label: 'معلق',    cls: 'bg-amber-100 text-amber-700'  },
     };
 
+    // --- Analytics Data Computation ---
+    const monthNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+    
+    // 1. Income Trend (Last 6 Months)
+    const incomeTrendData = [];
+    for (let i = 5; i >= 0; i--) {
+        const d = new Date();
+        d.setMonth(d.getMonth() - i);
+        const month = d.getMonth();
+        const year = d.getFullYear();
+        
+        const monthSubs = subscriptions.filter(s => {
+            if (!s.createdAt) return false;
+            const sd = new Date(s.createdAt);
+            return sd.getMonth() === month && sd.getFullYear() === year && s.status === 'ACTIVE';
+        });
+        
+        const revenue = monthSubs.reduce((sum, s) => sum + (s.amount ?? 0), 0);
+        incomeTrendData.push({ month: monthNames[month], income: revenue });
+    }
+
+    // 2. Teacher Growth (Last 6 Months)
+    const teacherGrowthData = [];
+    const usersList = (usersData as any)?.data || usersData || [];
+    for (let i = 5; i >= 0; i--) {
+        const d = new Date();
+        d.setMonth(d.getMonth() - i);
+        const month = d.getMonth();
+        const year = d.getFullYear();
+        
+        const newTeachers = usersList.filter((u: any) => {
+            if (!u.createdAt) return false;
+            const ud = new Date(u.createdAt);
+            return ud.getMonth() === month && ud.getFullYear() === year;
+        }).length;
+        
+        teacherGrowthData.push({ month: monthNames[month], newTeachers });
+    }
+
+    // 3. Plan Distribution
+    const planCounts: Record<string, number> = {};
+    subscriptions.forEach(s => {
+        if (s.status === 'ACTIVE') {
+            const label = PLAN_LABEL[s.planTier] ?? s.planTier;
+            planCounts[label] = (planCounts[label] || 0) + 1;
+        }
+    });
+    const planDistributionData = Object.entries(planCounts).map(([name, value]) => ({ name, value }));
+
+
     if (isLoading) return <SuperAdminSkeleton />;
 
     if (errorSubs) {
@@ -127,11 +180,19 @@ export function SuperAdminDashboard() {
     return (
         <div className="space-y-5 sm:space-y-8 animate-in fade-in duration-500" dir="rtl">
             {/* Header */}
-            <div>
-                <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">
-                    مرحباً بعودتك، {user?.name?.split(' ')[0]}
-                </h1>
-                <p className="text-sm text-gray-500 mt-0.5">نظرة عامة على اشتراكات المنصة وحالة المعلمين.</p>
+            <div className="bg-linear-to-r from-slate-900 to-indigo-900 rounded-3xl p-6 sm:p-8 text-white shadow-lg relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
+                <div className="absolute bottom-0 left-0 w-40 h-40 bg-indigo-500/20 rounded-full blur-2xl -ml-10 -mb-10 pointer-events-none" />
+                <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                        <h1 className="text-2xl sm:text-3xl font-black tracking-tight mb-1">
+                            لوحة التحكم الخاصة
+                        </h1>
+                        <p className="text-indigo-100 text-sm sm:text-base opacity-95">
+                            مرحباً بعودتك، {user?.name?.split(' ')[0]} 👋
+                        </p>
+                    </div>
+                </div>
             </div>
 
             {/* Stat Cards */}
@@ -212,7 +273,15 @@ export function SuperAdminDashboard() {
                 </div>
             </div>
 
+            {/* Analytics Charts */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                <IncomeTrendChart data={incomeTrendData} />
+                <TeacherGrowthChart data={teacherGrowthData} />
+                <PlanDistributionChart data={planDistributionData} total={activeSubscriptions} />
+            </div>
+
             {/* Recent Subscriptions Table */}
+
             <div>
                 <div className="flex items-center justify-between mb-3">
                     <h2 className="text-base font-bold text-gray-700 flex items-center gap-2">
@@ -305,13 +374,13 @@ export function SuperAdminDashboard() {
 
             {/* Expiring Soon Alert */}
             {expiringSoon.length > 0 && (
-                <div>
-                    <h2 className="text-base font-bold text-gray-700 mb-3 flex items-center gap-2">
-                        <Clock className="h-5 w-5 text-amber-500" />
-                        اشتراكات تنتهي خلال 30 يوم
+                <div className="mt-8">
+                    <h2 className="text-lg font-bold text-red-700 mb-4 flex items-center gap-2">
+                        <AlertTriangle className="h-6 w-6 text-red-600 animate-pulse" />
+                        اشتراكات تتطلب الانتباه (تنتهي قريباً)
                     </h2>
-                    <div className="bg-amber-50 rounded-2xl border border-amber-100 shadow-sm overflow-hidden">
-                        <div className="divide-y divide-amber-100">
+                    <div className="bg-red-50/50 rounded-2xl border border-red-100 shadow-sm overflow-hidden">
+                        <div className="divide-y divide-red-100">
                             {expiringSoon.slice(0, 5).map((sub) => {
                                 const teacher = typeof sub.teacherId === 'object' && sub.teacherId !== null
                                     ? sub.teacherId as { name: string; phone: string }
@@ -320,20 +389,21 @@ export function SuperAdminDashboard() {
                                 return (
                                     <div key={sub._id} className="flex items-center justify-between px-3 sm:px-5 py-3">
                                         <div className="flex items-center gap-3">
-                                            <div className="h-9 w-9 rounded-full bg-amber-200 flex items-center justify-center text-amber-800 font-bold text-sm shrink-0">
+                                            <div className="h-10 w-10 rounded-xl bg-red-100 flex items-center justify-center text-red-700 font-bold text-sm shrink-0">
                                                 {teacher.name.charAt(0)}
                                             </div>
                                             <div>
                                                 <p className="font-semibold text-gray-900 text-sm">{teacher.name}</p>
+
                                                 <p className="text-xs text-gray-500" dir="ltr">{teacher.phone}</p>
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-2">
-                                            <Badge variant="outline" className="text-xs text-gray-500">
+                                            <Badge variant="outline" className="text-xs text-gray-500 bg-white">
                                                 {PLAN_LABEL[sub.planTier] ?? sub.planTier}
                                             </Badge>
-                                            <span className="text-sm font-bold text-amber-700 bg-white px-3 py-1 rounded-full border border-amber-200">
-                                                {days} يوم
+                                            <span className="text-sm font-bold text-red-700 bg-white px-3 py-1 rounded-full border border-red-200 shadow-sm">
+                                                باقي {days} يوم
                                             </span>
                                         </div>
                                     </div>

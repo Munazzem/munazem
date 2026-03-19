@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { fetchGroups } from '@/lib/api/groups';
 import { fetchStudents } from '@/lib/api/students';
 import { useAuthStore } from '@/lib/store/auth.store';
+import { UserRole } from '@/types/user.types';
 
 /**
  * Background Cache Warmer
@@ -14,9 +15,10 @@ import { useAuthStore } from '@/lib/store/auth.store';
 export function CacheWarmer() {
     const queryClient = useQueryClient();
     const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+    const user = useAuthStore((state) => state.user);
 
     useEffect(() => {
-        if (!isAuthenticated) return;
+        if (!isAuthenticated || !user || user.role === UserRole.superAdmin) return;
 
         console.log('🔥 Warming up offline cache...');
 
@@ -35,10 +37,7 @@ export function CacheWarmer() {
             staleTime: 5 * 60 * 1000, // 5 minutes
         });
 
-        // 3. Pre-fetch summary/stats if we have a dedicated call for them
-        // (Optional: can add more as needed)
-
-    }, [isAuthenticated, queryClient]);
+    }, [isAuthenticated, queryClient, user]);
 
     return null;
 }
