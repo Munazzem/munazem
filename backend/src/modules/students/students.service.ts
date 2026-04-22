@@ -52,9 +52,6 @@ export class StudentService {
             });
         } catch (error: any) {
             if (error.code === 11000) {
-                if (error.keyPattern?.studentPhone) {
-                    throw ConflictException({ message: 'يوجد طالب آخر مسجل بنفس رقم الهاتف مع هذا المعلم' });
-                }
                 if (error.keyPattern?.barcode) {
                     throw ConflictException({ message: 'رقم الباركود هذا مستخدم بالفعل لطالب آخر' });
                 }
@@ -98,8 +95,7 @@ export class StudentService {
             } catch (error: any) {
                 let message = 'حدث خطأ أثناء الإضافة';
                 if (error.code === 11000) {
-                    if (error.keyPattern?.studentPhone) message = 'رقم الهاتف مسجل مسبقاً';
-                    else if (error.keyPattern?.barcode) message = 'الباركود مستخدم مسبقاً';
+                    if (error.keyPattern?.barcode) message = 'الباركود مستخدم مسبقاً';
                 } else if (error.message) {
                     message = error.message;
                 }
@@ -231,7 +227,6 @@ export class StudentService {
             
         } catch (error: any) {
              if (error.code === 11000) {
-                 if (error.keyPattern?.studentPhone) throw ConflictException({ message: 'رقم الهاتف مستخدم لطالب آخر' });
                  if (error.keyPattern?.barcode) throw ConflictException({ message: 'الباركود مستخدم لطالب آخر' });
              }
              throw error;
