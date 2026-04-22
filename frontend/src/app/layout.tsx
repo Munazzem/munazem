@@ -33,7 +33,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0f4c81",
+  themeColor: "#1e3a6e",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -48,7 +48,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ar" dir="rtl">
-      <body className={`${cairo.variable} antialiased bg-[#fdfdfd] text-[#111111]`}>
+      <body className={`${cairo.variable} antialiased bg-slate-50 text-[#111111] overflow-x-hidden`}>
         <Providers>
             {children}
             <PWAEventListener />

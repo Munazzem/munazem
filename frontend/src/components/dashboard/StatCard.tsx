@@ -24,13 +24,13 @@ export function StatCard({
 }: StatCardProps) {
     return (
         <div className={cn(
-            'bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow relative overflow-hidden',
+            'bg-white/80 backdrop-blur-md p-6 rounded-[24px] border border-gray-100 soft-shadow hover-lift relative overflow-hidden group',
         )}>
             {accent && <div className={cn('absolute top-0 left-0 w-full h-1', accent)} />}
             <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-500">{label}</span>
-                <div className={cn('h-10 w-10 flex items-center justify-center rounded-xl', iconBg)}>
-                    <Icon className={cn('h-5 w-5', iconColor)} />
+                <span className="text-sm font-bold text-gray-500 group-hover:text-gray-700 transition-colors">{label}</span>
+                <div className={cn('h-12 w-12 flex items-center justify-center rounded-2xl transition-all duration-500 group-hover:scale-110 group-hover:rotate-3 group-hover:shadow-lg', iconBg)}>
+                    <Icon className={cn('h-6 w-6 drop-shadow-sm', iconColor)} />
                 </div>
             </div>
             <div className="mt-4 flex items-baseline gap-1">

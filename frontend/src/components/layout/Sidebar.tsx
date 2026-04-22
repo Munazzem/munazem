@@ -71,7 +71,7 @@ export function Sidebar() {
 
     if (!isMounted) {
         return (
-            <aside className="hidden sm:flex fixed right-0 top-0 z-40 h-[100dvh] w-64 bg-white border-l border-gray-100 shadow-sm flex-col">
+            <aside className="hidden sm:flex fixed right-0 top-0 z-40 h-[100dvh] w-64 glass-panel flex-col">
                 <div className="flex h-16 items-center justify-center border-b border-gray-100 px-6">
                     <div className="flex items-center gap-2">
                         <div className="w-8 h-8 bg-gray-200 rounded-lg animate-pulse" />
@@ -99,7 +99,7 @@ export function Sidebar() {
             
             <aside 
                 className={cn(
-                    "fixed right-0 top-0 z-40 h-[100dvh] w-64 bg-white border-l border-gray-100 shadow-sm flex flex-col overflow-hidden transition-transform duration-300 ease-in-out sm:translate-x-0",
+                    "fixed right-0 top-0 z-40 h-[100dvh] w-64 glass-panel flex flex-col overflow-hidden transition-transform duration-300 ease-in-out sm:translate-x-0",
                     isSidebarOpen ? "translate-x-0" : "translate-x-full"
                 )}
             >
@@ -130,13 +130,20 @@ export function Sidebar() {
                             key={item.href}
                             href={item.href}
                             className={cn(
-                                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                                "flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-bold transition-all duration-300 relative group overflow-hidden",
                                 isActive 
-                                    ? "bg-primary/5 text-primary" 
-                                    : "text-gray-500 hover:bg-gray-50 hover:text-gray-900"
+                                    ? "text-primary shadow-sm" 
+                                    : "text-gray-500 hover:bg-gray-50/50 hover:text-gray-900"
                             )}
                             onClick={() => setSidebarOpen(false)}
                         >
+                            {isActive && (
+                                <div className="absolute inset-0 bg-gradient-to-l from-primary/10 to-transparent -z-10 rounded-xl"></div>
+                            )}
+                            <div className={cn(
+                                "absolute right-0 top-1/2 -translate-y-1/2 w-1 h-0 bg-primary rounded-l-full transition-all duration-300",
+                                isActive ? "h-3/5" : "group-hover:h-2"
+                            )}></div>
                             <item.icon className={cn("h-5 w-5", isActive ? "text-primary" : "text-gray-400")} />
                             {item.name}
                         </Link>

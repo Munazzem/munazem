@@ -126,7 +126,7 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
         <div className="flex flex-col sm:flex-row h-full">
             {/* QR Panel */}
             <div className="w-full sm:w-[240px] shrink-0 bg-[#f0f6ff] flex flex-col items-center justify-center gap-4 p-6 border-b sm:border-b-0 sm:border-l border-blue-100">
-                <div className="flex items-center gap-1.5 text-[#0f4c81]">
+                <div className="flex items-center gap-1.5 text-[#1e3a6e]">
                     <QrCode className="h-4 w-4" />
                     <span className="text-xs font-bold uppercase tracking-wide">كود الحضور</span>
                 </div>
@@ -135,13 +135,13 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
                         <img src={qrDataUrl} alt="QR Code" className="w-[160px] h-[160px]" />
                     ) : (
                         <div className="w-[160px] h-[160px] bg-white/60 flex items-center justify-center">
-                            <QrCode className="h-8 w-8 text-[#0f4c81]/30" />
+                            <QrCode className="h-8 w-8 text-[#1e3a6e]/30" />
                         </div>
                     )}
                 </div>
                 <div className="text-center w-full px-2">
                     <p className="text-[10px] text-gray-400 mb-1">امسح للتسجيل</p>
-                    <p className="font-mono text-[11px] font-bold text-[#0f4c81] bg-white px-2 py-1.5 rounded-lg border border-blue-100 truncate w-full" dir="ltr">
+                    <p className="font-mono text-[11px] font-bold text-[#1e3a6e] bg-white px-2 py-1.5 rounded-lg border border-blue-100 truncate w-full" dir="ltr">
                         {qrValue}
                     </p>
                 </div>
@@ -237,7 +237,7 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
                     <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
                             <div className="h-7 w-7 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center">
-                                <TrendingUp className="h-3.5 w-3.5 text-[#0f4c81]" />
+                                <TrendingUp className="h-3.5 w-3.5 text-[#1e3a6e]" />
                             </div>
                             <span className="text-xs font-bold text-gray-700">متابعة الحصص الشهرية</span>
                         </div>
@@ -277,7 +277,7 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
                             <span className="text-xs text-gray-500 font-medium">
                                 تم حضور {usedSessionsThisMonth} من {monthlySessionsQuota} حصص
                             </span>
-                            <span className="text-xs font-bold text-[#0f4c81]">
+                            <span className="text-xs font-bold text-[#1e3a6e]">
                                 {attendancePercentage}%
                             </span>
                         </div>
@@ -296,7 +296,7 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
                                             "w-8 h-8 sm:w-10 sm:h-10 rounded-xl border-2 flex items-center justify-center cursor-pointer transition-all relative group",
                                             isPresent
                                                 ? "bg-green-500 border-green-500 text-white shadow-md shadow-green-500/20"
-                                                : "bg-gray-50 border-gray-200 text-gray-400 hover:border-[#0f4c81] hover:text-[#0f4c81]"
+                                                : "bg-gray-50 border-gray-200 text-gray-400 hover:border-[#1e3a6e] hover:text-[#1e3a6e]"
                                         )}
                                         onClick={() => {
                                             if (!isPresent && canWrite) {
@@ -330,7 +330,7 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
                                             "w-8 h-8 sm:w-10 sm:h-10 rounded-xl border-2 border-dashed flex items-center justify-center cursor-pointer transition-all",
                                             isManualFilled
                                                 ? "bg-green-100 border-green-500 text-green-700 shadow-sm"
-                                                : "bg-gray-50 border-gray-200 text-gray-300 hover:border-[#0f4c81] hover:text-[#0f4c81]"
+                                                : "bg-gray-50 border-gray-200 text-gray-300 hover:border-[#1e3a6e] hover:text-[#1e3a6e]"
                                         )}
                                         onClick={() => {
                                             if (!isManualFilled && canWrite) {

@@ -79,8 +79,8 @@ function StudentCard({ s }: { s: StudentSummary }) {
             <div className="p-5 border-b border-gray-50">
                 <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3">
-                        <div className="h-12 w-12 rounded-xl bg-[#0f4c81]/10 flex items-center justify-center shrink-0">
-                            <span className="text-lg font-extrabold text-[#0f4c81]">
+                        <div className="h-12 w-12 rounded-xl bg-[#1e3a6e]/10 flex items-center justify-center shrink-0">
+                            <span className="text-lg font-extrabold text-[#1e3a6e]">
                                 {s.studentName.charAt(0)}
                             </span>
                         </div>
@@ -102,7 +102,7 @@ function StudentCard({ s }: { s: StudentSummary }) {
                 {/* Quick stats row */}
                 <div className="grid grid-cols-3 gap-2 mt-4">
                     <div className="bg-gray-50 rounded-xl p-3 text-center">
-                        <p className="text-lg font-bold text-[#0f4c81]">{s.attendance.attendanceRate}</p>
+                        <p className="text-lg font-bold text-[#1e3a6e]">{s.attendance.attendanceRate}</p>
                         <p className="text-xs text-gray-400 mt-0.5">الحضور</p>
                     </div>
                     <div className="bg-gray-50 rounded-xl p-3 text-center">
@@ -129,7 +129,7 @@ function StudentCard({ s }: { s: StudentSummary }) {
                         className={cn(
                             'flex-1 flex items-center justify-center gap-1.5 py-3 text-sm font-medium transition-colors',
                             tab === key
-                                ? 'text-[#0f4c81] border-b-2 border-[#0f4c81] bg-blue-50/30'
+                                ? 'text-[#1e3a6e] border-b-2 border-[#1e3a6e] bg-blue-50/30'
                                 : 'text-gray-400 hover:text-gray-600'
                         )}
                     >
@@ -295,8 +295,8 @@ export default function ParentPortalPage() {
         <div className="space-y-6">
             {/* Page title */}
             <div className="text-center">
-                <div className="inline-flex items-center justify-center h-14 w-14 rounded-2xl bg-[#0f4c81]/10 mb-3">
-                    <GraduationCap className="h-7 w-7 text-[#0f4c81]" />
+                <div className="inline-flex items-center justify-center h-14 w-14 rounded-2xl bg-[#1e3a6e]/10 mb-3">
+                    <GraduationCap className="h-7 w-7 text-[#1e3a6e]" />
                 </div>
                 <h2 className="text-2xl font-bold text-gray-900">متابعة أداء الطالب</h2>
                 <p className="text-sm text-gray-500 mt-1">أدخل رقم هاتفك لعرض بيانات أبنائك</p>
@@ -323,7 +323,7 @@ export default function ParentPortalPage() {
                     <Button
                         type="submit"
                         disabled={loading}
-                        className="h-12 px-6 bg-[#0f4c81] hover:bg-[#0a3357] gap-2"
+                        className="h-12 px-6 bg-[#1e3a6e] hover:bg-[#152a52] gap-2"
                     >
                         {loading
                             ? <Loader2 className="h-4 w-4 animate-spin" />

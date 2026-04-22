@@ -268,7 +268,7 @@ export function EditGroupModal({ group, open, onOpenChange }: EditGroupModalProp
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={updateMutation.isPending}>
                 إلغاء
               </Button>
-              <Button type="submit" className="bg-[#0f4c81] hover:bg-[#0a3357]" disabled={updateMutation.isPending}>
+              <Button type="submit" className="bg-[#1e3a6e] hover:bg-[#152a52]" disabled={updateMutation.isPending}>
                 {updateMutation.isPending && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
                 حفظ التعديلات
               </Button>

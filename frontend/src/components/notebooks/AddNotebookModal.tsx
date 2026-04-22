@@ -72,7 +72,7 @@ export function AddNotebookModal() {
     return (
         <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) form.reset(); }}>
             <DialogTrigger asChild>
-                <Button className="bg-[#0f4c81] hover:bg-[#0a3357] text-white gap-2">
+                <Button className="bg-[#1e3a6e] hover:bg-[#152a52] text-white gap-2">
                     <Plus size={18} />
                     إضافة مذكرة
                 </Button>
@@ -168,7 +168,7 @@ export function AddNotebookModal() {
                             <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={mutation.isPending}>
                                 إلغاء
                             </Button>
-                            <Button type="submit" className="bg-[#0f4c81] hover:bg-[#0a3357]" disabled={mutation.isPending}>
+                            <Button type="submit" className="bg-[#1e3a6e] hover:bg-[#152a52]" disabled={mutation.isPending}>
                                 {mutation.isPending && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
                                 حفظ المذكرة
                             </Button>

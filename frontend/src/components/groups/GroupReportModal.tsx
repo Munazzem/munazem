@@ -80,7 +80,7 @@ export function GroupReportModal({ groupId, groupName, open, onOpenChange }: Gro
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-w-[560px] rounded-2xl" dir="rtl">
                 {/* Accent bar */}
-                <div className="absolute top-0 left-0 w-full h-1 bg-linear-to-r from-[#0f4c81] to-[#3b82f6] rounded-t-2xl" />
+                <div className="absolute top-0 left-0 w-full h-1 bg-linear-to-r from-[#1e3a6e] to-[#3b82f6] rounded-t-2xl" />
 
                 <DialogHeader className="pt-3">
                     <DialogTitle className="flex items-center gap-2 text-lg font-extrabold text-gray-900">
@@ -191,7 +191,7 @@ export function GroupReportModal({ groupId, groupName, open, onOpenChange }: Gro
                             <Button
                                 onClick={handleDownloadPdf}
                                 disabled={pdfLoading}
-                                className="gap-2 bg-[#0f4c81] hover:bg-[#0a3357] text-white"
+                                className="gap-2 bg-[#1e3a6e] hover:bg-[#152a52] text-white"
                             >
                                 {pdfLoading
                                     ? <Loader2 className="h-4 w-4 animate-spin" />
