@@ -71,7 +71,7 @@ const studentSchema = new Schema<IStudent>({
 });
 
 // Compound index to ensure a student phone is unique per teacher (a student can't be added twice to the same teacher)
-studentSchema.index({ studentPhone: 1, teacherId: 1 }, { unique: true });
+studentSchema.index({ studentPhone: 1, teacherId: 1 }, { unique: false, name: 'idx_student_phone_teacher_v2' });
 // Ensure student code is unique per teacher system
 studentSchema.index({ studentCode: 1, teacherId: 1 }, { unique: true });
 

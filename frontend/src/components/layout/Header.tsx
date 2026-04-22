@@ -60,23 +60,18 @@ export function Header() {
     }
 
     return (
-        <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between glass-panel border-b border-white/40 px-4 sm:px-6 relative">
-            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2 group cursor-pointer">
-                <div className="relative">
-                    <div className="absolute -inset-1 bg-glow rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-                    <img src="/logo.png" alt="Monazem Logo" className="h-9 w-9 rounded-lg border border-white/50 shadow-sm relative z-10" />
-                </div>
-                <span className="text-lg font-black text-primary hidden md:block tracking-tight text-glow transition-all duration-300">مُنظِّم</span>
-            </div>
-            
-            <div className="flex items-center gap-4">
+        <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between glass-panel border-b border-white/40 px-4 sm:px-6">
+            <div className="flex items-center gap-2 sm:gap-4">
                 {/* Mobile Menu Toggle */}
                 <button 
                     onClick={toggleSidebar}
-                    className="sm:hidden p-2 -ml-2 text-gray-500 hover:bg-gray-50 rounded-lg transition-colors"
+                    className="sm:hidden p-2 -mr-2 text-gray-500 hover:bg-gray-50 rounded-lg transition-colors"
                 >
                     <Menu className="h-6 w-6" />
                 </button>
+
+                {/* Logo next to toggle on mobile */}
+                <img src="/logo.png" alt="Monazem" className="h-7 w-7 rounded-lg border border-white/50 sm:hidden ml-1" />
                 
                 <h2 className="text-lg font-bold text-gray-800 hidden sm:flex items-center gap-2">
                     مرحباً بعودتك، {user?.name?.split(' ')[0] || 'أستاذ'}
