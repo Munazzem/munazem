@@ -38,6 +38,11 @@ export const fetchGroupReportHtml = async (groupId: string): Promise<string> => 
     return res as unknown as string;
 };
 
+export const fetchGroupAttendanceSheetHtml = async (groupId: string): Promise<string> => {
+    const res = await apiClient.get(`/reports/group/${groupId}/attendance-sheet`);
+    return res as unknown as string;
+};
+
 export const fetchFinancialMonthlyReport = async (year: number, month: number) => {
     const res = await apiClient.get(`/reports/financial/monthly?year=${year}&month=${month}`);
     return (res as any).data;

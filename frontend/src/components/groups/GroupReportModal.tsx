@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { fetchGroupReport, fetchGroupReportHtml } from '@/lib/api/reports';
+import { fetchGroupReport, fetchGroupReportHtml, fetchGroupAttendanceSheetHtml } from '@/lib/api/reports';
 import { printHtmlContent } from '@/lib/utils/print';
 import { toast } from 'sonner';
 import {
@@ -54,6 +54,19 @@ export function GroupReportModal({ groupId, groupName, open, onOpenChange }: Gro
             printHtmlContent(html);
         } catch {
             toast.error('فشل تحميل التقرير');
+        } finally {
+            setPdfLoading(false);
+        }
+    };
+
+    const handleDownloadSheet = async () => {
+        if (!groupId) return;
+        setPdfLoading(true);
+        try {
+            const html = await fetchGroupAttendanceSheetHtml(groupId);
+            printHtmlContent(html);
+        } catch {
+            toast.error('فشل تحميل الكشف');
         } finally {
             setPdfLoading(false);
         }
@@ -161,8 +174,20 @@ export function GroupReportModal({ groupId, groupName, open, onOpenChange }: Gro
                             </div>
                         )}
 
-                        {/* Download PDF */}
-                        <div className="flex justify-end pt-1">
+                        {/* Download PDF & Sheet */}
+                        <div className="flex justify-end gap-2 pt-1">
+                            <Button
+                                onClick={handleDownloadSheet}
+                                disabled={pdfLoading}
+                                variant="outline"
+                                className="gap-2 border-primary text-primary hover:bg-primary hover:text-white"
+                            >
+                                {pdfLoading
+                                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                                    : <FileDown className="h-4 w-4" />
+                                }
+                                طباعة كشف الحضور
+                            </Button>
                             <Button
                                 onClick={handleDownloadPdf}
                                 disabled={pdfLoading}
@@ -172,7 +197,7 @@ export function GroupReportModal({ groupId, groupName, open, onOpenChange }: Gro
                                     ? <Loader2 className="h-4 w-4 animate-spin" />
                                     : <FileDown className="h-4 w-4" />
                                 }
-                                تحميل PDF
+                                تحميل تقرير PDF
                             </Button>
                         </div>
                     </div>
