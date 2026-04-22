@@ -5,7 +5,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
             <header className="bg-white border-b border-gray-100 shadow-sm">
                 <div className="max-w-2xl mx-auto px-4 py-4 flex items-center justify-between">
                     <div>
-                        <h1 className="text-xl font-extrabold text-[#0f4c81]">مُنظِّم</h1>
+                        <h1 className="text-xl font-extrabold text-[#1e3a6e]">مُنظِّم</h1>
                         <p className="text-xs text-gray-400">بوابة ولي الأمر</p>
                     </div>
                 </div>

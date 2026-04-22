@@ -133,42 +133,42 @@ export default function DashboardPage() {
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                             <Link
                                 href="/students"
-                                className="group bg-white border border-gray-100 rounded-2xl p-4 shadow-sm hover:shadow-md hover:border-blue-200 transition-all flex flex-col items-center gap-3 text-center"
+                                className="group glass-panel rounded-2xl p-4 hover-lift transition-all flex flex-col items-center gap-3 text-center"
                             >
-                                <div className="h-11 w-11 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 group-hover:bg-blue-100 transition-colors">
-                                    <Users className="h-5 w-5" />
+                                <div className="h-12 w-12 rounded-2xl bg-blue-500/10 flex items-center justify-center text-blue-600 group-hover:bg-blue-500/20 group-hover:scale-110 transition-all duration-300">
+                                    <Users className="h-6 w-6" />
                                 </div>
-                                <p className="font-bold text-gray-900 text-sm">الطلاب</p>
+                                <p className="font-bold text-gray-800 text-sm">الطلاب</p>
                             </Link>
 
                             <Link
                                 href="/groups"
-                                className="group bg-white border border-gray-100 rounded-2xl p-4 shadow-sm hover:shadow-md hover:border-indigo-200 transition-all flex flex-col items-center gap-3 text-center"
+                                className="group glass-panel rounded-2xl p-4 hover-lift transition-all flex flex-col items-center gap-3 text-center"
                             >
-                                <div className="h-11 w-11 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 group-hover:bg-indigo-100 transition-colors">
-                                    <GraduationCap className="h-5 w-5" />
+                                <div className="h-12 w-12 rounded-2xl bg-indigo-500/10 flex items-center justify-center text-indigo-600 group-hover:bg-indigo-500/20 group-hover:scale-110 transition-all duration-300">
+                                    <GraduationCap className="h-6 w-6" />
                                 </div>
-                                <p className="font-bold text-gray-900 text-sm">المجموعات</p>
+                                <p className="font-bold text-gray-800 text-sm">المجموعات</p>
                             </Link>
 
                             <Link
                                 href="/sessions"
-                                className="group bg-white border border-gray-100 rounded-2xl p-4 shadow-sm hover:shadow-md hover:border-orange-200 transition-all flex flex-col items-center gap-3 text-center"
+                                className="group glass-panel rounded-2xl p-4 hover-lift transition-all flex flex-col items-center gap-3 text-center"
                             >
-                                <div className="h-11 w-11 rounded-xl bg-orange-50 flex items-center justify-center text-orange-600 group-hover:bg-orange-100 transition-colors">
-                                    <Activity className="h-5 w-5" />
+                                <div className="h-12 w-12 rounded-2xl bg-orange-500/10 flex items-center justify-center text-orange-600 group-hover:bg-orange-500/20 group-hover:scale-110 transition-all duration-300">
+                                    <Activity className="h-6 w-6" />
                                 </div>
-                                <p className="font-bold text-gray-900 text-sm">الحصص</p>
+                                <p className="font-bold text-gray-800 text-sm">الحصص</p>
                             </Link>
 
                             <Link
                                 href="/exams"
-                                className="group bg-white border border-gray-100 rounded-2xl p-4 shadow-sm hover:shadow-md hover:border-green-200 transition-all flex flex-col items-center gap-3 text-center"
+                                className="group glass-panel rounded-2xl p-4 hover-lift transition-all flex flex-col items-center gap-3 text-center"
                             >
-                                <div className="h-11 w-11 rounded-xl bg-green-50 flex items-center justify-center text-green-600 group-hover:bg-green-100 transition-colors">
-                                    <ClipboardList className="h-5 w-5" />
+                                <div className="h-12 w-12 rounded-2xl bg-green-500/10 flex items-center justify-center text-green-600 group-hover:bg-green-500/20 group-hover:scale-110 transition-all duration-300">
+                                    <ClipboardList className="h-6 w-6" />
                                 </div>
-                                <p className="font-bold text-gray-900 text-sm">الامتحانات</p>
+                                <p className="font-bold text-gray-800 text-sm">الامتحانات</p>
                             </Link>
                         </div>
                     </div>
@@ -176,22 +176,22 @@ export default function DashboardPage() {
                     <div className="grid grid-cols-2 gap-3 mt-3">
                         <button
                             onClick={() => setShowBulkSub(true)}
-                            className="group bg-primary/5 border border-primary/20 rounded-2xl p-4 shadow-sm hover:shadow-md hover:bg-primary/10 transition-all flex flex-col items-center gap-3 text-center"
+                            className="group glass-panel rounded-2xl p-4 hover-lift transition-all flex flex-col items-center gap-3 text-center"
                         >
-                            <div className="h-11 w-11 rounded-xl bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary/20 transition-colors">
-                                <CreditCard className="h-5 w-5" />
+                            <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary/20 group-hover:scale-110 transition-all duration-300">
+                                <CreditCard className="h-6 w-6" />
                             </div>
-                            <p className="font-bold text-gray-900 text-sm">اشتراك جماعي</p>
+                            <p className="font-bold text-gray-800 text-sm">اشتراك جماعي</p>
                         </button>
 
                         <button
                             onClick={() => setShowNbSale(true)}
-                            className="group bg-purple-50 border border-purple-100 rounded-2xl p-4 shadow-sm hover:shadow-md hover:bg-purple-100 transition-all flex flex-col items-center gap-3 text-center"
+                            className="group glass-panel rounded-2xl p-4 hover-lift transition-all flex flex-col items-center gap-3 text-center"
                         >
-                            <div className="h-11 w-11 rounded-xl bg-purple-100 flex items-center justify-center text-purple-600 group-hover:bg-purple-200 transition-colors">
-                                <BookOpen className="h-5 w-5" />
+                            <div className="h-12 w-12 rounded-2xl bg-purple-500/10 flex items-center justify-center text-purple-600 group-hover:bg-purple-500/20 group-hover:scale-110 transition-all duration-300">
+                                <BookOpen className="h-6 w-6" />
                             </div>
-                            <p className="font-bold text-gray-900 text-sm">بيع مذكرة</p>
+                            <p className="font-bold text-gray-800 text-sm">بيع مذكرة</p>
                         </button>
                     </div>
                 </div>

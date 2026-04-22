@@ -111,7 +111,7 @@ export default function LoginPage() {
 
                         <Button 
                             type="submit" 
-                            className="w-full h-12 text-md font-bold bg-[#0f4c81] hover:bg-[#0a3357] transition-all"
+                            className="w-full h-12 text-md font-bold bg-[#1e3a6e] hover:bg-[#152a52] transition-all"
                             disabled={isLoading}
                         >
                             {isLoading ? 'جاري التحقق...' : 'تسجيل الدخول'}
@@ -122,7 +122,7 @@ export default function LoginPage() {
                 <div className="mt-6 text-center">
                     <Link
                         href="/parent"
-                        className="inline-flex items-center gap-1.5 text-sm text-[#0f4c81] hover:underline font-medium"
+                        className="inline-flex items-center gap-1.5 text-sm text-[#1e3a6e] hover:underline font-medium"
                     >
                         <span>👨‍👧</span>
                         بوابة ولي الأمر — تابع أداء ابنك

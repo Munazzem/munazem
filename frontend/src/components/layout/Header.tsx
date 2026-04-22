@@ -40,7 +40,7 @@ export function Header() {
 
     if (!isMounted) {
         return (
-            <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-gray-100 bg-white/80 backdrop-blur-md px-4 sm:px-6">
+            <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between glass-panel border-b border-white/40 px-4 sm:px-6">
                 <div className="flex items-center gap-4">
                     <div className="h-8 w-8 bg-gray-200 rounded-lg animate-pulse sm:hidden" />
                     <div className="hidden sm:block h-6 w-48 bg-gray-200 rounded-md animate-pulse" />
@@ -60,10 +60,13 @@ export function Header() {
     }
 
     return (
-        <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-gray-100 bg-white/80 backdrop-blur-md px-4 sm:px-6 relative">
-            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2">
-                <img src="/logo.png" alt="Monazem Logo" className="h-9 w-9 rounded-lg border border-gray-100 shadow-sm" />
-                <span className="text-lg font-bold text-primary hidden md:block">مُنظِّم</span>
+        <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between glass-panel border-b border-white/40 px-4 sm:px-6 relative">
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2 group cursor-pointer">
+                <div className="relative">
+                    <div className="absolute -inset-1 bg-glow rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                    <img src="/logo.png" alt="Monazem Logo" className="h-9 w-9 rounded-lg border border-white/50 shadow-sm relative z-10" />
+                </div>
+                <span className="text-lg font-black text-primary hidden md:block tracking-tight text-glow transition-all duration-300">مُنظِّم</span>
             </div>
             
             <div className="flex items-center gap-4">
@@ -85,15 +88,18 @@ export function Header() {
 
 
                 {/* User Profile Snippet */}
-                <div className="flex items-center gap-3 border-r border-gray-200 pr-4">
+                <div className="flex items-center gap-3 border-r border-gray-200/50 pr-4">
                     <div className="flex flex-col items-end">
                         <span className="text-sm font-bold text-gray-900">{user?.name || 'مستخدم'}</span>
-                        <span className="text-xs text-primary font-medium">
+                        <span className="text-xs text-primary font-medium opacity-80">
                             {user?.role === 'superAdmin' ? 'مدير النظام' : user?.role === 'teacher' ? 'معلم' : user?.role === 'assistant' ? 'مساعد' : 'مستخدم'}
                         </span>
                     </div>
-                    <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20">
-                        <span className="text-primary font-bold">{user?.name?.charAt(0) || 'م'}</span>
+                    <div className="relative">
+                        <div className="absolute -inset-0.5 bg-gradient-to-r from-primary to-blue-400 rounded-full blur opacity-30"></div>
+                        <div className="relative h-9 w-9 rounded-full bg-white flex items-center justify-center border border-primary/20 shadow-sm">
+                            <span className="text-primary font-bold">{user?.name?.charAt(0) || 'م'}</span>
+                        </div>
                     </div>
                 </div>
             </div>

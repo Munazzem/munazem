@@ -49,7 +49,7 @@ export function OnboardingCard({
     ];
 
     return (
-        <div className="relative bg-gradient-to-br from-[#0f4c81] to-[#0a3357] rounded-2xl p-5 sm:p-6 text-white shadow-lg border border-[#0f4c81]/20">
+        <div className="relative bg-gradient-to-br from-[#1e3a6e] to-[#152a52] rounded-2xl p-5 sm:p-6 text-white shadow-lg border border-[#1e3a6e]/20">
             <button
                 type="button"
                 onClick={dismiss}
