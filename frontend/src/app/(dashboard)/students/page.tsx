@@ -13,6 +13,7 @@ import {
     Edit, 
     Trash2, 
     FileText,
+    FileDown,
     Loader2,
     AlertCircle,
     Phone,
@@ -38,7 +39,7 @@ import { GroupAccordionView } from '@/components/students/GroupAccordionView';
 import { StudentsList } from '@/components/students/StudentsList';
 import { toast } from 'sonner';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { fetchStudentReportHtml } from '@/lib/api/reports';
+import { fetchStudentReportHtml, fetchGroupAttendanceSheetHtml } from '@/lib/api/reports';
 import { printHtmlContent } from '@/lib/utils/print';
 import { generateIdCardsHtml } from '@/lib/utils/printIdCard';
 
@@ -64,6 +65,7 @@ export default function StudentsPage() {
     // Bulk selection
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [bulkPrinting, setBulkPrinting] = useState(false);
+    const [sheetLoading, setSheetLoading] = useState(false);
 
     const handleToggleSelect = (id: string) => {
         setSelectedIds((prev) => {
@@ -131,6 +133,19 @@ export default function StudentsPage() {
             toast.error('حدث خطأ أثناء طباعة الكروت');
         } finally {
             setBulkCardsPrinting(false);
+        }
+    };
+
+    const handlePrintGroupSheet = async () => {
+        if (!selectedGroup) return;
+        setSheetLoading(true);
+        try {
+            const html = await fetchGroupAttendanceSheetHtml(selectedGroup._id);
+            printHtmlContent(html);
+        } catch {
+            toast.error('فشل تحميل الكشف');
+        } finally {
+            setSheetLoading(false);
         }
     };
 
@@ -235,7 +250,18 @@ export default function StudentsPage() {
                     )}
                 </div>
                 {canWrite && (
-                    <div className="flex gap-2 flex-wrap">
+                    <div className="flex gap-2 flex-wrap items-center">
+                        {selectedGroup && !isSearching && (
+                            <Button 
+                                onClick={handlePrintGroupSheet} 
+                                disabled={sheetLoading} 
+                                variant="outline" 
+                                className="gap-2 border-primary text-primary hover:bg-primary hover:text-white"
+                            >
+                                {sheetLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+                                طباعة كشف الحضور
+                            </Button>
+                        )}
                         <BulkAddStudentsModal />
                         <AddStudentModal />
                     </div>

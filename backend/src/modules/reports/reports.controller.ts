@@ -114,6 +114,23 @@ reportsRouter.get(
     }
 );
 
+// ─── GET /reports/group/:groupId/attendance-sheet — Download Group Attendance Sheet
+reportsRouter.get(
+    '/group/:groupId/attendance-sheet',
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = resolveTeacherId((req as any).user);
+            const htmlString = await PdfService.generateGroupAttendanceSheetHtml(
+                req.params['groupId'] as string, teacherId
+            );
+            res.set({
+                'Content-Type': 'text/html; charset=utf-8',
+            });
+            res.send(htmlString);
+        } catch (error) { next(error); }
+    }
+);
+
 // ─── GET /reports/financial/monthly?year=2026&month=2 — Monthly financial report
 reportsRouter.get(
     '/financial/monthly',

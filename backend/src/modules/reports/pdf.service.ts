@@ -5,6 +5,12 @@ import { AttendanceService } from '../attendance/attendance.service.js';
 import { SessionService } from '../sessions/sessions.service.js';
 import { NotFoundException } from '../../common/utils/response/error.responce.js';
 import { UserModel } from '../../database/models/user.model.js';
+import { StudentModel } from '../../database/models/student.model.js';
+import { GroupModel } from '../../database/models/group.model.js';
+import { SessionModel } from '../../database/models/session.model.js';
+import { AttendanceSnapshotModel } from '../../database/models/attendance-snapshot.model.js';
+import { TransactionModel } from '../../database/models/transaction.model.js';
+import { SessionStatus, TransactionType, TransactionCategory } from '../../common/enums/enum.service.js';
 
 export class PdfService {
 
@@ -528,5 +534,173 @@ export class PdfService {
             </table>
         `;
         return this.wrapHtmlContent(`كشف غياب الحصة`, content, teacher?.centerName, teacher?.logoUrl);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // 5. Group Attendance Sheet PDF (Printable)
+    // ─────────────────────────────────────────────────────────────────
+    static async generateGroupAttendanceSheetHtml(groupId: string, teacherId: string): Promise<string> {
+        const group = await GroupModel.findOne({ _id: groupId, teacherId }).lean();
+        if (!group) throw NotFoundException({ message: 'المجموعة غير موجودة' });
+
+        const teacher = await UserModel.findById(teacherId).lean();
+        const centerName = teacher?.centerName || 'منصة مُنظِّم — Monazem';
+        const logoImg = teacher?.logoUrl ? `<img src="${teacher.logoUrl}" alt="Logo" style="max-height: 80px; margin-bottom: 10px; border-radius: 8px;" />` : '';
+
+        // Active students
+        const students = await StudentModel.find({ groupId, teacherId, isActive: true })
+            .select('studentName studentPhone parentPhone studentCode barcode').sort({ studentName: 1 }).lean();
+
+        // Current Month Sessions for the group
+        const now = new Date();
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const monthEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+        // Fetch up to 8 recent completed sessions in this month
+        const sessions = await SessionModel.find({
+            groupId, teacherId, status: SessionStatus.COMPLETED,
+            date: { $gte: monthStart, $lte: monthEnd }
+        }).sort({ date: 1 }).limit(8).lean();
+
+        // Create a fast lookup map for session attendance
+        const attendanceMap: Record<string, Record<string, boolean>> = {}; // sessionId -> { studentId: true }
+        for (const s of sessions) {
+            const sid = s._id.toString();
+            attendanceMap[sid] = {};
+            const snapshot = await AttendanceSnapshotModel.findOne({ sessionId: s._id }).lean();
+            if (snapshot) {
+                for (const ps of snapshot.presentStudents) {
+                    attendanceMap[sid][ps.studentId.toString()] = true;
+                }
+            }
+        }
+
+        // Subscriptions this month
+        const studentIds = students.map(s => s._id);
+        const subscriptions = await TransactionModel.distinct('studentId', {
+            teacherId,
+            studentId: { $in: studentIds },
+            type: TransactionType.INCOME,
+            category: TransactionCategory.SUBSCRIPTION,
+            date: { $gte: monthStart, $lte: monthEnd }
+        });
+        const activeSubSet = new Set(subscriptions.map((id: any) => id.toString()));
+
+        const monthNamesAr = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
+        const currentMonthName = monthNamesAr[now.getMonth()];
+
+        const content = `
+            <!DOCTYPE html>
+            <html lang="ar" dir="rtl">
+            <head>
+                <meta charset="UTF-8">
+                <style>
+                    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;800&display=swap');
+                    @page { size: A4 landscape; margin: 15mm; }
+                    body {
+                        font-family: 'Cairo', sans-serif;
+                        background-color: #fff;
+                        color: #000;
+                        margin: 0;
+                        font-size: 13px;
+                    }
+                    .header-container {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        border-bottom: 2px solid #000;
+                        padding-bottom: 15px;
+                        margin-bottom: 20px;
+                    }
+                    .header-info { text-align: right; }
+                    .header-info h1 { margin: 0 0 5px 0; font-size: 20px; }
+                    .header-info h2 { margin: 0; font-size: 16px; font-weight: normal; }
+                    .logo-box { text-align: left; }
+                    table {
+                        width: 100%;
+                        border-collapse: collapse;
+                        margin-bottom: 20px;
+                    }
+                    th, td {
+                        border: 1px solid #000;
+                        padding: 8px 4px;
+                        text-align: center;
+                        vertical-align: middle;
+                    }
+                    th {
+                        background-color: #f7f7f7;
+                        font-weight: bold;
+                        -webkit-print-color-adjust: exact;
+                        print-color-adjust: exact;
+                    }
+                    .student-name { text-align: right; padding-right: 8px; width: 18%; }
+                    .checkbox-col { font-size: 18px; }
+                    .session-col { width: 5%; }
+                </style>
+            </head>
+            <body>
+                <div class="header-container">
+                    <div class="header-info">
+                        <h1>${centerName}</h1>
+                        <h2>كشف حضور مجموعة: <strong>${group.name}</strong> — ${group.gradeLevel || ''}</h2>
+                        <h2>خاص بشهر: <strong>${currentMonthName} ${now.getFullYear()}</strong></h2>
+                    </div>
+                    <div class="logo-box">
+                        ${logoImg}
+                    </div>
+                </div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 3%">م</th>
+                            <th class="student-name">اسم الطالب</th>
+                            <th style="width: 10%">رقم الطالب</th>
+                            <th style="width: 10%">رقم ولي الأمر</th>
+                            <th style="width: 5%">اشتراك</th>
+                            ${Array.from({ length: 8 }).map((_, i) => {
+                                const s = sessions[i];
+                                const dateStr = s ? new Date(s.date).toLocaleDateString('ar-EG', { day: 'numeric', month: 'numeric' }) : '-';
+                                return `<th class="session-col">ح${i + 1}<br><span style="font-size:10px; font-weight:normal;">${dateStr}</span></th>`;
+                            }).join('')}
+                            <th style="width: 8%">ملاحظات</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${students.length === 0 ? '<tr><td colspan="14" style="padding: 20px;">لا يوجد طلاب في هذه المجموعة</td></tr>' : 
+                        students.map((student: any, idx: number) => {
+                            const isSub = activeSubSet.has(student._id.toString());
+                            return `
+                            <tr>
+                                <td>${idx + 1}</td>
+                                <td class="student-name">${student.studentName}</td>
+                                <td dir="ltr">${student.studentPhone || '—'}</td>
+                                <td dir="ltr">${student.parentPhone || '—'}</td>
+                                <td class="checkbox-col">${isSub ? '☑' : '☐'}</td>
+                                ${Array.from({ length: 8 }).map((_, i) => {
+                                    const s = sessions[i];
+                                    if (!s) return '<td></td>'; // Future session
+                                    const isPresent = attendanceMap[s._id.toString()]?.[student._id.toString()];
+                                    return `<td style="font-weight:bold; font-size: 16px; color: ${isPresent ? 'green' : 'red'};">
+                                        ${isPresent ? '✓' : '✗'}
+                                    </td>`;
+                                }).join('')}
+                                <td></td>
+                            </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+                <div style="text-align:center; font-size:11px; color:#555; margin-top:30px;">
+                    تم الاستخراج آلياً من منصة "مُنظِّم" التعليمية - ${new Date().toLocaleString('ar-EG')}
+                </div>
+                <script>
+                    window.onload = function() { setTimeout(function() { window.print(); }, 500); }
+                </script>
+            </body>
+            </html>
+        `;
+
+        return content;
     }
 }

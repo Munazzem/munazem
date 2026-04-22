@@ -10,6 +10,7 @@ import {
     Wallet,
     CalendarCheck,
     Download,
+    FileDown,
     Loader2,
     TrendingUp,
     TrendingDown,
@@ -32,6 +33,7 @@ import {
     fetchDailySummary,
     fetchStudentReportHtml,
     fetchGroupReportHtml,
+    fetchGroupAttendanceSheetHtml,
     fetchMonthlyReportHtml,
 } from '@/lib/api/reports';
 import { printHtmlContent } from '@/lib/utils/print';
@@ -122,6 +124,16 @@ export default function ReportsPage() {
             const html = await fetchGroupReportHtml(selectedGroup.id);
             printHtmlContent(html);
         } catch { toast.error('فشل تحميل التقرير'); }
+        finally { setPdfLoading(false); }
+    };
+
+    const handleGroupSheet = async () => {
+        if (!selectedGroup) return;
+        setPdfLoading(true);
+        try {
+            const html = await fetchGroupAttendanceSheetHtml(selectedGroup.id);
+            printHtmlContent(html);
+        } catch { toast.error('فشل تحميل الكشف'); }
         finally { setPdfLoading(false); }
     };
 
@@ -311,6 +323,7 @@ export default function ReportsPage() {
                             <GroupReportCard
                                 report={groupReport}
                                 onDownloadPdf={handleGroupPdf}
+                                onDownloadSheet={handleGroupSheet}
                                 pdfLoading={pdfLoading}
                                 isTeacher={isTeacher}
                             />
@@ -537,8 +550,8 @@ function StudentReportCard({ report, onDownloadPdf, pdfLoading, isTeacher }: {
     );
 }
 
-function GroupReportCard({ report, onDownloadPdf, pdfLoading, isTeacher }: {
-    report: any; onDownloadPdf: () => void; pdfLoading: boolean; isTeacher: boolean;
+function GroupReportCard({ report, onDownloadPdf, onDownloadSheet, pdfLoading, isTeacher }: {
+    report: any; onDownloadPdf: () => void; onDownloadSheet: () => void; pdfLoading: boolean; isTeacher: boolean;
 }) {
     // Backend returns: { group, attendance, revenue }
     const group      = report.group      ?? {};
@@ -566,10 +579,16 @@ function GroupReportCard({ report, onDownloadPdf, pdfLoading, isTeacher }: {
                         </p>
                     </div>
                     {isTeacher && (
-                        <Button onClick={onDownloadPdf} disabled={pdfLoading} variant="outline" className="gap-2 shrink-0">
-                            {pdfLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                            تحميل PDF
-                        </Button>
+                        <div className="flex gap-2 shrink-0">
+                            <Button onClick={onDownloadSheet} disabled={pdfLoading} variant="outline" className="gap-2 border-primary text-primary hover:bg-primary hover:text-white">
+                                {pdfLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+                                طباعة كشف الحضور
+                            </Button>
+                            <Button onClick={onDownloadPdf} disabled={pdfLoading} variant="outline" className="gap-2">
+                                {pdfLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                                تحميل تقرير PDF
+                            </Button>
+                        </div>
                     )}
                 </div>
             </div>
