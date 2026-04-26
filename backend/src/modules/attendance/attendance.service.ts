@@ -7,6 +7,11 @@ import { NotFoundException, BadRequestException, ConflictException } from '../..
 import type { RecordAttendanceDTO, BatchAttendanceDTO } from '../../types/attendance-dto.types.js';
 import mongoose from 'mongoose';
 
+// ─── Date helper ─────────────────────────────────────────────────────────────
+/** Returns midnight (00:00:00.000) of the given date in LOCAL time, as ms. */
+const startOfDay = (d: Date): number =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+
 export class AttendanceService {
 
     // ─── Record single attendance (QR scan or manual) ──────────────
@@ -19,6 +24,11 @@ export class AttendanceService {
         }
         if (session.status === SessionStatus.CANCELLED) {
             throw BadRequestException({ message: 'هذه الحصة مُلغاة' });
+        }
+
+        // Guard: cannot record attendance before the session day
+        if (startOfDay(new Date()) < startOfDay(new Date(session.date))) {
+            throw BadRequestException({ message: 'لا يمكن تسجيل الحضور قبل يوم الحصة' });
         }
 
         // Resolve student — scoped to this teacher to prevent cross-tenant scan
@@ -112,6 +122,11 @@ export class AttendanceService {
         if (!session) throw NotFoundException({ message: 'الحصة غير موجودة' });
         if (session.status === SessionStatus.COMPLETED) {
             throw BadRequestException({ message: 'انتهت هذه الحصة ولا يمكن تسجيل حضور عليها' });
+        }
+
+        // Guard: cannot record attendance before the session day
+        if (startOfDay(new Date()) < startOfDay(new Date(session.date))) {
+            throw BadRequestException({ message: 'لا يمكن تسجيل الحضور قبل يوم الحصة' });
         }
 
         // Build bulk records — insertMany with ordered:false to continue on duplicate errors
