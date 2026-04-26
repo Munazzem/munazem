@@ -170,10 +170,7 @@ export default function ExamDetailPage() {
                     {examData.status === 'DRAFT' && (
                         <>
                             <Button
-                                onClick={() => {
-                                    if (questions.length === 0) { toast.error('أضف أسئلة قبل النشر'); return; }
-                                    publishMutation.mutate();
-                                }}
+                                onClick={() => publishMutation.mutate()}
                                 disabled={publishMutation.isPending}
                                 className="gap-2 flex-1 sm:flex-none"
                             >

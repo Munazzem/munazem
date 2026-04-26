@@ -45,6 +45,24 @@ reportsRouter.get(
     }
 );
 
+// ─── GET /reports/daily-summary/pdf — End-of-day recap PDF
+reportsRouter.get(
+    '/daily-summary/pdf',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const user = (req as any).user;
+            const teacherId = user.role === UserRole.assistant ? user.teacherId : user.userId;
+            const date = req.query['date'] as string | undefined;
+            const htmlString = await PdfService.generateDailySummaryPdf(teacherId, date);
+            res.set({
+                'Content-Type': 'text/html; charset=utf-8',
+            });
+            res.send(htmlString);
+        } catch (error) { next(error); }
+    }
+);
+
 // All remaining routes: Teacher + Assistant (full access)
 reportsRouter.use(authorizeRoles(UserRole.teacher, UserRole.assistant));
 
