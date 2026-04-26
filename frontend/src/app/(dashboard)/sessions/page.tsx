@@ -199,7 +199,7 @@ export default function SessionsPage() {
                             </Button>
 
                             {showMonthPicker && (
-                                <div className="absolute top-full mt-2 left-0 z-50 bg-white border border-gray-200 rounded-xl shadow-lg p-4 w-64" dir="rtl">
+                                <div className="absolute top-full mt-2 right-0 sm:left-0 sm:right-auto z-50 bg-white border border-gray-200 rounded-xl shadow-lg p-4 w-64" dir="rtl">
                                     <p className="text-xs font-bold text-gray-600 mb-3">اختر الشهر للتوليد</p>
                                     <div className="flex items-center justify-between mb-3">
                                         <button onClick={() => setGenYear((y) => y - 1)} className="p-1 hover:text-primary rounded">

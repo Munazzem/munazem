@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import Link from 'next/link';
+import { Eye, EyeOff } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,6 +31,7 @@ export default function LoginPage() {
     const login = useAuthStore((state) => state.login);
     const router = useRouter();
     const [isLoading, setIsLoading] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
 
     const onSubmit = async (data: { phone: string; password: string }) => {
         setIsLoading(true);
@@ -95,14 +97,23 @@ export default function LoginPage() {
                                 <FormItem>
                                     <FormLabel>كلمة المرور</FormLabel>
                                     <FormControl>
-                                        <Input 
-                                            type="password" 
-                                            placeholder="••••••••" 
-                                            {...field} 
-                                            disabled={isLoading}
-                                            className="h-12 bg-gray-50/50 text-left"
-                                            dir="ltr"
-                                        />
+                                        <div className="relative">
+                                            <Input 
+                                                type={showPassword ? "text" : "password"} 
+                                                placeholder="••••••••" 
+                                                {...field} 
+                                                disabled={isLoading}
+                                                className="h-12 bg-gray-50/50 text-left pr-10"
+                                                dir="ltr"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowPassword(!showPassword)}
+                                                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                                            >
+                                                {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                                            </button>
+                                        </div>
                                     </FormControl>
                                     <FormMessage />
                                 </FormItem>
