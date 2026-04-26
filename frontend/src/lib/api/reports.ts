@@ -18,6 +18,12 @@ export const fetchDailySummary = async (date?: string): Promise<IDailySummary> =
     return (res as any).data;
 };
 
+export const fetchDailySummaryHtml = async (date?: string): Promise<string> => {
+    const query = date ? `?date=${date}` : '';
+    const res = await apiClient.get(`/reports/daily-summary/pdf${query}`);
+    return res as unknown as string;
+};
+
 export const fetchStudentReport = async (studentId: string) => {
     const res = await apiClient.get(`/reports/student/${studentId}`);
     return (res as any).data;

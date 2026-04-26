@@ -88,7 +88,7 @@ export class ExamsService {
     static async publishExam(examId: string, teacherId: string) {
         const exam = await ExamModel.findOne({ _id: examId, teacherId }).lean();
         if (!exam) throw NotFoundException({ message: 'الامتحان غير موجود' });
-        if (exam.questions.length === 0) throw BadRequestException({ message: 'لا يمكن نشر امتحان بدون أسئلة' });
+        // Allow publishing even without questions
         return await ExamModel.findOneAndUpdate(
             { _id: examId, teacherId },
             { status: ExamStatus.PUBLISHED },

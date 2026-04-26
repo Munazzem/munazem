@@ -31,6 +31,7 @@ import {
     fetchGroupReport,
     fetchFinancialMonthlyReport,
     fetchDailySummary,
+    fetchDailySummaryHtml,
     fetchStudentReportHtml,
     fetchGroupReportHtml,
     fetchGroupAttendanceSheetHtml,
@@ -107,6 +108,15 @@ export default function ReportsPage() {
     });
 
     // ── PDF downloads ──────────────────────────────────────────────────────
+    const handleDailyPdf = async () => {
+        setPdfLoading(true);
+        try {
+            const html = await fetchDailySummaryHtml(dailyDate);
+            printHtmlContent(html);
+        } catch { toast.error('فشل تحميل تقرير اليوم'); }
+        finally { setPdfLoading(false); }
+    };
+
     const handleStudentPdf = async () => {
         if (!selectedStudent) return;
         setPdfLoading(true);
@@ -189,15 +199,21 @@ export default function ReportsPage() {
             {/* ── DAILY SUMMARY ─────────────────────────────────────────── */}
             {activeTab === 'daily' && (
                 <div className="space-y-5">
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-                        <label className="text-sm font-medium text-gray-600 shrink-0">اختر يوم:</label>
-                        <Input
-                            type="date"
-                            value={dailyDate}
-                            onChange={(e) => setDailyDate(e.target.value)}
-                            className="w-full sm:w-48 bg-white border-gray-200"
-                            dir="ltr"
-                        />
+                    <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4">
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                            <label className="text-sm font-medium text-gray-600 shrink-0">اختر يوم:</label>
+                            <Input
+                                type="date"
+                                value={dailyDate}
+                                onChange={(e) => setDailyDate(e.target.value)}
+                                className="w-full sm:w-48 bg-white border-gray-200"
+                                dir="ltr"
+                            />
+                        </div>
+                        <Button onClick={handleDailyPdf} disabled={pdfLoading} className="gap-2 shrink-0">
+                            {pdfLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                            تحميل تقرير اليوم
+                        </Button>
                     </div>
 
                     {dailyLoading ? (

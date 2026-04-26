@@ -28,7 +28,8 @@ const questionSchema = z.object({
 const schema = z.object({
     title:        z.string().min(3, 'أدخل عنوان الامتحان'),
     date:         z.string().min(1, 'أدخل التاريخ'),
-    passingMarks: z.number({ error: 'أدخل درجة النجاح' }).min(1),
+    totalMarks:   z.number({ error: 'أدخل الدرجة النهائية' }).min(1, 'الدرجة النهائية يجب أن تكون 1 على الأقل'),
+    passingMarks: z.number({ error: 'أدخل درجة النجاح' }).optional(),
     gradeLevel:   z.string().optional(),
     groupIds:     z.array(z.string()).optional(),
     questions:    z.array(questionSchema).optional(),
@@ -69,20 +70,26 @@ export function CreateExamModal({ open, onOpenChange }: Props) {
     });
     const groups = (groupsData as any)?.data ?? (groupsData as any) ?? [];
 
+    const watchedGradeLevel = watch('gradeLevel');
+    const filteredGroups = watchedGradeLevel ? groups.filter((g: any) => g.gradeLevel === watchedGradeLevel) : groups;
+
     const mutation = useMutation({
-        mutationFn: (values: FormValues) => {
-            const totalMarks   = (values.questions ?? []).reduce((s, q) => s + (q.marks || 0), 0);
-            const autoTotal    = totalMarks || 100;
-            // Use entered passingMarks if set, else default to 50% of total
-            const passingMarks = values.passingMarks || Math.round(autoTotal * 0.5);
+        mutationFn: async (values: FormValues) => {
+            const questionsTotal = (values.questions ?? []).reduce((s, q) => s + (q.marks || 0), 0);
+            
+            if ((values.questions?.length ?? 0) > 0 && questionsTotal !== values.totalMarks) {
+                throw new Error(`مجموع درجات الأسئلة (${questionsTotal}) لا يساوي الدرجة النهائية للامتحان (${values.totalMarks})`);
+            }
+
+            const passingMarks = values.passingMarks || Math.round(values.totalMarks * 0.5);
             return createExam({
                 title:        values.title,
                 date:         values.date,
-                totalMarks:   autoTotal,
+                totalMarks:   values.totalMarks,
                 passingMarks,
                 gradeLevel:   values.gradeLevel,
                 groupIds:     values.groupIds?.length ? values.groupIds : undefined,
-                questions:    values.questions as IQuestion[],
+                questions:    values.questions?.length ? (values.questions as IQuestion[]) : undefined,
                 source:       'MANUAL',
             });
         },
@@ -92,7 +99,10 @@ export function CreateExamModal({ open, onOpenChange }: Props) {
             reset();
             onOpenChange(false);
         },
-        
+        onError: (err: any) => {
+            const backendMsg = err.response?.data?.message;
+            toast.error(backendMsg || err.message || 'حدث خطأ أثناء إنشاء الامتحان');
+        }
     });
 
     const addQuestion = () => {
@@ -130,6 +140,17 @@ export function CreateExamModal({ open, onOpenChange }: Props) {
                             {errors.date && <p className="text-red-500 text-xs mt-1">{errors.date.message}</p>}
                         </div>
                         <div>
+                            <label className="text-sm font-medium text-gray-700 block mb-1">الدرجة النهائية *</label>
+                            <Input
+                                type="number"
+                                min={1}
+                                {...register('totalMarks', { valueAsNumber: true })}
+                                placeholder="مثال: 20"
+                                dir="ltr"
+                            />
+                            {errors.totalMarks && <p className="text-red-500 text-xs mt-1">{errors.totalMarks.message}</p>}
+                        </div>
+                        <div>
                             <label className="text-sm font-medium text-gray-700 block mb-1">
                                 درجة النجاح
                                 <span className="text-xs text-gray-400 mr-1">(50% تلقائياً)</span>
@@ -138,7 +159,7 @@ export function CreateExamModal({ open, onOpenChange }: Props) {
                                 type="number"
                                 min={1}
                                 {...register('passingMarks', { valueAsNumber: true })}
-                                placeholder="تُحسب تلقائياً من مجموع الدرجات"
+                                placeholder="تُحسب تلقائياً من الدرجة النهائية"
                                 dir="ltr"
                             />
                             {errors.passingMarks && <p className="text-red-500 text-xs mt-1">{errors.passingMarks.message}</p>}
@@ -158,11 +179,11 @@ export function CreateExamModal({ open, onOpenChange }: Props) {
                     </div>
 
                     {/* Groups */}
-                    {groups.length > 0 && (
+                    {filteredGroups.length > 0 && (
                         <div>
                             <label className="text-sm font-medium text-gray-700 block mb-2">المجموعات المستهدفة</label>
                             <div className="flex flex-wrap gap-2">
-                                {groups.map((g: any) => (
+                                {filteredGroups.map((g: any) => (
                                     <button
                                         key={g._id}
                                         type="button"
