@@ -88,3 +88,16 @@ export const recordExpense = async (data: {
     const res = await apiClient.post('/payments/expense', data);
     return (res as any).data;
 };
+
+export const updateTransaction = async (
+    transactionId: string,
+    data: {
+        amount?: number;
+        category?: TransactionCategory;
+        description?: string;
+        date?: string;
+    }
+): Promise<ITransaction> => {
+    const res = await apiClient.patch(`/payments/${transactionId}`, data);
+    return (res as any).data;
+};

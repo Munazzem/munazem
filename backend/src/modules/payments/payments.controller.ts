@@ -3,10 +3,11 @@ import type { Request, Response, NextFunction } from 'express';
 import { PaymentsService } from './payments.service.js';
 import { UserRole, TransactionCategory } from '../../common/enums/enum.service.js';
 import { SuccessResponse } from '../../common/utils/response/success.responce.js';
+import { ForbiddenException } from '../../common/utils/response/error.responce.js';
 import { authenticate } from '../../middlewares/auth.middleware.js';
 import { authorizeRoles } from '../../middlewares/roles.middleware.js';
 import { validate } from '../../middlewares/validate.middleware.js';
-import { recordSubscriptionSchema, batchSubscriptionSchema, recordExpenseSchema, recordNotebookSaleSchema, upsertPriceSettingsSchema } from '../../validation/payment.validation.js';
+import { recordSubscriptionSchema, batchSubscriptionSchema, recordExpenseSchema, recordNotebookSaleSchema, upsertPriceSettingsSchema, updateTransactionSchema } from '../../validation/payment.validation.js';
 
 const paymentsRouter = Router();
 
@@ -150,6 +151,28 @@ paymentsRouter.get(
             const month = parseInt(req.query['month'] as string) || (now.getUTCMonth() + 1);
             const ledger = await PaymentsService.getMonthlyLedger(teacherId, year, month);
             return SuccessResponse({ res, data: ledger, message: 'تم جلب الجارد الشهري بنجاح' });
+        } catch (error) { next(error); }
+    }
+);
+
+// PATCH /payments/:id — Update transaction (Teacher only)
+paymentsRouter.patch(
+    '/:id',
+    (req: Request, _res: Response, next: NextFunction) => {
+        try {
+            const user = (req as any).user;
+            if (!user || user.role !== UserRole.teacher) {
+                throw ForbiddenException({ message: 'عفواً، المدرس فقط هو من يملك صلاحية تعديل البيانات المالية' });
+            }
+            next();
+        } catch (error) { next(error); }
+    },
+    validate(updateTransactionSchema),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = (req as any).user.userId;
+            const updated = await PaymentsService.updateTransaction(teacherId, req.params['id'] as string, req.body);
+            return SuccessResponse({ res, data: updated, message: 'تم تعديل المعاملة بنجاح' });
         } catch (error) { next(error); }
     }
 );
