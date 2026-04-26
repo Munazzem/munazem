@@ -43,18 +43,15 @@ export function InstallPrompt() {
     const handleDismiss = () => {
         setIsVisible(false);
         setIsDismissed(true);
-        // Maybe store in localStorage to not show again for a while
-        localStorage.setItem('pwa-prompt-dismissed', Date.now().toString());
+        // Store in sessionStorage to not show again in THIS session
+        sessionStorage.setItem('pwa-prompt-dismissed-session', 'true');
     };
 
-    // Check if previously dismissed (optional: wait 7 days)
+    // Check if previously dismissed in this session
     useEffect(() => {
-        const dismissedAt = localStorage.getItem('pwa-prompt-dismissed');
-        if (dismissedAt) {
-            const daysSinceDismissal = (Date.now() - parseInt(dismissedAt)) / (1000 * 60 * 60 * 24);
-            if (daysSinceDismissal < 7) {
-                setIsDismissed(true);
-            }
+        const dismissed = sessionStorage.getItem('pwa-prompt-dismissed-session');
+        if (dismissed) {
+            setIsDismissed(true);
         }
     }, []);
 
