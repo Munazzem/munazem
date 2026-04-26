@@ -24,6 +24,11 @@ import parentRouter from './modules/parent/parent.controller.js';
 
 export const bootstrap = () => {
     const app = express();
+    
+    // Trust the reverse proxy (e.g. Render, Nginx, Vercel) to get the real user IP
+    // Without this, all requests will look like they come from the load balancer's IP!
+    app.set('trust proxy', 1);
+
     app.use(helmet());
     app.use(express.json());
     const allowedOrigins = envVars.frontendUrl
@@ -83,10 +88,10 @@ export const bootstrap = () => {
 
     DBConnection()
 
-    // Global rate limiter: 300 requests per 15 minutes per IP
+    // Global rate limiter: 3000 requests per 15 minutes per IP
     const globalLimiter = rateLimit({
         windowMs: 15 * 60 * 1000,
-        limit: 300,
+        limit: 3000,
         message: { message: 'كثرة الطلبات، يرجى المحاولة لاحقاً' },
         standardHeaders: true,
         legacyHeaders: false,

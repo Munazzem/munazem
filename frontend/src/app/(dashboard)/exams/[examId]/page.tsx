@@ -133,20 +133,19 @@ export default function ExamDetailPage() {
     const summary   = resultsData as any;
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-500" dir="rtl">
+        <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-500" dir="rtl">
             {/* Header */}
-            <div className="flex items-start gap-3">
+            <div className="flex items-start gap-2">
                 <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => router.push('/exams')}
-                    className="shrink-0 mt-0.5"
+                    className="shrink-0 mt-0.5 h-8 w-8 p-0"
                 >
                     <ArrowRight className="h-4 w-4" />
                 </Button>
                 <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <h1 className="text-2xl font-bold text-gray-900 truncate">{examData.title}</h1>
+                    <div className="flex flex-wrap items-center gap-1.5 mb-1">
                         <StatusBadge status={examData.status} />
                         {examData.source === 'AI_GENERATED' && (
                             <span className="inline-flex items-center gap-1 text-xs text-purple-500 bg-purple-50 border border-purple-100 px-2 py-0.5 rounded-full">
@@ -154,11 +153,12 @@ export default function ExamDetailPage() {
                             </span>
                         )}
                     </div>
-                    <div className="flex flex-wrap gap-x-5 gap-y-1 mt-1 text-sm text-gray-500">
-                        {examData.gradeLevel && <span>{examData.gradeLevel}</span>}
+                    <h1 className="text-lg sm:text-2xl font-bold text-gray-900 leading-snug break-words">{examData.title}</h1>
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-xs sm:text-sm text-gray-500">
+                        {examData.gradeLevel && <span className="bg-gray-100 px-2 py-0.5 rounded-full text-xs">{examData.gradeLevel}</span>}
                         <span>{new Date(examData.date).toLocaleDateString('ar-EG')}</span>
-                        <span>الدرجة الكلية: <strong className="text-gray-700">{examData.totalMarks}</strong></span>
-                        <span>درجة النجاح: <strong className="text-gray-700">{examData.passingMarks}</strong></span>
+                        <span>الدرجة: <strong className="text-gray-700">{examData.totalMarks}</strong></span>
+                        <span>النجاح: <strong className="text-gray-700">{examData.passingMarks}</strong></span>
                         <span>{questions.length} سؤال</span>
                     </div>
                 </div>
@@ -175,7 +175,7 @@ export default function ExamDetailPage() {
                                     publishMutation.mutate();
                                 }}
                                 disabled={publishMutation.isPending}
-                                className="gap-2"
+                                className="gap-2 flex-1 sm:flex-none"
                             >
                                 {publishMutation.isPending
                                     ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -187,7 +187,7 @@ export default function ExamDetailPage() {
                                 variant="destructive"
                                 onClick={() => setConfirmDelete(true)}
                                 disabled={deleteMutation.isPending}
-                                className="gap-2"
+                                className="gap-2 flex-1 sm:flex-none"
                             >
                                 {deleteMutation.isPending
                                     ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -200,7 +200,7 @@ export default function ExamDetailPage() {
                     {examData.status === 'PUBLISHED' && (
                         <Button
                             onClick={() => setShowBatchModal(true)}
-                            className="gap-2"
+                            className="gap-2 w-full sm:w-auto"
                         >
                             <ListChecks className="h-4 w-4" />
                             إدخال النتائج دفعة واحدة
@@ -433,7 +433,7 @@ export default function ExamDetailPage() {
                                                                 </a>
                                                             </div>
                                                         </div>
-                                                        <div className="flex gap-4 mt-1 text-sm text-gray-500">
+                                                        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-sm text-gray-500">
                                                             <span>الدرجة: <strong className="text-gray-800">{r.score}</strong></span>
                                                             <span>النسبة: <strong className="text-gray-800">{r.percentage}%</strong></span>
                                                             <span>التقدير: <strong className={GRADE_COLORS[r.grade] ? 'font-bold' : ''}>{r.grade}</strong></span>
