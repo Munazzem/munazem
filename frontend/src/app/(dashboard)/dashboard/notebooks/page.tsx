@@ -210,10 +210,17 @@ export default function NotebooksPage() {
         setConfirmDeleteNb(nb);
     };
 
-    const notebooks: INotebook[] = (data as any)?.data ?? (data as any) ?? [];
-    const pagination = (data as any)?.pagination;
+    const apiResult = (data as any);
+    const notebooks: INotebook[] = Array.isArray(apiResult?.data?.data) 
+        ? apiResult.data.data 
+        : Array.isArray(apiResult?.data) 
+            ? apiResult.data 
+            : Array.isArray(apiResult) 
+                ? apiResult 
+                : [];
+    const pagination = apiResult?.data?.pagination || apiResult?.pagination;
 
-    const lowStock = notebooks.filter((nb) => nb.stock <= 5).length;
+    const lowStock = notebooks?.filter((nb) => nb.stock <= 5).length || 0;
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500" dir="rtl">
@@ -251,7 +258,7 @@ export default function NotebooksPage() {
                     </SelectTrigger>
                     <SelectContent dir="rtl">
                         <SelectItem value="ALL">كل المراحل</SelectItem>
-                        {allowedGrades.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                        {allowedGrades?.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
                     </SelectContent>
                 </Select>
             </div>
@@ -283,7 +290,7 @@ export default function NotebooksPage() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
-                                {notebooks.map((nb) => (
+                                {notebooks?.map((nb) => (
                                     <tr key={nb._id} className="hover:bg-gray-50/50 transition-colors">
                                         <td className="px-6 py-3">
                                             <div className="flex items-center gap-3">

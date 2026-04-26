@@ -14,9 +14,9 @@ export const validate = (schema: ZodTypeAny) => {
     } catch (error: any) {
       if (error instanceof ZodError) {
         // Collect all error messages from Zod
-        const errorMessage = (error as any).errors.map((err: any) => err.message).join(', ');
+        const errorMessage = (error as any).issues.map((err: any) => err.message).join(', ');
         // Pass the error to the global error handler
-        return next(BadRequestException({ message: errorMessage, extra: (error as any).errors }));
+        return next(BadRequestException({ message: errorMessage, extra: (error as any).issues }));
       }
       next(error);
     }

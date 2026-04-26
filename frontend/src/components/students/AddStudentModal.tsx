@@ -79,7 +79,12 @@ export function AddStudentModal() {
       queryFn: () => fetchGroups({ limit: 100 }),
   });
 
-  const groups: Group[] = groupsData?.data || [];
+  const rawGroupsData = groupsData as any;
+  const groups: Group[] = Array.isArray(rawGroupsData?.data?.data) 
+    ? rawGroupsData.data.data 
+    : Array.isArray(rawGroupsData?.data) 
+        ? rawGroupsData.data 
+        : [];
   
   // Extract unique grade levels from groups, filtered by teacher's allowed stage
   const availableGradeLevels = Array.from(

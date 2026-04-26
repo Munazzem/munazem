@@ -68,7 +68,12 @@ export function QuickNotebookSaleModal({ open, onOpenChange }: Props) {
         enabled: debouncedSearch.length >= 2 && !selectedStudent,
         staleTime: 30 * 1000,
     });
-    const studentResults: StudentWithGroup[] = studentsData?.data ?? [];
+    const rawStudents = studentsData as any;
+    const studentResults: StudentWithGroup[] = Array.isArray(rawStudents?.data?.data)
+        ? rawStudents.data.data
+        : Array.isArray(rawStudents?.data)
+            ? rawStudents.data
+            : [];
 
     // Notebooks filtered by student grade level
     const { data: notebooksData, isLoading: notebooksLoading } = useQuery({
@@ -77,7 +82,12 @@ export function QuickNotebookSaleModal({ open, onOpenChange }: Props) {
         enabled: !!selectedStudent,
         staleTime: 5 * 60 * 1000,
     });
-    const notebooks: INotebook[] = notebooksData?.data ?? [];
+    const rawNotebooks = notebooksData as any;
+    const notebooks: INotebook[] = Array.isArray(rawNotebooks?.data?.data)
+        ? rawNotebooks.data.data
+        : Array.isArray(rawNotebooks?.data)
+            ? rawNotebooks.data
+            : [];
 
     const selectedNotebook = notebooks.find(n => n._id === notebookId) ?? null;
     const total = selectedNotebook
@@ -162,14 +172,14 @@ export function QuickNotebookSaleModal({ open, onOpenChange }: Props) {
                                     autoFocus
                                 />
                                 {/* Dropdown */}
-                                {(studentsLoading || studentResults.length > 0) && (
-                                    <div className="absolute top-full mt-1 right-0 left-0 bg-white border border-gray-100 rounded-xl shadow-lg z-50 overflow-hidden">
-                                        {studentsLoading ? (
-                                            <div className="flex items-center gap-2 px-4 py-3 text-sm text-gray-400">
-                                                <Loader2 className="h-4 w-4 animate-spin" /> جاري البحث...
-                                            </div>
-                                        ) : (
-                                            studentResults.map(s => (
+                                        {(studentsLoading || (studentResults?.length ?? 0) > 0) && (
+                                            <div className="absolute top-full mt-1 right-0 left-0 bg-white border border-gray-100 rounded-xl shadow-lg z-50 overflow-hidden">
+                                                {studentsLoading ? (
+                                                    <div className="flex items-center gap-2 px-4 py-3 text-sm text-gray-400">
+                                                        <Loader2 className="h-4 w-4 animate-spin" /> جاري البحث...
+                                                    </div>
+                                                ) : (
+                                                    studentResults?.map(s => (
                                                 <button
                                                     key={s._id}
                                                     onClick={() => { setSelectedStudent(s); setSearch(''); }}
@@ -211,7 +221,7 @@ export function QuickNotebookSaleModal({ open, onOpenChange }: Props) {
                                         <SelectValue placeholder="اختر مذكرة..." />
                                     </SelectTrigger>
                                     <SelectContent dir="rtl">
-                                        {notebooks.map(n => (
+                                        {notebooks?.map(n => (
                                             <SelectItem
                                                 key={n._id}
                                                 value={n._id}
