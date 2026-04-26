@@ -114,7 +114,7 @@ export class AttendanceService {
             throw BadRequestException({ message: 'انتهت هذه الحصة ولا يمكن تسجيل حضور عليها' });
         }
 
-        // Build bulk records — insertMany with ordered:false to continue on duplicate errors
+        // Build bulk records
         const docs = data.records.map(r => ({
             studentId: new mongoose.Types.ObjectId(r.studentId),
             sessionId: new mongoose.Types.ObjectId(data.sessionId),
@@ -125,15 +125,30 @@ export class AttendanceService {
             notes:     r.notes,
         }));
 
-        const result = await AttendanceModel.insertMany(docs, {
-            ordered: false,   // continue on errors (e.g., duplicate unique constraint)
-        }).catch((err: any) => {
-            // Partial success is ok — return what succeeded
-            if (err.writeErrors || err.insertedDocs) return err.insertedDocs ?? [];
-            throw err;
-        });
+        // Chunk the inserts to avoid hitting MongoDB Atlas Free Tier IOPS limit (100 ops/sec)
+        const BATCH_SIZE = 50; 
+        let totalInserted = 0;
 
-        return { inserted: (result as any[]).length, total: docs.length };
+        for (let i = 0; i < docs.length; i += BATCH_SIZE) {
+            const chunk = docs.slice(i, i + BATCH_SIZE);
+            try {
+                const result = await AttendanceModel.insertMany(chunk, { ordered: false });
+                totalInserted += (result as any[]).length;
+            } catch (err: any) {
+                // Partial success is ok — count what succeeded
+                if (err.writeErrors || err.insertedDocs) {
+                    totalInserted += (err.insertedDocs?.length || 0);
+                } else {
+                    throw err; // Rethrow if it's a fatal error
+                }
+            }
+            // A tiny artificial delay (50ms) to let the database breathe and reset its IOPS counter
+            if (i + BATCH_SIZE < docs.length) {
+                await new Promise(resolve => setTimeout(resolve, 50));
+            }
+        }
+
+        return { inserted: totalInserted, total: docs.length };
     }
 
     // ─── Get attendance for a session (the live list) ────────────────
@@ -191,6 +206,10 @@ export class AttendanceService {
         const absentStudents:  any[] = [];
         const guestStudents:   any[] = [];
 
+        // Arrays to accumulate bulk operations (to avoid hitting DB inside the loop)
+        const excusedAttendanceDocsToInsert: any[] = [];
+        const studentIdsToDecrementExcuse: any[] = [];
+
         for (const student of allStudents) {
             const record = attendedSet.get(student._id.toString());
             
@@ -219,7 +238,7 @@ export class AttendanceService {
                     
                     // Also create an actual attendance record as EXCUSED if it doesn't exist
                     if (!record) {
-                        await AttendanceModel.create({
+                        excusedAttendanceDocsToInsert.push({
                             studentId: student._id,
                             sessionId: session._id,
                             status:    AttendanceStatus.EXCUSED,
@@ -232,10 +251,7 @@ export class AttendanceService {
 
                     // Decrement session count if it was a session-based excuse
                     if (hasSessionExcuse) {
-                        await StudentModel.updateOne(
-                            { _id: student._id },
-                            { $inc: { excusedSessionsCount: -1 } }
-                        );
+                        studentIdsToDecrementExcuse.push(student._id);
                     }
                 } else {
                     absentStudents.push({
@@ -265,6 +281,18 @@ export class AttendanceService {
                     });
                 }
             }
+        }
+
+        // Execute Accumulated Bulk Operations outside the loop
+        if (excusedAttendanceDocsToInsert.length > 0) {
+            await AttendanceModel.insertMany(excusedAttendanceDocsToInsert, { ordered: false }).catch(() => {});
+        }
+        
+        if (studentIdsToDecrementExcuse.length > 0) {
+            await StudentModel.updateMany(
+                { _id: { $in: studentIdsToDecrementExcuse } },
+                { $inc: { excusedSessionsCount: -1 } }
+            );
         }
 
         // Run session update + snapshot creation in parallel
