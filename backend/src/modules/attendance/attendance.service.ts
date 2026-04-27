@@ -2,6 +2,7 @@ import { AttendanceModel }         from '../../database/models/attendance.model.
 import { AttendanceSnapshotModel }  from '../../database/models/attendance-snapshot.model.js';
 import { SessionModel }             from '../../database/models/session.model.js';
 import { StudentModel }             from '../../database/models/student.model.js';
+import { GroupModel }               from '../../database/models/group.model.js';
 import { SessionStatus, AttendanceStatus } from '../../common/enums/enum.service.js';
 import { NotFoundException, BadRequestException, ConflictException } from '../../common/utils/response/error.responce.js';
 import type { RecordAttendanceDTO, BatchAttendanceDTO } from '../../types/attendance-dto.types.js';
@@ -44,6 +45,15 @@ export class AttendanceService {
               }).lean();
         if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
 
+        // ── Step 1: Grade-level enforcement ──────────────────────────────────
+        // Fetch the session's group to compare grade levels (lean for performance)
+        const sessionGroup = await GroupModel.findById(session.groupId, { gradeLevel: 1 }).lean();
+        if (!sessionGroup) throw NotFoundException({ message: 'المجموعة المرتبطة بالحصة غير موجودة' });
+
+        if (student.gradeLevel !== sessionGroup.gradeLevel) {
+            throw BadRequestException({ message: 'عفواً، هذه المجموعة لمرحلة دراسية مختلفة' });
+        }
+
         try {
             // Check for existing record to prevent duplicates regardless of DB index state
             const existing = await AttendanceModel.findOne({
@@ -55,7 +65,8 @@ export class AttendanceService {
                 throw ConflictException({ message: 'تم تسجيل حضور هذا الطالب بالفعل في هذه الحصة' });
             }
 
-            // Auto-detect guest: student not in this session's group
+            // ── Step 2: Guest detection ───────────────────────────────────────
+            // Grades match (enforced above) — guest if from a different group
             const isGuest = student.groupId?.toString() !== session.groupId?.toString();
 
             const record = await AttendanceModel.create({
