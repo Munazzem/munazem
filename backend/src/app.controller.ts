@@ -7,7 +7,7 @@ import mongoSanitize from 'express-mongo-sanitize';
 import { DBConnection } from './database/connection.js';
 import { globalErrorHandler } from './common/utils/response/error.responce.js';
 import { envVars } from '../config/env.service.js';
-import { logger } from './common/utils/logger.util.js';
+import { logger, generateRequestId } from './common/utils/logger.util.js';
 import { resolveTenant } from './middlewares/tenant.middleware.js';
 import authRouter from './modules/authentication/auth.controller.js';
 import userRouter from './modules/users/users.controller.js';
@@ -21,9 +21,15 @@ import notebooksRouter from './modules/notebooks/notebooks.controller.js';
 import reportsRouter from './modules/reports/reports.controller.js';
 import examsRouter  from './modules/exams/exams.controller.js';
 import parentRouter from './modules/parent/parent.controller.js';
+import adminRouter  from './modules/admin/admin.controller.js';
 
 export const bootstrap = () => {
     const app = express();
+    
+    // Trust the reverse proxy (e.g. Render, Nginx, Vercel) to get the real user IP
+    // Without this, all requests will look like they come from the load balancer's IP!
+    app.set('trust proxy', 1);
+
     app.use(helmet());
     app.use(express.json());
     const allowedOrigins = envVars.frontendUrl
@@ -59,6 +65,12 @@ export const bootstrap = () => {
         next();
     });
 
+    // Attach a unique requestId to every incoming request — used for log correlation
+    app.use((req: any, _res: any, next: any) => {
+        req.requestId = generateRequestId();
+        next();
+    });
+
     // Lightweight request logging — after basic security & timeouts
     app.use((req: any, res: any, next: any) => {
         const start = process.hrtime.bigint();
@@ -69,12 +81,13 @@ export const bootstrap = () => {
             const user = (req as any).user;
 
             logger.info('request_completed', {
-                method: req.method,
-                path: req.path,
+                requestId:  req.requestId,
+                method:     req.method,
+                path:       req.path,
                 statusCode: res.statusCode,
                 durationMs: Math.round(durationMs),
-                userId: user?.userId ?? null,
-                role: user?.role ?? null,
+                userId:     user?.userId ?? null,
+                role:       user?.role   ?? null,
             });
         });
 
@@ -83,10 +96,10 @@ export const bootstrap = () => {
 
     DBConnection()
 
-    // Global rate limiter: 300 requests per 15 minutes per IP
+    // Global rate limiter: 3000 requests per 15 minutes per IP
     const globalLimiter = rateLimit({
         windowMs: 15 * 60 * 1000,
-        limit: 300,
+        limit: 3000,
         message: { message: 'كثرة الطلبات، يرجى المحاولة لاحقاً' },
         standardHeaders: true,
         legacyHeaders: false,
@@ -132,6 +145,7 @@ export const bootstrap = () => {
     app.use('/notebooks', notebooksRouter)    // Notebooks inventory routes
     app.use('/reports', reportsRouter)         // Reports routes
     app.use('/exams', examsRouter)              // Exams + AI Generation routes
+    app.use('/admin', adminRouter)              // Super Admin routes
 
     // Health check — used by Render to verify the server is alive; includes basic process stats for monitoring
     app.get('/health', (_req, res) => {

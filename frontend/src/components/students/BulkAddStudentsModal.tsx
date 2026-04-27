@@ -182,7 +182,12 @@ export function BulkAddStudentsModal() {
         queryFn: () => fetchGroups({ limit: 100 }),
         enabled: open,
     });
-    const groups: Group[] = groupsData?.data || [];
+    const rawGroupsData = groupsData as any;
+    const groups: Group[] = Array.isArray(rawGroupsData?.data?.data)
+        ? rawGroupsData.data.data
+        : Array.isArray(rawGroupsData?.data)
+            ? rawGroupsData.data
+            : [];
 
     const availableGrades = Array.from(
         new Set(groups.map((g) => g.gradeLevel).filter((g) => allowedGrades.includes(g)))

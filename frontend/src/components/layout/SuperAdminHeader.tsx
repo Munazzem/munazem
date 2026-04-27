@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/store/auth.store';
-import { LogOut, LayoutDashboard, Users, CreditCard } from 'lucide-react';
+import { LogOut, LayoutDashboard, Building2, AlertTriangle, CreditCard, Users } from 'lucide-react';
 import { Button } from '../ui/button';
 
 export function SuperAdminHeader() {
@@ -25,9 +25,11 @@ export function SuperAdminHeader() {
     };
 
     const navLinks = [
-        { name: 'الرئيسية', href: '/dashboard', icon: LayoutDashboard },
-        { name: 'المعلمين', href: '/dashboard/users', icon: Users },
-        { name: 'الاشتراكات', href: '/dashboard/subscriptions', icon: CreditCard },
+        { name: 'لوحة التحكم',  href: '/admin',                   icon: LayoutDashboard },
+        { name: 'المعلمون',      href: '/admin/tenants',            icon: Building2       },
+        { name: 'سجل الأخطاء',  href: '/admin/errors',             icon: AlertTriangle   },
+        { name: 'الاشتراكات',   href: '/dashboard/subscriptions',  icon: CreditCard      },
+        { name: 'المستخدمون',   href: '/dashboard/users',          icon: Users           },
     ];
 
     if (!isMounted) {

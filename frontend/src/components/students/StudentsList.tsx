@@ -101,7 +101,18 @@ export function StudentsList({
         <>
             {/* Mobile */}
             <div className="lg:hidden space-y-3">
-                {students.map((stu) => {
+                {students.length > 0 && (
+                    <div className="flex items-center gap-2 px-1 mb-2">
+                        <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-gray-300 text-primary cursor-pointer shrink-0"
+                            checked={allSelected}
+                            onChange={() => onToggleAll(students?.map(s => s._id) || [])}
+                        />
+                        <span className="text-sm font-medium text-gray-700">تحديد الكل</span>
+                    </div>
+                )}
+                {students?.map((stu) => {
                     const groupName = typeof stu.groupId === 'object' && stu.groupId !== null
                         ? (stu.groupId as { name: string }).name
                         : stu.groupDetails?.name || 'بدون مجموعة';
@@ -172,7 +183,7 @@ export function StudentsList({
                                         type="checkbox"
                                         className="h-4 w-4 rounded border-gray-300 text-primary cursor-pointer"
                                         checked={allSelected}
-                                        onChange={() => onToggleAll(students.map(s => s._id))}
+                                        onChange={() => onToggleAll(students?.map(s => s._id) || [])}
                                     />
                                 </TableHead>
                                 <TableHead className="text-right font-bold text-gray-600">اسم الطالب</TableHead>
@@ -183,7 +194,7 @@ export function StudentsList({
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {students.map((stu) => (
+                            {students?.map((stu) => (
                                 <TableRow key={stu._id} className="hover:bg-gray-50/50 transition-colors">
                                 <TableCell className="text-center">
                                     <input

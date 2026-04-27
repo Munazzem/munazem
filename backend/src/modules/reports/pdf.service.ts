@@ -426,7 +426,49 @@ export class PdfService {
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // 3. Group Report PDF (List of Students and Stats)
+    // 3. Daily Summary PDF
+    // ─────────────────────────────────────────────────────────────────
+    static async generateDailySummaryPdf(teacherId: string, dateStr?: string): Promise<string> {
+        const teacher = await UserModel.findById(teacherId).lean();
+        const report = await ReportsService.getDailySummary(teacherId, dateStr);
+
+        const content = `
+            <div class="summary-cards">
+                <div class="card" style="background: #e2e3e5; border-color: #d6d8db;">
+                    عدد الحصص المكتملة
+                    <span style="color: #383d41;">${report.sessionsCount}</span>
+                </div>
+                <div class="card" style="background: #d4edda; border-color: #c3e6cb;">
+                    إجمالي حضور الطلاب
+                    <span style="color: #155724;">${report.totalPresent}</span>
+                </div>
+                <div class="card" style="background: #cce5ff; border-color: #b8daff;">
+                    عمليات اشتراك جديدة
+                    <span style="color: #004085;">${report.subscriptionsCount}</span>
+                </div>
+            </div>
+
+            <h3 class="section-title">الملخص المالي لليوم</h3>
+            <div class="summary-cards">
+                <div class="card" style="background: #d4edda; border-color: #c3e6cb;">
+                    الإيرادات
+                    <span style="color: #155724;">${report.financial.totalIncome} ج.م</span>
+                </div>
+                <div class="card" style="background: #f8d7da; border-color: #f5c6cb;">
+                    المصروفات
+                    <span style="color: #721c24;">${report.financial.totalExpenses} ج.م</span>
+                </div>
+                <div class="card" style="background: #e2e3e5; border-color: #d6d8db;">
+                    الصافي
+                    <span style="color: #383d41;">${report.financial.netBalance} ج.م</span>
+                </div>
+            </div>
+        `;
+        return this.wrapHtmlContent(`تقرير يوم: ${report.date}`, content, teacher?.centerName, teacher?.logoUrl);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // 4. Group Report PDF (List of Students and Stats)
     // ─────────────────────────────────────────────────────────────────
     static async generateGroupReportPdf(groupId: string, teacherId: string): Promise<string> {
         const teacher = await UserModel.findById(teacherId).lean();
@@ -516,9 +558,15 @@ export class PdfService {
                 <tbody>
                     ${attendanceList.length === 0 ? '<tr><td colspan="6">لم يتم تسجيل أي طلاب في هذا الكشف</td></tr>' : 
                     attendanceList.map((record: any, index: number) => {
-                        const isAttended = record.status === 'ATTENDED' || record.status === 'GUEST';
-                        const statusColor = isAttended ? 'green' : 'red';
-                        const statusText = record.status === 'ATTENDED' ? 'حاضر' : (record.status === 'ABSENT' ? 'غائب' : 'زائر (مجموعة أخرى)');
+                        const isAttended = record.status === 'PRESENT' || record.status === 'LATE';
+                        const isGuest = record.isGuest === true;
+                        const statusColor = isAttended ? 'green' : (record.status === 'EXCUSED' ? 'orange' : 'red');
+                        let statusText = 'غائب';
+                        if (isAttended) {
+                            statusText = isGuest ? 'زائر (مجموعة أخرى)' : 'حاضر';
+                        } else if (record.status === 'EXCUSED') {
+                            statusText = 'بعذر';
+                        }
                         return `
                         <tr>
                             <td>${index + 1}</td>

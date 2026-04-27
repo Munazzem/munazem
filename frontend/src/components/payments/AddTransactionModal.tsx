@@ -126,7 +126,12 @@ export function AddTransactionModal({
         queryFn: () => fetchStudents({ search: studentSearch, limit: 8 }),
         enabled: open && !isEditMode && studentSearch.length >= 1 && (mode === 'subscription' || mode === 'notebook'),
     });
-    const students = studentsData?.data ?? [];
+    const rawStudents = studentsData as any;
+    const students = Array.isArray(rawStudents?.data?.data)
+        ? rawStudents.data.data
+        : Array.isArray(rawStudents?.data)
+            ? rawStudents.data
+            : [];
 
     // Notebooks list
     const { data: notebooksData } = useQuery({
@@ -138,7 +143,12 @@ export function AddTransactionModal({
         },
         enabled: open && mode === 'notebook',
     });
-    const notebooks = notebooksData?.data ?? [];
+    const rawNotebooks = notebooksData as any;
+    const notebooks = Array.isArray(rawNotebooks?.data?.data)
+        ? rawNotebooks.data.data
+        : Array.isArray(rawNotebooks?.data)
+            ? rawNotebooks.data
+            : [];
 
     const resetForm = () => {
         setStudentSearch('');
@@ -305,9 +315,9 @@ export function AddTransactionModal({
                                         onChange={(e) => setStudentSearch(e.target.value)}
                                         className="pr-9"
                                     />
-                                    {students.length > 0 && (
+                                    {students?.length > 0 && (
                                         <div className="absolute z-10 top-full mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
-                                            {students.map((s) => (
+                                            {students?.map((s: any) => (
                                                 <button
                                                     key={s._id}
                                                     type="button"
@@ -339,9 +349,9 @@ export function AddTransactionModal({
                                         <SelectValue placeholder="اختر مذكرة..." />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {notebooks.map((nb: any) => (
+                                        {notebooks?.map((nb: any) => (
                                             <SelectItem key={nb._id} value={nb._id}>
-                                                {nb.title} — {nb.price} ج
+                                                {nb.name || nb.title} — {nb.price} ج
                                             </SelectItem>
                                         ))}
                                     </SelectContent>

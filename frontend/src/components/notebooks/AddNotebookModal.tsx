@@ -113,7 +113,7 @@ export function AddNotebookModal() {
                                                 <SelectTrigger><SelectValue placeholder="اختر..." /></SelectTrigger>
                                             </FormControl>
                                             <SelectContent dir="rtl">
-                                                {allowedGrades.map((g) => (
+                                                {allowedGrades?.map((g) => (
                                                     <SelectItem key={g} value={g}>{g}</SelectItem>
                                                 ))}
                                             </SelectContent>

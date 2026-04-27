@@ -136,37 +136,38 @@ export default function ExamsPage() {
             </div>
 
             {/* Filters */}
-            <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col sm:flex-row gap-3 items-center">
+            <div className="bg-white p-3 sm:p-4 rounded-xl border border-gray-100 shadow-sm space-y-2 sm:space-y-0 sm:flex sm:flex-row sm:gap-3 sm:items-center">
                 <div className="relative w-full sm:flex-1">
                     <Search className="absolute inset-y-0 right-3 h-full w-4 text-gray-400 pointer-events-none" />
                     <Input
                         placeholder="ابحث باسم الامتحان..."
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
-                        className="pr-10 bg-gray-50 border-gray-200"
+                        className="pr-10 bg-gray-50 border-gray-200 h-9"
                     />
                 </div>
-                <Select value={statusFilter || 'ALL'} onValueChange={(v) => { setStatusFilter(v === 'ALL' ? '' : v); setPage(1); }} dir="rtl">
-                    <SelectTrigger className="w-full sm:w-40 border-gray-200 bg-gray-50">
-                        <Filter size={14} className="ml-2 text-gray-400" />
-                        <SelectValue placeholder="الحالة" />
-                    </SelectTrigger>
-                    <SelectContent dir="rtl">
-                        <SelectItem value="ALL">كل الحالات</SelectItem>
-                        <SelectItem value="DRAFT">مسودة</SelectItem>
-                        <SelectItem value="PUBLISHED">منشور</SelectItem>
-                        <SelectItem value="COMPLETED">مكتمل</SelectItem>
-                    </SelectContent>
-                </Select>
-                <Select value={gradeFilter || 'ALL'} onValueChange={(v) => { setGradeFilter(v === 'ALL' ? '' : v); setPage(1); }} dir="rtl">
-                    <SelectTrigger className="w-full sm:w-48 border-gray-200 bg-gray-50">
-                        <SelectValue placeholder="المرحلة" />
-                    </SelectTrigger>
-                    <SelectContent dir="rtl">
-                        <SelectItem value="ALL">كل المراحل</SelectItem>
-                        {allowedGrades.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
-                    </SelectContent>
-                </Select>
+                <div className="grid grid-cols-2 gap-2 sm:contents">
+                    <Select value={statusFilter || 'ALL'} onValueChange={(v) => { setStatusFilter(v === 'ALL' ? '' : v); setPage(1); }} dir="rtl">
+                        <SelectTrigger className="border-gray-200 bg-gray-50 h-9 text-sm sm:w-40">
+                            <SelectValue placeholder="الحالة" />
+                        </SelectTrigger>
+                        <SelectContent dir="rtl">
+                            <SelectItem value="ALL">كل الحالات</SelectItem>
+                            <SelectItem value="DRAFT">مسودة</SelectItem>
+                            <SelectItem value="PUBLISHED">منشور</SelectItem>
+                            <SelectItem value="COMPLETED">مكتمل</SelectItem>
+                        </SelectContent>
+                    </Select>
+                    <Select value={gradeFilter || 'ALL'} onValueChange={(v) => { setGradeFilter(v === 'ALL' ? '' : v); setPage(1); }} dir="rtl">
+                        <SelectTrigger className="border-gray-200 bg-gray-50 h-9 text-sm sm:w-48">
+                            <SelectValue placeholder="المرحلة" />
+                        </SelectTrigger>
+                        <SelectContent dir="rtl">
+                            <SelectItem value="ALL">كل المراحل</SelectItem>
+                            {allowedGrades.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                </div>
             </div>
 
             {/* Table — Desktop */}
@@ -279,21 +280,27 @@ export default function ExamsPage() {
                                             <ClipboardList className="h-5 w-5 text-primary" />
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2 flex-wrap">
-                                                <p className="font-semibold text-gray-900 truncate">{exam.title}</p>
-                                                {exam.source === 'AI_GENERATED' && (
-                                                    <Sparkles className="h-3.5 w-3.5 text-purple-500 shrink-0" />
-                                                )}
-                                                <StatusBadge status={exam.status} />
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="font-semibold text-gray-900 break-words leading-snug">{exam.title}</p>
+                                                    {exam.source === 'AI_GENERATED' && (
+                                                        <span className="inline-flex items-center gap-0.5 text-xs text-purple-500 mt-0.5">
+                                                            <Sparkles className="h-3 w-3" /> AI
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                    <StatusBadge status={exam.status} />
+                                                    <ChevronLeft className="h-4 w-4 text-gray-300" />
+                                                </div>
                                             </div>
-                                            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-xs text-gray-500">
+                                            <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-xs text-gray-500">
                                                 {exam.gradeLevel && <span>{exam.gradeLevel}</span>}
                                                 <span>{new Date(exam.date).toLocaleDateString('ar-EG')}</span>
                                                 <span>{exam.questions?.length ?? 0} سؤال</span>
-                                                <span>الدرجة: {exam.totalMarks} / نجاح: {exam.passingMarks}</span>
+                                                <span>الدرجة: {exam.totalMarks} · نجاح: {exam.passingMarks}</span>
                                             </div>
                                         </div>
-                                        <ChevronLeft className="h-4 w-4 text-gray-300 shrink-0 mt-1" />
                                     </div>
                                 </div>
                             ))}

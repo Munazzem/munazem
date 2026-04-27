@@ -18,7 +18,7 @@ export const createExamSchema = z.object({
     gradeLevel:   z.nativeEnum(GradeLevel).optional(),
     groupIds:     z.array(objectId).optional(),
     passingMarks: z.number().positive().optional(),
-    questions:    z.array(questionSchema).min(1, 'يجب إضافة سؤال واحد على الأقل'),
+    questions:    z.array(questionSchema).optional(),
     totalMarks:   z.number().positive().optional(),
   }),
 });

@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { batchRecordResults, getExamResults } from '@/lib/api/exams';
 import { fetchStudents } from '@/lib/api/students';
+import { fetchGroups } from '@/lib/api/groups';
 import type { IExam } from '@/lib/api/exams';
 
 interface Props {
@@ -26,19 +27,29 @@ interface StudentRow {
 }
 
 export function BatchResultsModal({ exam, open, onOpenChange, onSuccess }: Props) {
-    const [rows, setRows] = useState<StudentRow[]>([]);
-    const [submitted, setSubmitted] = useState(false);
-    const [result, setResult] = useState<{ total: number; inserted: number } | null>(null);
+    const [selectedGroupId, setSelectedGroupId] = useState<string | undefined>(undefined);
 
-    // groupIds come as ObjectId strings from the backend — stringify each one
-    const firstGroupId = exam.groupIds?.length
-        ? String(exam.groupIds[0])
-        : undefined;
+    // Fetch all groups to get names for filtering
+    const { data: groupsData } = useQuery({
+        queryKey: ['groups'],
+        queryFn: () => fetchGroups({ limit: 100 }),
+        enabled: open,
+    });
 
-    // Fetch students — filter by group if exam has groups, else fetch all
+    const examGroups = (groupsData?.data ?? []).filter((g: any) => 
+        exam.groupIds?.map(String).includes(String(g._id))
+    );
+
+    useEffect(() => {
+        if (open && !selectedGroupId && exam.groupIds?.length) {
+            setSelectedGroupId(String(exam.groupIds[0]));
+        }
+    }, [open, exam.groupIds, selectedGroupId]);
+
+    // Fetch students — filter by selected group
     const { data: studentsData, isLoading: studentsLoading } = useQuery({
-        queryKey: ['students-for-exam', exam._id, firstGroupId],
-        queryFn:  () => fetchStudents({ limit: 200, ...(firstGroupId ? { groupId: firstGroupId } : {}) }),
+        queryKey: ['students-for-exam', exam._id, selectedGroupId],
+        queryFn:  () => fetchStudents({ limit: 200, ...(selectedGroupId ? { groupId: selectedGroupId } : {}) }),
         enabled:  open,
     });
 
@@ -48,6 +59,10 @@ export function BatchResultsModal({ exam, open, onOpenChange, onSuccess }: Props
         queryFn:  () => getExamResults(exam._id),
         enabled:  open,
     });
+
+    const [rows, setRows] = useState<StudentRow[]>([]);
+    const [submitted, setSubmitted] = useState(false);
+    const [result, setResult] = useState<{ total: number; inserted: number } | null>(null);
 
     useEffect(() => {
         if (!open) { setSubmitted(false); setResult(null); return; }
@@ -132,51 +147,71 @@ export function BatchResultsModal({ exam, open, onOpenChange, onSuccess }: Props
                     <div className="flex justify-center items-center h-40">
                         <Loader2 className="h-8 w-8 animate-spin text-primary" />
                     </div>
-                ) : rows.length === 0 ? (
-                    <div className="py-10 text-center text-gray-400 space-y-2">
-                        <XCircle className="h-10 w-10 mx-auto text-gray-200" />
-                        <p>لا يوجد طلاب مرتبطون بهذا الامتحان.</p>
-                        <p className="text-xs">تأكد من تحديد المجموعات عند إنشاء الامتحان.</p>
-                    </div>
                 ) : (
                     <>
-                        <div className="space-y-2 py-2">
-                            <div className="grid grid-cols-12 text-xs font-medium text-gray-400 px-3 pb-1 border-b">
-                                <span className="col-span-7">الطالب</span>
-                                <span className="col-span-5 text-center">الدرجة</span>
+                        {/* Group Selector */}
+                        {examGroups.length > 1 && (
+                            <div className="flex flex-wrap gap-2 mb-4 p-2 bg-gray-50/50 rounded-xl border border-gray-100">
+                                {examGroups.map((g: any) => (
+                                    <button
+                                        key={g._id}
+                                        onClick={() => setSelectedGroupId(g._id)}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                                            selectedGroupId === g._id
+                                                ? 'bg-primary text-white shadow-sm'
+                                                : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                                        }`}
+                                    >
+                                        {g.name}
+                                    </button>
+                                ))}
                             </div>
-                            {rows.map((row, idx) => (
-                                <div
-                                    key={row.studentId}
-                                    className={`grid grid-cols-12 items-center gap-2 px-3 py-2 rounded-lg ${row.alreadyDone ? 'bg-green-50' : 'hover:bg-gray-50'}`}
-                                >
-                                    <div className="col-span-7 flex items-center gap-2">
-                                        <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary shrink-0">
-                                            {row.studentName.charAt(0)}
-                                        </div>
-                                        <span className="text-sm font-medium text-gray-800 truncate">{row.studentName}</span>
-                                    </div>
-                                    <div className="col-span-5 flex items-center justify-center">
-                                        {row.alreadyDone ? (
-                                            <span className="text-xs text-green-600 font-medium flex items-center gap-1">
-                                                <CheckCircle2 className="h-3.5 w-3.5" /> مُدخَل
-                                            </span>
-                                        ) : (
-                                            <Input
-                                                type="number"
-                                                min={0}
-                                                max={exam.totalMarks}
-                                                value={row.score}
-                                                onChange={(e) => updateScore(idx, e.target.value)}
-                                                placeholder={`0 – ${exam.totalMarks}`}
-                                                dir="ltr"
-                                                className="text-center text-sm h-8 w-24"
-                                            />
-                                        )}
-                                    </div>
+                        )}
+
+                        {rows.length === 0 ? (
+                            <div className="py-10 text-center text-gray-400 space-y-2">
+                                <XCircle className="h-10 w-10 mx-auto text-gray-200" />
+                                <p>لا يوجد طلاب في هذه المجموعة حالياً.</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-2 py-2">
+                                <div className="grid grid-cols-12 text-xs font-medium text-gray-400 px-3 pb-1 border-b">
+                                    <span className="col-span-7">الطالب</span>
+                                    <span className="col-span-5 text-center">الدرجة</span>
                                 </div>
-                            ))}
-                        </div>
+                                {rows.map((row, idx) => (
+                                    <div
+                                        key={row.studentId}
+                                        className={`grid grid-cols-12 items-center gap-2 px-3 py-2 rounded-lg ${row.alreadyDone ? 'bg-green-50' : 'hover:bg-gray-50'}`}
+                                    >
+                                        <div className="col-span-7 flex items-center gap-2">
+                                            <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary shrink-0">
+                                                {row.studentName.charAt(0)}
+                                            </div>
+                                            <span className="text-sm font-medium text-gray-800 truncate">{row.studentName}</span>
+                                        </div>
+                                        <div className="col-span-5 flex items-center justify-center">
+                                            {row.alreadyDone ? (
+                                                <span className="text-xs text-green-600 font-medium flex items-center gap-1">
+                                                    <CheckCircle2 className="h-3.5 w-3.5" /> مُدخَل
+                                                </span>
+                                            ) : (
+                                                <Input
+                                                    type="number"
+                                                    min={0}
+                                                    max={exam.totalMarks}
+                                                    value={row.score}
+                                                    onChange={(e) => updateScore(idx, e.target.value)}
+                                                    placeholder={`0 – ${exam.totalMarks}`}
+                                                    dir="ltr"
+                                                    className="text-center text-sm h-8 w-24"
+                                                />
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
 
                         <div className="flex gap-2 justify-end pt-3 border-t">
                             <Button variant="outline" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>

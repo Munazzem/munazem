@@ -16,6 +16,9 @@ import {
     ClipboardList,
     FileText,
     ShieldCheck,
+    AlertTriangle,
+    Building2,
+    BarChart3,
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { useUIStore } from '@/lib/store/ui.store';
@@ -23,10 +26,12 @@ import { useUIStore } from '@/lib/store/ui.store';
 const getNavItems = (role?: string) => {
     if (role === 'superAdmin') {
         return [
-            { name: 'الرئيسية',           href: '/dashboard',              icon: LayoutDashboard },
-            { name: 'الاشتراكات والخطط', href: '/dashboard/subscriptions', icon: BookOpen },
-            { name: 'إدارة المعلمين',     href: '/dashboard/users',         icon: Users },
-            { name: 'الإعدادات',          href: '/dashboard/settings',      icon: Settings },
+            { name: 'لوحة التحكم',   href: '/admin',          icon: LayoutDashboard },
+            { name: 'المعلمون',       href: '/admin/tenants',  icon: Building2       },
+            { name: 'سجل الأخطاء',   href: '/admin/errors',   icon: AlertTriangle   },
+            { name: 'الاشتراكات',    href: '/dashboard/subscriptions', icon: BarChart3 },
+            { name: 'إدارة المستخدمين', href: '/dashboard/users', icon: Users       },
+            { name: 'الإعدادات',     href: '/dashboard/settings', icon: Settings    },
         ];
     }
 
