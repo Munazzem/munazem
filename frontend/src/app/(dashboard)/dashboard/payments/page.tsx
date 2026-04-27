@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getDailyLedger, getMonthlyLedger } from '@/lib/api/payments';
 import { fetchMonthlyReportHtml } from '@/lib/api/reports';
@@ -22,6 +22,7 @@ import {
     ChevronRight,
     Receipt,
     FileDown,
+    Pencil,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -85,9 +86,22 @@ function StatCardSkeleton() {
 }
 
 // ─── Daily Tab ────────────────────────────────────────────────────
-function DailyTab({ canWrite }: { canWrite: boolean }) {
+function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boolean }) {
     const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]!);
     const [filter, setFilter] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
+
+    // Edit modal state
+    type EditInitialData = {
+        mode: 'subscription' | 'notebook' | 'expense';
+        studentName?: string;
+        amount?: number;
+        category?: import('@/types/payment.types').TransactionCategory;
+        description?: string;
+        date?: string;
+    };
+    const [editOpen, setEditOpen] = useState(false);
+    const [editTxId, setEditTxId] = useState<string | null>(null);
+    const [editInitialData, setEditInitialData] = useState<EditInitialData | undefined>(undefined);
 
     const { data: ledger, isLoading, refetch } = useQuery({
         queryKey: ['daily-ledger', date],
@@ -101,6 +115,25 @@ function DailyTab({ canWrite }: { canWrite: boolean }) {
 
     const formatTime = (timeStr: string) =>
         new Date(timeStr).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+
+    const openEditModal = (
+        tx: typeof txs[number]
+    ) => {
+        const mode =
+            tx.category === 'SUBSCRIPTION'  ? 'subscription' as const :
+            tx.category === 'NOTEBOOK_SALE' ? 'notebook'     as const :
+                                              'expense'       as const;
+        setEditTxId((tx as any).transactionId ?? null);
+        setEditInitialData({
+            mode,
+            studentName: tx.studentName,
+            amount:      tx.paidAmount,
+            category:    tx.category as any,
+            description: tx.description,
+            date:        tx.time,
+        });
+        setEditOpen(true);
+    };
 
     return (
         <div className="space-y-6">
@@ -161,6 +194,20 @@ function DailyTab({ canWrite }: { canWrite: boolean }) {
                     </div>
                 )}
             </div>
+
+            {/* Edit Modal — teacher only, controlled */}
+            {isTeacher && editTxId && editInitialData && (
+                <AddTransactionModal
+                    transactionId={editTxId}
+                    initialData={editInitialData}
+                    open={editOpen}
+                    onOpenChange={(v) => {
+                        setEditOpen(v);
+                        if (!v) { setEditTxId(null); setEditInitialData(undefined); }
+                    }}
+                    onSuccess={() => refetch()}
+                />
+            )}
 
             {/* Transactions Section */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -224,9 +271,21 @@ function DailyTab({ canWrite }: { canWrite: boolean }) {
                                         )}>
                                             {tx.type === 'INCOME' ? '↑ دخل' : '↓ مصروف'}
                                         </span>
-                                        <span className="font-black text-gray-900">
-                                            {tx.paidAmount.toLocaleString('ar-EG')} ج
-                                        </span>
+                                        <div className="flex items-center gap-2">
+                                            {isTeacher && (
+                                                <button
+                                                    type="button"
+                                                    title="تعديل المعاملة"
+                                                    onClick={() => openEditModal(tx)}
+                                                    className="p-1 rounded-lg text-gray-400 hover:text-primary hover:bg-primary/5 transition-colors"
+                                                >
+                                                    <Pencil className="h-3.5 w-3.5" />
+                                                </button>
+                                            )}
+                                            <span className="font-black text-gray-900">
+                                                {tx.paidAmount.toLocaleString('ar-EG')} ج
+                                            </span>
+                                        </div>
                                     </div>
                                     <div className="flex justify-between items-end">
                                         <div>
@@ -254,6 +313,9 @@ function DailyTab({ canWrite }: { canWrite: boolean }) {
                                         <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">الطالب</th>
                                         <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">المبلغ</th>
                                         <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">الوقت</th>
+                                        {isTeacher && (
+                                            <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">إجراء</th>
+                                        )}
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-50">
@@ -288,6 +350,18 @@ function DailyTab({ canWrite }: { canWrite: boolean }) {
                                                 </span>
                                             </td>
                                             <td className="px-6 py-4 text-gray-400 text-xs font-medium">{formatTime(tx.time)}</td>
+                                            {isTeacher && (
+                                                <td className="px-6 py-4">
+                                                    <button
+                                                        type="button"
+                                                        title="تعديل المعاملة"
+                                                        onClick={() => openEditModal(tx)}
+                                                        className="p-1.5 rounded-lg text-gray-400 hover:text-primary hover:bg-primary/5 transition-colors"
+                                                    >
+                                                        <Pencil className="h-4 w-4" />
+                                                    </button>
+                                                </td>
+                                            )}
                                         </tr>
                                     ))}
                                 </tbody>
@@ -511,7 +585,7 @@ export default function PaymentsPage() {
             </div>
 
             {/* Tab Content */}
-            {activeTab === 'daily' && <DailyTab canWrite={canWrite} />}
+            {activeTab === 'daily' && <DailyTab canWrite={canWrite} isTeacher={isTeacher} />}
             {activeTab === 'monthly' && isTeacher && <MonthlyTab />}
             {activeTab === 'prices' && isTeacher && <PricesTab />}
         </div>

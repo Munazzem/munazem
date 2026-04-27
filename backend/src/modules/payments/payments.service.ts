@@ -394,4 +394,30 @@ export class PaymentsService {
         if (!ledger) return { year, month, dailySummaries: [], totalIncome: 0, totalExpenses: 0, netBalance: 0 };
         return ledger;
     }
+
+    // ── Update Transaction (Teacher only) ───────────────────────────
+    // Allowed fields: amount, category, description, date.
+    // studentId is intentionally excluded to preserve audit integrity.
+    static async updateTransaction(
+        teacherId: string,
+        transactionId: string,
+        data: { amount?: number; category?: TransactionCategory; description?: string; date?: string }
+    ) {
+        const transaction = await TransactionModel.findOne({ _id: transactionId, teacherId }).lean();
+        if (!transaction) throw NotFoundException({ message: 'المعاملة غير موجودة' });
+
+        const update: Record<string, any> = {};
+        if (data.amount      !== undefined) { update['originalAmount'] = data.amount; update['paidAmount'] = data.amount; }
+        if (data.category    !== undefined)   update['category']        = data.category;
+        if (data.description !== undefined)   update['description']     = data.description;
+        if (data.date        !== undefined)   update['date']            = new Date(data.date);
+
+        const updated = await TransactionModel.findByIdAndUpdate(
+            transactionId,
+            { $set: update },
+            { new: true, runValidators: true }
+        ).lean();
+
+        return updated;
+    }
 }

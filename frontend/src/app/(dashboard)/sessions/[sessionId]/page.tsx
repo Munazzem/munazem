@@ -224,7 +224,8 @@ export default function SessionDetailPage() {
         },
         onSuccess: (record) => {
             const name = (record.studentId as any)?.studentName ?? 'الطالب';
-            toast.success(`تم تسجيل حضور ${name}`);
+            const guestSuffix = (record as any).isGuest ? ' (طالب زائر)' : '';
+            toast.success(`تم تسجيل حضور ${name}${guestSuffix}`);
         },
         onError: (err: any, studentId, context) => {
             // Rollback optimistic update
@@ -491,6 +492,11 @@ export default function SessionDetailPage() {
                                                     <p className="text-sm font-medium text-gray-800 truncate">
                                                         {student?.studentName ?? '—'}
                                                     </p>
+                                                    {(record as any).isGuest && (
+                                                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-purple-300 text-purple-700 bg-purple-50 shrink-0">
+                                                            زائر
+                                                        </Badge>
+                                                    )}
                                                     {subscriptionMap.get(student?._id ?? '') === false && (
                                                         <span
                                                             title="غير مشترك هذا الشهر"
