@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { GradeLevel, TransactionCategory } from '../common/enums/enum.service.js';
+import { Types } from 'mongoose';
 
 const objectId = z.string().length(24, 'معرف غير صحيح');
 
@@ -63,4 +64,16 @@ export const upsertPriceSettingsSchema = z.object({
       amount:     z.number().positive('السعر يجب أن يكون أكبر من صفر'),
     })).min(1, 'يجب تحديد سعر على الأقل'),
   }),
+});
+
+export const updateTransactionSchema = z.object({
+  params: z.object({
+    id: z.string().refine((v) => Types.ObjectId.isValid(v), { message: 'معرف المعاملة غير صحيح' }),
+  }),
+  body: z.object({
+    amount:      z.number().positive('المبلغ يجب أن يكون أكبر من صفر').optional(),
+    category:    z.nativeEnum(TransactionCategory, { error: () => ({ message: 'الفئة غير صحيحة' }) }).optional(),
+    description: z.string().max(300).optional(),
+    date:        z.string().optional(),
+  }).refine((b) => Object.keys(b).length > 0, { message: 'يجب تحديد حقل واحد على الأقل للتعديل' }),
 });

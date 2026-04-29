@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { recordSubscription, recordNotebookSale, recordExpense } from '@/lib/api/payments';
+import { recordSubscription, recordNotebookSale, recordExpense, updateTransaction } from '@/lib/api/payments';
 import { fetchStudents } from '@/lib/api/students';
 import { toast } from 'sonner';
 import { Plus, Loader2, User, BookOpen, TrendingDown, Search } from 'lucide-react';
@@ -40,36 +40,91 @@ const MODE_ICONS: Record<TxMode, React.ReactNode> = {
     expense:      <TrendingDown className="h-4 w-4" />,
 };
 
+// ─── Props ────────────────────────────────────────────────────────
 interface AddTransactionModalProps {
     onSuccess?: () => void;
+    // Edit mode — when provided the modal opens pre-filled for editing
+    transactionId?: string;
+    initialData?: {
+        mode: TxMode;
+        studentName?: string;
+        amount?: number;
+        category?: TransactionCategory;
+        description?: string;
+        date?: string;
+    };
+    // Controlled open state — used by the edit trigger in the table
+    open?: boolean;
+    onOpenChange?: (v: boolean) => void;
 }
 
-export function AddTransactionModal({ onSuccess }: AddTransactionModalProps) {
-    const [open, setOpen] = useState(false);
-    const [mode, setMode] = useState<TxMode>('subscription');
+export function AddTransactionModal({
+    onSuccess,
+    transactionId,
+    initialData,
+    open: controlledOpen,
+    onOpenChange: controlledOnOpenChange,
+}: AddTransactionModalProps) {
+    const isEditMode = Boolean(transactionId && initialData);
+
+    const [internalOpen, setInternalOpen] = useState(false);
+    const open = controlledOpen !== undefined ? controlledOpen : internalOpen;
+    const setOpen = (v: boolean) => {
+        if (controlledOnOpenChange) controlledOnOpenChange(v);
+        else setInternalOpen(v);
+    };
+
+    const [mode, setMode] = useState<TxMode>(initialData?.mode ?? 'subscription');
     const queryClient = useQueryClient();
 
     // Shared fields
     const [studentSearch, setStudentSearch] = useState('');
     const [selectedStudentId, setSelectedStudentId] = useState('');
-    const [selectedStudentName, setSelectedStudentName] = useState('');
+    const [selectedStudentName, setSelectedStudentName] = useState(initialData?.studentName ?? '');
     const [discountAmount, setDiscountAmount] = useState('');
-    const [description, setDescription] = useState('');
-    const [date, setDate] = useState(new Date().toISOString().split('T')[0]!);
+    const [description, setDescription] = useState(initialData?.description ?? '');
+    const [date, setDate] = useState(
+        initialData?.date
+            ? initialData.date.split('T')[0]!
+            : new Date().toISOString().split('T')[0]!
+    );
 
     // Notebook-specific
     const [notebookId, setNotebookId] = useState('');
     const [quantity, setQuantity] = useState('1');
 
     // Expense-specific
-    const [expenseCategory, setExpenseCategory] = useState<TransactionCategory>('SALARY');
-    const [expenseAmount, setExpenseAmount] = useState('');
+    const [expenseCategory, setExpenseCategory] = useState<TransactionCategory>(
+        (initialData?.category as TransactionCategory) ?? 'SALARY'
+    );
+    // Used for expense amount in expense mode, and for the editable paid amount in edit mode
+    const [expenseAmount, setExpenseAmount] = useState(
+        initialData?.amount !== undefined ? String(initialData.amount) : ''
+    );
+
+    // Sync initialData when edit modal opens (controlled)
+    useEffect(() => {
+        if (open && isEditMode && initialData) {
+            setMode(initialData.mode);
+            setSelectedStudentName(initialData.studentName ?? '');
+            setSelectedStudentId('__edit_locked__'); // sentinel — not sent to backend
+            setDescription(initialData.description ?? '');
+            setDate(
+                initialData.date
+                    ? initialData.date.split('T')[0]!
+                    : new Date().toISOString().split('T')[0]!
+            );
+            setExpenseCategory((initialData.category as TransactionCategory) ?? 'SALARY');
+            setExpenseAmount(initialData.amount !== undefined ? String(initialData.amount) : '');
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open]);
 
     // Student search
     const { data: studentsData } = useQuery({
         queryKey: ['students-search-payment', studentSearch],
         queryFn: () => fetchStudents({ search: studentSearch, limit: 8 }),
-        enabled: open && studentSearch.length >= 1 && (mode === 'subscription' || mode === 'notebook'),
+        enabled: open && !isEditMode && studentSearch.length >= 1 && (mode === 'subscription' || mode === 'notebook'),
     });
     const rawStudents = studentsData as any;
     const students = Array.isArray(rawStudents?.data?.data)
@@ -112,32 +167,54 @@ export function AddTransactionModal({ onSuccess }: AddTransactionModalProps) {
         queryClient.invalidateQueries({ queryKey: ['daily-ledger'] });
         queryClient.invalidateQueries({ queryKey: ['monthly-ledger'] });
         setOpen(false);
-        resetForm();
+        if (!isEditMode) resetForm();
         onSuccess?.();
     };
 
+    // ── Add mutations ────────────────────────────────────────────────
     const subscriptionMutation = useMutation({
         mutationFn: recordSubscription,
         onSuccess: () => { toast.success('تم تسجيل الاشتراك بنجاح'); invalidateAndClose(); },
-        
     });
 
     const notebookMutation = useMutation({
         mutationFn: recordNotebookSale,
         onSuccess: () => { toast.success('تم تسجيل بيع المذكرة بنجاح'); invalidateAndClose(); },
-        
     });
 
     const expenseMutation = useMutation({
         mutationFn: recordExpense,
         onSuccess: () => { toast.success('تم تسجيل المصروف بنجاح'); invalidateAndClose(); },
-        
     });
 
-    const isPending = subscriptionMutation.isPending || notebookMutation.isPending || expenseMutation.isPending;
+    // ── Edit mutation ────────────────────────────────────────────────
+    const updateMutation = useMutation({
+        mutationFn: ({ id, data }: { id: string; data: Parameters<typeof updateTransaction>[1] }) =>
+            updateTransaction(id, data),
+        onSuccess: () => { toast.success('تم حفظ التعديلات بنجاح'); invalidateAndClose(); },
+    });
+
+    const isPending =
+        subscriptionMutation.isPending ||
+        notebookMutation.isPending ||
+        expenseMutation.isPending ||
+        updateMutation.isPending;
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+
+        // ── Edit mode ─────────────────────────────────────────────────
+        if (isEditMode && transactionId) {
+            const patch: Parameters<typeof updateTransaction>[1] = {};
+            if (expenseAmount) patch.amount = parseFloat(expenseAmount);
+            if (mode === 'expense') patch.category = expenseCategory;
+            patch.description = description || undefined;
+            patch.date = date;
+            updateMutation.mutate({ id: transactionId, data: patch });
+            return;
+        }
+
+        // ── Add mode ──────────────────────────────────────────────────
         if (mode === 'subscription') {
             if (!selectedStudentId) return toast.error('اختر طالباً');
             subscriptionMutation.mutate({
@@ -168,54 +245,66 @@ export function AddTransactionModal({ onSuccess }: AddTransactionModalProps) {
         }
     };
 
+    const dialogTitle = isEditMode ? 'تعديل المعاملة' : 'تسجيل معاملة جديدة';
+
     return (
-        <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
-            <DialogTrigger asChild>
-                <Button size="sm" className="gap-2">
-                    <Plus className="h-4 w-4" />
-                    إضافة معاملة
-                </Button>
-            </DialogTrigger>
+        <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v && !isEditMode) resetForm(); }}>
+            {/* Trigger only shown in add mode */}
+            {!isEditMode && (
+                <DialogTrigger asChild>
+                    <Button size="sm" className="gap-2">
+                        <Plus className="h-4 w-4" />
+                        إضافة معاملة
+                    </Button>
+                </DialogTrigger>
+            )}
             <DialogContent className="sm:max-w-[480px]" dir="rtl">
                 <DialogHeader>
-                    <DialogTitle>تسجيل معاملة جديدة</DialogTitle>
+                    <DialogTitle>{dialogTitle}</DialogTitle>
                 </DialogHeader>
 
-                {/* Mode Selector */}
-                <div className="grid grid-cols-3 gap-2 mb-1">
-                    {(Object.keys(MODE_LABELS) as TxMode[]).map((m) => (
-                        <button
-                            key={m}
-                            type="button"
-                            onClick={() => { setMode(m); resetForm(); setDate(new Date().toISOString().split('T')[0]!); }}
-                            className={cn(
-                                'flex flex-col items-center gap-1.5 rounded-xl border p-3 text-xs font-medium transition-all',
-                                mode === m
-                                    ? 'border-primary bg-primary/5 text-primary'
-                                    : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                            )}
-                        >
-                            {MODE_ICONS[m]}
-                            {MODE_LABELS[m]}
-                        </button>
-                    ))}
-                </div>
+                {/* Mode Selector — hidden in edit mode */}
+                {!isEditMode && (
+                    <div className="grid grid-cols-3 gap-2 mb-1">
+                        {(Object.keys(MODE_LABELS) as TxMode[]).map((m) => (
+                            <button
+                                key={m}
+                                type="button"
+                                onClick={() => { setMode(m); resetForm(); setDate(new Date().toISOString().split('T')[0]!); }}
+                                className={cn(
+                                    'flex flex-col items-center gap-1.5 rounded-xl border p-3 text-xs font-medium transition-all',
+                                    mode === m
+                                        ? 'border-primary bg-primary/5 text-primary'
+                                        : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                                )}
+                            >
+                                {MODE_ICONS[m]}
+                                {MODE_LABELS[m]}
+                            </button>
+                        ))}
+                    </div>
+                )}
 
                 <form onSubmit={handleSubmit} className="space-y-3 pt-1">
-                    {/* Student Search (subscription & notebook) */}
+                    {/* Student (subscription & notebook) */}
                     {(mode === 'subscription' || mode === 'notebook') && (
                         <div>
                             <label className="text-sm font-medium text-gray-700 mb-1.5 block">الطالب</label>
-                            {selectedStudentId ? (
+                            {/* In edit mode: always show locked student chip */}
+                            {(selectedStudentId || isEditMode) ? (
                                 <div className="flex items-center justify-between bg-primary/5 border border-primary/20 rounded-lg px-3 py-2">
                                     <span className="text-sm font-medium text-primary">{selectedStudentName}</span>
-                                    <button
-                                        type="button"
-                                        onClick={() => { setSelectedStudentId(''); setSelectedStudentName(''); }}
-                                        className="text-xs text-gray-400 hover:text-gray-600"
-                                    >
-                                        تغيير
-                                    </button>
+                                    {!isEditMode ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => { setSelectedStudentId(''); setSelectedStudentName(''); }}
+                                            className="text-xs text-gray-400 hover:text-gray-600"
+                                        >
+                                            تغيير
+                                        </button>
+                                    ) : (
+                                        <span className="text-[10px] text-gray-400">لا يمكن تغيير الطالب</span>
+                                    )}
                                 </div>
                             ) : (
                                 <div className="relative">
@@ -250,8 +339,8 @@ export function AddTransactionModal({ onSuccess }: AddTransactionModalProps) {
                         </div>
                     )}
 
-                    {/* Notebook Select */}
-                    {mode === 'notebook' && (
+                    {/* Notebook Select — add mode only */}
+                    {mode === 'notebook' && !isEditMode && (
                         <div className="grid grid-cols-3 gap-2">
                             <div className="col-span-2">
                                 <label className="text-sm font-medium text-gray-700 mb-1.5 block">المذكرة</label>
@@ -309,8 +398,8 @@ export function AddTransactionModal({ onSuccess }: AddTransactionModalProps) {
                         </div>
                     )}
 
-                    {/* Discount (subscription & notebook) */}
-                    {(mode === 'subscription' || mode === 'notebook') && (
+                    {/* Discount — add mode only, subscription & notebook */}
+                    {(mode === 'subscription' || mode === 'notebook') && !isEditMode && (
                         <div>
                             <label className="text-sm font-medium text-gray-700 mb-1.5 block">
                                 خصم (ج) <span className="text-gray-400 font-normal">— اختياري</span>
@@ -321,6 +410,20 @@ export function AddTransactionModal({ onSuccess }: AddTransactionModalProps) {
                                 placeholder="0"
                                 value={discountAmount}
                                 onChange={(e) => setDiscountAmount(e.target.value)}
+                            />
+                        </div>
+                    )}
+
+                    {/* Editable amount — edit mode, subscription & notebook */}
+                    {isEditMode && (mode === 'subscription' || mode === 'notebook') && (
+                        <div>
+                            <label className="text-sm font-medium text-gray-700 mb-1.5 block">المبلغ المدفوع (ج)</label>
+                            <Input
+                                type="number"
+                                min="0"
+                                placeholder="0"
+                                value={expenseAmount}
+                                onChange={(e) => setExpenseAmount(e.target.value)}
                             />
                         </div>
                     )}
@@ -349,7 +452,7 @@ export function AddTransactionModal({ onSuccess }: AddTransactionModalProps) {
                         </Button>
                         <Button type="submit" disabled={isPending}>
                             {isPending && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
-                            تسجيل
+                            {isEditMode ? 'حفظ التعديلات' : 'تسجيل'}
                         </Button>
                     </div>
                 </form>

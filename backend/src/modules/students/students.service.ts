@@ -29,6 +29,18 @@ export class StudentService {
             throw NotFoundException({ message: 'المجموعة غير موجودة أو لا صلاحية لك عليها' });
         }
 
+        // 2. Enforce grade-level match
+        if (group.gradeLevel !== data.gradeLevel) {
+            throw BadRequestException({ message: 'عفواً، هذه المجموعة لمرحلة دراسية مختلفة' });
+        }
+
+        // 3. Enforce capacity limit
+        const capacity = group.capacity ?? 50;
+        const currentCount = await StudentModel.countDocuments({ groupId: data.groupId, teacherId });
+        if (currentCount >= capacity) {
+            throw BadRequestException({ message: `عفواً، وصلت المجموعة إلى أقصى عدد متاح (الطاقة: ${capacity} طالب)` });
+        }
+
         // 2. Parse the name
         const { studentName, parentName } = this.parseFullName(data.fullName);
 
@@ -70,6 +82,20 @@ export class StudentService {
                 const group = await GroupModel.findOne({ _id: data.groupId, teacherId }).lean();
                 if (!group) {
                     results.push({ index: i, success: false, error: 'المجموعة غير موجودة أو لا صلاحية لك عليها' });
+                    continue;
+                }
+
+                // Enforce grade-level match
+                if (group.gradeLevel !== data.gradeLevel) {
+                    results.push({ index: i, success: false, error: 'عفواً، هذه المجموعة لمرحلة دراسية مختلفة' });
+                    continue;
+                }
+
+                // Enforce capacity limit
+                const capacity = group.capacity ?? 50;
+                const currentCount = await StudentModel.countDocuments({ groupId: data.groupId, teacherId });
+                if (currentCount >= capacity) {
+                    results.push({ index: i, success: false, error: `عفواً، وصلت المجموعة إلى أقصى عدد متاح (الطاقة: ${capacity} طالب)` });
                     continue;
                 }
 
