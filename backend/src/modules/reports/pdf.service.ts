@@ -595,7 +595,7 @@ export class PdfService {
         const centerName = teacher?.centerName || 'منصة مُنظِّم — Monazem';
         const logoImg = teacher?.logoUrl ? `<img src="${teacher.logoUrl}" alt="Logo" style="max-height: 80px; margin-bottom: 10px; border-radius: 8px;" />` : '';
 
-        // Active students
+        // Active students — sorted alphabetically
         const students = await StudentModel.find({ groupId, teacherId, isActive: true })
             .select('studentName studentPhone parentPhone studentCode barcode').sort({ studentName: 1 }).lean();
 

@@ -30,6 +30,11 @@ const notebookSchema = new Schema<INotebookDocument>({
         default: 0,
         min:     [0, 'الكمية لا يمكن أن تكون سالبة'],
     },
+    reservedCount: {
+        type:    Number,
+        default: 0,
+        min:     [0, 'الكمية المحجوزة لا يمكن أن تكون سالبة'],
+    },
 }, {
     timestamps: true,
 });

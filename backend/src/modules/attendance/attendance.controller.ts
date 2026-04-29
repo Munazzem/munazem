@@ -101,9 +101,10 @@ attendanceRouter.post(
     authorizeRoles(UserRole.teacher, UserRole.assistant),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const teacherId = resolveTeacherId((req as any).user);
+            const user = (req as any).user;
+            const teacherId = resolveTeacherId(user);
             const sessionId = req.params['sessionId'] as string;
-            const result = await AttendanceService.completeSession(sessionId, teacherId);
+            const result = await AttendanceService.completeSession(sessionId, teacherId, user.userId);
             return SuccessResponse({ res, data: result, message: 'تم إنهاء الحصة وحفظ سجل الحضور' });
         } catch (error) { next(error); }
     }

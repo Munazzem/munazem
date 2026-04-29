@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchStudents } from '@/lib/api/students';
 import { fetchNotebooks } from '@/lib/api/notebooks';
-import { recordNotebookSale } from '@/lib/api/payments';
+import { reserveNotebook } from '@/lib/api/payments';
 import { toast } from 'sonner';
 import {
     Dialog,
@@ -39,7 +39,7 @@ export function QuickNotebookSaleModal({ open, onOpenChange }: Props) {
     const [selectedStudent, setSelectedStudent] = useState<StudentWithGroup | null>(null);
     const [notebookId,      setNotebookId]      = useState('');
     const [quantity,        setQuantity]        = useState('1');
-    const [discount,        setDiscount]        = useState('');
+    const [paidAmount,      setPaidAmount]      = useState('');
 
     // Debounce search
     useEffect(() => {
@@ -56,7 +56,7 @@ export function QuickNotebookSaleModal({ open, onOpenChange }: Props) {
                 setSelectedStudent(null);
                 setNotebookId('');
                 setQuantity('1');
-                setDiscount('');
+                setPaidAmount('');
             }, 300);
         }
     }, [open]);
@@ -89,21 +89,20 @@ export function QuickNotebookSaleModal({ open, onOpenChange }: Props) {
             ? rawNotebooks.data
             : [];
 
-    const selectedNotebook = notebooks.find(n => n._id === notebookId) ?? null;
-    const total = selectedNotebook
-        ? Math.max(0, selectedNotebook.price * Number(quantity || 1) - Number(discount || 0))
-        : 0;
+    const selectedNotebook = notebooks.find(n => n._id === notebookId);
+    const fullPrice = selectedNotebook ? selectedNotebook.price * Number(quantity || 1) : 0;
+    const remaining = Math.max(0, fullPrice - Number(paidAmount || 0));
 
     const mutation = useMutation({
         mutationFn: () =>
-            recordNotebookSale({
-                studentId:      selectedStudent!._id,
+            reserveNotebook({
+                studentId:   selectedStudent!._id,
                 notebookId,
-                quantity:       Number(quantity) || 1,
-                discountAmount: Number(discount) || 0,
+                quantity:    Number(quantity) || 1,
+                paidAmount:  Number(paidAmount) || 0, // In this context, the second input will be "Paid Amount"
             }),
         onSuccess: () => {
-            toast.success(`تم تسجيل بيع المذكرة لـ ${selectedStudent?.studentName} بنجاح`);
+            toast.success(`تم تسجيل حجز المذكرة لـ ${selectedStudent?.studentName} بنجاح`);
             queryClient.invalidateQueries({ queryKey: ['notebooks'] });
             queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
             queryClient.invalidateQueries({ queryKey: ['dailySummary'] });
@@ -129,7 +128,7 @@ export function QuickNotebookSaleModal({ open, onOpenChange }: Props) {
                 <DialogHeader className="px-6 pt-5 pb-4 border-b border-gray-100">
                     <DialogTitle className="text-lg font-bold flex items-center gap-2">
                         <BookOpen className="h-5 w-5 text-purple-600" />
-                        بيع مذكرة سريع
+                        حجز مذكرة جديد
                     </DialogTitle>
                 </DialogHeader>
 
@@ -258,13 +257,13 @@ export function QuickNotebookSaleModal({ open, onOpenChange }: Props) {
                                 </div>
                                 <div>
                                     <label className="text-sm font-medium text-gray-700 block mb-1.5">
-                                        خصم <span className="text-gray-400 font-normal">(ج.م — اختياري)</span>
+                                        المبلغ المدفوع حالياً <span className="text-gray-400 font-normal">(عربون)</span>
                                     </label>
                                     <Input
                                         type="number"
                                         min="0"
-                                        value={discount}
-                                        onChange={e => setDiscount(e.target.value)}
+                                        value={paidAmount}
+                                        onChange={e => setPaidAmount(e.target.value)}
                                         placeholder="0"
                                         dir="ltr"
                                     />
@@ -273,11 +272,22 @@ export function QuickNotebookSaleModal({ open, onOpenChange }: Props) {
 
                             {/* Total preview */}
                             <div className="bg-purple-50 border border-purple-100 rounded-xl px-4 py-3 flex items-center justify-between">
-                                <span className="text-sm text-gray-600 font-medium">الإجمالي المستحق</span>
-                                <span className="text-xl font-bold text-purple-700">
-                                    {total.toLocaleString('ar-EG')} ج.م
-                                </span>
+                                <div className="flex flex-col">
+                                    <span className="text-xs text-gray-500">إجمالي الحجز</span>
+                                    <span className="text-sm font-bold text-gray-700">{fullPrice.toLocaleString('ar-EG')} ج.م</span>
+                                </div>
+                                <div className="flex flex-col items-end">
+                                    <span className="text-xs text-gray-500">المبلغ المتبقي</span>
+                                    <span className="text-xl font-bold text-purple-700">
+                                        {remaining.toLocaleString('ar-EG')} ج.م
+                                    </span>
+                                </div>
                             </div>
+                            {Number(paidAmount) > 0 && (
+                                <div className="text-xs text-center text-gray-500 mt-1">
+                                    سيتم تسجيل {Number(paidAmount)} ج.م كعربون في الخزنة
+                                </div>
+                            )}
                         </>
                     )}
                 </div>
@@ -293,7 +303,7 @@ export function QuickNotebookSaleModal({ open, onOpenChange }: Props) {
                         className="flex-1 gap-2 bg-purple-600 hover:bg-purple-700"
                     >
                         {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                        تأكيد البيع
+                        تأكيد الحجز
                     </Button>
                 </div>
             </DialogContent>

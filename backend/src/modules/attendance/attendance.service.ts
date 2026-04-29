@@ -180,22 +180,31 @@ export class AttendanceService {
 
         // Mongoose populate with match returns null for studentId if it doesn't match the filter
         // So we filter out the records where studentId is null (meaning the student didn't match the search)
-        return records.filter(r => r.studentId !== null);
+        const filtered = records.filter(r => r.studentId !== null);
+
+        // Sort alphabetically by student name
+        filtered.sort((a, b) => {
+            const nameA = (a.studentId as any)?.studentName ?? '';
+            const nameB = (b.studentId as any)?.studentName ?? '';
+            return nameA.localeCompare(nameB, 'ar');
+        });
+
+        return filtered;
     }
 
     // ─── Complete session + generate Snapshot ───────────────────────
-    static async completeSession(sessionId: string, teacherId: string) {
+    static async completeSession(sessionId: string, teacherId: string, completedBy?: string) {
         const session = await SessionModel.findOne({ _id: sessionId, teacherId }).lean();
         if (!session) throw NotFoundException({ message: 'الحصة غير موجودة' });
         if (session.status === SessionStatus.COMPLETED) {
             throw BadRequestException({ message: 'الحصة مكتملة بالفعل' });
         }
 
-        // Get all students registered in this group
+        // Get all students registered in this group — sorted alphabetically
         const allStudents = await StudentModel.find(
             { groupId: session.groupId, teacherId, isActive: true },
-            { _id: 1, studentName: 1 }
-        ).lean();
+            { _id: 1, studentName: 1, excusedSessionsCount: 1, excusedUntil: 1 }
+        ).sort({ studentName: 1 }).lean();
 
         // Get all present/late attendance records
         const attendanceRecords = await AttendanceModel.find({ sessionId }).lean();
@@ -208,6 +217,7 @@ export class AttendanceService {
 
         // Arrays to accumulate bulk operations (to avoid hitting DB inside the loop)
         const excusedAttendanceDocsToInsert: any[] = [];
+        const absentAttendanceDocsToInsert:  any[] = [];
         const studentIdsToDecrementExcuse: any[] = [];
 
         for (const student of allStudents) {
@@ -243,6 +253,7 @@ export class AttendanceService {
                             sessionId: session._id,
                             status:    AttendanceStatus.EXCUSED,
                             type:      'SESSION',
+                            scannedBy: completedBy ? new mongoose.Types.ObjectId(completedBy) : undefined,
                             notes:     hasSessionExcuse 
                                 ? `مُستأذن (متبقي ${student.excusedSessionsCount} حصص قبل هذه)` 
                                 : 'مُستأذن تلقائياً بناءً على تاريخ الإذن',
@@ -258,6 +269,17 @@ export class AttendanceService {
                         studentId:   student._id,
                         studentName: student.studentName,
                     });
+
+                    // Create actual attendance record as ABSENT if it doesn't exist
+                    if (!record) {
+                        absentAttendanceDocsToInsert.push({
+                            studentId: student._id,
+                            sessionId: session._id,
+                            status:    AttendanceStatus.ABSENT,
+                            type:      'SESSION',
+                            scannedBy: completedBy ? new mongoose.Types.ObjectId(completedBy) : undefined,
+                        });
+                    }
                 }
             }
         }
@@ -286,6 +308,10 @@ export class AttendanceService {
         // Execute Accumulated Bulk Operations outside the loop
         if (excusedAttendanceDocsToInsert.length > 0) {
             await AttendanceModel.insertMany(excusedAttendanceDocsToInsert, { ordered: false }).catch(() => {});
+        }
+
+        if (absentAttendanceDocsToInsert.length > 0) {
+            await AttendanceModel.insertMany(absentAttendanceDocsToInsert, { ordered: false }).catch(() => {});
         }
         
         if (studentIdsToDecrementExcuse.length > 0) {
@@ -398,11 +424,11 @@ export class AttendanceService {
 
         const groupName = (session.groupId as any)?.name || 'مجموعة غير معروفة';
 
-        // 1. Get all students in the group
+        // 1. Get all students in the group — sorted alphabetically
         const allStudents = await StudentModel.find(
             { groupId: session.groupId, teacherId, isActive: true },
             { studentName: 1, parentPhone: 1 }
-        ).lean();
+        ).sort({ studentName: 1 }).lean();
 
         // 2. Get attendance records for this session
         const records = await AttendanceModel.find({ sessionId }).lean();

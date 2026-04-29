@@ -1,4 +1,6 @@
 import { NotebookModel } from '../../database/models/notebook.model.js';
+import { NotebookReservationModel } from '../../database/models/notebook-reservation.model.js';
+import { ReservationStatus } from '../../types/notebook-reservation.types.js';
 import { GradeLevel } from '../../common/enums/enum.service.js';
 import { NotFoundException, BadRequestException, ConflictException } from '../../common/utils/response/error.responce.js';
 
@@ -95,5 +97,30 @@ export class NotebooksService {
         const nb = await NotebookModel.findOneAndDelete({ _id: notebookId, teacherId }).lean();
         if (!nb) throw NotFoundException({ message: 'المذكرة غير موجودة' });
         return nb;
+    }
+
+    // ── List Reservations ───────────────────────────────────────────
+    static async getReservations(teacherId: string, queryFilters: any = {}) {
+        const filter: any = { teacherId };
+        if (queryFilters.status) filter.status = queryFilters.status;
+        if (queryFilters.studentId) filter.studentId = queryFilters.studentId;
+        if (queryFilters.notebookId) filter.notebookId = queryFilters.notebookId;
+
+        const page  = Math.max(1, parseInt(queryFilters.page)  || 1);
+        const limit = Math.min(100, Math.max(1, parseInt(queryFilters.limit) || 50));
+        const skip  = (page - 1) * limit;
+
+        const [data, total] = await Promise.all([
+            NotebookReservationModel.find(filter)
+                .populate('studentId', 'studentName studentPhone gradeLevel')
+                .populate('notebookId', 'name price')
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            NotebookReservationModel.countDocuments(filter),
+        ]);
+
+        return { data, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } };
     }
 }

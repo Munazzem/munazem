@@ -39,6 +39,23 @@ export const recordNotebookSaleSchema = z.object({
   }),
 });
 
+export const reserveNotebookSchema = z.object({
+  body: z.object({
+    notebookId:  objectId,
+    studentId:   objectId,
+    quantity:    z.number().int().positive('الكمية يجب أن تكون أكبر من صفر').optional(),
+    paidAmount:  z.number().min(0).optional(),
+    description: z.string().max(300).optional(),
+  }),
+});
+
+export const deliverNotebookSchema = z.object({
+  body: z.object({
+    paidAmount:  z.number().min(0).optional(),
+    description: z.string().max(300).optional(),
+  }),
+});
+
 export const upsertPriceSettingsSchema = z.object({
   body: z.object({
     prices: z.array(z.object({

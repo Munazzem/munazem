@@ -191,7 +191,7 @@ export default function DashboardPage() {
                             <div className="h-12 w-12 rounded-2xl bg-purple-500/10 flex items-center justify-center text-purple-600 group-hover:bg-purple-500/20 group-hover:scale-110 transition-all duration-300">
                                 <BookOpen className="h-6 w-6" />
                             </div>
-                            <p className="font-bold text-gray-800 text-sm">بيع مذكرة</p>
+                            <p className="font-bold text-gray-800 text-sm">حجز مذكرة</p>
                         </button>
                     </div>
                 </div>

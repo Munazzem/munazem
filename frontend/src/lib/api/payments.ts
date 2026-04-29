@@ -54,6 +54,25 @@ export const recordNotebookSale = async (data: {
     return (res as any).data;
 };
 
+export const reserveNotebook = async (data: {
+    studentId: string;
+    notebookId: string;
+    quantity?: number;
+    paidAmount?: number;
+    description?: string;
+}): Promise<any> => {
+    const res = await apiClient.post('/payments/notebook/reserve', data);
+    return (res as any).data;
+};
+
+export const deliverNotebook = async (reservationId: string, data: {
+    paidAmount?: number;
+    description?: string;
+}): Promise<any> => {
+    const res = await apiClient.post(`/payments/notebook/deliver/${reservationId}`, data);
+    return (res as any).data;
+};
+
 export interface IBatchSubscriptionResult {
     studentId: string;
     studentName: string;

@@ -199,7 +199,7 @@ export class ExamsService {
         const exam = await ExamModel.findOne({ _id: examId, teacherId }).lean();
         if (!exam) throw NotFoundException({ message: 'الامتحان غير موجود' });
 
-        const results = await ExamResultModel.find({ examId, teacherId }).sort({ score: -1 }).lean();
+        const results = await ExamResultModel.find({ examId, teacherId }).sort({ studentName: 1 }).lean();
         const passing = results.filter(r => r.passed).length;
 
         return {

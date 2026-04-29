@@ -39,3 +39,20 @@ export const restockNotebook = async (id: string, quantity: number): Promise<INo
 export const deleteNotebook = async (id: string): Promise<void> => {
     await apiClient.delete(`/notebooks/${id}`);
 };
+
+export const fetchReservations = async (params?: {
+    page?: number;
+    limit?: number;
+    status?: string;
+    studentId?: string;
+    notebookId?: string;
+}): Promise<{ data: any[]; pagination: any }> => {
+    const query = new URLSearchParams();
+    if (params?.page) query.append('page', String(params.page));
+    if (params?.limit) query.append('limit', String(params.limit));
+    if (params?.status) query.append('status', params.status);
+    if (params?.studentId) query.append('studentId', params.studentId);
+    if (params?.notebookId) query.append('notebookId', params.notebookId);
+    const res = await apiClient.get(`/notebooks/reservations?${query.toString()}`);
+    return (res as any).data;
+};
