@@ -7,7 +7,7 @@ import { ForbiddenException } from '../../common/utils/response/error.responce.j
 import { authenticate } from '../../middlewares/auth.middleware.js';
 import { authorizeRoles } from '../../middlewares/roles.middleware.js';
 import { validate } from '../../middlewares/validate.middleware.js';
-import { recordSubscriptionSchema, batchSubscriptionSchema, recordExpenseSchema, recordNotebookSaleSchema, upsertPriceSettingsSchema, updateTransactionSchema } from '../../validation/payment.validation.js';
+import { recordSubscriptionSchema, batchSubscriptionSchema, recordExpenseSchema, recordNotebookSaleSchema, upsertPriceSettingsSchema, reserveNotebookSchema, deliverNotebookSchema, updateTransactionSchema } from '../../validation/payment.validation.js';
 
 const paymentsRouter = Router();
 
@@ -92,6 +92,36 @@ paymentsRouter.post(
             const teacherId = resolveTeacherId(user);
             const transaction = await PaymentsService.recordNotebookSale(teacherId, user.userId, req.body);
             return SuccessResponse({ res, data: transaction, message: 'تم تسجيل بيع المذكرة بنجاح', status: 201 });
+        } catch (error) { next(error); }
+    }
+);
+
+// POST /payments/notebook/reserve — Reserve notebook (Assistant + Teacher)
+paymentsRouter.post(
+    '/notebook/reserve',
+    authorizeRoles(UserRole.assistant, UserRole.teacher),
+    validate(reserveNotebookSchema),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const user = (req as any).user;
+            const teacherId = resolveTeacherId(user);
+            const result = await PaymentsService.reserveNotebook(teacherId, user.userId, req.body);
+            return SuccessResponse({ res, data: result, message: 'تم حجز المذكرة بنجاح', status: 201 });
+        } catch (error) { next(error); }
+    }
+);
+
+// POST /payments/notebook/deliver/:reservationId — Deliver notebook (Assistant + Teacher)
+paymentsRouter.post(
+    '/notebook/deliver/:reservationId',
+    authorizeRoles(UserRole.assistant, UserRole.teacher),
+    validate(deliverNotebookSchema),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const user = (req as any).user;
+            const teacherId = resolveTeacherId(user);
+            const result = await PaymentsService.deliverNotebook(teacherId, user.userId, req.params['reservationId'] as string, req.body);
+            return SuccessResponse({ res, data: result, message: 'تم تسليم المذكرة بنجاح' });
         } catch (error) { next(error); }
     }
 );

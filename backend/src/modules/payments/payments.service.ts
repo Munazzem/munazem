@@ -4,6 +4,8 @@ import { DailyLedgerModel }   from '../../database/models/ledger.model.js';
 import { MonthlyLedgerModel } from '../../database/models/ledger.model.js';
 import { StudentModel }       from '../../database/models/student.model.js';
 import { NotebookModel }      from '../../database/models/notebook.model.js';
+import { NotebookReservationModel } from '../../database/models/notebook-reservation.model.js';
+import { ReservationStatus } from '../../types/notebook-reservation.types.js';
 import { TransactionType, TransactionCategory, GradeLevel } from '../../common/enums/enum.service.js';
 import { NotFoundException, BadRequestException } from '../../common/utils/response/error.responce.js';
 import type { IPriceSetting } from '../../types/price-settings.types.js';
@@ -321,6 +323,153 @@ export class PaymentsService {
         ]);
 
         return transaction;
+    }
+
+    // ── Reserve Notebook ────────────────────────────────────────────
+    static async reserveNotebook(
+        teacherId: string,
+        createdBy: string,
+        data: { studentId: string; notebookId: string; quantity?: number; paidAmount?: number; description?: string }
+    ) {
+        const student = await StudentModel.findById(data.studentId, { studentName: 1, teacherId: 1 }).lean();
+        if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
+        if (student.teacherId.toString() !== teacherId) throw BadRequestException({ message: 'لا تملك صلاحية على هذا الطالب' });
+
+        const notebook = await NotebookModel.findOne({ _id: data.notebookId, teacherId }).lean();
+        if (!notebook) throw NotFoundException({ message: 'المذكرة غير موجودة' });
+
+        const quantity = data.quantity ?? 1;
+        const totalPrice = notebook.price * quantity;
+        const paidAmount = data.paidAmount ?? 0;
+        const txDate = new Date();
+
+        if (paidAmount > totalPrice) throw BadRequestException({ message: 'المبلغ المدفوع أكبر من إجمالي السعر' });
+
+        // 1. Create Reservation
+        const reservation = await NotebookReservationModel.create({
+            teacherId,
+            studentId: student._id,
+            notebookId: notebook._id,
+            quantity,
+            totalPrice,
+            paidAmount,
+            status: ReservationStatus.PENDING,
+        });
+
+        const promises: Promise<any>[] = [
+            // 2. Increment reservedCount
+            NotebookModel.findByIdAndUpdate(notebook._id, { $inc: { reservedCount: quantity } })
+        ];
+
+        // 3. Record Transaction if any payment made
+        if (paidAmount > 0) {
+            const transaction = await TransactionModel.create({
+                teacherId,
+                createdBy,
+                type:           TransactionType.INCOME,
+                category:       TransactionCategory.NOTEBOOK_SALE,
+                studentId:      student._id,
+                studentName:    student.studentName,
+                originalAmount: totalPrice,
+                discountAmount: 0,
+                paidAmount,
+                date:           txDate,
+                description:    data.description || `عربون حجز مذكرة: ${notebook.name}`,
+            });
+
+            promises.push(
+                updateDailyLedger(teacherId, txDate, {
+                    transactionId: transaction._id,
+                    type:          TransactionType.INCOME,
+                    category:      TransactionCategory.NOTEBOOK_SALE,
+                    paidAmount,
+                    studentName:   student.studentName,
+                    createdBy,
+                    time:          txDate,
+                }, true),
+                updateMonthlyLedger(teacherId, txDate, paidAmount, true)
+            );
+        }
+
+        await Promise.all(promises);
+        return reservation;
+    }
+
+    // ── Deliver Notebook ────────────────────────────────────────────
+    static async deliverNotebook(
+        teacherId: string,
+        createdBy: string,
+        reservationId: string,
+        data: { paidAmount?: number; description?: string }
+    ) {
+        const reservation = await NotebookReservationModel.findOne({ _id: reservationId, teacherId })
+            .populate('studentId', 'studentName')
+            .populate('notebookId', 'name price stock');
+        
+        if (!reservation) throw NotFoundException({ message: 'الحجز غير موجود' });
+        if (reservation.status !== ReservationStatus.PENDING) throw BadRequestException({ message: 'هذا الحجز مكتمل أو ملغى بالفعل' });
+
+        const notebook = reservation.notebookId as any;
+        const student = reservation.studentId as any;
+
+        if (notebook.stock < reservation.quantity) {
+            throw BadRequestException({ message: `الكمية المتاحة في المخزن (${notebook.stock}) أقل من الكمية المحجوزة (${reservation.quantity})` });
+        }
+
+        const remainingBalance = reservation.totalPrice - reservation.paidAmount;
+        const additionalPayment = data.paidAmount ?? 0;
+        const txDate = new Date();
+
+        if (additionalPayment > remainingBalance) throw BadRequestException({ message: 'المبلغ المدفوع أكبر من المتبقي' });
+
+        // 1. Update Reservation
+        reservation.status = ReservationStatus.DELIVERED;
+        reservation.paidAmount += additionalPayment;
+        reservation.deliveredAt = txDate;
+        await reservation.save();
+
+        const promises: Promise<any>[] = [
+            // 2. Decrement Main Stock AND Decrement Reserved Count
+            NotebookModel.findByIdAndUpdate(notebook._id, { 
+                $inc: { 
+                    stock: -reservation.quantity,
+                    reservedCount: -reservation.quantity 
+                } 
+            })
+        ];
+
+        // 3. Record Transaction if any additional payment made
+        if (additionalPayment > 0) {
+            const transaction = await TransactionModel.create({
+                teacherId,
+                createdBy,
+                type:           TransactionType.INCOME,
+                category:       TransactionCategory.NOTEBOOK_SALE,
+                studentId:      student._id,
+                studentName:    student.studentName,
+                originalAmount: reservation.totalPrice,
+                discountAmount: 0,
+                paidAmount:     additionalPayment,
+                date:           txDate,
+                description:    data.description || `تكملة ثمن مذكرة: ${notebook.name}`,
+            });
+
+            promises.push(
+                updateDailyLedger(teacherId, txDate, {
+                    transactionId: transaction._id,
+                    type:          TransactionType.INCOME,
+                    category:      TransactionCategory.NOTEBOOK_SALE,
+                    paidAmount:    additionalPayment,
+                    studentName:   student.studentName,
+                    createdBy,
+                    time:          txDate,
+                }, true),
+                updateMonthlyLedger(teacherId, txDate, additionalPayment, true)
+            );
+        }
+
+        await Promise.all(promises);
+        return reservation;
     }
 
     // ── Record Expense ──────────────────────────────────────────────

@@ -17,6 +17,10 @@ import {
     PackagePlus,
     Filter,
     Pencil,
+    Printer,
+    CheckSquare,
+    QrCode,
+    BookMarked,
 } from 'lucide-react';
 import { TableSkeleton } from '@/components/layout/skeletons/TableSkeleton';
 import { cn } from '@/lib/utils';
@@ -45,6 +49,7 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { AddNotebookModal } from '@/components/notebooks/AddNotebookModal';
+import { PendingReservationsModal } from '@/components/notebooks/PendingReservationsModal';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 // ── Restock Dialog ────────────────────────────────────────────────
@@ -187,6 +192,7 @@ export default function NotebooksPage() {
     const [restockNb, setRestockNb] = useState<INotebook | null>(null);
     const [editNb, setEditNb] = useState<INotebook | null>(null);
     const [confirmDeleteNb, setConfirmDeleteNb] = useState<INotebook | null>(null);
+    const [showPending, setShowPending] = useState(false);
     const limit = 20;
 
     const queryClient = useQueryClient();
@@ -233,7 +239,17 @@ export default function NotebooksPage() {
                         {lowStock > 0 && <span className="text-amber-600"> · {lowStock} مخزون منخفض</span>})
                     </p>
                 </div>
-                {canManage && <AddNotebookModal />}
+                <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                    <Button 
+                        variant="outline" 
+                        className="gap-2 border-purple-100 text-purple-700 hover:bg-purple-50 hover:text-purple-800"
+                        onClick={() => setShowPending(true)}
+                    >
+                        <BookMarked className="h-4 w-4" />
+                        الحجوزات المعلقة
+                    </Button>
+                    {canManage && <AddNotebookModal />}
+                </div>
             </div>
 
             {/* Filters */}
@@ -278,88 +294,171 @@ export default function NotebooksPage() {
                         {canManage && <p className="text-xs text-gray-400 mt-1">اضغط "إضافة مذكرة" لإضافة أول مذكرة.</p>}
                     </div>
                 ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead>
-                                <tr className="border-b border-gray-50 bg-gray-50/50">
-                                    <th className="text-right font-semibold text-gray-500 px-6 py-3">المذكرة</th>
-                                    <th className="text-right font-semibold text-gray-500 px-4 py-3">المرحلة</th>
-                                    <th className="text-right font-semibold text-gray-500 px-4 py-3">السعر</th>
-                                    <th className="text-right font-semibold text-gray-500 px-4 py-3">المخزون</th>
-                                    <th className="text-center font-semibold text-gray-500 px-4 py-3 w-14">إجراء</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-50">
-                                {notebooks?.map((nb) => (
-                                    <tr key={nb._id} className="hover:bg-gray-50/50 transition-colors">
-                                        <td className="px-6 py-3">
-                                            <div className="flex items-center gap-3">
-                                                <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                                                    <BookOpen className="h-4 w-4 text-primary" />
-                                                </div>
-                                                <span className="font-semibold text-gray-900">{nb.name}</span>
+                    <>
+                        {/* Mobile List (Card View) */}
+                        <div className="block sm:hidden divide-y divide-gray-50">
+                            {notebooks?.map((nb) => (
+                                <div key={nb._id} className="p-4 space-y-3">
+                                    <div className="flex items-start justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                                                <BookOpen className="h-5 w-5 text-primary" />
                                             </div>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            <Badge variant="outline" className="text-xs text-gray-500">{nb.gradeLevel}</Badge>
-                                        </td>
-                                        <td className="px-4 py-3 font-medium text-gray-900">
-                                            {nb.price.toLocaleString('ar-EG')} ج
-                                        </td>
-                                        <td className="px-4 py-3">
+                                            <div>
+                                                <h3 className="font-bold text-gray-900 leading-tight">{nb.name}</h3>
+                                                <Badge variant="outline" className="mt-1 text-[10px] text-gray-500 h-5">
+                                                    {nb.gradeLevel}
+                                                </Badge>
+                                            </div>
+                                        </div>
+                                        
+                                        <DropdownMenu dir="rtl">
+                                            <DropdownMenuTrigger asChild>
+                                                <Button variant="ghost" className="h-8 w-8 p-0 text-gray-400">
+                                                    <MoreVertical className="h-4 w-4" />
+                                                </Button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent align="end">
+                                                <DropdownMenuLabel className="text-xs text-gray-400">الإجراءات</DropdownMenuLabel>
+                                                <DropdownMenuSeparator />
+                                                {canManage && (
+                                                    <>
+                                                        <DropdownMenuItem onClick={() => setRestockNb(nb)}>
+                                                            <PackagePlus className="ml-2 h-4 w-4" /> إضافة مخزون
+                                                        </DropdownMenuItem>
+                                                        <DropdownMenuItem onClick={() => setEditNb(nb)}>
+                                                            <Pencil className="ml-2 h-4 w-4" /> تعديل
+                                                        </DropdownMenuItem>
+                                                        <DropdownMenuSeparator />
+                                                        <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(nb)}>
+                                                            <Trash2 className="ml-2 h-4 w-4" /> حذف
+                                                        </DropdownMenuItem>
+                                                    </>
+                                                )}
+                                            </DropdownMenuContent>
+                                        </DropdownMenu>
+                                    </div>
+
+                                    <div className="flex items-center justify-between pt-1">
+                                        <div className="flex flex-col gap-1">
+                                            <span className="text-xs text-gray-400">السعر</span>
+                                            <span className="font-bold text-primary">{nb.price.toLocaleString('ar-EG')} ج</span>
+                                        </div>
+                                        <div className="flex flex-col items-end gap-1">
+                                            <span className="text-xs text-gray-400">المحجوز</span>
+                                            <span className="flex items-center gap-1 text-sm font-bold px-2 py-0.5 rounded-lg bg-purple-100 text-purple-700">
+                                                <BookMarked className="h-3 w-3" />
+                                                {nb.reservedCount || 0}
+                                            </span>
+                                        </div>
+                                        <div className="flex flex-col items-end gap-1">
+                                            <span className="text-xs text-gray-400">المخزن</span>
                                             <span className={cn(
-                                                'flex items-center gap-1 text-sm font-bold w-fit px-2 py-0.5 rounded-lg',
-                                                nb.stock === 0
-                                                    ? 'bg-red-100 text-red-600'
-                                                    : nb.stock <= 5
-                                                    ? 'bg-amber-100 text-amber-700'
-                                                    : 'bg-green-100 text-green-700'
+                                                'flex items-center gap-1 text-sm font-bold px-2 py-0.5 rounded-lg',
+                                                nb.stock === 0 ? 'bg-red-100 text-red-600' :
+                                                nb.stock <= 5 ? 'bg-amber-100 text-amber-700' :
+                                                'bg-green-100 text-green-700'
                                             )}>
-                                                <Package className="h-3.5 w-3.5" />
+                                                <Package className="h-3 w-3" />
                                                 {nb.stock}
                                             </span>
-                                        </td>
-                                        <td className="px-4 py-3 text-center">
-                                            <DropdownMenu dir="rtl">
-                                                <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" className="h-8 w-8 p-0 text-gray-400 hover:text-primary">
-                                                        <MoreVertical className="h-4 w-4" />
-                                                    </Button>
-                                                </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end">
-                                                    <DropdownMenuLabel className="text-xs text-gray-400">الإجراءات</DropdownMenuLabel>
-                                                    <DropdownMenuSeparator />
-                                                    {canManage && (
-                                                        <>
-                                                            <DropdownMenuItem
-                                                                className="cursor-pointer focus:text-primary"
-                                                                onClick={() => setRestockNb(nb)}
-                                                            >
-                                                                <PackagePlus className="mr-2 h-4 w-4 ml-2" /> إضافة مخزون
-                                                            </DropdownMenuItem>
-                                                            <DropdownMenuItem
-                                                                className="cursor-pointer focus:text-primary"
-                                                                onClick={() => { setEditNb(nb); }}
-                                                            >
-                                                                <Pencil className="mr-2 h-4 w-4 ml-2" /> تعديل
-                                                            </DropdownMenuItem>
-                                                            <DropdownMenuSeparator />
-                                                            <DropdownMenuItem
-                                                                className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50"
-                                                                onClick={() => handleDelete(nb)}
-                                                            >
-                                                                <Trash2 className="mr-2 h-4 w-4 ml-2" /> حذف
-                                                            </DropdownMenuItem>
-                                                        </>
-                                                    )}
-                                                </DropdownMenuContent>
-                                            </DropdownMenu>
-                                        </td>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Desktop Table View */}
+                        <div className="hidden sm:block overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="border-b border-gray-50 bg-gray-50/50">
+                                        <th className="text-right font-semibold text-gray-500 px-6 py-3">المذكرة</th>
+                                        <th className="text-right font-semibold text-gray-500 px-4 py-3">المرحلة</th>
+                                        <th className="text-right font-semibold text-gray-500 px-4 py-3">السعر</th>
+                                        <th className="text-right font-semibold text-gray-500 px-4 py-3">المحجوز</th>
+                                        <th className="text-right font-semibold text-gray-500 px-4 py-3">المخزن الرئيسي</th>
+                                        <th className="text-center font-semibold text-gray-500 px-4 py-3 w-14">إجراء</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
+                                </thead>
+                                <tbody className="divide-y divide-gray-50">
+                                    {notebooks?.map((nb) => (
+                                        <tr key={nb._id} className="hover:bg-gray-50/50 transition-colors">
+                                            <td className="px-6 py-3">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                                                        <BookOpen className="h-4 w-4 text-primary" />
+                                                    </div>
+                                                    <span className="font-semibold text-gray-900">{nb.name}</span>
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <Badge variant="outline" className="text-xs text-gray-500">{nb.gradeLevel}</Badge>
+                                            </td>
+                                            <td className="px-4 py-3 font-medium text-gray-900">
+                                                {nb.price.toLocaleString('ar-EG')} ج
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <span className="flex items-center gap-1 text-sm font-bold w-fit px-2 py-0.5 rounded-lg bg-purple-100 text-purple-700">
+                                                    <BookMarked className="h-3.5 w-3.5" />
+                                                    {nb.reservedCount || 0}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <span className={cn(
+                                                    'flex items-center gap-1 text-sm font-bold w-fit px-2 py-0.5 rounded-lg',
+                                                    nb.stock === 0
+                                                        ? 'bg-red-100 text-red-600'
+                                                        : nb.stock <= 5
+                                                        ? 'bg-amber-100 text-amber-700'
+                                                        : 'bg-green-100 text-green-700'
+                                                )}>
+                                                    <Package className="h-3.5 w-3.5" />
+                                                    {nb.stock}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                <DropdownMenu dir="rtl">
+                                                    <DropdownMenuTrigger asChild>
+                                                        <Button variant="ghost" className="h-8 w-8 p-0 text-gray-400 hover:text-primary">
+                                                            <MoreVertical className="h-4 w-4" />
+                                                        </Button>
+                                                    </DropdownMenuTrigger>
+                                                    <DropdownMenuContent align="end">
+                                                        <DropdownMenuLabel className="text-xs text-gray-400">الإجراءات</DropdownMenuLabel>
+                                                        <DropdownMenuSeparator />
+                                                        {canManage && (
+                                                            <>
+                                                                <DropdownMenuItem
+                                                                    className="cursor-pointer focus:text-primary"
+                                                                    onClick={() => setRestockNb(nb)}
+                                                                >
+                                                                    <PackagePlus className="mr-2 h-4 w-4 ml-2" /> إضافة مخزون
+                                                                </DropdownMenuItem>
+                                                                <DropdownMenuItem
+                                                                    className="cursor-pointer focus:text-primary"
+                                                                    onClick={() => { setEditNb(nb); }}
+                                                                >
+                                                                    <Pencil className="mr-2 h-4 w-4 ml-2" /> تعديل
+                                                                </DropdownMenuItem>
+                                                                <DropdownMenuSeparator />
+                                                                <DropdownMenuItem
+                                                                    className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50"
+                                                                    onClick={() => handleDelete(nb)}
+                                                                >
+                                                                    <Trash2 className="mr-2 h-4 w-4 ml-2" /> حذف
+                                                                </DropdownMenuItem>
+                                                            </>
+                                                        )}
+                                                    </DropdownMenuContent>
+                                                </DropdownMenu>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </>
                 )}
 
                 {/* Pagination */}
@@ -381,16 +480,17 @@ export default function NotebooksPage() {
             <RestockDialog notebook={restockNb} open={restockNb !== null} onOpenChange={(v) => { if (!v) setRestockNb(null); }} />
             <EditNotebookDialog notebook={editNb} open={editNb !== null} onOpenChange={(v) => { if (!v) setEditNb(null); }} />
             <ConfirmDialog
-                open={confirmDeleteNb !== null}
-                onOpenChange={(v) => { if (!v) setConfirmDeleteNb(null); }}
-                title={`حذف "${confirmDeleteNb?.name}"؟`}
-                description="سيتم حذف المذكرة من النظام نهائياً."
-                confirmLabel="حذف"
+                open={!!confirmDeleteNb}
+                onOpenChange={(v) => !v && setConfirmDeleteNb(null)}
+                title="حذف المذكرة"
+                description={`هل أنت متأكد من حذف مذكرة "${confirmDeleteNb?.name}"؟ سيتم حذف كافة السجلات المرتبطة بها.`}
+                onConfirm={() => confirmDeleteNb && deleteMutation.mutate(confirmDeleteNb._id)}
                 variant="danger"
-                onConfirm={() => {
-                    if (confirmDeleteNb) deleteMutation.mutate(confirmDeleteNb._id);
-                    setConfirmDeleteNb(null);
-                }}
+            />
+
+            <PendingReservationsModal 
+                open={showPending} 
+                onOpenChange={setShowPending} 
             />
         </div>
     );

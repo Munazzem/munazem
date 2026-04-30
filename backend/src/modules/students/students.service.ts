@@ -169,7 +169,7 @@ export class StudentService {
         const [students, total] = await Promise.all([
             StudentModel.find(filter)
                 .populate('groupId', 'name schedule')
-                .sort({ createdAt: -1 })
+                .sort({ studentName: 1 })
                 .skip(skip)
                 .limit(limit)
                 .lean(),

@@ -42,6 +42,19 @@ notebooksRouter.get(
     }
 );
 
+// ─── GET /notebooks/reservations — List all reservations (Teacher + Assistant)
+notebooksRouter.get(
+    '/reservations',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = resolveTeacherId((req as any).user);
+            const result = await NotebooksService.getReservations(teacherId, req.query);
+            return SuccessResponse({ res, data: result, message: 'تم جلب الحجوزات بنجاح' });
+        } catch (error) { next(error); }
+    }
+);
+
 // ─── GET /notebooks/:id — Get single (Teacher + Assistant)
 notebooksRouter.get(
     '/:id',

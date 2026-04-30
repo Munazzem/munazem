@@ -172,6 +172,13 @@ export default function SessionDetailPage() {
             .filter(Boolean)
     );
 
+    // Sort attendance records alphabetically by student name
+    const sortedAttendanceRecords = [...attendanceRecords].sort((a, b) => {
+        const nameA = (a.studentId as any)?.studentName ?? '';
+        const nameB = (b.studentId as any)?.studentName ?? '';
+        return nameA.localeCompare(nameB, 'ar');
+    });
+
     // Start session (mark IN_PROGRESS) when recording first attendance
     const ensureInProgress = useCallback(async () => {
         if (session?.status === 'SCHEDULED') {
@@ -336,7 +343,14 @@ export default function SessionDetailPage() {
     }
 
     const presentCount = attendanceRecords.filter((r) => r.status === 'PRESENT' || r.status === 'LATE').length;
-    const absentCount = attendanceRecords.filter((r) => r.status === 'ABSENT').length;
+    const excusedCount = attendanceRecords.filter((r) => r.status === 'EXCUSED').length;
+    
+    // Total absentees = Students in group who didn't show up + Students explicitly marked as ABSENT
+    // During active session, it's safer to calculate as: Total Group - (Present + Excused)
+    const totalGroupStudents = groupStudentsData?.data?.length ?? 0;
+    const absentCount = session.status === 'COMPLETED' 
+        ? attendanceRecords.filter((r) => r.status === 'ABSENT').length
+        : Math.max(0, totalGroupStudents - presentCount - excusedCount);
 
     return (
         <div className="min-h-screen bg-gray-50/30 p-3 sm:p-4 lg:p-6" dir="rtl">
@@ -463,7 +477,7 @@ export default function SessionDetailPage() {
                             </div>
                         ) : (
                             <ul className="divide-y divide-gray-50">
-                                {attendanceRecords.map((record) => {
+                                {sortedAttendanceRecords.map((record) => {
                                     const student = record.studentId as any;
                                     return (
                                         <li
@@ -567,6 +581,8 @@ export default function SessionDetailPage() {
                                 <ul className="divide-y divide-gray-50 max-h-[300px] overflow-y-auto">
                                     {(groupStudentsData?.data ?? [])
                                         .filter(s => !alreadyRecordedIds.has(s._id))
+                                        .slice()
+                                        .sort((a, b) => a.studentName.localeCompare(b.studentName, 'ar'))
                                         .map((student) => (
                                             <li
                                                 key={student._id}
