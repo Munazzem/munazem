@@ -58,3 +58,22 @@ export const fetchMonthlyReportHtml = async (year: number, month: number): Promi
     const res = await apiClient.get(`/reports/financial/monthly/pdf?year=${year}&month=${month}`);
     return res as unknown as string;
 };
+
+export interface IUnpaidStudentsReport {
+    month:       string;
+    totalActive: number;
+    unpaidCount: number;
+    paidCount:   number;
+    students:    Array<{
+        _id:         string;
+        studentName: string;
+        gradeLevel:  string;
+        studentCode: string;
+        groupId?:    { _id: string; name: string } | string;
+    }>;
+}
+
+export const fetchUnpaidStudents = async (includeList = false): Promise<IUnpaidStudentsReport> => {
+    const res = await apiClient.get(`/reports/unpaid-students${includeList ? '?includeList=true' : ''}`);
+    return (res as any).data;
+};

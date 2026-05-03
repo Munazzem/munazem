@@ -509,4 +509,47 @@ export class ReportsService {
             },
         };
     }
+
+    // ══════════════════════════════════════════════════════════════
+    // 7. Unpaid Students — who hasn't paid a subscription this month
+    // ══════════════════════════════════════════════════════════════
+    static async getUnpaidStudents(teacherId: string, includeList = false) {
+        const now        = new Date();
+        const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+        const monthEnd   = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+
+        // IDs of students who paid a subscription this month (fast distinct — no populate)
+        const paidIds: any[] = await TransactionModel.distinct('studentId', {
+            teacherId,
+            type:     TransactionType.INCOME,
+            category: TransactionCategory.SUBSCRIPTION,
+            date:     { $gte: monthStart, $lt: monthEnd },
+        });
+
+        const paidSet = new Set(paidIds.map((id) => id.toString()));
+
+        // Count active students using $nin — no document fetch needed
+        const totalActive = await StudentModel.countDocuments({ teacherId, isActive: true });
+        const paidCount   = paidSet.size;
+        const unpaidCount = totalActive - paidCount;
+
+        const base = {
+            month:       `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`,
+            totalActive,
+            unpaidCount: Math.max(0, unpaidCount),
+            paidCount,
+        };
+
+        // ── Heavy part: only when caller explicitly requests the list ──
+        if (!includeList) {
+            return { ...base, students: [] };
+        }
+
+        const unpaidStudents = await StudentModel.find(
+            { teacherId, isActive: true, _id: { $nin: paidIds } },
+            { studentName: 1, gradeLevel: 1, groupId: 1, studentCode: 1 }
+        ).populate('groupId', 'name').sort({ studentName: 1 }).limit(100).lean();
+
+        return { ...base, students: unpaidStudents };
+    }
 }

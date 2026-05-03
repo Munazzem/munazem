@@ -223,11 +223,15 @@ export class SessionService {
                 date: { $gte: monthStart, $lt: monthEnd }
             });
 
+            // To preserve chronological order and avoid skipping days (e.g. Wednesday in the middle of the month),
+            // we first collect all possible dates matching the schedule, sort them, and THEN apply the 8-session limit.
+            const possibleDates: { date: Date, time: string }[] = [];
+
             for (const slot of group.schedule) {
                 const targetDay = dayMap[slot.day];
                 if (targetDay === undefined) continue;
 
-                // Find the first occurrence of that weekday in the month
+                // Find the first occurrence of that weekday in the month (on or after today)
                 const startDayToUse = monthStart > today ? monthStart : today;
                 const diff = (targetDay - startDayToUse.getUTCDay() + 7) % 7;
                 
@@ -236,33 +240,40 @@ export class SessionService {
 
                 let sessionDate = new Date(firstOccurrence);
                 while (sessionDate < monthEnd) {
-                    if (groupSessionCount >= 8) break;
-
-                    const nextDay = new Date(sessionDate);
-                    nextDay.setUTCDate(sessionDate.getUTCDate() + 1);
-
-                    const existing = await SessionModel.findOne({
-                        groupId: group._id,
-                        date: { $gte: sessionDate, $lt: nextDay },
-                    }).lean();
-
-                    if (existing) {
-                        skippedCount++;
-                    } else {
-                        await SessionModel.create({
-                            groupId:   group._id,
-                            teacherId,
-                            date:      new Date(sessionDate),
-                            startTime: slot.time,
-                            status:    SessionStatus.SCHEDULED,
-                        });
-                        createdCount++;
-                        groupSessionCount++;
-                    }
-
+                    possibleDates.push({ date: new Date(sessionDate), time: slot.time });
                     // Advance to next week
-                    sessionDate = new Date(sessionDate);
                     sessionDate.setUTCDate(sessionDate.getUTCDate() + 7);
+                }
+            }
+
+            // Sort chronologically
+            possibleDates.sort((a, b) => a.date.getTime() - b.date.getTime());
+
+            // Create sessions respecting the limit
+            for (const slot of possibleDates) {
+                if (groupSessionCount >= 8) break;
+
+                const sessionDate = slot.date;
+                const nextDay = new Date(sessionDate);
+                nextDay.setUTCDate(sessionDate.getUTCDate() + 1);
+
+                const existing = await SessionModel.findOne({
+                    groupId: group._id,
+                    date: { $gte: sessionDate, $lt: nextDay },
+                }).lean();
+
+                if (existing) {
+                    skippedCount++;
+                } else {
+                    await SessionModel.create({
+                        groupId:   group._id,
+                        teacherId,
+                        date:      new Date(sessionDate),
+                        startTime: slot.time,
+                        status:    SessionStatus.SCHEDULED,
+                    });
+                    createdCount++;
+                    groupSessionCount++;
                 }
             }
         }
