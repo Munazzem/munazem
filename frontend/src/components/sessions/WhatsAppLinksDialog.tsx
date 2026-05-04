@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getWhatsAppLinks } from '@/lib/api/attendance';
 import {
@@ -15,6 +16,7 @@ import {
     UserCheck,
     Send,
     ExternalLink,
+    CheckCheck,
 } from 'lucide-react';
 
 interface WhatsAppLinksDialogProps {
@@ -33,6 +35,23 @@ export function WhatsAppLinksDialog({
         queryFn: () => getWhatsAppLinks(sessionId),
         enabled: open,
     });
+
+    const [notifying, setNotifying] = useState(false);
+    const [notified, setNotified]   = useState(false);
+
+    const notifyAllAbsent = () => {
+        if (absent.length === 0 || notifying) return;
+        setNotifying(true);
+        absent.forEach((l, i) => {
+            setTimeout(() => {
+                window.open(l.whatsappLink, '_blank');
+                if (i === absent.length - 1) {
+                    setNotifying(false);
+                    setNotified(true);
+                }
+            }, i * 600);
+        });
+    };
 
     const present = links.filter((l) => l.status === 'PRESENT');
     const absent  = links.filter((l) => l.status === 'ABSENT');
@@ -73,9 +92,30 @@ export function WhatsAppLinksDialog({
                         {/* Absent first (priority) */}
                         {absent.length > 0 && (
                             <div className="mb-4">
-                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                                    الغائبون — {absent.length}
-                                </p>
+                                <div className="flex items-center justify-between mb-2">
+                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                                        الغائبون — {absent.length}
+                                    </p>
+                                    <button
+                                        onClick={notifyAllAbsent}
+                                        disabled={notifying || notified}
+                                        className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all ${
+                                            notified
+                                                ? 'bg-green-100 text-green-700 border border-green-200 cursor-default'
+                                                : notifying
+                                                ? 'bg-green-50 text-green-600 border border-green-200 cursor-wait'
+                                                : 'bg-green-600 hover:bg-green-700 text-white shadow-sm hover:shadow-md'
+                                        }`}
+                                    >
+                                        {notified ? (
+                                            <><CheckCheck className="h-3.5 w-3.5" /> تم الإرسال</>
+                                        ) : notifying ? (
+                                            <><Loader2 className="h-3.5 w-3.5 animate-spin" /> جارٍ الفتح...</>
+                                        ) : (
+                                            <><Send className="h-3.5 w-3.5" /> 📲 إبلاغ الكل ({absent.length})</>
+                                        )}
+                                    </button>
+                                </div>
                                 <ul className="space-y-1.5">
                                     {absent.map((l) => (
                                         <li key={l.studentId}>

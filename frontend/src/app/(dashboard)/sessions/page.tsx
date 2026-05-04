@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchSessions, generateMonthSessions } from '@/lib/api/sessions';
+import { fetchSessions, generateMonthSessions, updateSessionStatus } from '@/lib/api/sessions';
 import { fetchGroups } from '@/lib/api/groups';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { CreateSessionModal } from '@/components/sessions/CreateSessionModal';
@@ -21,7 +21,20 @@ import {
     ArrowLeft,
     ChevronDown,
     ChevronUp,
+    XCircle,
+    Calendar,
+    CalendarX,
 } from 'lucide-react';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { TableSkeleton } from '@/components/layout/skeletons/TableSkeleton';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -62,11 +75,21 @@ export default function SessionsPage() {
     const queryClient = useQueryClient();
     const canWrite = user?.role === 'assistant' || user?.role === 'teacher';
 
+    // Use local date (not UTC) to avoid timezone offset issues
+    const _now = new Date();
+    const today = [
+        _now.getFullYear(),
+        String(_now.getMonth() + 1).padStart(2, '0'),
+        String(_now.getDate()).padStart(2, '0'),
+    ].join('-');
+
     const [page, setPage] = useState(1);
     const [groupFilter, setGroupFilter] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
-    const [dateFilter, setDateFilter] = useState('');
+    const [dateFilter, setDateFilter] = useState(today);
     const [showFilters, setShowFilters] = useState(false);
+    const [cancelSessionId, setCancelSessionId] = useState<string | null>(null);
+    const isViewingToday = dateFilter === today;
 
     // Month generation
     const now = new Date();
@@ -109,6 +132,19 @@ export default function SessionsPage() {
         },
     });
 
+    const cancelMutation = useMutation({
+        mutationFn: (sessionId: string) => updateSessionStatus(sessionId, 'CANCELLED'),
+        onSuccess: () => {
+            toast.success('تم إلغاء الحصة بنجاح');
+            setCancelSessionId(null);
+            queryClient.invalidateQueries({ queryKey: ['sessions'] });
+        },
+        onError: () => {
+            toast.error('حدث خطأ أثناء إلغاء الحصة');
+            setCancelSessionId(null);
+        },
+    });
+
     const handleGenerateMonth = () => {
         generateMutation.mutate({ year: genYear, month: genMonth });
     };
@@ -123,6 +159,11 @@ export default function SessionsPage() {
         setGroupFilter('');
         setStatusFilter('');
         setDateFilter('');
+        setPage(1);
+    };
+
+    const goToToday = () => {
+        setDateFilter(today);
         setPage(1);
     };
 
@@ -168,10 +209,13 @@ export default function SessionsPage() {
                 <div>
                     <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-2">
                         <CalendarCheck className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
-                        الحصص والغياب
+                        {isViewingToday ? 'حصص اليوم' : 'الحصص والغياب'}
                     </h1>
                     <p className="text-xs sm:text-sm text-gray-500 mt-1">
-                        {canWrite ? 'إدارة الحصص وتسجيل الحضور' : 'عرض الحصص وسجلات الحضور'}
+                        {isViewingToday
+                            ? new Date().toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+                            : (canWrite ? 'إدارة الحصص وتسجيل الحضور' : 'عرض الحصص وسجلات الحضور')
+                        }
                     </p>
                 </div>
                 {canWrite && (
@@ -295,6 +339,27 @@ export default function SessionsPage() {
                         </SelectContent>
                     </Select>
 
+                    {/* Today / All quick toggle */}
+                    <div className="flex gap-1.5 w-full sm:w-auto">
+                        <Button
+                            variant={isViewingToday ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={goToToday}
+                            className="gap-1.5 h-9 flex-1 sm:flex-none text-xs"
+                        >
+                            <Calendar className="h-3.5 w-3.5" />
+                            اليوم
+                        </Button>
+                        <Button
+                            variant={!dateFilter ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => { setDateFilter(''); setPage(1); }}
+                            className="gap-1.5 h-9 flex-1 sm:flex-none text-xs"
+                        >
+                            كل الحصص
+                        </Button>
+                    </div>
+
                     <Input
                         type="date"
                         className="h-9 text-sm w-full sm:w-44"
@@ -302,7 +367,7 @@ export default function SessionsPage() {
                         onChange={(e) => { setDateFilter(e.target.value); setPage(1); }}
                     />
 
-                    {hasActiveFilters && (
+                    {(groupFilter || statusFilter) && (
                         <Button
                             variant="ghost"
                             size="sm"
@@ -327,8 +392,13 @@ export default function SessionsPage() {
             {!isLoading && sessions.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-16 text-gray-400 gap-3 bg-white rounded-xl border border-gray-100 shadow-sm">
                     <CalendarDays className="h-12 w-12 text-gray-200" />
-                    <p className="text-sm">لا توجد حصص</p>
-                    {canWrite && (
+                    <p className="text-sm font-medium">
+                        {isViewingToday ? 'لا توجد حصص اليوم' : 'لا توجد حصص'}
+                    </p>
+                    {isViewingToday && canWrite && (
+                        <p className="text-xs text-gray-400">يمكنك إنشاء حصة جديدة أو توليد حصص الشهر</p>
+                    )}
+                    {!isViewingToday && canWrite && (
                         <p className="text-xs text-gray-400">ابدأ بإنشاء حصة جديدة أو توليد حصص الأسبوع</p>
                     )}
                 </div>
@@ -351,32 +421,43 @@ export default function SessionsPage() {
                                 {/* Mobile View (Cards) */}
                                 <div className="lg:hidden space-y-3 pt-4">
                                     {sessionsByGroup[groupName].map((session) => (
-                                        <button
-                                            key={session._id}
-                                            className="w-full text-right bg-white border border-gray-100 rounded-xl shadow-sm p-4 hover:border-primary/30 hover:shadow-md transition-all"
-                                            onClick={() => router.push(`/sessions/${session._id}`)}
-                                        >
-                                            <div className="flex items-start justify-between gap-2">
-                                                <div className="min-w-0">
-                                                    <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-500">
-                                                        <span className="flex items-center gap-1">
-                                                            <CalendarDays className="h-4 w-4 text-primary" />
-                                                            <span className="font-bold text-gray-800 text-sm">{formatDateShort(session.date)}</span>
+                                        <div key={session._id} className="relative">
+                                            <button
+                                                className="w-full text-right bg-white border border-gray-100 rounded-xl shadow-sm p-4 hover:border-primary/30 hover:shadow-md transition-all"
+                                                onClick={() => router.push(`/sessions/${session._id}`)}
+                                            >
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div className="min-w-0">
+                                                        <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-500">
+                                                            <span className="flex items-center gap-1">
+                                                                <CalendarDays className="h-4 w-4 text-primary" />
+                                                                <span className="font-bold text-gray-800 text-sm">{formatDateShort(session.date)}</span>
+                                                            </span>
+                                                            <span className="flex items-center gap-1">
+                                                                <Clock className="h-4 w-4 text-primary" />
+                                                                <span className="font-bold text-gray-800 text-sm">{session.startTime}</span>
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex flex-col items-end gap-2 shrink-0">
+                                                        <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border', STATUS_COLORS[session.status])}>
+                                                            {STATUS_LABELS[session.status]}
                                                         </span>
-                                                        <span className="flex items-center gap-1">
-                                                            <Clock className="h-4 w-4 text-primary" />
-                                                            <span className="font-bold text-gray-800 text-sm">{session.startTime}</span>
-                                                        </span>
+                                                        <ArrowLeft className="h-4 w-4 text-gray-300" />
                                                     </div>
                                                 </div>
-                                                <div className="flex flex-col items-end gap-2 shrink-0">
-                                                    <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border', STATUS_COLORS[session.status])}>
-                                                        {STATUS_LABELS[session.status]}
-                                                    </span>
-                                                    <ArrowLeft className="h-4 w-4 text-gray-300" />
-                                                </div>
-                                            </div>
-                                        </button>
+                                            </button>
+                                            {/* Cancel button — only for SCHEDULED sessions */}
+                                            {canWrite && session.status === 'SCHEDULED' && (
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); setCancelSessionId(session._id); }}
+                                                    className="absolute top-2 left-2 flex items-center gap-1 text-[11px] text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-100 rounded-full px-2 py-0.5 transition-colors"
+                                                >
+                                                    <CalendarX className="h-3 w-3" />
+                                                    إلغاء
+                                                </button>
+                                            )}
+                                        </div>
                                     ))}
                                 </div>
 
@@ -417,17 +498,30 @@ export default function SessionsPage() {
                                                             </span>
                                                         </td>
                                                         <td className="px-4 py-3 text-left">
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="sm"
-                                                                className="text-primary hover:text-primary/80 gap-1 text-xs"
-                                                                onClick={(e) => { e.stopPropagation(); router.push(`/sessions/${session._id}`); }}
-                                                            >
-                                                                {canWrite && session.status !== 'COMPLETED' && session.status !== 'CANCELLED'
-                                                                    ? 'تسجيل الحضور'
-                                                                    : 'عرض التفاصيل'}
-                                                                <ChevronLeft className="h-3.5 w-3.5" />
-                                                            </Button>
+                                                            <div className="flex items-center gap-2 justify-end">
+                                                                {canWrite && session.status === 'SCHEDULED' && (
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        className="text-red-500 hover:text-red-700 hover:bg-red-50 gap-1 text-xs"
+                                                                        onClick={(e) => { e.stopPropagation(); setCancelSessionId(session._id); }}
+                                                                    >
+                                                                        <CalendarX className="h-3.5 w-3.5" />
+                                                                        إلغاء
+                                                                    </Button>
+                                                                )}
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    className="text-primary hover:text-primary/80 gap-1 text-xs"
+                                                                    onClick={(e) => { e.stopPropagation(); router.push(`/sessions/${session._id}`); }}
+                                                                >
+                                                                    {canWrite && session.status !== 'COMPLETED' && session.status !== 'CANCELLED'
+                                                                        ? 'تسجيل الحضور'
+                                                                        : 'عرض التفاصيل'}
+                                                                    <ChevronLeft className="h-3.5 w-3.5" />
+                                                                </Button>
+                                                            </div>
                                                         </td>
                                                     </tr>
                                                 ))}
@@ -457,6 +551,32 @@ export default function SessionsPage() {
                     </div>
                 </div>
             )}
+            {/* Cancel Session Confirmation Dialog */}
+            <AlertDialog open={!!cancelSessionId} onOpenChange={(open) => { if (!open) setCancelSessionId(null); }}>
+                <AlertDialogContent dir="rtl">
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="flex items-center gap-2">
+                            <CalendarX className="h-5 w-5 text-red-500" />
+                            إلغاء الحصة
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            هل أنت متأكد من إلغاء هذه الحصة؟ لن يتم تسجيل حضور عليها.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter className="flex-row-reverse gap-2">
+                        <AlertDialogCancel>رجوع</AlertDialogCancel>
+                        <AlertDialogAction
+                            className="bg-red-500 hover:bg-red-600 text-white"
+                            onClick={() => cancelSessionId && cancelMutation.mutate(cancelSessionId)}
+                            disabled={cancelMutation.isPending}
+                        >
+                            {cancelMutation.isPending ? (
+                                <><Loader2 className="h-4 w-4 animate-spin ml-1" /> جارٍ الإلغاء...</>
+                            ) : 'تأكيد الإلغاء'}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }
