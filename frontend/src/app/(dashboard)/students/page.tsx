@@ -66,6 +66,7 @@ export default function StudentsPage() {
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [bulkPrinting, setBulkPrinting] = useState(false);
     const [sheetLoading, setSheetLoading] = useState(false);
+    const [showUnpaidOnly, setShowUnpaidOnly] = useState(false);
 
     const handleToggleSelect = (id: string) => {
         setSelectedIds((prev) => {
@@ -217,6 +218,10 @@ export default function StudentsPage() {
     };
 
     const students = data?.pages.flatMap(page => page.data) || [];
+    const displayedStudents = showUnpaidOnly
+        ? students.filter(s => !s.hasActiveSubscription)
+        : students;
+    const unpaidCount = students.filter(s => !s.hasActiveSubscription).length;
     const pagination = data?.pages[0]?.pagination;
 
     return (
@@ -270,20 +275,38 @@ export default function StudentsPage() {
 
             {/* Search Bar */}
             <div className="bg-white p-3 sm:p-4 rounded-xl border border-gray-100 shadow-sm">
-                <div className="relative">
-                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-400">
-                        <Search size={16} />
+                <div className="flex flex-col sm:flex-row gap-2">
+                    <div className="relative flex-1">
+                        <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-400">
+                            <Search size={16} />
+                        </div>
+                        <Input
+                            type="text"
+                            placeholder="ابحث بالاسم أو الهاتف أو الباركود في كل الطلاب..."
+                            className="pl-4 pr-9 border-gray-200 bg-gray-50 focus-visible:ring-primary focus-visible:bg-white text-sm"
+                            value={searchTerm}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                                setSearchTerm(e.target.value);
+                                setSelectedIds(new Set());
+                            }}
+                        />
                     </div>
-                    <Input
-                        type="text"
-                        placeholder="ابحث بالاسم أو الهاتف أو الباركود في كل الطلاب..."
-                        className="pl-4 pr-9 border-gray-200 bg-gray-50 focus-visible:ring-primary focus-visible:bg-white text-sm"
-                        value={searchTerm}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                            setSearchTerm(e.target.value);
-                            setSelectedIds(new Set());
-                        }}
-                    />
+                    {/* Unpaid filter — only shown when viewing a group */}
+                    {showStudents && !isSearching && (
+                        <button
+                            onClick={() => { setShowUnpaidOnly(v => !v); setSelectedIds(new Set()); }}
+                            className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border transition-all shrink-0 ${
+                                showUnpaidOnly
+                                    ? 'bg-red-500 text-white border-red-500 shadow-sm'
+                                    : 'bg-white text-red-500 border-red-200 hover:bg-red-50'
+                            }`}
+                        >
+                            <span className={`inline-flex items-center justify-center h-5 w-5 rounded-full text-[10px] font-bold ${
+                                showUnpaidOnly ? 'bg-white text-red-500' : 'bg-red-100 text-red-600'
+                            }`}>{unpaidCount}</span>
+                            غير مدفوعين
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -353,7 +376,7 @@ export default function StudentsPage() {
                     )}
                     {!isLoading && !isError && (
                         <StudentsList
-                            students={students}
+                            students={displayedStudents}
                             canWrite={canWrite}
                             onProfile={handleProfileClick}
                             onEdit={handleEditClick}

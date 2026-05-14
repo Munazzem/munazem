@@ -330,6 +330,10 @@ export default function SessionDetailPage() {
         return <div className="p-6"><ReportCardSkeleton /></div>;
     }
 
+    const todayStr = new Date().toLocaleDateString('en-CA');
+    const sessionDateStr = session ? new Date(session.date).toLocaleDateString('en-CA') : '';
+    const isFutureSession = sessionDateStr > todayStr;
+
     if (!session) {
         return (
             <div className="flex flex-col items-center justify-center min-h-screen gap-3" dir="rtl">
@@ -384,7 +388,7 @@ export default function SessionDetailPage() {
                         )}>
                             {STATUS_LABELS[session.status]}
                         </span>
-                        {canWrite && isSessionActive && (
+                        {canWrite && isSessionActive && !isFutureSession && (
                             <Button
                                 size="sm"
                                 variant="destructive"
@@ -398,6 +402,17 @@ export default function SessionDetailPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Future Session Warning Banner */}
+            {isFutureSession && session.status !== 'COMPLETED' && session.status !== 'CANCELLED' && (
+                <div className="mb-5 bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start sm:items-center gap-3">
+                    <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5 sm:mt-0" />
+                    <div>
+                        <h3 className="text-amber-800 font-bold text-sm">تنبيه: موعد الحصة لم يأتِ بعد</h3>
+                        <p className="text-amber-700 text-xs mt-1">لا يمكنك تسجيل الغياب أو فتح الكاميرا لهذه الحصة إلا في يوم الحصة أو بعده.</p>
+                    </div>
+                </div>
+            )}
 
             {/* Stats Bar */}
             <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-4 sm:mb-5">
@@ -418,7 +433,7 @@ export default function SessionDetailPage() {
             {/* Main Content */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-5">
                 {/* Left Panel — QR Scanner (assistant only, active sessions) */}
-                {canWrite && isSessionActive && (
+                {canWrite && isSessionActive && !isFutureSession && (
                     <div className="bg-white rounded-xl border border-gray-100 p-3 sm:p-5 shadow-sm">
                         <QRScannerPanel
                             sessionId={sessionId}
@@ -445,7 +460,7 @@ export default function SessionDetailPage() {
                 {/* Right Panel — Live Attendance List */}
                 <div className={cn(
                     'flex flex-col gap-3',
-                    (!canWrite || !isSessionActive) && 'lg:col-span-2'
+                    (!canWrite || !isSessionActive || isFutureSession) && 'lg:col-span-2'
                 )}>
                     {/* Attendance List */}
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -559,7 +574,7 @@ export default function SessionDetailPage() {
                     </div>
 
                     {/* Missing Students Section */}
-                    {canWrite && isSessionActive && (groupStudentsData?.data?.length ?? 0) > 0 && (
+                    {canWrite && isSessionActive && !isFutureSession && (groupStudentsData?.data?.length ?? 0) > 0 && (
                         <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
                             <button
                                 onClick={() => setShowAllStudents(!showAllStudents)}

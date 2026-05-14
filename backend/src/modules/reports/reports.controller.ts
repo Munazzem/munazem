@@ -182,4 +182,17 @@ reportsRouter.get(
     }
 );
 
+// ─── GET /reports/unpaid-students?includeList=true — Students who haven't paid this month
+reportsRouter.get(
+    '/unpaid-students',
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId    = resolveTeacherId((req as any).user);
+            const includeList  = req.query['includeList'] === 'true';
+            const data = await ReportsService.getUnpaidStudents(teacherId, includeList);
+            return SuccessResponse({ res, data, message: 'تم جلب قائمة الطلاب غير المدفوعين' });
+        } catch (error) { next(error); }
+    }
+);
+
 export default reportsRouter;

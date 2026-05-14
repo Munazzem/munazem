@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getWhatsAppLinks } from '@/lib/api/attendance';
 import {
@@ -15,6 +16,7 @@ import {
     UserCheck,
     Send,
     ExternalLink,
+    CheckCheck,
 } from 'lucide-react';
 
 interface WhatsAppLinksDialogProps {
@@ -73,9 +75,11 @@ export function WhatsAppLinksDialog({
                         {/* Absent first (priority) */}
                         {absent.length > 0 && (
                             <div className="mb-4">
-                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                                    الغائبون — {absent.length}
-                                </p>
+                                <div className="flex items-center justify-between mb-2">
+                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                                        الغائبون — {absent.length}
+                                    </p>
+                                </div>
                                 <ul className="space-y-1.5">
                                     {absent.map((l) => (
                                         <li key={l.studentId}>

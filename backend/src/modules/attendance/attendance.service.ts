@@ -3,6 +3,7 @@ import { AttendanceSnapshotModel }  from '../../database/models/attendance-snaps
 import { SessionModel }             from '../../database/models/session.model.js';
 import { StudentModel }             from '../../database/models/student.model.js';
 import { GroupModel }               from '../../database/models/group.model.js';
+import { UserModel }                from '../../database/models/user.model.js';
 import { SessionStatus, AttendanceStatus } from '../../common/enums/enum.service.js';
 import { NotFoundException, BadRequestException, ConflictException } from '../../common/utils/response/error.responce.js';
 import type { RecordAttendanceDTO, BatchAttendanceDTO } from '../../types/attendance-dto.types.js';
@@ -443,13 +444,17 @@ export class AttendanceService {
 
     // ─── Generate WhatsApp Links for Session ─────────────────────────
     static async generateWhatsAppLinks(sessionId: string, teacherId: string) {
-        const session = await SessionModel.findOne({ _id: sessionId, teacherId })
-            .populate('groupId', 'name')
-            .lean();
+        const [session, teacher] = await Promise.all([
+            SessionModel.findOne({ _id: sessionId, teacherId })
+                .populate('groupId', 'name')
+                .lean(),
+            UserModel.findById(teacherId, { name: 1 }).lean(),
+        ]);
             
         if (!session) throw NotFoundException({ message: 'الحصة غير موجودة' });
 
-        const groupName = (session.groupId as any)?.name || 'مجموعة غير معروفة';
+        const groupName   = (session.groupId as any)?.name || 'مجموعة غير معروفة';
+        const teacherName = teacher?.name || '';
 
         // 1. Get all students in the group — sorted alphabetically
         const allStudents = await StudentModel.find(
@@ -477,11 +482,12 @@ export class AttendanceService {
             const isPresent = record && record.status !== AttendanceStatus.ABSENT;
 
             let message = '';
+            const signature = teacherName ? `\n\nمع تحيات أ/ ${teacherName}` : '';
             if (isPresent) {
                 const timeStr = record.scannedAt.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
-                message = `أهلاً بك ولي أمر الطالب/ة: ${student.studentName}.\n\nنعلمكم بحضور الطالب لحصة [${groupName}] بتاريخ ${shortDate}.\nوقت الوصول: ${timeStr}.\n\nشكراً لتعاونكم.`;
+                message = `أهلاً بك ولي أمر الطالب/ة: ${student.studentName}.\n\nنعلمكم بحضور الطالب لحصة [${groupName}] بتاريخ ${shortDate}.\nوقت الوصول: ${timeStr}.\n\nشكراً لتعاونكم.${signature}`;
             } else {
-                message = `أهلاً بك ولي أمر الطالب/ة: ${student.studentName}.\n\nنعلمكم بغياب الطالب عن حصة [${groupName}] بتاريخ ${shortDate}.\nبرجاء متابعة الأمر، شكراً لتعاونكم.`;
+                message = `أهلاً بك ولي أمر الطالب/ة: ${student.studentName}.\n\nنعلمكم بغياب الطالب عن حصة [${groupName}] بتاريخ ${shortDate}.\nبرجاء متابعة الأمر، شكراً لتعاونكم.${signature}`;
             }
 
             const encodedMessage = encodeURIComponent(message);
