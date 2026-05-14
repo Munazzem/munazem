@@ -36,23 +36,6 @@ export function WhatsAppLinksDialog({
         enabled: open,
     });
 
-    const [notifying, setNotifying] = useState(false);
-    const [notified, setNotified]   = useState(false);
-
-    const notifyAllAbsent = () => {
-        if (absent.length === 0 || notifying) return;
-        setNotifying(true);
-        absent.forEach((l, i) => {
-            setTimeout(() => {
-                window.open(l.whatsappLink, '_blank');
-                if (i === absent.length - 1) {
-                    setNotifying(false);
-                    setNotified(true);
-                }
-            }, i * 600);
-        });
-    };
-
     const present = links.filter((l) => l.status === 'PRESENT');
     const absent  = links.filter((l) => l.status === 'ABSENT');
 
@@ -96,25 +79,6 @@ export function WhatsAppLinksDialog({
                                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
                                         الغائبون — {absent.length}
                                     </p>
-                                    <button
-                                        onClick={notifyAllAbsent}
-                                        disabled={notifying || notified}
-                                        className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all ${
-                                            notified
-                                                ? 'bg-green-100 text-green-700 border border-green-200 cursor-default'
-                                                : notifying
-                                                ? 'bg-green-50 text-green-600 border border-green-200 cursor-wait'
-                                                : 'bg-green-600 hover:bg-green-700 text-white shadow-sm hover:shadow-md'
-                                        }`}
-                                    >
-                                        {notified ? (
-                                            <><CheckCheck className="h-3.5 w-3.5" /> تم الإرسال</>
-                                        ) : notifying ? (
-                                            <><Loader2 className="h-3.5 w-3.5 animate-spin" /> جارٍ الفتح...</>
-                                        ) : (
-                                            <><Send className="h-3.5 w-3.5" /> 📲 إبلاغ الكل ({absent.length})</>
-                                        )}
-                                    </button>
                                 </div>
                                 <ul className="space-y-1.5">
                                     {absent.map((l) => (
