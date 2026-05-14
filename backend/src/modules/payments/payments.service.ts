@@ -3,6 +3,7 @@ import { TransactionModel }   from '../../database/models/transaction.model.js';
 import { DailyLedgerModel }   from '../../database/models/ledger.model.js';
 import { MonthlyLedgerModel } from '../../database/models/ledger.model.js';
 import { StudentModel }       from '../../database/models/student.model.js';
+import { GroupModel }          from '../../database/models/group.model.js';
 import { NotebookModel }      from '../../database/models/notebook.model.js';
 import { NotebookReservationModel } from '../../database/models/notebook-reservation.model.js';
 import { ReservationStatus } from '../../types/notebook-reservation.types.js';
@@ -175,6 +176,13 @@ export class PaymentsService {
             updateMonthlyLedger(teacherId, txDate, paidAmount, true),
         ]);
 
+        // Set remaining sessions based on student quota (or group schedule)
+        const group = await GroupModel.findById(student.groupId, { schedule: 1 }).lean();
+        const quota = (student as any).monthlySessionsQuota || (group?.schedule?.length ?? 2) * 4;
+        await StudentModel.findByIdAndUpdate(data.studentId, {
+            $set: { remainingSessions: quota }
+        });
+
         return transaction;
     }
 
@@ -252,6 +260,13 @@ export class PaymentsService {
                 ]);
 
                 results.push({ studentId, studentName: student.studentName, paidAmount, status: 'success' });
+
+                // Set remaining sessions for this student
+                const group = await GroupModel.findById(student.groupId, { schedule: 1 }).lean();
+                const quota = (student as any).monthlySessionsQuota || (group?.schedule?.length ?? 2) * 4;
+                await StudentModel.findByIdAndUpdate(studentId, {
+                    $set: { remainingSessions: quota }
+                });
             } catch (err: any) {
                 results.push({ studentId, studentName: '', paidAmount: 0, status: 'error', error: err?.message ?? 'خطأ غير متوقع' });
             }

@@ -374,6 +374,21 @@ export class AttendanceService {
             ).lean(),
         ]);
 
+        // ── Decrement remainingSessions for all present students (including guests) ──
+        // This powers the session-cycle subscription model:
+        // each completed session counts toward the student's paid quota.
+        const allPresentIds = [
+            ...presentStudents.map(s => s.studentId),
+            ...guestStudents.map(s => s.studentId),
+        ];
+
+        if (allPresentIds.length > 0) {
+            await StudentModel.updateMany(
+                { _id: { $in: allPresentIds }, remainingSessions: { $gt: 0 } },
+                { $inc: { remainingSessions: -1 } }
+            );
+        }
+
         return { session: updatedSession, snapshot };
     }
 

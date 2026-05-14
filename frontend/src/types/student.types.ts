@@ -18,6 +18,7 @@ export interface Student {
     monthlySessionsQuota: number;
     excusedUntil?: string; // ISO Date string (compatibility)
     excusedSessionsCount?: number; // عدد حصص الاستئذان المتبقية
+    remainingSessions?: number;
     usedSessionsThisMonth?: number;
     monthlySessions?: {
         sessionId: string;
@@ -41,6 +42,7 @@ export interface StudentWithGroup extends Omit<Student, 'groupId'> {
     usedSessionsThisMonth?: number;
     excusedUntil?: string;
     excusedSessionsCount?: number;
+    remainingSessions?: number;
 }
 
 // Pagination Metadata

@@ -118,7 +118,8 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
     });
 
     const monthlySessionsQuota = report?.student?.monthlySessionsQuota ?? student.monthlySessionsQuota ?? 8;
-    const usedSessionsThisMonth = report?.student?.usedSessionsThisMonth ?? student.usedSessionsThisMonth ?? 0;
+    const remainingSessions = report?.student?.remainingSessions ?? student.remainingSessions ?? 0;
+    const usedSessionsThisMonth = Math.max(0, monthlySessionsQuota - remainingSessions);
     const attendancePercentage = Math.round((usedSessionsThisMonth / monthlySessionsQuota) * 100) || 0;
 
     return (
@@ -239,7 +240,7 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
                             <div className="h-7 w-7 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center">
                                 <TrendingUp className="h-3.5 w-3.5 text-[#1e3a6e]" />
                             </div>
-                            <span className="text-xs font-bold text-gray-700">متابعة الحصص الشهرية</span>
+                            <span className="text-xs font-bold text-gray-700">متابعة الحصص</span>
                         </div>
                         <div className="flex items-center gap-2">
                             {editingQuota ? (

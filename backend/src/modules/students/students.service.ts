@@ -60,7 +60,8 @@ export class StudentService {
                 groupId:      data.groupId,
                 teacherId,
                 studentCode,
-                barcode: data.barcode || crypto.randomUUID(), // Auto generate barcode if omited
+                barcode: data.barcode || crypto.randomUUID(),
+                monthlySessionsQuota: (group.schedule?.length ?? 2) * 4, // Dynamic from schedule
             });
         } catch (error: any) {
             if (error.code === 11000) {
@@ -115,6 +116,7 @@ export class StudentService {
                     teacherId,
                     studentCode,
                     barcode: data.barcode || crypto.randomUUID(),
+                    monthlySessionsQuota: (group.schedule?.length ?? 2) * 4,
                 });
 
                 results.push({ index: i, success: true, studentName: created.studentName, studentCode: created.studentCode });
@@ -176,27 +178,10 @@ export class StudentService {
             StudentModel.countDocuments(filter)
         ]);
 
-        // Determine active subscription status for this month for each student
-        const now = new Date();
-        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-        const monthEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-
-        const studentIds = students.map((s: any) => s._id);
-
-        // Find all subscription transactions for these students this month
-        const activeSubStudentIds = await TransactionModel.distinct('studentId', {
-            teacherId,
-            studentId: { $in: studentIds },
-            type: TransactionType.INCOME,
-            category: TransactionCategory.SUBSCRIPTION,
-            date: { $gte: monthStart, $lte: monthEnd },
-        });
-
-        const activeSubSet = new Set(activeSubStudentIds.map((id: any) => id.toString()));
-
+        // Determine active subscription via remainingSessions (cycle-based model)
         const data = students.map((s: any) => ({
             ...s,
-            hasActiveSubscription: activeSubSet.has(s._id.toString()),
+            hasActiveSubscription: (s.remainingSessions ?? 0) > 0,
         }));
 
         return {
