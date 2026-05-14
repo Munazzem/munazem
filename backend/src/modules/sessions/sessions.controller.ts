@@ -72,6 +72,20 @@ sessionRouter.patch(
     }
 );
 
+// ─── DELETE /sessions/:id — Delete session permanently (no replacement)
+sessionRouter.delete(
+    '/:id',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = resolveTeacherId((req as any).user);
+            const sessionId = req.params['id'] as string;
+            const result = await SessionService.deleteSession(sessionId, teacherId);
+            return SuccessResponse({ res, data: result, message: result.message });
+        } catch (error) { next(error); }
+    }
+);
+
 // ─── POST /sessions/generate-week?weekStart=2026-03-07 — Auto-generate all sessions for a week
 sessionRouter.post(
     '/generate-week',

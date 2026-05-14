@@ -15,6 +15,7 @@ export interface IStudent {
     monthlySessionsQuota: number;
     excusedUntil?: Date; // تاريخ نهاية الإذن (للتوافق القديم)
     excusedSessionsCount?: number; // عدد حصص الاستئذان المتبقية
+    remainingSessions: number; // عدد الحصص المتبقية في دورة الاشتراك الحالية
     createdAt?: Date;
     updatedAt?: Date;
 }

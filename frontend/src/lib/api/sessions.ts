@@ -61,3 +61,8 @@ export const generateMonthSessions = async (year: number, month: number): Promis
     const res = await apiClient.post(`/sessions/generate-month?year=${year}&month=${month}`);
     return (res as any).data;
 };
+
+export const deleteSession = async (sessionId: string): Promise<{ message: string }> => {
+    const res = await apiClient.delete(`/sessions/${sessionId}`);
+    return (res as any).data;
+};
