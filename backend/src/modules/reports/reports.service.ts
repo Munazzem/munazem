@@ -19,6 +19,7 @@ export class ReportsService {
         const student = await StudentModel.findOne({ _id: studentId, teacherId }, {
             studentName: 1, parentName: 1, studentPhone: 1, parentPhone: 1,
             gradeLevel:  1, groupId: 1, isActive: 1, studentCode: 1,
+            monthlySessionsQuota: 1, remainingSessions: 1,
         }).lean();
         if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
 
@@ -76,20 +77,20 @@ export class ReportsService {
         const subscriptions  = payments.filter(p => p.category === TransactionCategory.SUBSCRIPTION);
         const notebookSales  = payments.filter(p => p.category === TransactionCategory.NOTEBOOK_SALE);
 
-        // Active subscription this month?
+        // Active subscription = student still has remaining sessions in their cycle
+        const hasActiveSubscription = ((student as any).remainingSessions ?? 0) > 0;
+
+        // Calculate monthly session usage (Attendance records this month)
         const now = new Date();
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
         const monthEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-        const hasActiveSubscription = subscriptions.some(
-            s => new Date(s.date) >= monthStart && new Date(s.date) <= monthEnd
-        );
 
-        // Calculate monthly session usage (Attendance records this month)
-        // 1. Get all scheduled/completed sessions for the group this month
+        // 1. Get all non-cancelled sessions for the group this month
         const groupSessions = await SessionModel.find({
             groupId: student.groupId,
             teacherId,
-            date: { $gte: monthStart, $lte: monthEnd }
+            date: { $gte: monthStart, $lte: monthEnd },
+            status: { $ne: 'CANCELLED' }
         }).sort({ date: 1, startTime: 1 }).lean();
 
         // 2. Get attendance for these sessions
@@ -119,6 +120,9 @@ export class ReportsService {
 
         const usedSessionsThisMonth = attendedRecords.length + manualRecordsCount;
 
+        // Remaining sessions from cycle-based subscription
+        const remainingSessions = (student as any).remainingSessions ?? 0;
+
         // Generate Barcode Image using the studentCode (or barcode if they have a physical card)
         const codeToEncode = student.barcode || (student as any).studentCode || student._id.toString().substring(0, 10);
         let barcodeImageBase64 = '';
@@ -135,6 +139,7 @@ export class ReportsService {
                 barcodeImageBase64,
                 hasActiveSubscription,
                 monthlySessionsQuota: student.monthlySessionsQuota,
+                remainingSessions,
                 usedSessionsThisMonth,
                 monthlySessions, // Send the real session list
                 manualRecordsCount,
@@ -511,28 +516,17 @@ export class ReportsService {
     }
 
     // ══════════════════════════════════════════════════════════════
-    // 7. Unpaid Students — who hasn't paid a subscription this month
+    // 7. Unpaid Students — students with no remaining sessions (need to pay)
     // ══════════════════════════════════════════════════════════════
     static async getUnpaidStudents(teacherId: string, includeList = false) {
-        const now        = new Date();
-        const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-        const monthEnd   = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
-
-        // IDs of students who paid a subscription this month (fast distinct — no populate)
-        const paidIds: any[] = await TransactionModel.distinct('studentId', {
-            teacherId,
-            type:     TransactionType.INCOME,
-            category: TransactionCategory.SUBSCRIPTION,
-            date:     { $gte: monthStart, $lt: monthEnd },
-        });
-
-        const paidSet = new Set(paidIds.map((id) => id.toString()));
-
-        // Count active students using $nin — no document fetch needed
-        const totalActive = await StudentModel.countDocuments({ teacherId, isActive: true });
-        const paidCount   = paidSet.size;
+        // Cycle-based: "unpaid" = remainingSessions <= 0
+        const [totalActive, paidCount] = await Promise.all([
+            StudentModel.countDocuments({ teacherId, isActive: true }),
+            StudentModel.countDocuments({ teacherId, isActive: true, remainingSessions: { $gt: 0 } }),
+        ]);
         const unpaidCount = totalActive - paidCount;
 
+        const now = new Date();
         const base = {
             month:       `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`,
             totalActive,
@@ -546,8 +540,8 @@ export class ReportsService {
         }
 
         const unpaidStudents = await StudentModel.find(
-            { teacherId, isActive: true, _id: { $nin: paidIds } },
-            { studentName: 1, gradeLevel: 1, groupId: 1, studentCode: 1 }
+            { teacherId, isActive: true, remainingSessions: { $lte: 0 } },
+            { studentName: 1, gradeLevel: 1, groupId: 1, studentCode: 1, remainingSessions: 1 }
         ).populate('groupId', 'name').sort({ studentName: 1 }).limit(100).lean();
 
         return { ...base, students: unpaidStudents };

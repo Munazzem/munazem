@@ -1,8 +1,49 @@
 import { SessionModel } from '../../database/models/session.model.js';
 import { GroupModel }   from '../../database/models/group.model.js';
+import { AttendanceModel } from '../../database/models/attendance.model.js';
 import { SessionStatus } from '../../common/enums/enum.service.js';
 import { NotFoundException, BadRequestException, ConflictException } from '../../common/utils/response/error.responce.js';
 import type { CreateSessionDTO } from '../../types/attendance-dto.types.js';
+// ─── Day-name helper ─────────────────────────────────────────────────────────
+const DAY_MAP: Record<string, number> = {
+    'الأحد':     0, 'الاحد':     0,
+    'الاثنين':   1, 'الإثنين':   1,
+    'الثلاثاء':  2,
+    'الأربعاء':  3, 'الاربعاء':  3,
+    'الخميس':    4,
+    'الجمعة':    5,
+    'السبت':     6,
+};
+
+/**
+ * Given a group schedule and a reference date, returns the next available
+ * schedule slot AFTER that date (i.e. the day strictly after `afterDate`).
+ */
+function findNextScheduleSlot(
+    schedule: { day: string; time: string }[],
+    afterDate: Date
+): { date: Date; time: string } {
+    const candidates = schedule
+        .map(slot => {
+            const targetDay = DAY_MAP[slot.day];
+            if (targetDay === undefined) return null;
+
+            // Start searching from the day AFTER afterDate
+            const next = new Date(afterDate);
+            next.setUTCDate(next.getUTCDate() + 1);
+
+            const diff = (targetDay - next.getUTCDay() + 7) % 7;
+            next.setUTCDate(next.getUTCDate() + diff);
+            next.setUTCHours(0, 0, 0, 0);
+
+            return { date: next, time: slot.time };
+        })
+        .filter(Boolean) as { date: Date; time: string }[];
+
+    // Return the earliest candidate
+    candidates.sort((a, b) => a.date.getTime() - b.date.getTime());
+    return candidates[0]!;
+}
 
 export class SessionService {
 
@@ -89,6 +130,7 @@ export class SessionService {
     }
 
     // Update session status — e.g., mark as IN_PROGRESS or CANCELLED
+    // When CANCELLED: deletes attendance records and auto-generates a replacement session.
     static async updateSessionStatus(sessionId: string, teacherId: string, status: SessionStatus) {
         const session = await SessionModel.findOne({ _id: sessionId, teacherId }).lean();
         if (!session) throw NotFoundException({ message: 'الحصة غير موجودة' });
@@ -97,11 +139,74 @@ export class SessionService {
             throw BadRequestException({ message: 'لا يمكن تعديل حصة مكتملة' });
         }
 
-        return await SessionModel.findByIdAndUpdate(
+        // ── Handle CANCELLED — clean up + auto-replacement ──────────────────
+        let replacementSession = null;
+        if (status === SessionStatus.CANCELLED) {
+            // 1. Delete any attendance records linked to this session
+            await AttendanceModel.deleteMany({ sessionId });
+
+            // 2. Generate a replacement session after the last non-cancelled session
+            const group = await GroupModel.findById(session.groupId, { schedule: 1 }).lean();
+            if (group && group.schedule && group.schedule.length > 0) {
+                // Find the last non-cancelled session for this group
+                const lastSession = await SessionModel.findOne({
+                    groupId: session.groupId,
+                    status: { $ne: SessionStatus.CANCELLED },
+                    _id: { $ne: sessionId }, // exclude the one being cancelled
+                }).sort({ date: -1 }).lean();
+
+                const referenceDate = lastSession?.date || session.date;
+                const nextSlot = findNextScheduleSlot(group.schedule, referenceDate);
+
+                if (nextSlot) {
+                    // Duplicate guard — avoid creating on a day that already has a session
+                    const nextDay = new Date(nextSlot.date);
+                    nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+
+                    const exists = await SessionModel.findOne({
+                        groupId: session.groupId,
+                        date: { $gte: nextSlot.date, $lt: nextDay },
+                    }).lean();
+
+                    if (!exists) {
+                        replacementSession = await SessionModel.create({
+                            groupId:   session.groupId,
+                            teacherId: session.teacherId,
+                            date:      nextSlot.date,
+                            startTime: nextSlot.time,
+                            status:    SessionStatus.SCHEDULED,
+                        });
+                    }
+                }
+            }
+        }
+
+        const updated = await SessionModel.findByIdAndUpdate(
             sessionId,
             { status },
             { new: true, runValidators: true }
         ).lean();
+
+        return { session: updated, replacementSession };
+    }
+
+    // Delete session permanently — NO replacement generated.
+    // Used for end-of-term cleanup or removing unnecessary sessions.
+    static async deleteSession(sessionId: string, teacherId: string) {
+        const session = await SessionModel.findOne({ _id: sessionId, teacherId }).lean();
+        if (!session) throw NotFoundException({ message: 'الحصة غير موجودة' });
+
+        if (session.status === SessionStatus.COMPLETED) {
+            throw BadRequestException({ message: 'لا يمكن حذف حصة مكتملة' });
+        }
+
+        // Delete any attendance records for this session
+        await AttendanceModel.deleteMany({ sessionId });
+
+        // Delete the session document itself
+        await SessionModel.findByIdAndDelete(sessionId);
+
+        return { message: 'تم حذف الحصة بدون تعويض' };
     }
 
     // ─── Auto-generate week sessions from group schedules ────────────
@@ -184,20 +289,8 @@ export class SessionService {
 
     // ─── Auto-generate month sessions from group schedules ───────────
     // year: full year e.g. 2026, month: 1-12
+    // Max sessions per group = schedule.length × 4 (dynamic based on schedule)
     static async generateMonthSessions(teacherId: string, year: number, month: number) {
-        const dayMap: Record<string, number> = {
-            'الأحد':     0,
-            'الاحد':     0,
-            'الاثنين':   1,
-            'الإثنين':   1,
-            'الثلاثاء':  2,
-            'الأربعاء':  3,
-            'الاربعاء':  3,
-            'الخميس':    4,
-            'الجمعة':    5,
-            'السبت':     6,
-        };
-
         const now = new Date();
         const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
 
@@ -217,10 +310,14 @@ export class SessionService {
         for (const group of groups) {
             if (!group.schedule || group.schedule.length === 0) continue;
 
-            // Count existing sessions for this group in this month to respect the 8-session limit
+            // Dynamic max: schedule slots per week × 4 weeks
+            const maxSessions = (group.schedule?.length ?? 2) * 4;
+
+            // Count existing NON-CANCELLED sessions for this group in this month
             let groupSessionCount = await SessionModel.countDocuments({
                 groupId: group._id,
-                date: { $gte: monthStart, $lt: monthEnd }
+                date: { $gte: monthStart, $lt: monthEnd },
+                status: { $ne: SessionStatus.CANCELLED }
             });
 
             // To preserve chronological order and avoid skipping days (e.g. Wednesday in the middle of the month),
@@ -228,7 +325,7 @@ export class SessionService {
             const possibleDates: { date: Date, time: string }[] = [];
 
             for (const slot of group.schedule) {
-                const targetDay = dayMap[slot.day];
+                const targetDay = DAY_MAP[slot.day];
                 if (targetDay === undefined) continue;
 
                 // Find the first occurrence of that weekday in the month (on or after today)
@@ -251,7 +348,7 @@ export class SessionService {
 
             // Create sessions respecting the limit
             for (const slot of possibleDates) {
-                if (groupSessionCount >= 8) break;
+                if (groupSessionCount >= maxSessions) break;
 
                 const sessionDate = slot.date;
                 const nextDay = new Date(sessionDate);
@@ -283,7 +380,7 @@ export class SessionService {
             month,
             createdCount,
             skippedCount,
-            message: `تم إنشاء ${createdCount} حصة لشهر ${month}/${year}، تجاهل ${skippedCount} موجودة (الحد الأقصى 8 حصص لكل مجموعة)`,
+            message: `تم إنشاء ${createdCount} حصة لشهر ${month}/${year}، تجاهل ${skippedCount} موجودة (الحد الأقصى ${(groups[0]?.schedule?.length ?? 2) * 4} حصة لكل مجموعة)`,
         };
     }
 }
