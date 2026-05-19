@@ -10,6 +10,7 @@ import { fetchUsers } from '@/lib/api/users';
 import { toast } from 'sonner';
 import { Loader2, Plus, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { QK } from '@/lib/query-keys';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -63,7 +64,7 @@ export function AddSubscriptionModal() {
     const queryClient = useQueryClient();
 
     const { data: usersData, isLoading: usersLoading } = useQuery({
-        queryKey: ['users', {}],
+        queryKey: QK.users.list({}),
         queryFn: () => fetchUsers({}),
         enabled: open,
     });
@@ -92,8 +93,8 @@ export function AddSubscriptionModal() {
         mutationFn: createSubscription,
         onSuccess: () => {
             toast.success('تم إضافة الاشتراك بنجاح');
-            queryClient.invalidateQueries({ queryKey: ['subscriptions'] });
-            queryClient.invalidateQueries({ queryKey: ['users'] });
+            queryClient.invalidateQueries({ queryKey: QK.subscriptions.all });
+            queryClient.invalidateQueries({ queryKey: QK.users.all });
             form.reset();
             setOpen(false);
         },

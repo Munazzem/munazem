@@ -19,6 +19,7 @@ import {
     AlertTriangle,
     Building2,
     BarChart3,
+    Activity,
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { useUIStore } from '@/lib/store/ui.store';
@@ -29,6 +30,7 @@ const getNavItems = (role?: string) => {
             { name: 'لوحة التحكم',   href: '/admin',          icon: LayoutDashboard },
             { name: 'المعلمون',       href: '/admin/tenants',  icon: Building2       },
             { name: 'سجل الأخطاء',   href: '/admin/errors',   icon: AlertTriangle   },
+            { name: 'سجل النشاط',    href: '/admin/activity', icon: Activity        },
             { name: 'الاشتراكات',    href: '/dashboard/subscriptions', icon: BarChart3 },
             { name: 'إدارة المستخدمين', href: '/dashboard/users', icon: Users       },
             { name: 'الإعدادات',     href: '/dashboard/settings', icon: Settings    },

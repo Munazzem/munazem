@@ -6,6 +6,7 @@ import type { Group } from '@/types/group.types';
 import { Users, ChevronRight } from 'lucide-react';
 import { CardSkeleton } from '@/components/layout/skeletons/CardSkeleton';
 import { Badge } from '@/components/ui/badge';
+import { QK } from '@/lib/query-keys';
 import {
     Accordion,
     AccordionContent,
@@ -23,7 +24,7 @@ export function GroupAccordionView({
     canWrite,
 }: GroupAccordionViewProps) {
     const { data, isLoading } = useQuery({
-        queryKey: ['groups', { limit: 100 }],
+        queryKey: QK.groups.list({ limit: 100 }),
         queryFn: () => fetchGroups({ limit: 100 }),
     });
 

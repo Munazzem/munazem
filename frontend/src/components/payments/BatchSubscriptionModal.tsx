@@ -8,6 +8,7 @@ import { useAuthStore } from '@/lib/store/auth.store';
 import { getAllowedGrades } from '@/lib/utils/grades';
 import { toast } from 'sonner';
 import { Users, Check, X, Loader2, CheckSquare, Square, ChevronDown } from 'lucide-react';
+import { QK } from '@/lib/query-keys';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -46,7 +47,7 @@ export function BatchSubscriptionModal() {
     const allowedGrades = getAllowedGrades(user?.stage);
 
     const { data: studentsData, isLoading } = useQuery({
-        queryKey: ['batchStudents', search],
+        queryKey: QK.payments.batchStudents(search),
         queryFn: () => fetchStudents({ limit: 200, search }),
         enabled: open,
     });
@@ -63,8 +64,8 @@ export function BatchSubscriptionModal() {
         mutationFn: recordBatchSubscription,
         onSuccess: (data) => {
             setResults(data.results);
-            queryClient.invalidateQueries({ queryKey: ['dailyLedger'] });
-            queryClient.invalidateQueries({ queryKey: ['monthlyLedger'] });
+            queryClient.invalidateQueries({ queryKey: QK.payments.dailyLedgerBase });
+            queryClient.invalidateQueries({ queryKey: QK.payments.monthlyLedgerBase });
             if (data.failCount === 0) {
                 toast.success(`تم تسجيل ${data.successCount} اشتراك بنجاح — إجمالي: ${data.totalPaid.toLocaleString()} ج`);
             } else {

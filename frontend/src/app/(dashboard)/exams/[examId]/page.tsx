@@ -386,11 +386,11 @@ export default function ExamDetailPage() {
                                                                 </td>
                                                                 <td className="px-4 py-3 text-center">
                                                                     <a
-                                                                        href={`https://wa.me/?text=${waMsg}`}
+                                                                        href={r.parentPhone ? `https://wa.me/${r.parentPhone.replace(/[^0-9]/g, '')}?text=${waMsg}` : `https://wa.me/?text=${waMsg}`}
                                                                         target="_blank"
                                                                         rel="noopener noreferrer"
                                                                         className="inline-flex items-center justify-center h-7 w-7 rounded-full bg-green-50 hover:bg-green-100 text-green-600 transition-colors"
-                                                                        title="إرسال النتيجة لولي الأمر"
+                                                                        title={r.parentPhone ? `إرسال لـ ${r.parentPhone}` : 'إرسال النتيجة'}
                                                                     >
                                                                         <MessageCircle className="h-3.5 w-3.5" />
                                                                     </a>
@@ -421,7 +421,7 @@ export default function ExamDetailPage() {
                                                                     {r.passed ? 'ناجح' : 'راسب'}
                                                                 </span>
                                                                 <a
-                                                                    href={`https://wa.me/?text=${waMsg}`}
+                                                                    href={r.parentPhone ? `https://wa.me/${r.parentPhone.replace(/[^0-9]/g, '')}?text=${waMsg}` : `https://wa.me/?text=${waMsg}`}
                                                                     target="_blank"
                                                                     rel="noopener noreferrer"
                                                                     className="inline-flex items-center justify-center h-7 w-7 rounded-full bg-green-50 hover:bg-green-100 text-green-600 transition-colors"

@@ -10,6 +10,7 @@ import { fetchGroups } from '@/lib/api/groups';
 import type { StudentWithGroup } from '@/types/student.types';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
+import { QK } from '@/lib/query-keys';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -82,7 +83,7 @@ export function EditStudentModal({ student, open, onOpenChange }: EditStudentMod
 
   // Fetch Teacher's Groups dynamically
   const { data: groupsData, isLoading: isLoadingGroups } = useQuery({
-      queryKey: ['teacherGroups_editStudent'],
+      queryKey: QK.groups.forEditStudent,
       queryFn: () => fetchGroups({ limit: 100 }),
   });
 
@@ -126,7 +127,7 @@ export function EditStudentModal({ student, open, onOpenChange }: EditStudentMod
     },
     onSuccess: () => {
       toast.success('تم تحديث بيانات الطالب بنجاح');
-      queryClient.invalidateQueries({ queryKey: ['students'] });
+      queryClient.invalidateQueries({ queryKey: QK.students.all });
       onOpenChange(false);
     },
     onError: (error: { response?: { data?: { message?: string } } } | Error) => {
