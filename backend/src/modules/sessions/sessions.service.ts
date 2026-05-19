@@ -3,6 +3,7 @@ import { GroupModel }   from '../../database/models/group.model.js';
 import { AttendanceModel } from '../../database/models/attendance.model.js';
 import { SessionStatus } from '../../common/enums/enum.service.js';
 import { NotFoundException, BadRequestException, ConflictException } from '../../common/utils/response/error.responce.js';
+import { trackEvent } from '../../common/utils/activity.service.js';
 import type { CreateSessionDTO } from '../../types/attendance-dto.types.js';
 // ─── Day-name helper ─────────────────────────────────────────────────────────
 const DAY_MAP: Record<string, number> = {
@@ -279,6 +280,12 @@ export class SessionService {
             }
         }
 
+        trackEvent('sessions_generated', {
+            tenantId: teacherId,
+            userId:   teacherId,
+            meta:     { type: 'week', weekStart, createdCount, skippedCount },
+        });
+
         return {
             weekStart,
             createdCount,
@@ -374,6 +381,12 @@ export class SessionService {
                 }
             }
         }
+
+        trackEvent('sessions_generated', {
+            tenantId: teacherId,
+            userId:   teacherId,
+            meta:     { type: 'month', year, month, createdCount, skippedCount },
+        });
 
         return {
             year,

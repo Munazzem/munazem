@@ -200,6 +200,20 @@ export class ExamsService {
         if (!exam) throw NotFoundException({ message: 'الامتحان غير موجود' });
 
         const results = await ExamResultModel.find({ examId, teacherId }).sort({ studentName: 1 }).lean();
+
+        // Enrich with parentPhone for WhatsApp links
+        const studentIds = results.map(r => r.studentId);
+        const students = await StudentModel.find(
+            { _id: { $in: studentIds } },
+            { parentPhone: 1 }
+        ).lean();
+        const phoneMap = new Map(students.map(s => [s._id.toString(), (s as any).parentPhone]));
+
+        const enrichedResults = results.map(r => ({
+            ...r,
+            parentPhone: phoneMap.get(r.studentId?.toString()) ?? null,
+        }));
+
         const passing = results.filter(r => r.passed).length;
 
         return {
@@ -208,7 +222,7 @@ export class ExamsService {
             passingCount:  passing,
             failingCount:  results.length - passing,
             passRate:      results.length > 0 ? `${Math.round((passing / results.length) * 100)}%` : '0%',
-            results,
+            results:       enrichedResults,
         };
     }
 

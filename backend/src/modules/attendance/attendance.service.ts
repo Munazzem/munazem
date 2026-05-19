@@ -6,13 +6,19 @@ import { GroupModel }               from '../../database/models/group.model.js';
 import { UserModel }                from '../../database/models/user.model.js';
 import { SessionStatus, AttendanceStatus } from '../../common/enums/enum.service.js';
 import { NotFoundException, BadRequestException, ConflictException } from '../../common/utils/response/error.responce.js';
+import { trackEvent } from '../../common/utils/activity.service.js';
+import { withTransaction } from '../../common/utils/transaction.util.js';
 import type { RecordAttendanceDTO, BatchAttendanceDTO } from '../../types/attendance-dto.types.js';
 import mongoose from 'mongoose';
 
 // ─── Date helper ─────────────────────────────────────────────────────────────
-/** Returns midnight (00:00:00.000) of the given date in LOCAL time, as ms. */
-const startOfDay = (d: Date): number =>
-    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+/** Returns midnight of the given date in Egypt timezone (UTC+3), as ms. */
+const startOfDay = (d: Date): number => {
+    const EGYPT_OFFSET_MS = 3 * 60 * 60 * 1000;
+    const local = new Date(d.getTime() + EGYPT_OFFSET_MS);
+    local.setUTCHours(0, 0, 0, 0);
+    return local.getTime() - EGYPT_OFFSET_MS;
+};
 
 export class AttendanceService {
 
@@ -333,61 +339,78 @@ export class AttendanceService {
             }
         }
 
-        // Execute Accumulated Bulk Operations outside the loop
-        if (excusedAttendanceDocsToInsert.length > 0) {
-            await AttendanceModel.insertMany(excusedAttendanceDocsToInsert, { ordered: false }).catch(() => {});
-        }
+        // ── All mutations wrapped in a transaction (all-or-nothing) ──
+        const { updatedSession, snapshot } = await withTransaction(async (dbSession) => {
+            // Insert excused and absent attendance records
+            if (excusedAttendanceDocsToInsert.length > 0) {
+                await AttendanceModel.insertMany(excusedAttendanceDocsToInsert, { ordered: false, session: dbSession }).catch(() => {});
+            }
+            if (absentAttendanceDocsToInsert.length > 0) {
+                await AttendanceModel.insertMany(absentAttendanceDocsToInsert, { ordered: false, session: dbSession }).catch(() => {});
+            }
 
-        if (absentAttendanceDocsToInsert.length > 0) {
-            await AttendanceModel.insertMany(absentAttendanceDocsToInsert, { ordered: false }).catch(() => {});
-        }
-        
-        if (studentIdsToDecrementExcuse.length > 0) {
-            await StudentModel.updateMany(
-                { _id: { $in: studentIdsToDecrementExcuse } },
-                { $inc: { excusedSessionsCount: -1 } }
-            );
-        }
+            // Decrement excuse counts
+            if (studentIdsToDecrementExcuse.length > 0) {
+                await StudentModel.updateMany(
+                    { _id: { $in: studentIdsToDecrementExcuse } },
+                    { $inc: { excusedSessionsCount: -1 } },
+                    { session: dbSession }
+                );
+            }
 
-        // Run session update + snapshot creation in parallel
-        const [updatedSession, snapshot] = await Promise.all([
-            SessionModel.findByIdAndUpdate(
-                sessionId,
-                { status: SessionStatus.COMPLETED },
-                { new: true }
-            ).lean(),
-            AttendanceSnapshotModel.findOneAndUpdate(
-                { sessionId },
-                {
+            // Update session status + create snapshot
+            const [updatedSession, snapshot] = await Promise.all([
+                SessionModel.findByIdAndUpdate(
                     sessionId,
-                    groupId:   session.groupId,
-                    teacherId: session.teacherId,
-                    date:      session.date,
-                    presentStudents,
-                    absentStudents,
-                    guestStudents,
-                    presentCount: presentStudents.length,
-                    absentCount:  absentStudents.length,
-                    totalCount:   allStudents.length,
-                },
-                { upsert: true, new: true }
-            ).lean(),
-        ]);
+                    { status: SessionStatus.COMPLETED },
+                    { new: true, session: dbSession }
+                ).lean(),
+                AttendanceSnapshotModel.findOneAndUpdate(
+                    { sessionId },
+                    {
+                        sessionId,
+                        groupId:   session.groupId,
+                        teacherId: session.teacherId,
+                        date:      session.date,
+                        presentStudents,
+                        absentStudents,
+                        guestStudents,
+                        presentCount: presentStudents.length,
+                        absentCount:  absentStudents.length,
+                        totalCount:   allStudents.length,
+                    },
+                    { upsert: true, new: true, session: dbSession }
+                ).lean(),
+            ]);
 
-        // ── Decrement remainingSessions for all present students (including guests) ──
-        // This powers the session-cycle subscription model:
-        // each completed session counts toward the student's paid quota.
-        const allPresentIds = [
-            ...presentStudents.map(s => s.studentId),
-            ...guestStudents.map(s => s.studentId),
-        ];
+            // Decrement remainingSessions for all present students (including guests)
+            const allPresentIds = [
+                ...presentStudents.map(s => s.studentId),
+                ...guestStudents.map(s => s.studentId),
+            ];
+            if (allPresentIds.length > 0) {
+                await StudentModel.updateMany(
+                    { _id: { $in: allPresentIds }, remainingSessions: { $gt: 0 } },
+                    { $inc: { remainingSessions: -1 } },
+                    { session: dbSession }
+                );
+            }
 
-        if (allPresentIds.length > 0) {
-            await StudentModel.updateMany(
-                { _id: { $in: allPresentIds }, remainingSessions: { $gt: 0 } },
-                { $inc: { remainingSessions: -1 } }
-            );
-        }
+            return { updatedSession, snapshot };
+        });
+
+        // Track after successful commit (fire-and-forget)
+        trackEvent('session_completed', {
+            tenantId: teacherId,
+            userId:   completedBy || teacherId,
+            targetId: sessionId,
+            meta:     {
+                groupId:      session.groupId?.toString(),
+                presentCount: presentStudents.length,
+                absentCount:  absentStudents.length,
+                guestCount:   guestStudents.length,
+            },
+        });
 
         return { session: updatedSession, snapshot };
     }

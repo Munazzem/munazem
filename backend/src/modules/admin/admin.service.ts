@@ -4,6 +4,7 @@ import { GroupModel }        from '../../database/models/group.model.js';
 import { SessionModel }      from '../../database/models/session.model.js';
 import { SubscriptionModel } from '../../database/models/subscription.model.js';
 import { ErrorLogModel }     from '../../database/models/error-log.model.js';
+import { ActivityLogModel }   from '../../database/models/activity-log.model.js';
 import { UserRole, SubscriptionStatus } from '../../common/enums/enum.service.js';
 
 export class AdminService {
@@ -172,5 +173,38 @@ export class AdminService {
             { isActive },
             { new: true }
         ).select('-password').lean();
+    }
+
+    // ── Get activity feed (business event log) ────────────────────────
+    static async getActivityFeed(query: {
+        page?: number; limit?: number; event?: string; tenantId?: string;
+    }) {
+        const page  = Math.max(1, query.page ?? 1);
+        const limit = Math.min(100, query.limit ?? 20);
+        const skip  = (page - 1) * limit;
+
+        const filter: any = {};
+        if (query.event)    filter.event    = query.event;
+        if (query.tenantId) filter.tenantId = query.tenantId;
+
+        const [logs, total] = await Promise.all([
+            ActivityLogModel.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+            ActivityLogModel.countDocuments(filter),
+        ]);
+
+        // Enrich with teacher names for display
+        const tenantIds = [...new Set(logs.map(l => l.tenantId.toString()))];
+        const teachers = await UserModel.find(
+            { _id: { $in: tenantIds } },
+            { name: 1, centerName: 1 }
+        ).lean();
+        const teacherMap = new Map(teachers.map(t => [t._id.toString(), t]));
+
+        const enriched = logs.map(log => ({
+            ...log,
+            teacherName: (teacherMap.get(log.tenantId.toString()) as any)?.name ?? null,
+        }));
+
+        return { data: enriched, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } };
     }
 }
