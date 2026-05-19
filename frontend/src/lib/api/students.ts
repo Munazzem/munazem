@@ -3,8 +3,17 @@ import type {
     PaginatedStudentsResponse, 
     StudentWithGroup, 
     CreateStudentDTO, 
-    UpdateStudentDTO 
+    UpdateStudentDTO,
+    BulkStudentInput,
+    BulkStudentResult,
+    BulkCreateResponse,
 } from '@/types/student.types';
+
+export type {
+    BulkStudentInput,
+    BulkStudentResult,
+    BulkCreateResponse,
+};
 
 /**
  * Fetch a paginated list of students with optional filters.
@@ -62,30 +71,6 @@ export const updateStudent = async (id: string, data: UpdateStudentDTO): Promise
 export const deleteStudent = async (id: string): Promise<void> => {
     await apiClient.delete(`/students/${id}`);
 };
-
-export interface BulkStudentInput {
-    fullName: string;
-    studentPhone: string;
-    parentPhone: string;
-    gradeLevel: string;
-    groupId: string;
-    barcode?: string;
-}
-
-export interface BulkStudentResult {
-    index: number;
-    success: boolean;
-    studentName?: string;
-    studentCode?: string;
-    error?: string;
-}
-
-export interface BulkCreateResponse {
-    results: BulkStudentResult[];
-    successCount: number;
-    failCount: number;
-    total: number;
-}
 
 /**
  * Bulk create multiple students at once

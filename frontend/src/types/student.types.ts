@@ -77,3 +77,29 @@ export type UpdateStudentDTO = Partial<CreateStudentDTO> & {
     excusedUntil?: string | null;
     excusedSessionsCount?: number;
 };
+
+// ── Bulk Operations ──────────────────────────────────────────────────
+
+export interface BulkStudentInput {
+    fullName:     string;
+    studentPhone: string;
+    parentPhone:  string;
+    gradeLevel:   string;
+    groupId:      string;
+    barcode?:     string;
+}
+
+export interface BulkStudentResult {
+    index:        number;
+    success:      boolean;
+    studentName?: string;
+    studentCode?: string;
+    error?:       string;
+}
+
+export interface BulkCreateResponse {
+    results:      BulkStudentResult[];
+    successCount: number;
+    failCount:    number;
+    total:        number;
+}
