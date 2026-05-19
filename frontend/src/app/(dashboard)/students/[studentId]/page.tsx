@@ -53,6 +53,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { QK } from '@/lib/query-keys';
 
 export default function StudentProfilePage() {
     const params = useParams();
@@ -68,7 +69,7 @@ export default function StudentProfilePage() {
     // Fetch the single student (we use fetchStudents with search by ID for now, or just trust the report)
     // Actually, report brings back student data anyway, but let's fetch students list filtered by ID.
     const { data, isLoading: studentLoading } = useQuery({
-        queryKey: ['student_detail', studentId],
+        queryKey: QK.students.detail(studentId),
         queryFn: () => fetchStudentById(studentId),
         enabled: !!studentId,
     });
@@ -89,7 +90,7 @@ export default function StudentProfilePage() {
 
     // Fetch full student report
     const { data: report, isLoading: reportLoading } = useQuery({
-        queryKey: ['studentReport', studentId],
+        queryKey: QK.students.report(studentId),
         queryFn: () => fetchStudentReport(studentId),
         enabled: !!studentId,
         staleTime: 2 * 60 * 1000,
@@ -99,9 +100,9 @@ export default function StudentProfilePage() {
         mutationFn: () => recordSubscription({ studentId: studentId }),
         onSuccess: () => {
             toast.success(`تم تسجيل اشتراك ${student?.studentName} بنجاح`);
-            queryClient.invalidateQueries({ queryKey: ['student_detail', studentId] });
-            queryClient.invalidateQueries({ queryKey: ['studentReport', studentId] });
-            queryClient.invalidateQueries({ queryKey: ['payments'] });
+            queryClient.invalidateQueries({ queryKey: QK.students.detail(studentId) });
+            queryClient.invalidateQueries({ queryKey: QK.students.report(studentId) });
+            queryClient.invalidateQueries({ queryKey: QK.payments.all });
         },
         onError: (err: any) => {
             

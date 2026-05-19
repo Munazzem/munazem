@@ -6,6 +6,7 @@ import { fetchGroups } from '@/lib/api/groups';
 import { fetchStudents } from '@/lib/api/students';
 import { recordBatchSubscription } from '@/lib/api/payments';
 import { toast } from 'sonner';
+import { QK } from '@/lib/query-keys';
 import {
     Dialog,
     DialogContent,
@@ -60,7 +61,7 @@ export function BulkSubscriptionModal({ open, onOpenChange }: Props) {
 
     // Groups list
     const { data: groupsData, isLoading: groupsLoading } = useQuery({
-        queryKey: ['bulkSub_groups'],
+        queryKey: QK.groups.forBulkSub,
         queryFn: () => fetchGroups({ limit: 100 }),
         enabled: open,
         staleTime: 5 * 60 * 1000,
@@ -69,7 +70,7 @@ export function BulkSubscriptionModal({ open, onOpenChange }: Props) {
 
     // Students of selected group
     const { data: studentsData, isLoading: studentsLoading } = useQuery({
-        queryKey: ['bulkSub_students', groupId],
+        queryKey: QK.payments.bulkSubStudents(groupId),
         queryFn: () => fetchStudents({ groupId, limit: 200, isActive: true }),
         enabled: !!groupId,
         staleTime: 2 * 60 * 1000,
@@ -109,9 +110,9 @@ export function BulkSubscriptionModal({ open, onOpenChange }: Props) {
             setResults(data.results);
             setSummary({ successCount: data.successCount, failCount: data.failCount, totalPaid: data.totalPaid });
             setPhase('result');
-            queryClient.invalidateQueries({ queryKey: ['students'] });
-            queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
-            queryClient.invalidateQueries({ queryKey: ['dailySummary'] });
+            queryClient.invalidateQueries({ queryKey: QK.students.all });
+            queryClient.invalidateQueries({ queryKey: QK.dashboard.summary });
+            queryClient.invalidateQueries({ queryKey: QK.dashboard.dailySummary() });
             if (data.successCount > 0) {
                 toast.success(`تم تسجيل ${data.successCount} اشتراك بنجاح`);
             }

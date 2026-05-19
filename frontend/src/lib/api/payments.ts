@@ -7,7 +7,14 @@ import type {
     ITransaction,
     GradeLevel,
     TransactionCategory,
+    IBatchSubscriptionResult,
+    IBatchSubscriptionResponse,
 } from '@/types/payment.types';
+
+export type {
+    IBatchSubscriptionResult,
+    IBatchSubscriptionResponse,
+};
 
 // ─── Price Settings ───────────────────────────────────────────────
 export const getPriceSettings = async (): Promise<IPriceSettings> => {
@@ -72,21 +79,6 @@ export const deliverNotebook = async (reservationId: string, data: {
     const res = await apiClient.post(`/payments/notebook/deliver/${reservationId}`, data);
     return (res as any).data;
 };
-
-export interface IBatchSubscriptionResult {
-    studentId: string;
-    studentName: string;
-    paidAmount: number;
-    status: 'success' | 'error';
-    error?: string;
-}
-
-export interface IBatchSubscriptionResponse {
-    results: IBatchSubscriptionResult[];
-    successCount: number;
-    failCount: number;
-    totalPaid: number;
-}
 
 export const recordBatchSubscription = async (data: {
     studentIds: string[];

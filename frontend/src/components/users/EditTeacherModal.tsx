@@ -8,6 +8,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { updateUser } from '@/lib/api/users';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
+import { QK } from '@/lib/query-keys';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -83,7 +84,7 @@ export function EditTeacherModal({ open, onOpenChange, teacher }: EditTeacherMod
     mutationFn: (data: { id: string; data: any }) => updateUser(data),
     onSuccess: () => {
       toast.success('تم تحديث بيانات المعلم بنجاح');
-      queryClient.invalidateQueries({ queryKey: ['users'] });
+      queryClient.invalidateQueries({ queryKey: QK.users.all });
       form.reset();
       onOpenChange(false);
     },

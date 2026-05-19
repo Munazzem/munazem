@@ -9,6 +9,7 @@ import { createSubscription } from '@/lib/api/subscriptions';
 import { toast } from 'sonner';
 import { Loader2, RefreshCw, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { QK } from '@/lib/query-keys';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -97,7 +98,7 @@ export function RenewSubscriptionModal({ open, onOpenChange, subscription }: Pro
         mutationFn: createSubscription,
         onSuccess: () => {
             toast.success('تم تجديد الاشتراك بنجاح');
-            queryClient.invalidateQueries({ queryKey: ['subscriptions'] });
+            queryClient.invalidateQueries({ queryKey: QK.subscriptions.all });
             onOpenChange(false);
         },
         onError: (error: any) => {

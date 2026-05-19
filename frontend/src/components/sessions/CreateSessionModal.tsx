@@ -9,6 +9,7 @@ import { createSession } from '@/lib/api/sessions';
 import { fetchGroups } from '@/lib/api/groups';
 import { toast } from 'sonner';
 import { Loader2, Plus } from 'lucide-react';
+import { QK } from '@/lib/query-keys';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -52,7 +53,7 @@ export function CreateSessionModal({ onSuccess }: CreateSessionModalProps) {
     const queryClient = useQueryClient();
 
     const { data: groupsData } = useQuery({
-        queryKey: ['groups'],
+        queryKey: QK.groups.forCreateSession,
         queryFn: () => fetchGroups({ limit: 100 }),
         enabled: open,
     });
@@ -72,7 +73,7 @@ export function CreateSessionModal({ onSuccess }: CreateSessionModalProps) {
         mutationFn: createSession,
         onSuccess: () => {
             toast.success('تم إنشاء الحصة بنجاح');
-            queryClient.invalidateQueries({ queryKey: ['sessions'] });
+            queryClient.invalidateQueries({ queryKey: QK.sessions.all });
             setOpen(false);
             form.reset();
             onSuccess?.();

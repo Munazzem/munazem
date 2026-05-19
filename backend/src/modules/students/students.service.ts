@@ -5,6 +5,7 @@ import { NotFoundException, BadRequestException, ConflictException } from '../..
 import type { CreateStudentDTO, UpdateStudentDTO } from '../../types/dto.types.js';
 import { GRADE_LETTER, GradeLevel, TransactionType, TransactionCategory } from '../../common/enums/enum.service.js';
 import { nextSequence } from '../../database/models/counter.model.js';
+import { trackEvent } from '../../common/utils/activity.service.js';
 import crypto from 'crypto';
 
 export class StudentService {
@@ -51,7 +52,7 @@ export class StudentService {
 
         // 4. Create — explicit fields only (no spread of DTO to avoid fullName leaking into model)
         try {
-            return await StudentModel.create({
+            const student = await StudentModel.create({
                 studentName,
                 parentName,
                 studentPhone: data.studentPhone,
@@ -63,6 +64,15 @@ export class StudentService {
                 barcode: data.barcode || crypto.randomUUID(),
                 monthlySessionsQuota: (group.schedule?.length ?? 2) * 4, // Dynamic from schedule
             });
+
+            trackEvent('student_created', {
+                tenantId: teacherId,
+                userId:   teacherId,
+                targetId: student._id.toString(),
+                meta:     { studentName, studentCode, groupName: group.name },
+            });
+
+            return student;
         } catch (error: any) {
             if (error.code === 11000) {
                 if (error.keyPattern?.barcode) {
@@ -247,6 +257,14 @@ export class StudentService {
     static async deleteStudent(studentId: string, teacherId: string) {
         const deletedStudent = await StudentModel.findOneAndDelete({ _id: studentId, teacherId }).lean();
         if (!deletedStudent) throw NotFoundException({ message: 'الطالب غير موجود' });
+
+        trackEvent('student_deleted', {
+            tenantId: teacherId,
+            userId:   teacherId,
+            targetId: studentId,
+            meta:     { studentName: deletedStudent.studentName, studentCode: deletedStudent.studentCode },
+        });
+
         return deletedStudent;
     }
 }

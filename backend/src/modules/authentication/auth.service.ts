@@ -2,6 +2,7 @@ import { ConflictException, UnauthorizedException } from "../../common/utils/res
 import { UserModel } from "../../database/models/user.model.js";
 import { PasswordUtil } from "../../common/utils/password.util.js";
 import { TokenUtil } from "../../common/utils/token.util.js";
+import { trackEvent } from "../../common/utils/activity.service.js";
 import type { ILoginRequest, IAuthResponse } from "../../types/auth.types.js";
 
 export const login = async (data: ILoginRequest): Promise<IAuthResponse> => {
@@ -10,11 +11,17 @@ export const login = async (data: ILoginRequest): Promise<IAuthResponse> => {
     // [PERFORMANCE OPTIMIZATION] Using .lean() to bypass Mongoose hydration. Faster read times for login.
     const user = await UserModel.findOne({ phone }).select('+password').lean();
     if (!user) {
+        // Cannot track tenantId/userId since user doesn't exist — log to stdout only
         throw UnauthorizedException({ message: 'رقم الهاتف أو كلمة المرور غير صحيحة' });
     }
 
     const isPasswordValid = await PasswordUtil.comparePassword(password, user.password as string);
     if (!isPasswordValid) {
+        trackEvent('user_login_failed', {
+            tenantId: (user.teacherId || user._id).toString(),
+            userId:   user._id.toString(),
+            meta:     { reason: 'invalid_password', role: user.role },
+        });
         throw UnauthorizedException({ message: 'رقم الهاتف أو كلمة المرور غير صحيحة' });
     }
 
@@ -44,6 +51,12 @@ export const login = async (data: ILoginRequest): Promise<IAuthResponse> => {
             userObject.logoUrl = teacher.logoUrl;
         }
     }
+
+    trackEvent('user_login', {
+        tenantId: (user.teacherId || user._id).toString(),
+        userId:   user._id.toString(),
+        meta:     { role: user.role, name: user.name },
+    });
 
     return {
         message: 'تم تسجيل الدخول بنجاح',

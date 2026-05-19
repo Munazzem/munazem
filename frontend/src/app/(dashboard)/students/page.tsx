@@ -42,6 +42,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { fetchStudentReportHtml, fetchGroupAttendanceSheetHtml } from '@/lib/api/reports';
 import { printHtmlContent } from '@/lib/utils/print';
 import { generateIdCardsHtml } from '@/lib/utils/printIdCard';
+import { QK } from '@/lib/query-keys';
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function StudentsPage() {
@@ -164,7 +165,7 @@ export default function StudentsPage() {
         hasNextPage,
         isFetchingNextPage
     } = useInfiniteQuery({
-        queryKey: ['students', { limit, search: searchTerm, groupId: selectedGroup?._id }],
+        queryKey: QK.students.list({ limit, search: searchTerm, groupId: selectedGroup?._id }),
         queryFn: ({ pageParam = 1 }) => fetchStudents({
             page: pageParam,
             limit,
@@ -185,7 +186,7 @@ export default function StudentsPage() {
         mutationFn: deleteStudent,
         onSuccess: () => {
             toast.success('تم حذف الطالب بنجاح');
-            queryClient.invalidateQueries({ queryKey: ['students'] });
+            queryClient.invalidateQueries({ queryKey: QK.students.all });
         },
         onError: (error: { response?: { data?: { message?: string } } } | Error) => {
             const err = error as { response?: { data?: { message?: string } } };

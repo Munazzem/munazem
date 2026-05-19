@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { QrCode, User, Phone, Hash, TrendingUp, Check, Clock } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { QK } from '@/lib/query-keys';
 
 interface Props {
     studentId: string;
@@ -60,7 +61,7 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
     }, [currentGroupId]);
 
     const { data: groupsData } = useQuery({
-        queryKey: ['teacherGroups_reassignStudent', student?.gradeLevel],
+        queryKey: QK.groups.forReassign(student?.gradeLevel),
         queryFn: () => fetchGroups({ limit: 100, gradeLevel: student?.gradeLevel }),
         enabled: canWrite && !!student?.gradeLevel,
         staleTime: 5 * 60 * 1000,
@@ -74,8 +75,8 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
         onSuccess: (updated) => {
             if (updated) {
                 toast.success('تم نقل الطالب إلى المجموعة الجديدة بنجاح');
-                queryClient.invalidateQueries({ queryKey: ['student_detail', studentId] });
-                queryClient.invalidateQueries({ queryKey: ['studentReport', studentId] });
+                queryClient.invalidateQueries({ queryKey: QK.students.detail(studentId) });
+                queryClient.invalidateQueries({ queryKey: QK.students.report(studentId) });
             }
             setIsChangingGroup(false);
         },
@@ -89,8 +90,8 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
         mutationFn: () => recordManualAttendance(studentId),
         onSuccess: () => {
             toast.success('تم تسجيل الحصة بنجاح');
-            queryClient.invalidateQueries({ queryKey: ['studentReport', studentId] });
-            queryClient.invalidateQueries({ queryKey: ['student_detail', studentId] });
+            queryClient.invalidateQueries({ queryKey: QK.students.report(studentId) });
+            queryClient.invalidateQueries({ queryKey: QK.students.detail(studentId) });
         },
         onError: (err: any) => {
             
@@ -109,7 +110,7 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
         mutationFn: (val: number) => updateStudent(studentId, { monthlySessionsQuota: val }),
         onSuccess: () => {
             toast.success('تم تحديث عدد الحصص بنجاح');
-            queryClient.invalidateQueries({ queryKey: ['student_detail', studentId] });
+            queryClient.invalidateQueries({ queryKey: QK.students.detail(studentId) });
             setEditingQuota(false);
         },
         onError: (err: any) => {

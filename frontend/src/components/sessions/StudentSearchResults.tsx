@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { fetchStudents } from '@/lib/api/students';
 import { cn } from '@/lib/utils';
+import { QK } from '@/lib/query-keys';
 
 interface StudentSearchResultsProps {
     sessionId: string;
@@ -22,7 +23,7 @@ export function StudentSearchResults({
     onClose,
 }: StudentSearchResultsProps) {
     const { data } = useQuery({
-        queryKey: ['students-search', groupId, search],
+        queryKey: QK.attendance.searchInSession(groupId, search),
         queryFn: () => fetchStudents({ groupId, search, limit: 10 }),
         enabled: search.length >= 1,
     });

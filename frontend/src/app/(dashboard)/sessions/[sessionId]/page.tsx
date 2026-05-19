@@ -29,6 +29,7 @@ import { StudentSearchResults } from '@/components/sessions/StudentSearchResults
 import { SnapshotSummary } from '@/components/sessions/SnapshotSummary';
 import { WhatsAppLinksDialog } from '@/components/sessions/WhatsAppLinksDialog';
 import { toast } from 'sonner';
+import { QK } from '@/lib/query-keys';
 import {
     ArrowRight,
     CheckCircle2,
@@ -130,14 +131,14 @@ export default function SessionDetailPage() {
 
     // Fetch session
     const { data: session, isLoading: sessionLoading } = useQuery({
-        queryKey: ['session', sessionId],
+        queryKey: QK.sessions.detail(sessionId),
         queryFn: () => fetchSessionById(sessionId),
         refetchInterval: 30000,
     });
 
     // Fetch attendance records (live polling every 5s when IN_PROGRESS)
     const { data: attendanceRecords = [], isLoading: attendanceLoading } = useQuery({
-        queryKey: ['attendance', sessionId],
+        queryKey: QK.attendance.bySession(sessionId),
         queryFn: () => getSessionAttendance(sessionId),
         refetchInterval: session?.status === 'IN_PROGRESS' ? 5000 : false,
         enabled: !!session,
@@ -145,7 +146,7 @@ export default function SessionDetailPage() {
 
     // Fetch snapshot if completed
     const { data: snapshot } = useQuery({
-        queryKey: ['snapshot', sessionId],
+        queryKey: QK.attendance.snapshot(sessionId),
         queryFn: () => getSessionSnapshot(sessionId),
         enabled: session?.status === 'COMPLETED',
     });
@@ -156,7 +157,7 @@ export default function SessionDetailPage() {
         : session?.groupId ?? '';
 
     const { data: groupStudentsData } = useQuery({
-        queryKey: ['students', { groupId, limit: 200 }],
+        queryKey: QK.students.list({ groupId, limit: 200 }),
         queryFn: () => fetchStudents({ groupId, limit: 200 }),
         enabled: !!groupId,
     });
@@ -184,10 +185,10 @@ export default function SessionDetailPage() {
         if (session?.status === 'SCHEDULED') {
             try {
                 // Optimistically update session status
-                queryClient.setQueryData(['session', sessionId], (old: any) => ({ ...old, status: 'IN_PROGRESS' }));
+                queryClient.setQueryData(QK.sessions.detail(sessionId), (old: any) => ({ ...old, status: 'IN_PROGRESS' }));
                 await updateSessionStatus(sessionId, 'IN_PROGRESS');
-                queryClient.invalidateQueries({ queryKey: ['session', sessionId] });
-                queryClient.invalidateQueries({ queryKey: ['sessions'] });
+                queryClient.invalidateQueries({ queryKey: QK.sessions.detail(sessionId) });
+                queryClient.invalidateQueries({ queryKey: QK.sessions.all });
             } catch (err) {
                 console.error('Failed to update session status:', err);
             }
@@ -206,10 +207,10 @@ export default function SessionDetailPage() {
         },
         onMutate: async (studentId) => {
             // Cancel outgoing refetches
-            await queryClient.cancelQueries({ queryKey: ['attendance', sessionId] });
+            await queryClient.cancelQueries({ queryKey: QK.attendance.bySession(sessionId) });
 
             // Snapshot previous value
-            const previousAttendance = queryClient.getQueryData<IAttendanceRecord[]>(['attendance', sessionId]) || [];
+            const previousAttendance = queryClient.getQueryData<IAttendanceRecord[]>(QK.attendance.bySession(sessionId)) || [];
 
             // Find student info for optimistic record
             const student = groupStudentsData?.data?.find(s => s._id === studentId);
@@ -225,7 +226,7 @@ export default function SessionDetailPage() {
             };
 
             // Update cache
-            queryClient.setQueryData(['attendance', sessionId], [...previousAttendance, optimisticRecord]);
+            queryClient.setQueryData(QK.attendance.bySession(sessionId), [...previousAttendance, optimisticRecord]);
 
             return { previousAttendance };
         },
@@ -237,7 +238,7 @@ export default function SessionDetailPage() {
         onError: (err: any, studentId, context) => {
             // Rollback optimistic update
             if (context?.previousAttendance) {
-                queryClient.setQueryData(['attendance', sessionId], context.previousAttendance);
+                queryClient.setQueryData(QK.attendance.bySession(sessionId), context.previousAttendance);
             }
 
             const msg = err?.response?.data?.message ?? 'حدث خطأ (قد يكون بسبب انقطاع الاتصال)';
@@ -248,7 +249,7 @@ export default function SessionDetailPage() {
             }
         },
         onSettled: () => {
-            queryClient.invalidateQueries({ queryKey: ['attendance', sessionId] });
+            queryClient.invalidateQueries({ queryKey: QK.attendance.bySession(sessionId) });
             setSearchQuery('');
         },
     });
@@ -259,7 +260,7 @@ export default function SessionDetailPage() {
             updateAttendance(id, status),
         onSuccess: () => {
             toast.success('تم تحديث الحضور');
-            queryClient.invalidateQueries({ queryKey: ['attendance', sessionId] });
+            queryClient.invalidateQueries({ queryKey: QK.attendance.bySession(sessionId) });
             setEditRecord(null);
         },
         onError: (err: any) => {
@@ -285,8 +286,8 @@ export default function SessionDetailPage() {
         onSuccess: (record) => {
             const name = (record.studentId as any)?.studentName ?? 'الطالب';
             toast.success(`تم تسجيل إذن غياب لـ ${name}`);
-            queryClient.invalidateQueries({ queryKey: ['attendance', sessionId] });
-            queryClient.invalidateQueries({ queryKey: ['student_detail'] });
+            queryClient.invalidateQueries({ queryKey: QK.attendance.bySession(sessionId) });
+            queryClient.invalidateQueries({ queryKey: QK.students.details });
             setExcuseStudent(null);
         },
         onError: (err: any) => {
@@ -299,9 +300,9 @@ export default function SessionDetailPage() {
         mutationFn: () => completeSession(sessionId),
         onSuccess: (result) => {
             toast.success('تم إنهاء الحصة وحفظ السجل');
-            queryClient.invalidateQueries({ queryKey: ['session', sessionId] });
-            queryClient.invalidateQueries({ queryKey: ['sessions'] });
-            queryClient.setQueryData(['snapshot', sessionId], result.snapshot);
+            queryClient.invalidateQueries({ queryKey: QK.sessions.detail(sessionId) });
+            queryClient.invalidateQueries({ queryKey: QK.sessions.all });
+            queryClient.setQueryData(QK.attendance.snapshot(sessionId), result.snapshot);
             setShowCompleteConfirm(false);
         },
         onError: (err: any) => {

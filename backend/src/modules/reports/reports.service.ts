@@ -459,15 +459,23 @@ export class ReportsService {
     // ══════════════════════════════════════════════════════════════
     static async getDailySummary(teacherId: string, dateStr?: string) {
         // dateStr arrives as "YYYY-MM-DD" (local date chosen by the user).
-        // Parse as UTC midnight so MongoDB comparisons are correct
-        // regardless of the server's local timezone.
-        const dateKey = (dateStr ?? new Date().toISOString().split('T')[0])!;
+        // When omitted, we default to "today" in Egypt timezone (UTC+3).
+        // This prevents showing yesterday's data after midnight Egypt time.
+        const dateKey = (() => {
+            if (dateStr) return dateStr;
+            // Current date in Egypt timezone (UTC+3)
+            const EGYPT_OFFSET_MS = 3 * 60 * 60 * 1000;
+            const egyptNow = new Date(Date.now() + EGYPT_OFFSET_MS);
+            return egyptNow.toISOString().split('T')[0]!;
+        })();
         const parts   = dateKey.split('-').map(Number);
         const y = parts[0]!;
         const m = parts[1]!;
         const d = parts[2]!;
-        const dayStart = new Date(Date.UTC(y, m - 1, d, 0,  0,  0,   0));
-        const dayEnd   = new Date(Date.UTC(y, m - 1, d, 23, 59, 59, 999));
+        // Use Egypt midnight boundaries (21:00 UTC prev day → 21:00 UTC this day)
+        const EGYPT_OFFSET_MS = 3 * 60 * 60 * 1000;
+        const dayStart = new Date(Date.UTC(y, m - 1, d, 0,  0,  0,   0) - EGYPT_OFFSET_MS);
+        const dayEnd   = new Date(Date.UTC(y, m - 1, d, 23, 59, 59, 999) - EGYPT_OFFSET_MS);
 
         const tid = new mongoose.Types.ObjectId(teacherId);
 
@@ -499,8 +507,11 @@ export class ReportsService {
             date: { $gte: dayStart, $lte: dayEnd },
         });
 
-        // Daily financial summary
-        const dailyLedger = await DailyLedgerModel.findOne({ teacherId: tid, date: dateKey } as any).lean();
+        // Use pure UTC midnight for the DailyLedger lookup to match startOfDay logic
+        const dayStartUTC = new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
+
+        // Daily financial summary — query by pure UTC start-of-day key
+        const dailyLedger = await DailyLedgerModel.findOne({ teacherId: tid, date: dayStartUTC }).lean();
 
         return {
             date: dateKey,

@@ -1,68 +1,25 @@
 import { apiClient } from './axios';
+import type {
+    AdminStats,
+    GrowthDataPoint,
+    AdminTenant,
+    TenantDetail,
+    AdminErrorLog,
+    Paginated,
+    ServerHealth,
+    ActivityLogEntry,
+} from '@/types/admin.types';
 
-// ── Types ──────────────────────────────────────────────────────────
-
-export interface AdminStats {
-    totalTeachers:         number;
-    activeTeachers:        number;
-    inactiveTeachers:      number;
-    totalStudents:         number;
-    activeSubscriptions:   number;
-    expiredSubscriptions:  number;
-    newTeachersThisMonth:  number;
-    monthlyRevenue:        number;
-    recentErrorsThisMonth: number;
-}
-
-export interface GrowthDataPoint {
-    label: string;
-    count: number;
-}
-
-export interface AdminTenant {
-    _id:          string;
-    name:         string;
-    email?:       string;
-    phone:        string;
-    stage?:       string;
-    isActive:     boolean;
-    centerName?:  string;
-    createdAt:    string;
-    studentCount: number;
-    subscription: {
-        planTier:       string;
-        status:         string;
-        endDate:        string;
-        durationMonths: number;
-    } | null;
-}
-
-export interface TenantDetail {
-    teacher:           AdminTenant;
-    studentCount:      number;
-    groupCount:        number;
-    sessionsThisMonth: number;
-    subscription:      AdminTenant['subscription'];
-}
-
-export interface AdminErrorLog {
-    _id:        string;
-    level:      'warn' | 'error' | 'critical';
-    message:    string;
-    path:       string;
-    method:     string;
-    statusCode: number;
-    requestId?: string;
-    userId?:    string;
-    teacherId?: string;
-    stack?:     string;
-    createdAt:  string;
-}
-
-export interface Paginated<T> {
-    data:       T[];
-    pagination: { total: number; page: number; limit: number; totalPages: number };
-}
+export type {
+    AdminStats,
+    GrowthDataPoint,
+    AdminTenant,
+    TenantDetail,
+    AdminErrorLog,
+    Paginated,
+    ServerHealth,
+    ActivityLogEntry,
+};
 
 // ── API Functions ──────────────────────────────────────────────────
 
@@ -112,24 +69,21 @@ export const fetchAdminErrors = async (params?: {
     return (res as any).data;
 };
 
-export interface ServerHealth {
-    status:      string;
-    uptime:      number;
-    uptimeHuman: string;
-    memory: {
-        heapUsedMB:  number;
-        heapTotalMB: number;
-        rssMB:       number;
-        heapPct:     number;
-    };
-    errors: {
-        lastHour: number;
-        last24h:  number;
-    };
-    timestamp: string;
-}
-
 export const fetchAdminHealth = async (): Promise<ServerHealth> => {
     const res = await apiClient.get('/admin/health');
+    return (res as any).data;
+};
+
+// ── Activity Feed ──────────────────────────────────────────────────
+
+export const fetchActivityFeed = async (params?: {
+    page?: number; limit?: number; event?: string; tenantId?: string;
+}): Promise<Paginated<ActivityLogEntry>> => {
+    const q = new URLSearchParams();
+    if (params?.page)     q.set('page',     String(params.page));
+    if (params?.limit)    q.set('limit',    String(params.limit));
+    if (params?.event)    q.set('event',    params.event);
+    if (params?.tenantId) q.set('tenantId', params.tenantId);
+    const res = await apiClient.get(`/admin/activity?${q.toString()}`);
     return (res as any).data;
 };

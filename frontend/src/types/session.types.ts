@@ -76,3 +76,12 @@ export interface PaginatedSessionsResponse {
         totalPages: number;
     };
 }
+
+// ── WhatsApp ──────────────────────────────────────────────────────────
+
+export interface IWhatsAppLink {
+    studentId:    string;
+    studentName:  string;
+    status:       'PRESENT' | 'ABSENT';
+    whatsappLink: string;
+}

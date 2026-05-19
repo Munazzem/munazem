@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { recordSubscription, recordNotebookSale, recordExpense, updateTransaction } from '@/lib/api/payments';
+import { recordSubscription, recordNotebookSale, recordExpense, updateTransaction, reserveNotebook } from '@/lib/api/payments';
 import { fetchStudents } from '@/lib/api/students';
 import { toast } from 'sonner';
-import { Plus, Loader2, User, BookOpen, TrendingDown, Search } from 'lucide-react';
+import { Plus, Loader2, User, BookOpen, TrendingDown, Search, Bookmark } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { QK } from '@/lib/query-keys';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,17 +27,19 @@ import {
 } from '@/components/ui/select';
 import { EXPENSE_CATEGORIES, CATEGORY_LABELS, type TransactionCategory } from '@/types/payment.types';
 
-type TxMode = 'subscription' | 'notebook' | 'expense';
+type TxMode = 'subscription' | 'notebook' | 'notebook_reservation' | 'expense';
 
 const MODE_LABELS: Record<TxMode, string> = {
     subscription: 'اشتراك طالب',
     notebook:     'بيع مذكرة',
+    notebook_reservation: 'حجز مذكرة',
     expense:      'مصروف',
 };
 
 const MODE_ICONS: Record<TxMode, React.ReactNode> = {
     subscription: <User className="h-4 w-4" />,
     notebook:     <BookOpen className="h-4 w-4" />,
+    notebook_reservation: <Bookmark className="h-4 w-4" />,
     expense:      <TrendingDown className="h-4 w-4" />,
 };
 
@@ -122,9 +125,9 @@ export function AddTransactionModal({
 
     // Student search
     const { data: studentsData } = useQuery({
-        queryKey: ['students-search-payment', studentSearch],
+        queryKey: QK.payments.searchForPayment(studentSearch),
         queryFn: () => fetchStudents({ search: studentSearch, limit: 8 }),
-        enabled: open && !isEditMode && studentSearch.length >= 1 && (mode === 'subscription' || mode === 'notebook'),
+        enabled: open && !isEditMode && studentSearch.length >= 1 && (mode === 'subscription' || mode === 'notebook' || mode === 'notebook_reservation'),
     });
     const rawStudents = studentsData as any;
     const students = Array.isArray(rawStudents?.data?.data)
@@ -135,13 +138,13 @@ export function AddTransactionModal({
 
     // Notebooks list
     const { data: notebooksData } = useQuery({
-        queryKey: ['notebooks-list'],
+        queryKey: QK.notebooks.listForModal,
         queryFn: async () => {
             const { apiClient } = await import('@/lib/api/axios');
             const res = await apiClient.get('/notebooks?limit=100');
             return (res as any).data;
         },
-        enabled: open && mode === 'notebook',
+        enabled: open && (mode === 'notebook' || mode === 'notebook_reservation'),
     });
     const rawNotebooks = notebooksData as any;
     const notebooks = Array.isArray(rawNotebooks?.data?.data)
@@ -164,8 +167,8 @@ export function AddTransactionModal({
     };
 
     const invalidateAndClose = () => {
-        queryClient.invalidateQueries({ queryKey: ['daily-ledger'] });
-        queryClient.invalidateQueries({ queryKey: ['monthly-ledger'] });
+        queryClient.invalidateQueries({ queryKey: QK.payments.dailyLedgerBase });
+        queryClient.invalidateQueries({ queryKey: QK.payments.monthlyLedgerBase });
         setOpen(false);
         if (!isEditMode) resetForm();
         onSuccess?.();
@@ -180,6 +183,11 @@ export function AddTransactionModal({
     const notebookMutation = useMutation({
         mutationFn: recordNotebookSale,
         onSuccess: () => { toast.success('تم تسجيل بيع المذكرة بنجاح'); invalidateAndClose(); },
+    });
+
+    const reservationMutation = useMutation({
+        mutationFn: reserveNotebook,
+        onSuccess: () => { toast.success('تم حجز المذكرة بنجاح'); invalidateAndClose(); },
     });
 
     const expenseMutation = useMutation({
@@ -197,6 +205,7 @@ export function AddTransactionModal({
     const isPending =
         subscriptionMutation.isPending ||
         notebookMutation.isPending ||
+        reservationMutation.isPending ||
         expenseMutation.isPending ||
         updateMutation.isPending;
 
@@ -234,6 +243,16 @@ export function AddTransactionModal({
                 description: description || undefined,
                 date,
             });
+        } else if (mode === 'notebook_reservation') {
+            if (!selectedStudentId) return toast.error('اختر طالباً');
+            if (!notebookId) return toast.error('اختر مذكرة');
+            reservationMutation.mutate({
+                studentId: selectedStudentId,
+                notebookId,
+                quantity: quantity ? parseInt(quantity) : 1,
+                paidAmount: expenseAmount ? parseFloat(expenseAmount) : 0, // Using expenseAmount state for the deposit
+                description: description || undefined,
+            });
         } else {
             if (!expenseAmount) return toast.error('أدخل المبلغ');
             expenseMutation.mutate({
@@ -265,7 +284,7 @@ export function AddTransactionModal({
 
                 {/* Mode Selector — hidden in edit mode */}
                 {!isEditMode && (
-                    <div className="grid grid-cols-3 gap-2 mb-1">
+                    <div className="grid grid-cols-4 gap-2 mb-1">
                         {(Object.keys(MODE_LABELS) as TxMode[]).map((m) => (
                             <button
                                 key={m}
@@ -286,8 +305,8 @@ export function AddTransactionModal({
                 )}
 
                 <form onSubmit={handleSubmit} className="space-y-3 pt-1">
-                    {/* Student (subscription & notebook) */}
-                    {(mode === 'subscription' || mode === 'notebook') && (
+                    {/* Student (subscription, notebook & reservation) */}
+                    {(mode === 'subscription' || mode === 'notebook' || mode === 'notebook_reservation') && (
                         <div>
                             <label className="text-sm font-medium text-gray-700 mb-1.5 block">الطالب</label>
                             {/* In edit mode: always show locked student chip */}
@@ -340,7 +359,7 @@ export function AddTransactionModal({
                     )}
 
                     {/* Notebook Select — add mode only */}
-                    {mode === 'notebook' && !isEditMode && (
+                    {(mode === 'notebook' || mode === 'notebook_reservation') && !isEditMode && (
                         <div className="grid grid-cols-3 gap-2">
                             <div className="col-span-2">
                                 <label className="text-sm font-medium text-gray-700 mb-1.5 block">المذكرة</label>
@@ -414,6 +433,22 @@ export function AddTransactionModal({
                         </div>
                     )}
 
+                    {/* Deposit for reservation */}
+                    {mode === 'notebook_reservation' && !isEditMode && (
+                        <div>
+                            <label className="text-sm font-medium text-gray-700 mb-1.5 block">
+                                المبلغ المدفوع (عربون) <span className="text-gray-400 font-normal">— اختياري</span>
+                            </label>
+                            <Input
+                                type="number"
+                                min="0"
+                                placeholder="0"
+                                value={expenseAmount}
+                                onChange={(e) => setExpenseAmount(e.target.value)}
+                            />
+                        </div>
+                    )}
+
                     {/* Editable amount — edit mode, subscription & notebook */}
                     {isEditMode && (mode === 'subscription' || mode === 'notebook') && (
                         <div>
@@ -440,11 +475,13 @@ export function AddTransactionModal({
                         />
                     </div>
 
-                    {/* Date */}
-                    <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1.5 block">التاريخ</label>
-                        <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-                    </div>
+                    {/* Date (Not available for reservation since reservation tracks current date) */}
+                    {mode !== 'notebook_reservation' && (
+                        <div>
+                            <label className="text-sm font-medium text-gray-700 mb-1.5 block">التاريخ</label>
+                            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+                        </div>
+                    )}
 
                     <div className="flex justify-end gap-2 pt-1">
                         <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={isPending}>

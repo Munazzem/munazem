@@ -1,44 +1,22 @@
+import type { GradeLevel } from '@/lib/constants/grade.constants';
+export type { GradeLevel };
+export { ALL_GRADES } from '@/lib/constants/grade.constants';
+
+// Re-export payment constants for backward compatibility
+export { CATEGORY_LABELS, EXPENSE_CATEGORIES } from '@/lib/constants/payment.constants';
+
 export type TransactionType = 'INCOME' | 'EXPENSE';
 
 export type TransactionCategory =
     | 'SUBSCRIPTION'
     | 'NOTEBOOK_SALE'
+    | 'NOTEBOOK_RESERVATION'
+    | 'NOTEBOOK_DELIVERY'
     | 'OTHER_INCOME'
     | 'SALARY'
     | 'RENT'
     | 'SUPPLIES'
     | 'OTHER_EXPENSE';
-
-export const CATEGORY_LABELS: Record<TransactionCategory, string> = {
-    SUBSCRIPTION:  'اشتراك طالب',
-    NOTEBOOK_SALE: 'بيع مذكرة',
-    OTHER_INCOME:  'دخل آخر',
-    SALARY:        'رواتب',
-    RENT:          'إيجار',
-    SUPPLIES:      'مستلزمات',
-    OTHER_EXPENSE: 'مصروف آخر',
-};
-
-export const EXPENSE_CATEGORIES: TransactionCategory[] = [
-    'SALARY', 'RENT', 'SUPPLIES', 'OTHER_EXPENSE',
-];
-
-export type GradeLevel =
-    | 'الصف الأول الإعدادي'
-    | 'الصف الثاني الإعدادي'
-    | 'الصف الثالث الإعدادي'
-    | 'الصف الأول الثانوي'
-    | 'الصف الثاني الثانوي'
-    | 'الصف الثالث الثانوي';
-
-export const ALL_GRADES: GradeLevel[] = [
-    'الصف الأول الإعدادي',
-    'الصف الثاني الإعدادي',
-    'الصف الثالث الإعدادي',
-    'الصف الأول الثانوي',
-    'الصف الثاني الثانوي',
-    'الصف الثالث الثانوي',
-];
 
 export interface ITransaction {
     _id: string;
@@ -104,4 +82,21 @@ export interface IPriceSetting {
 export interface IPriceSettings {
     teacherId: string;
     prices: IPriceSetting[];
+}
+
+// ── Batch Operations ────────────────────────────────────────────────
+
+export interface IBatchSubscriptionResult {
+    studentId:   string;
+    studentName: string;
+    paidAmount:  number;
+    status:      'success' | 'error';
+    error?:      string;
+}
+
+export interface IBatchSubscriptionResponse {
+    results:      IBatchSubscriptionResult[];
+    successCount: number;
+    failCount:    number;
+    totalPaid:    number;
 }

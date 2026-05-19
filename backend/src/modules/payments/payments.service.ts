@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { PriceSettingsModel } from '../../database/models/price-settings.model.js';
 import { TransactionModel }   from '../../database/models/transaction.model.js';
 import { DailyLedgerModel }   from '../../database/models/ledger.model.js';
@@ -9,15 +10,44 @@ import { NotebookReservationModel } from '../../database/models/notebook-reserva
 import { ReservationStatus } from '../../types/notebook-reservation.types.js';
 import { TransactionType, TransactionCategory, GradeLevel } from '../../common/enums/enum.service.js';
 import { NotFoundException, BadRequestException } from '../../common/utils/response/error.responce.js';
+import { trackEvent } from '../../common/utils/activity.service.js';
+import { withTransaction } from '../../common/utils/transaction.util.js';
 import type { IPriceSetting } from '../../types/price-settings.types.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────
 
-// Returns start-of-day UTC Date for a given date
+// Maps any timestamp to the midnight UTC of the day it falls on in Egypt.
+// Example: 10 PM Egypt time (19:00 UTC) on May 18 → May 18 00:00:00 UTC.
+// Example: 1 AM Egypt time (22:00 UTC) on May 19 → May 19 00:00:00 UTC.
+// This perfectly aligns with existing data keys (which were saved exactly at 00:00:00 UTC).
 function startOfDay(date: Date): Date {
-    const d = new Date(date);
-    d.setUTCHours(0, 0, 0, 0);
-    return d;
+    const EGYPT_OFFSET_MS = 3 * 60 * 60 * 1000;
+    const local = new Date(date.getTime() + EGYPT_OFFSET_MS);
+    return new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate(), 0, 0, 0, 0));
+}
+
+// Resolves a transaction date string to a precise Date object.
+// If it's today's date in Egypt, it uses the exact current time.
+// If it's backdated, it defaults to 12:00 PM (Noon) Egypt time to avoid 3:00 AM weirdness.
+export function resolveTransactionDate(dateStr?: string): Date {
+    if (!dateStr) return new Date();
+    if (dateStr.includes('T')) return new Date(dateStr);
+    
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+        const EGYPT_OFFSET_MS = 3 * 60 * 60 * 1000;
+        const now = new Date();
+        const egyptNow = new Date(now.getTime() + EGYPT_OFFSET_MS);
+        const todayStr = egyptNow.toISOString().split('T')[0];
+        
+        if (dateStr === todayStr) {
+            return now; // exact current time
+        } else {
+            // Noon Egypt time (09:00 UTC)
+            return new Date(Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 9, 0, 0, 0));
+        }
+    }
+    return new Date(dateStr);
 }
 
 // Atomically updates (upsert) the DailyLedger when a transaction occurs
@@ -25,7 +55,8 @@ async function updateDailyLedger(
     teacherId: string,
     date: Date,
     transaction: { transactionId: any; type: string; category: string; paidAmount: number; studentName?: string; description?: string; createdBy: any; time: Date },
-    isIncome: boolean
+    isIncome: boolean,
+    session?: mongoose.ClientSession
 ) {
     const day = startOfDay(date);
     const incIncome   = isIncome ? transaction.paidAmount : 0;
@@ -41,7 +72,7 @@ async function updateDailyLedger(
                 netBalance:    isIncome ? transaction.paidAmount : -transaction.paidAmount,
             },
         },
-        { upsert: true }
+        { upsert: true, ...(session ? { session } : {}) }
     );
 }
 
@@ -51,7 +82,8 @@ async function updateMonthlyLedger(
     teacherId: string,
     date: Date,
     paidAmount: number,
-    isIncome: boolean
+    isIncome: boolean,
+    session?: mongoose.ClientSession
 ) {
     const year  = date.getUTCFullYear();
     const month = date.getUTCMonth() + 1;
@@ -75,7 +107,8 @@ async function updateMonthlyLedger(
                 'dailySummaries.$.netBalance':       net,
                 'dailySummaries.$.transactionCount': 1,
             },
-        }
+        },
+        { ...(session ? { session } : {}) }
     );
 
     if (updated) return; // Day entry existed — done
@@ -95,7 +128,7 @@ async function updateMonthlyLedger(
                 },
             },
         },
-        { upsert: true }
+        { upsert: true, ...(session ? { session } : {}) }
     );
 }
 
@@ -143,44 +176,57 @@ export class PaymentsService {
         const discountAmount = data.discountAmount ?? 0;
         const originalAmount = priceSetting.amount;
         const paidAmount     = originalAmount - discountAmount;
-        const txDate         = data.date ? new Date(data.date) : new Date();
+        const txDate         = resolveTransactionDate(data.date);
 
         if (paidAmount < 0) throw BadRequestException({ message: 'الخصم لا يمكن أن يتجاوز السعر الأصلي' });
 
-        const transaction = await TransactionModel.create({
-            teacherId,
-            createdBy,
-            type:           TransactionType.INCOME,
-            category:       TransactionCategory.SUBSCRIPTION,
-            studentId:      student._id,
-            studentName:    student.studentName,
-            gradeLevel:     student.gradeLevel,
-            originalAmount,
-            discountAmount,
-            paidAmount,
-            date:           txDate,
-            ...(data.description ? { description: data.description } : {}),
-        });
-
-        // Update both ledgers atomically
-        await Promise.all([
-            updateDailyLedger(teacherId, txDate, {
-                transactionId: transaction._id,
-                type:          TransactionType.INCOME,
-                category:      TransactionCategory.SUBSCRIPTION,
-                paidAmount,
-                studentName:   student.studentName,
-                createdBy,
-                time:          txDate,
-            }, true),
-            updateMonthlyLedger(teacherId, txDate, paidAmount, true),
-        ]);
-
-        // Set remaining sessions based on student quota (or group schedule)
+        // Get group quota info before transaction (read-only)
         const group = await GroupModel.findById(student.groupId, { schedule: 1 }).lean();
         const quota = (student as any).monthlySessionsQuota || (group?.schedule?.length ?? 2) * 4;
-        await StudentModel.findByIdAndUpdate(data.studentId, {
-            $set: { remainingSessions: quota }
+
+        // ── All mutations wrapped in a transaction (all-or-nothing) ──
+        const transaction = await withTransaction(async (session) => {
+            const [tx] = await TransactionModel.create([{
+                teacherId,
+                createdBy,
+                type:           TransactionType.INCOME,
+                category:       TransactionCategory.SUBSCRIPTION,
+                studentId:      student._id,
+                studentName:    student.studentName,
+                gradeLevel:     student.gradeLevel,
+                originalAmount,
+                discountAmount,
+                paidAmount,
+                date:           txDate,
+                ...(data.description ? { description: data.description } : {}),
+            }], { session });
+
+            await Promise.all([
+                updateDailyLedger(teacherId, txDate, {
+                    transactionId: tx!._id,
+                    type:          TransactionType.INCOME,
+                    category:      TransactionCategory.SUBSCRIPTION,
+                    paidAmount,
+                    studentName:   student.studentName,
+                    createdBy,
+                    time:          txDate,
+                }, true, session),
+                updateMonthlyLedger(teacherId, txDate, paidAmount, true, session),
+            ]);
+
+            await StudentModel.findByIdAndUpdate(data.studentId, {
+                $set: { remainingSessions: quota }
+            }, { session });
+
+            return tx;
+        });
+
+        // Track after successful commit (fire-and-forget, outside transaction)
+        trackEvent('payment_recorded', {
+            tenantId: teacherId,
+            userId:   createdBy,
+            targetId: transaction!._id.toString(),
+            meta:     { studentName: student.studentName, paidAmount, category: 'SUBSCRIPTION' },
         });
 
         return transaction;
@@ -201,7 +247,7 @@ export class PaymentsService {
             throw BadRequestException({ message: 'لم يتم تحديد أسعار المراحل بعد — يرجى إعداد الأسعار أولاً' });
         }
 
-        const txDate = data.date ? new Date(data.date) : new Date();
+        const txDate = resolveTransactionDate(data.date);
         const discountAmount = data.discountAmount ?? 0;
 
         const results: { studentId: string; studentName: string; paidAmount: number; status: 'success' | 'error'; error?: string }[] = [];
@@ -304,38 +350,42 @@ export class PaymentsService {
         const originalAmount = notebook.price * quantity;
         const discountAmount = data.discountAmount ?? 0;
         const paidAmount     = originalAmount - discountAmount;
-        const txDate         = data.date ? new Date(data.date) : new Date();
+        const txDate         = resolveTransactionDate(data.date);
 
         if (paidAmount < 0) throw BadRequestException({ message: 'الخصم لا يمكن أن يتجاوز السعر' });
 
-        const transaction = await TransactionModel.create({
-            teacherId,
-            createdBy,
-            type:           TransactionType.INCOME,
-            category:       TransactionCategory.NOTEBOOK_SALE,
-            studentId:      student._id,
-            studentName:    student.studentName,
-            originalAmount,
-            discountAmount,
-            paidAmount,
-            date:           txDate,
-            ...(data.description ? { description: data.description } : {}),
-        });
-
-        // Decrement stock + update both ledgers — all in parallel
-        await Promise.all([
-            NotebookModel.findByIdAndUpdate(data.notebookId, { $inc: { stock: -quantity } }),
-            updateDailyLedger(teacherId, txDate, {
-                transactionId: transaction._id,
-                type:          TransactionType.INCOME,
-                category:      TransactionCategory.NOTEBOOK_SALE,
-                paidAmount,
-                studentName:   student.studentName,
+        // ── All mutations wrapped in a transaction (all-or-nothing) ──
+        const transaction = await withTransaction(async (session) => {
+            const [tx] = await TransactionModel.create([{
+                teacherId,
                 createdBy,
-                time:          txDate,
-            }, true),
-            updateMonthlyLedger(teacherId, txDate, paidAmount, true),
-        ]);
+                type:           TransactionType.INCOME,
+                category:       TransactionCategory.NOTEBOOK_SALE,
+                studentId:      student._id,
+                studentName:    student.studentName,
+                originalAmount,
+                discountAmount,
+                paidAmount,
+                date:           txDate,
+                ...(data.description ? { description: data.description } : {}),
+            }], { session });
+
+            await Promise.all([
+                NotebookModel.findByIdAndUpdate(data.notebookId, { $inc: { stock: -quantity } }, { session }),
+                updateDailyLedger(teacherId, txDate, {
+                    transactionId: tx!._id,
+                    type:          TransactionType.INCOME,
+                    category:      TransactionCategory.NOTEBOOK_SALE,
+                    paidAmount,
+                    studentName:   student.studentName,
+                    createdBy,
+                    time:          txDate,
+                }, true, session),
+                updateMonthlyLedger(teacherId, txDate, paidAmount, true, session),
+            ]);
+
+            return tx;
+        });
 
         return transaction;
     }
@@ -382,7 +432,7 @@ export class PaymentsService {
                 teacherId,
                 createdBy,
                 type:           TransactionType.INCOME,
-                category:       TransactionCategory.NOTEBOOK_SALE,
+                category:       TransactionCategory.NOTEBOOK_RESERVATION,
                 studentId:      student._id,
                 studentName:    student.studentName,
                 originalAmount: totalPrice,
@@ -396,7 +446,7 @@ export class PaymentsService {
                 updateDailyLedger(teacherId, txDate, {
                     transactionId: transaction._id,
                     type:          TransactionType.INCOME,
-                    category:      TransactionCategory.NOTEBOOK_SALE,
+                    category:      TransactionCategory.NOTEBOOK_RESERVATION,
                     paidAmount,
                     studentName:   student.studentName,
                     createdBy,
@@ -459,7 +509,7 @@ export class PaymentsService {
                 teacherId,
                 createdBy,
                 type:           TransactionType.INCOME,
-                category:       TransactionCategory.NOTEBOOK_SALE,
+                category:       TransactionCategory.NOTEBOOK_DELIVERY,
                 studentId:      student._id,
                 studentName:    student.studentName,
                 originalAmount: reservation.totalPrice,
@@ -473,7 +523,7 @@ export class PaymentsService {
                 updateDailyLedger(teacherId, txDate, {
                     transactionId: transaction._id,
                     type:          TransactionType.INCOME,
-                    category:      TransactionCategory.NOTEBOOK_SALE,
+                    category:      TransactionCategory.NOTEBOOK_DELIVERY,
                     paidAmount:    additionalPayment,
                     studentName:   student.studentName,
                     createdBy,
@@ -502,31 +552,45 @@ export class PaymentsService {
             throw BadRequestException({ message: 'نوع العملية يجب أن يكون مصروفاً' });
         }
 
-        const txDate = data.date ? new Date(data.date) : new Date();
-        const transaction = await TransactionModel.create({
-            teacherId,
-            createdBy,
-            type:           TransactionType.EXPENSE,
-            category:       data.category,
-            originalAmount: data.amount,
-            discountAmount: 0,
-            paidAmount:     data.amount,
-            date:           txDate,
-            ...(data.description ? { description: data.description } : {}),
+        const txDate = resolveTransactionDate(data.date);
+
+        // ── All mutations wrapped in a transaction (all-or-nothing) ──
+        const transaction = await withTransaction(async (session) => {
+            const [tx] = await TransactionModel.create([{
+                teacherId,
+                createdBy,
+                type:           TransactionType.EXPENSE,
+                category:       data.category,
+                originalAmount: data.amount,
+                discountAmount: 0,
+                paidAmount:     data.amount,
+                date:           txDate,
+                ...(data.description ? { description: data.description } : {}),
+            }], { session });
+
+            await Promise.all([
+                updateDailyLedger(teacherId, txDate, {
+                    transactionId: tx!._id,
+                    type:          TransactionType.EXPENSE,
+                    category:      data.category,
+                    paidAmount:    data.amount,
+                    createdBy,
+                    time:          txDate,
+                    ...(data.description ? { description: data.description } : {}),
+                }, false, session),
+                updateMonthlyLedger(teacherId, txDate, data.amount, false, session),
+            ]);
+
+            return tx;
         });
 
-        await Promise.all([
-            updateDailyLedger(teacherId, txDate, {
-                transactionId: transaction._id,
-                type:          TransactionType.EXPENSE,
-                category:      data.category,
-                paidAmount:    data.amount,
-                createdBy,
-                time:          txDate,
-                ...(data.description ? { description: data.description } : {}),
-            }, false),
-            updateMonthlyLedger(teacherId, txDate, data.amount, false),
-        ]);
+        // Track after successful commit
+        trackEvent('expense_recorded', {
+            tenantId: teacherId,
+            userId:   createdBy,
+            targetId: transaction!._id.toString(),
+            meta:     { amount: data.amount, category: data.category },
+        });
 
         return transaction;
     }
@@ -574,7 +638,7 @@ export class PaymentsService {
         if (data.amount      !== undefined) { update['originalAmount'] = data.amount; update['paidAmount'] = data.amount; }
         if (data.category    !== undefined)   update['category']        = data.category;
         if (data.description !== undefined)   update['description']     = data.description;
-        if (data.date        !== undefined)   update['date']            = new Date(data.date);
+        if (data.date        !== undefined)   update['date']            = resolveTransactionDate(data.date);
 
         const updated = await TransactionModel.findByIdAndUpdate(
             transactionId,
