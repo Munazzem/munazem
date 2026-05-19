@@ -85,9 +85,11 @@ export enum TransactionType {
 
 export enum TransactionCategory {
     // Income categories
-    SUBSCRIPTION  = 'SUBSCRIPTION',   
-    NOTEBOOK_SALE = 'NOTEBOOK_SALE',  
-    OTHER_INCOME  = 'OTHER_INCOME',   
+    SUBSCRIPTION         = 'SUBSCRIPTION',   
+    NOTEBOOK_SALE        = 'NOTEBOOK_SALE',  
+    NOTEBOOK_RESERVATION = 'NOTEBOOK_RESERVATION',
+    NOTEBOOK_DELIVERY    = 'NOTEBOOK_DELIVERY',
+    OTHER_INCOME         = 'OTHER_INCOME',   
     // Expense categories
     SALARY        = 'SALARY',         
     RENT          = 'RENT',           

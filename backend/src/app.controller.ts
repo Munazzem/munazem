@@ -23,7 +23,7 @@ import examsRouter  from './modules/exams/exams.controller.js';
 import parentRouter from './modules/parent/parent.controller.js';
 import adminRouter  from './modules/admin/admin.controller.js';
 
-export const bootstrap = () => {
+export const bootstrap = async () => {
     const app = express();
     
     // Trust the reverse proxy (e.g. Render, Nginx, Vercel) to get the real user IP
@@ -94,7 +94,7 @@ export const bootstrap = () => {
         next();
     });
 
-    DBConnection()
+    await DBConnection()
 
     // Global rate limiter: 3000 requests per 15 minutes per IP
     const globalLimiter = rateLimit({

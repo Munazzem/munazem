@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getWhatsAppLinks } from '@/lib/api/attendance';
+import { QK } from '@/lib/query-keys';
 import {
     Dialog,
     DialogContent,
@@ -31,7 +32,7 @@ export function WhatsAppLinksDialog({
     onClose,
 }: WhatsAppLinksDialogProps) {
     const { data: links = [], isLoading } = useQuery({
-        queryKey: ['whatsapp-links', sessionId],
+        queryKey: QK.attendance.whatsapp(sessionId),
         queryFn: () => getWhatsAppLinks(sessionId),
         enabled: open,
     });

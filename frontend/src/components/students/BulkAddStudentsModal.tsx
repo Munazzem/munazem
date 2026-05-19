@@ -7,6 +7,7 @@ import { fetchGroups } from '@/lib/api/groups';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { getAllowedGrades } from '@/lib/utils/grades';
 import { toast } from 'sonner';
+import { QK } from '@/lib/query-keys';
 import {
     Plus,
     Trash2,
@@ -178,7 +179,7 @@ export function BulkAddStudentsModal() {
     const allowedGrades = getAllowedGrades(user?.stage);
 
     const { data: groupsData } = useQuery({
-        queryKey: ['teacherGroups_bulk'],
+        queryKey: QK.groups.forBulk,
         queryFn: () => fetchGroups({ limit: 100 }),
         enabled: open,
     });
@@ -201,7 +202,7 @@ export function BulkAddStudentsModal() {
         mutationFn: bulkCreateStudents,
         onSuccess: (data) => {
             setResults(data.results);
-            queryClient.invalidateQueries({ queryKey: ['students'] });
+            queryClient.invalidateQueries({ queryKey: QK.students.all });
             if (data.failCount === 0) {
                 toast.success(`تمت إضافة ${data.successCount} طالب بنجاح`);
             } else if (data.successCount === 0) {

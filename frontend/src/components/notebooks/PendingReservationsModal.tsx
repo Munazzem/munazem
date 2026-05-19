@@ -25,6 +25,7 @@ import {
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
+import { QK } from '@/lib/query-keys';
 
 interface Props {
     open: boolean;
@@ -40,7 +41,7 @@ export function PendingReservationsModal({ open, onOpenChange }: Props) {
     const [additionalPayment, setAdditionalPayment] = useState('');
 
     const { data, isLoading } = useQuery({
-        queryKey: ['pendingReservations', searchTerm],
+        queryKey: QK.notebooks.reservations(searchTerm),
         queryFn: () => fetchReservations({ status: 'PENDING', limit: 100 }), // Simplified for now
         enabled: open,
     });
@@ -52,9 +53,11 @@ export function PendingReservationsModal({ open, onOpenChange }: Props) {
             deliverNotebook(id, { paidAmount: amount }),
         onSuccess: () => {
             toast.success('تم تسليم المذكرة بنجاح');
-            queryClient.invalidateQueries({ queryKey: ['pendingReservations'] });
-            queryClient.invalidateQueries({ queryKey: ['notebooks'] });
-            queryClient.invalidateQueries({ queryKey: ['dailySummary'] });
+            queryClient.invalidateQueries({ queryKey: QK.notebooks.reservations() });
+            queryClient.invalidateQueries({ queryKey: QK.notebooks.all });
+            queryClient.invalidateQueries({ queryKey: QK.dashboard.dailySummary() });
+            queryClient.invalidateQueries({ queryKey: QK.payments.dailyLedgerBase });
+            queryClient.invalidateQueries({ queryKey: QK.payments.monthlyLedgerBase });
             setDeliveringId(null);
             setAdditionalPayment('');
         },

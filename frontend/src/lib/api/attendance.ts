@@ -4,7 +4,10 @@ import type {
     IAttendanceSnapshot,
     RecordAttendanceDTO,
     AttendanceStatus,
+    IWhatsAppLink,
 } from '@/types/session.types';
+
+export type { IWhatsAppLink };
 
 export const recordAttendance = async (data: RecordAttendanceDTO): Promise<IAttendanceRecord> => {
     const res = await apiClient.post('/attendance', data);
@@ -41,13 +44,6 @@ export const getSessionSnapshot = async (sessionId: string): Promise<IAttendance
     const res = await apiClient.get(`/attendance/snapshot/${sessionId}`);
     return (res as any).data;
 };
-
-export interface IWhatsAppLink {
-    studentId: string;
-    studentName: string;
-    status: 'PRESENT' | 'ABSENT';
-    whatsappLink: string;
-}
 
 export const getWhatsAppLinks = async (sessionId: string): Promise<IWhatsAppLink[]> => {
     const res = await apiClient.get(`/attendance/session/${sessionId}/whatsapp-links`);

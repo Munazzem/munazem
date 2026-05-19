@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getPriceSettings, savePriceSettings } from '@/lib/api/payments';
 import { toast } from 'sonner';
 import { Settings, Loader2, Save } from 'lucide-react';
+import { QK } from '@/lib/query-keys';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,7 +27,7 @@ export function PriceSettingsModal() {
     );
 
     const { data: settings, isLoading } = useQuery({
-        queryKey: ['price-settings'],
+        queryKey: QK.payments.priceSettings,
         queryFn: getPriceSettings,
         enabled: open,
         retry: false,
@@ -48,7 +49,7 @@ export function PriceSettingsModal() {
         mutationFn: (data: IPriceSetting[]) => savePriceSettings(data),
         onSuccess: () => {
             toast.success('تم حفظ الأسعار بنجاح');
-            queryClient.invalidateQueries({ queryKey: ['price-settings'] });
+            queryClient.invalidateQueries({ queryKey: QK.payments.priceSettings });
             setOpen(false);
         },
         

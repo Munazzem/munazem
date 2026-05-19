@@ -6,6 +6,7 @@ import { fetchStudents } from '@/lib/api/students';
 import { fetchNotebooks } from '@/lib/api/notebooks';
 import { reserveNotebook } from '@/lib/api/payments';
 import { toast } from 'sonner';
+import { QK } from '@/lib/query-keys';
 import {
     Dialog,
     DialogContent,
@@ -63,7 +64,7 @@ export function QuickNotebookSaleModal({ open, onOpenChange }: Props) {
 
     // Student search results
     const { data: studentsData, isLoading: studentsLoading } = useQuery({
-        queryKey: ['quickSale_students', debouncedSearch],
+        queryKey: QK.payments.quickSaleStudents(debouncedSearch),
         queryFn: () => fetchStudents({ search: debouncedSearch, limit: 10, isActive: true }),
         enabled: debouncedSearch.length >= 2 && !selectedStudent,
         staleTime: 30 * 1000,
@@ -77,7 +78,7 @@ export function QuickNotebookSaleModal({ open, onOpenChange }: Props) {
 
     // Notebooks filtered by student grade level
     const { data: notebooksData, isLoading: notebooksLoading } = useQuery({
-        queryKey: ['quickSale_notebooks', selectedStudent?.gradeLevel],
+        queryKey: QK.notebooks.forQuickSale(selectedStudent?.gradeLevel),
         queryFn: () => fetchNotebooks({ gradeLevel: selectedStudent!.gradeLevel, limit: 100 }),
         enabled: !!selectedStudent,
         staleTime: 5 * 60 * 1000,
@@ -103,9 +104,11 @@ export function QuickNotebookSaleModal({ open, onOpenChange }: Props) {
             }),
         onSuccess: () => {
             toast.success(`تم تسجيل حجز المذكرة لـ ${selectedStudent?.studentName} بنجاح`);
-            queryClient.invalidateQueries({ queryKey: ['notebooks'] });
-            queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
-            queryClient.invalidateQueries({ queryKey: ['dailySummary'] });
+            queryClient.invalidateQueries({ queryKey: QK.notebooks.all });
+            queryClient.invalidateQueries({ queryKey: QK.dashboard.summary });
+            queryClient.invalidateQueries({ queryKey: QK.dashboard.dailySummary() });
+            queryClient.invalidateQueries({ queryKey: QK.payments.dailyLedgerBase });
+            queryClient.invalidateQueries({ queryKey: QK.payments.monthlyLedgerBase });
             onOpenChange(false);
         },
         onError: (err: any) => {

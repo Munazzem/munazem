@@ -1,16 +1,9 @@
 import { apiClient } from './axios';
+import type { IDailySummary, IUnpaidStudentsReport } from '@/types/report.types';
 
-export interface IDailySummary {
-    date: string;
-    sessionsCount: number;
-    totalPresent: number;
-    subscriptionsCount: number;
-    financial: {
-        totalIncome: number;
-        totalExpenses: number;
-        netBalance: number;
-    };
-}
+export type { IDailySummary, IUnpaidStudentsReport };
+
+// ── Daily Summary ──────────────────────────────────────────────────
 
 export const fetchDailySummary = async (date?: string): Promise<IDailySummary> => {
     const query = date ? `?date=${date}` : '';
@@ -24,6 +17,8 @@ export const fetchDailySummaryHtml = async (date?: string): Promise<string> => {
     return res as unknown as string;
 };
 
+// ── Student Reports ────────────────────────────────────────────────
+
 export const fetchStudentReport = async (studentId: string) => {
     const res = await apiClient.get(`/reports/student/${studentId}`);
     return (res as any).data;
@@ -33,6 +28,8 @@ export const fetchStudentReportHtml = async (studentId: string): Promise<string>
     const res = await apiClient.get(`/reports/student/${studentId}/pdf`);
     return res as unknown as string;
 };
+
+// ── Group Reports ──────────────────────────────────────────────────
 
 export const fetchGroupReport = async (groupId: string) => {
     const res = await apiClient.get(`/reports/group/${groupId}`);
@@ -49,6 +46,8 @@ export const fetchGroupAttendanceSheetHtml = async (groupId: string): Promise<st
     return res as unknown as string;
 };
 
+// ── Financial Reports ──────────────────────────────────────────────
+
 export const fetchFinancialMonthlyReport = async (year: number, month: number) => {
     const res = await apiClient.get(`/reports/financial/monthly?year=${year}&month=${month}`);
     return (res as any).data;
@@ -59,19 +58,7 @@ export const fetchMonthlyReportHtml = async (year: number, month: number): Promi
     return res as unknown as string;
 };
 
-export interface IUnpaidStudentsReport {
-    month:       string;
-    totalActive: number;
-    unpaidCount: number;
-    paidCount:   number;
-    students:    Array<{
-        _id:         string;
-        studentName: string;
-        gradeLevel:  string;
-        studentCode: string;
-        groupId?:    { _id: string; name: string } | string;
-    }>;
-}
+// ── Unpaid Students ────────────────────────────────────────────────
 
 export const fetchUnpaidStudents = async (includeList = false): Promise<IUnpaidStudentsReport> => {
     const res = await apiClient.get(`/reports/unpaid-students${includeList ? '?includeList=true' : ''}`);

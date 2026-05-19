@@ -84,6 +84,20 @@ adminRouter.get('/errors', async (req: Request, res: Response, next: NextFunctio
     } catch (error) { next(error); }
 });
 
+// ── GET /admin/activity ─────────────────────────────────────────────
+adminRouter.get('/activity', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { page, limit, event, tenantId } = req.query as Record<string, string>;
+        const data = await AdminService.getActivityFeed({
+            page:  page  ? parseInt(page)  : 1,
+            limit: limit ? parseInt(limit) : 20,
+            ...(event    ? { event }    : {}),
+            ...(tenantId ? { tenantId } : {}),
+        });
+        return SuccessResponse({ res, data, message: 'Activity feed fetched successfully' });
+    } catch (error) { next(error); }
+});
+
 // ── GET /admin/health ─────────────────────────────────────────────
  adminRouter.get('/health', async (_req: Request, res: Response, next: NextFunction) => {
     try {

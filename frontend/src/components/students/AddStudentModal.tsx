@@ -11,6 +11,7 @@ import { useAuthStore } from '@/lib/store/auth.store';
 import { getAllowedGrades } from '@/lib/utils/grades';
 import { toast } from 'sonner';
 import { Plus, Loader2 } from 'lucide-react';
+import { QK } from '@/lib/query-keys';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -75,7 +76,7 @@ export function AddStudentModal() {
 
   // Fetch Teacher's Groups dynamically
   const { data: groupsData, isLoading: isLoadingGroups } = useQuery({
-      queryKey: ['teacherGroups_addStudent'],
+      queryKey: QK.groups.forAddStudent,
       queryFn: () => fetchGroups({ limit: 100 }),
   });
 
@@ -102,7 +103,7 @@ export function AddStudentModal() {
     mutationFn: createStudent,
     onSuccess: () => {
       toast.success('تمت إضافة الطالب بنجاح');
-      queryClient.invalidateQueries({ queryKey: ['students'] });
+      queryClient.invalidateQueries({ queryKey: QK.students.all });
       form.reset();
       setOpen(false); // Close Modal on success
     },
