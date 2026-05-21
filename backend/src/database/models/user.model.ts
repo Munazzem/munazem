@@ -62,6 +62,16 @@ const userSchema = new Schema<IUserDocument>(
         logoUrl: {
             type: String,
         },
+        // ── WhatsApp multi-tenant fields (teacher only) ──────────────────
+        whatsappQr: {
+            type: String,
+            default: null,
+        },
+        whatsappStatus: {
+            type: String,
+            enum: ['disconnected', 'pending', 'connected'],
+            default: 'disconnected',
+        },
     },
     {
         timestamps: true,

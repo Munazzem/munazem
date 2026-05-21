@@ -12,3 +12,6 @@ backend/test-*.js
 # Internal docs (not for repo)
 backend/docs/BACKEND_FLOW_GUIDE_AR.md
 backend/docs/PRODUCTION.md
+# WhatsApp Session Cache (Hidden everywhere)
+**/.wwebjs_auth/
+**/.wwebjs_cache/

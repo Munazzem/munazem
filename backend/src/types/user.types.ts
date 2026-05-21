@@ -13,6 +13,8 @@ export interface IUser {
   isActive:  boolean;
   centerName?: string;              // اسم السنتر — للمدرسين فقط
   logoUrl?:    string;              // لوجو السنتر — للمدرسين فقط
+  whatsappQr?:     string | null;   // QR data for frontend rendering
+  whatsappStatus?: 'disconnected' | 'pending' | 'connected';
 }
 
 export interface IUserDocument extends IUser, Document {
