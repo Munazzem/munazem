@@ -9,6 +9,7 @@ import { NotFoundException, BadRequestException, ConflictException } from '../..
 import { trackEvent } from '../../common/utils/activity.service.js';
 import { withTransaction } from '../../common/utils/transaction.util.js';
 import type { RecordAttendanceDTO, BatchAttendanceDTO } from '../../types/attendance-dto.types.js';
+import { enqueueWhatsApp } from '../../infrastructure/queues/whatsapp.queue.js';
 import mongoose from 'mongoose';
 
 // ─── Date helper ─────────────────────────────────────────────────────────────
@@ -234,10 +235,11 @@ export class AttendanceService {
             throw BadRequestException({ message: 'الحصة مكتملة بالفعل' });
         }
 
-        // Get all students registered in this group — sorted alphabetically
+        // Get all students in this group — sorted alphabetically
+        // parentPhone is included here so we don't need an extra DB query for WhatsApp jobs
         const allStudents = await StudentModel.find(
             { groupId: session.groupId, teacherId, isActive: true },
-            { _id: 1, studentName: 1, excusedSessionsCount: 1, excusedUntil: 1 }
+            { _id: 1, studentName: 1, excusedSessionsCount: 1, excusedUntil: 1, parentPhone: 1 }
         ).sort({ studentName: 1 }).lean();
 
         // Get all present/late attendance records
@@ -399,7 +401,6 @@ export class AttendanceService {
             return { updatedSession, snapshot };
         });
 
-        // Track after successful commit (fire-and-forget)
         trackEvent('session_completed', {
             tenantId: teacherId,
             userId:   completedBy || teacherId,
@@ -411,6 +412,44 @@ export class AttendanceService {
                 guestCount:   guestStudents.length,
             },
         });
+
+        // ── WhatsApp: notify parents of absent students (fire-and-forget) ────
+        // Fetch group name once — only if there are absent students to notify
+        if (absentStudents.length > 0) {
+            // Build a map of studentId → parentPhone from allStudents
+            const phoneMap = new Map(
+                allStudents
+                    .filter(s => (s as any).parentPhone)
+                    .map(s => [s._id.toString(), (s as any).parentPhone as string])
+            );
+
+            // Fetch group name (lean — single field)
+            const groupDoc = await GroupModel.findById(
+                session.groupId, { name: 1 }
+            ).lean().catch(() => null);
+            const groupName = (groupDoc as any)?.name ?? 'المجموعة';
+
+            // Fetch teacher name for the message signature
+            const teacherDoc = await UserModel.findById(
+                teacherId, { name: 1 }
+            ).lean().catch(() => null);
+            const teacherName = (teacherDoc as any)?.name ?? '';
+
+            for (const absent of absentStudents) {
+                const parentPhone = phoneMap.get(absent.studentId.toString());
+                if (!parentPhone) continue;  // skip if no phone on record
+
+                enqueueWhatsApp({
+                    kind:        'session_absent',
+                    teacherId,
+                    parentPhone,
+                    studentName: absent.studentName,
+                    groupName,
+                    sessionDate: session.date.toISOString(),
+                    teacherName,
+                });
+            }
+        }
 
         return { session: updatedSession, snapshot };
     }

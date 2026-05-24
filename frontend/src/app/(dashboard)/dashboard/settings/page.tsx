@@ -1,14 +1,16 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { fetchMe, updateMe, changePassword, updateSettings } from '@/lib/api/auth';
 import { useAuthStore } from '@/lib/store/auth.store';
+import { apiClient } from '@/lib/api/axios';
 import { toast } from 'sonner';
-import { Loader2, User, Lock, Phone, Mail, Save, UploadCloud, Image as ImageIcon, Trash2 } from 'lucide-react';
+import { Loader2, User, Lock, Phone, Mail, Save, UploadCloud, Image as ImageIcon, Trash2, Wifi, WifiOff, MessageSquare } from 'lucide-react';
+import QRCode from 'qrcode';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -95,6 +97,86 @@ export default function SettingsPage() {
     const [logoBase64, setLogoBase64] = useState<string | null>(storeUser?.logoUrl || null);
     const [centerName, setCenterName] = useState(storeUser?.centerName || '');
     const fileInputRef = useRef<any>(null);
+
+    // ── WhatsApp Integration ──────────────────────────────────────────────────
+    type WaStatus = 'disconnected' | 'pending' | 'connected';
+    const [waStatus, setWaStatus] = useState<WaStatus>('disconnected');
+    const [waQrCode, setWaQrCode] = useState<string | null>(null);
+    const [waQrDataUrl, setWaQrDataUrl] = useState<string | null>(null);
+    const [waConnecting, setWaConnecting] = useState(false);
+    const waIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    // Generate QR data URL whenever raw qrCode string changes
+    useEffect(() => {
+        if (!waQrCode) { setWaQrDataUrl(null); return; }
+        QRCode.toDataURL(waQrCode, { width: 260, margin: 2 })
+            .then(setWaQrDataUrl)
+            .catch(() => setWaQrDataUrl(null));
+    }, [waQrCode]);
+
+    // Fetch initial WA status on mount
+    useEffect(() => {
+        if (!isTeacher) return;
+        apiClient.get('/whatsapp/status')
+            .then((res: any) => {
+                setWaStatus(res.data?.status ?? 'disconnected');
+                setWaQrCode(res.data?.qrCode ?? null);
+            })
+            .catch(() => {});
+    }, [isTeacher]);
+
+    // Cleanup interval on unmount
+    useEffect(() => {
+        return () => {
+            if (waIntervalRef.current) clearInterval(waIntervalRef.current);
+        };
+    }, []);
+
+    const startPolling = useCallback(() => {
+        if (waIntervalRef.current) clearInterval(waIntervalRef.current);
+        waIntervalRef.current = setInterval(async () => {
+            try {
+                const res: any = await apiClient.get('/whatsapp/status');
+                const status: WaStatus = res.data?.status ?? 'disconnected';
+                const qr: string | null = res.data?.qrCode ?? null;
+                setWaStatus(status);
+                setWaQrCode(qr);
+                if (status === 'connected') {
+                    if (waIntervalRef.current) clearInterval(waIntervalRef.current);
+                    waIntervalRef.current = null;
+                    setWaConnecting(false);
+                    toast.success('تم ربط الواتساب بنجاح! ✅');
+                }
+            } catch { /* silent */ }
+        }, 3000);
+    }, []);
+
+    const handleWaConnect = useCallback(async () => {
+        setWaConnecting(true);
+        try {
+            await apiClient.post('/whatsapp/connect');
+            setWaStatus('pending');
+            startPolling();
+        } catch {
+            setWaConnecting(false);
+            toast.error('فشل بدء اتصال الواتساب');
+        }
+    }, [startPolling]);
+
+    const handleWaDisconnect = useCallback(async () => {
+        const ok = window.confirm('هل أنت متأكد من إلغاء ربط حساب الواتساب؟ سيتوقف إرسال الرسائل التلقائية.');
+        if (!ok) return;
+        try {
+            await apiClient.post('/whatsapp/disconnect');
+            setWaStatus('disconnected');
+            setWaQrCode(null);
+            setWaQrDataUrl(null);
+            if (waIntervalRef.current) { clearInterval(waIntervalRef.current); waIntervalRef.current = null; }
+            toast.success('تم فصل الواتساب بنجاح');
+        } catch {
+            toast.error('فشل فصل الواتساب');
+        }
+    }, []);
 
     const brandingMutation = useMutation({
         mutationFn: updateSettings,
@@ -379,6 +461,124 @@ export default function SettingsPage() {
                                 حفظ إعدادات السنتر
                             </Button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* WhatsApp Integration Card (Teachers Only) */}
+            {isTeacher && (
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                    <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+                        <div className={`h-9 w-9 rounded-xl flex items-center justify-center ${
+                            waStatus === 'connected'
+                                ? 'bg-emerald-100 text-emerald-600'
+                                : 'bg-green-100 text-green-600'
+                        }`}>
+                            <MessageSquare className="h-5 w-5" />
+                        </div>
+                        <div className="flex-1">
+                            <p className="font-bold text-gray-900 text-sm">ربط نظام الواتساب الذكي</p>
+                            <p className="text-xs text-gray-500">إرسال إشعارات الغياب ونتائج الامتحانات تلقائياً لأولياء الأمور</p>
+                        </div>
+                        {/* Status badge */}
+                        {waStatus === 'connected' && (
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-2.5 py-1">
+                                <span className="relative flex h-2 w-2">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                                </span>
+                                متصل
+                            </span>
+                        )}
+                        {waStatus === 'disconnected' && (
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold bg-red-50 text-red-600 border border-red-200 rounded-full px-2.5 py-1">
+                                <WifiOff className="h-3 w-3" />
+                                غير متصل
+                            </span>
+                        )}
+                        {waStatus === 'pending' && (
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold bg-amber-50 text-amber-600 border border-amber-200 rounded-full px-2.5 py-1">
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                في انتظار المسح
+                            </span>
+                        )}
+                    </div>
+
+                    <div className="p-6">
+                        {/* ── State: DISCONNECTED ──────────────────────────── */}
+                        {waStatus === 'disconnected' && (
+                            <div className="text-center py-4 space-y-4">
+                                <div className="mx-auto w-16 h-16 rounded-2xl bg-red-50 flex items-center justify-center">
+                                    <WifiOff className="h-8 w-8 text-red-400" />
+                                </div>
+                                <div>
+                                    <p className="text-sm font-semibold text-gray-800">خدمة الواتساب الذكي غير مفعّلة</p>
+                                    <p className="text-xs text-gray-500 mt-1 max-w-sm mx-auto leading-relaxed">
+                                        فعّل الخدمة لإرسال إشعارات الغياب ونتائج الامتحانات تلقائياً لأولياء الأمور عبر واتساب.
+                                    </p>
+                                </div>
+                                <Button
+                                    onClick={handleWaConnect}
+                                    className="bg-green-600 hover:bg-green-700 gap-2"
+                                    disabled={waConnecting}
+                                >
+                                    {waConnecting
+                                        ? <Loader2 className="h-4 w-4 animate-spin" />
+                                        : <Wifi className="h-4 w-4" />
+                                    }
+                                    توليد كود الربط (QR Code)
+                                </Button>
+                            </div>
+                        )}
+
+                        {/* ── State: PENDING (waiting for QR scan) ─────────── */}
+                        {waStatus === 'pending' && (
+                            <div className="text-center py-4 space-y-4">
+                                {waQrDataUrl ? (
+                                    <>
+                                        <p className="text-sm font-semibold text-gray-800">امسح الكود بتطبيق واتساب على هاتفك</p>
+                                        <p className="text-xs text-gray-500">Settings → Linked Devices → Link a Device</p>
+                                        <div className="inline-block p-4 bg-white rounded-2xl border-2 border-gray-100 shadow-md">
+                                            <img
+                                                src={waQrDataUrl}
+                                                alt="WhatsApp QR Code"
+                                                className="w-[200px] h-[200px]"
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-center gap-2 text-xs text-amber-600">
+                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                            <span>جاري مراقبة عملية المسح...</span>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="flex flex-col items-center gap-3 py-6">
+                                        <Loader2 className="h-10 w-10 animate-spin text-green-600" />
+                                        <p className="text-sm text-gray-600">جاري تجهيز كود الربط...</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* ── State: CONNECTED ─────────────────────────────── */}
+                        {waStatus === 'connected' && (
+                            <div className="text-center py-4 space-y-4">
+                                <div className="mx-auto w-16 h-16 rounded-2xl bg-emerald-50 flex items-center justify-center">
+                                    <Wifi className="h-8 w-8 text-emerald-500" />
+                                </div>
+                                <div>
+                                    <p className="text-sm font-semibold text-emerald-700">السيستم متصل بنجاح ونشط برقم السنتر ✅</p>
+                                    <p className="text-xs text-gray-500 mt-1">سيتم إرسال إشعارات الغياب والنتائج تلقائياً لأولياء الأمور</p>
+                                </div>
+                                <Button
+                                    onClick={handleWaDisconnect}
+                                    variant="outline"
+                                    className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 gap-2"
+                                >
+                                    <WifiOff className="h-4 w-4" />
+                                    إلغاء ربط الحساب (Disconnect)
+                                </Button>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

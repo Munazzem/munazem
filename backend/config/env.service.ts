@@ -20,7 +20,8 @@ const geminiApiKey = process.env.GEMINI_API_KEY; // Google AI Studio — free ti
 const groqApiKey = process.env.GROQ_API_KEY; // console.groq.com — free tier
 const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000";
 // Feature flags
-const enableAIExams = process.env.ENABLE_AI_EXAMS === "true";
+const enableAIExams    = process.env.ENABLE_AI_EXAMS    === 'true';
+const redisUrl         = process.env.REDIS_URL         ?? 'redis://localhost:6379';
 
 export const envVars = {
   mongo_url,
@@ -33,4 +34,5 @@ export const envVars = {
   groqApiKey,
   frontendUrl,
   enableAIExams,
+  redisUrl,
 };
