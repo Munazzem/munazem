@@ -3,6 +3,7 @@ import { ExamResultModel } from '../../database/models/exam-result.model.js';
 import { StudentModel }    from '../../database/models/student.model.js';
 import { ExamStatus, ExamSource } from '../../common/enums/enum.service.js';
 import { NotFoundException, BadRequestException, ConflictException } from '../../common/utils/response/error.responce.js';
+import { enqueueWhatsApp } from '../../infrastructure/queues/whatsapp.queue.js';
 import type { IQuestion }  from '../../types/exam.types.js';
 
 // ── Grade letter calculator ───────────────────────────────────────
@@ -163,7 +164,7 @@ export class ExamsService {
         // Scope to this teacher — prevents injecting another teacher's students
         const students   = await StudentModel.find(
             { _id: { $in: studentIds }, teacherId },
-            { studentName: 1, groupId: 1 }
+            { studentName: 1, groupId: 1, parentPhone: 1 }  // parentPhone for WhatsApp
         ).lean();
 
         const studentMap = new Map(students.map(s => [s._id.toString(), s]));
@@ -191,6 +192,29 @@ export class ExamsService {
         }).filter(Boolean);
 
         const result = await ExamResultModel.insertMany(docs, { ordered: false });
+
+        // ── WhatsApp: notify parents of each recorded result (fire-and-forget) ────
+        for (const doc of docs) {
+            if (!doc) continue;
+            const student = studentMap.get(doc.studentId.toString());
+            const parentPhone = (student as any)?.parentPhone as string | undefined;
+            if (!parentPhone) continue;
+
+            enqueueWhatsApp({
+                kind:        'exam_result',
+                teacherId,
+                parentPhone,
+                studentName: doc.studentName,
+                examTitle:   exam.title,
+                score:       doc.score,
+                totalMarks:  doc.totalMarks,
+                percentage:  doc.percentage,
+                grade:       doc.grade,
+                passed:      doc.passed,
+                examDate:    exam.date.toISOString(),
+            });
+        }
+
         return { total: data.results.length, inserted: result.length };
     }
 

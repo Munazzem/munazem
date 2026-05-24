@@ -22,6 +22,9 @@ import reportsRouter from './modules/reports/reports.controller.js';
 import examsRouter  from './modules/exams/exams.controller.js';
 import parentRouter from './modules/parent/parent.controller.js';
 import adminRouter  from './modules/admin/admin.controller.js';
+import whatsappRouter from './modules/whatsapp/whatsapp.controller.js';
+import { startWhatsAppWorker }    from './infrastructure/queues/whatsapp.processor.js';
+import { autoReconnectClients }   from './common/utils/whatsapp.service.js';
 
 export const bootstrap = async () => {
     const app = express();
@@ -94,7 +97,13 @@ export const bootstrap = async () => {
         next();
     });
 
-    await DBConnection()
+    await DBConnection();
+
+    // ── Background workers ────────────────────────────────────────────────────
+    // 1. Re-connect WhatsApp clients for all previously-connected teachers (fire-and-forget)
+    autoReconnectClients();
+    // 2. Start the BullMQ worker that drains the whatsapp queue
+    startWhatsAppWorker();
 
     // Global rate limiter: 3000 requests per 15 minutes per IP
     const globalLimiter = rateLimit({
@@ -145,6 +154,7 @@ export const bootstrap = async () => {
     app.use('/notebooks', notebooksRouter)    // Notebooks inventory routes
     app.use('/reports', reportsRouter)         // Reports routes
     app.use('/exams', examsRouter)              // Exams + AI Generation routes
+    app.use('/whatsapp', whatsappRouter)          // WhatsApp multi-tenant client mgmt
     app.use('/admin', adminRouter)              // Super Admin routes
 
     // Health check — used by Render to verify the server is alive; includes basic process stats for monitoring
