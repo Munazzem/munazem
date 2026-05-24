@@ -6,10 +6,31 @@ import type { WhatsAppJobData }  from './queue.types.js';
 
 // ─── Rate-limit delay ─────────────────────────────────────────────────────────
 // WhatsApp bans numbers that send messages too fast.
-// 4 000 ms between messages ≈ 15 messages/minute — safe for most gateways.
-const INTER_MESSAGE_DELAY_MS = 4_000;
+// 12 000 ms between messages ≈ 5 messages/minute — safe for automation.
+const INTER_MESSAGE_DELAY_MS = 12_000;
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
+// ─── Payment reminder templates (randomized to reduce ban risk) ───────────────
+const PAYMENT_REMINDER_TEMPLATES = [
+    (s: string, t: string) =>
+        `السلام عليكم ورحمة الله 🌙\n` +
+        `نُذكركم بضرورة سداد المصاريف المستحقة للطالب/ة: *${s}* عن هذا الشهر.\n\n` +
+        `لإيقاف هذه الرسائل، أرسل "إلغاء".\n\n` +
+        `مع تحيات أ/ ${t}`,
+
+    (s: string, t: string) =>
+        `أهلاً بكم 🌺\n` +
+        `نلفت انتباهكم إلى أن الطالب/ة: *${s}* لم يقم بتسديد اشتراك الشهر الحالي حتى الآن.\n\n` +
+        `لإيقاف هذه الرسائل، أرسل "إلغاء".\n\n` +
+        `مع تحيات أ/ ${t}`,
+
+    (s: string, t: string) =>
+        `تحية طيبة 🌟\n` +
+        `رسالة تذكيرية بخصوص سداد اشتراك الشهر للطالب/ة: *${s}* لتأكيد الاستمرار.\n\n` +
+        `لإيقاف هذه الرسائل، أرسل "إلغاء".\n\n` +
+        `مع تحيات أ/ ${t}`,
+];
 
 // ─── Message builders ─────────────────────────────────────────────────────────
 function buildMessage(data: WhatsAppJobData): string {
@@ -22,9 +43,14 @@ function buildMessage(data: WhatsAppJobData): string {
             `نُعلمكم بغياب الطالب/ة: *${data.studentName}*\n` +
             `عن حصة مجموعة: *${data.groupName}*\n` +
             `بتاريخ: ${date}\n\n` +
-            `للتواصل: ${data.teacherName}\n` +
+            `مع تحيات أ/ ${data.teacherName}\n` +
             `شكراً لمتابعتكم 🙏`
         );
+    }
+
+    if (data.kind === 'payment_reminder') {
+        const idx = Math.floor(Math.random() * PAYMENT_REMINDER_TEMPLATES.length);
+        return PAYMENT_REMINDER_TEMPLATES[idx]!(data.studentName, data.teacherName);
     }
 
     // kind === 'exam_result'
@@ -70,7 +96,7 @@ async function processWhatsAppJob(job: Job<WhatsAppJobData>): Promise<void> {
  * Creates and starts the BullMQ Worker.
  * Call this once from `bootstrap()` in app.controller.ts.
  *
- * concurrency: 1 — processes one job at a time so the 4 s delay actually
+ * concurrency: 1 — processes one job at a time so the 12 s delay actually
  * enforces a gap between messages (higher concurrency would bypass it).
  */
 export function startWhatsAppWorker(): Worker<WhatsAppJobData> {
