@@ -1,13 +1,13 @@
 import { Queue } from 'bullmq';
 import { envVars } from '../../../config/env.service.js';
 import { logger }  from '../../common/utils/logger.util.js';
-import type { WhatsAppJobData } from './queue.types.js';
+import type { WhatsAppJobData, EmailJobData } from './queue.types.js';
 
 // ─── Redis connection options ─────────────────────────────────────────────────
 // BullMQ accepts a full ioredis connection string via `connection.url`
 const connection = { url: envVars.redisUrl };
 
-// ─── Singleton Queue ──────────────────────────────────────────────────────────
+// ─── WhatsApp Queue (Singleton) ───────────────────────────────────────────────
 // One Queue instance is enough — it only pushes jobs, not processes them.
 export const whatsAppQueue = new Queue<WhatsAppJobData>('whatsapp', {
     connection,
@@ -22,7 +22,18 @@ export const whatsAppQueue = new Queue<WhatsAppJobData>('whatsapp', {
     },
 });
 
-// ─── Typed enqueue helper ─────────────────────────────────────────────────────
+// ─── Email Queue (Singleton) ─────────────────────────────────────────────────
+export const emailQueue = new Queue<EmailJobData>('email', {
+    connection,
+    defaultJobOptions: {
+        attempts:    2,
+        backoff: { type: 'exponential', delay: 10_000 },
+        removeOnComplete: { count: 100 },
+        removeOnFail:     { count: 200 },
+    },
+});
+
+// ─── Typed enqueue helper (WhatsApp) ─────────────────────────────────────────
 /**
  * Add a single WhatsApp notification job to the queue.
  * Fire-and-forget — logs a warning on failure but never throws.
@@ -33,7 +44,7 @@ export function enqueueWhatsApp(data: WhatsAppJobData): void {
         .add(data.kind, data, {
             // Spread a unique deduplication key so re-calling completeSession
             // after a crash doesn't send the same WhatsApp twice.
-            jobId: buildJobId(data),
+            jobId: buildWhatsAppJobId(data),
         })
         .catch((err) => {
             logger.warn('whatsapp_queue_enqueue_failed', {
@@ -44,12 +55,34 @@ export function enqueueWhatsApp(data: WhatsAppJobData): void {
         });
 }
 
-// ─── Deduplication key ────────────────────────────────────────────────────────
-function buildJobId(data: WhatsAppJobData): string {
+// ─── Typed enqueue helper (Email) ────────────────────────────────────────────
+export function enqueueEmail(data: EmailJobData, forceTest: boolean = false): void {
+    const jobId = forceTest 
+        ? `report-${data.teacherId}-${data.weekStart}-${Date.now()}` 
+        : `report-${data.teacherId}-${data.weekStart}`;
+
+    emailQueue
+        .add(data.kind, data, { jobId })
+        .catch((err) => {
+            logger.warn('email_queue_enqueue_failed', {
+                kind:  data.kind,
+                email: data.teacherEmail,
+                error: (err as Error).message,
+            });
+        });
+}
+
+// ─── Deduplication key (WhatsApp) ─────────────────────────────────────────────
+function buildWhatsAppJobId(data: WhatsAppJobData): string {
     if (data.kind === 'session_absent') {
         // One job per teacher per student per session day
         return `absent-${data.teacherId}-${data.parentPhone}-${data.sessionDate.slice(0, 10)}`;
     }
-    // One job per teacher per student per exam
+    if (data.kind === 'payment_reminder') {
+        // One reminder per teacher per parent phone per month
+        const month = new Date().toISOString().slice(0, 7); // "2026-05"
+        return `reminder-${data.teacherId}-${data.parentPhone}-${month}`;
+    }
+    // kind === 'exam_result'
     return `exam-${data.teacherId}-${data.parentPhone}-${data.examDate.slice(0, 10)}-${data.examTitle}`;
 }

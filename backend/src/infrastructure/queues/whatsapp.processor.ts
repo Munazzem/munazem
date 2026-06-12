@@ -94,6 +94,11 @@ function buildMessage(data: WhatsAppJobData): string {
         return SESSION_ABSENT_TEMPLATES[idx]!(data.studentName, data.groupName, date, data.teacherName);
     }
 
+    if (data.kind === 'payment_reminder') {
+        const idx = Math.floor(Math.random() * PAYMENT_REMINDER_TEMPLATES.length);
+        return PAYMENT_REMINDER_TEMPLATES[idx]!(data.studentName, data.teacherName);
+    }
+
     // kind === 'exam_result'
     const date = new Date(data.examDate).toLocaleDateString('ar-EG', {
         year: 'numeric', month: 'long', day: 'numeric',

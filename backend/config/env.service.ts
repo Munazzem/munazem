@@ -42,4 +42,9 @@ export const envVars = {
   frontendUrl,
   enableAIExams,
   redisUrl,
+  smtpHost,
+  smtpPort,
+  smtpUser,
+  smtpPass,
+  smtpFrom,
 };
