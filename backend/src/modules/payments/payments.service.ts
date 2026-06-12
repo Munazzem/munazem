@@ -12,6 +12,7 @@ import { TransactionType, TransactionCategory, GradeLevel } from '../../common/e
 import { NotFoundException, BadRequestException } from '../../common/utils/response/error.responce.js';
 import { trackEvent } from '../../common/utils/activity.service.js';
 import { withTransaction } from '../../common/utils/transaction.util.js';
+import { cache, CacheKeys, CacheTTL } from '../../infrastructure/cache/cache.service.js';
 import type { IPriceSetting } from '../../types/price-settings.types.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────
@@ -138,16 +139,26 @@ export class PaymentsService {
 
     // ── Price Settings ──────────────────────────────────────────────
     static async upsertPriceSettings(teacherId: string, prices: IPriceSetting[]) {
-        return await PriceSettingsModel.findOneAndUpdate(
+        const result = await PriceSettingsModel.findOneAndUpdate(
             { teacherId },
             { teacherId, prices },
             { upsert: true, new: true, runValidators: true }
         ).lean();
+        // Invalidate cached price settings
+        await cache.del(CacheKeys.priceSettings(teacherId));
+        return result;
     }
 
     static async getPriceSettings(teacherId: string) {
+        // Check cache first (prices rarely change)
+        const cacheKey = CacheKeys.priceSettings(teacherId);
+        const cached = await cache.get(cacheKey);
+        if (cached) return cached;
+
         const settings = await PriceSettingsModel.findOne({ teacherId }).lean();
         if (!settings) throw NotFoundException({ message: 'لم يتم تحديد أسعار المراحل بعد' });
+
+        await cache.set(cacheKey, settings, CacheTTL.PRICE_SETTINGS);
         return settings;
     }
 
@@ -228,6 +239,8 @@ export class PaymentsService {
             targetId: transaction!._id.toString(),
             meta:     { studentName: student.studentName, paidAmount, category: 'SUBSCRIPTION' },
         });
+        // Invalidate dashboard cache so fresh financial data is shown
+        cache.del(CacheKeys.dashboard(teacherId));
 
         return transaction;
     }
@@ -277,49 +290,55 @@ export class PaymentsService {
                 const originalAmount = priceSetting.amount;
                 const paidAmount = Math.max(0, originalAmount - discountAmount);
 
-                const transaction = await TransactionModel.create({
-                    teacherId,
-                    createdBy,
-                    type:           TransactionType.INCOME,
-                    category:       TransactionCategory.SUBSCRIPTION,
-                    studentId:      student._id,
-                    studentName:    student.studentName,
-                    gradeLevel:     student.gradeLevel,
-                    originalAmount,
-                    discountAmount,
-                    paidAmount,
-                    date:           txDate,
-                    ...(data.description ? { description: data.description } : {}),
-                });
-
-                await Promise.all([
-                    updateDailyLedger(teacherId, txDate, {
-                        transactionId: transaction._id,
-                        type:          TransactionType.INCOME,
-                        category:      TransactionCategory.SUBSCRIPTION,
-                        paidAmount,
-                        studentName:   student.studentName,
+                // ── Each student wrapped in its own transaction (atomic per student) ──
+                await withTransaction(async (session) => {
+                    const [tx] = await TransactionModel.create([{
+                        teacherId,
                         createdBy,
-                        time:          txDate,
-                    }, true),
-                    updateMonthlyLedger(teacherId, txDate, paidAmount, true),
-                ]);
+                        type:           TransactionType.INCOME,
+                        category:       TransactionCategory.SUBSCRIPTION,
+                        studentId:      student._id,
+                        studentName:    student.studentName,
+                        gradeLevel:     student.gradeLevel,
+                        originalAmount,
+                        discountAmount,
+                        paidAmount,
+                        date:           txDate,
+                        ...(data.description ? { description: data.description } : {}),
+                    }], { session });
+
+                    // Get group quota info
+                    const group = await GroupModel.findById(student.groupId, { schedule: 1 }).session(session).lean();
+                    const quota = (student as any).monthlySessionsQuota || (group?.schedule?.length ?? 2) * 4;
+
+                    await Promise.all([
+                        updateDailyLedger(teacherId, txDate, {
+                            transactionId: tx!._id,
+                            type:          TransactionType.INCOME,
+                            category:      TransactionCategory.SUBSCRIPTION,
+                            paidAmount,
+                            studentName:   student.studentName,
+                            createdBy,
+                            time:          txDate,
+                        }, true, session),
+                        updateMonthlyLedger(teacherId, txDate, paidAmount, true, session),
+                        StudentModel.findByIdAndUpdate(studentId, {
+                            $set: { remainingSessions: quota }
+                        }, { session }),
+                    ]);
+                });
 
                 results.push({ studentId, studentName: student.studentName, paidAmount, status: 'success' });
-
-                // Set remaining sessions for this student
-                const group = await GroupModel.findById(student.groupId, { schedule: 1 }).lean();
-                const quota = (student as any).monthlySessionsQuota || (group?.schedule?.length ?? 2) * 4;
-                await StudentModel.findByIdAndUpdate(studentId, {
-                    $set: { remainingSessions: quota }
-                });
             } catch (err: any) {
-                results.push({ studentId, studentName: '', paidAmount: 0, status: 'error', error: err?.message ?? 'خطأ غير متوقع' });
+                results.push({ studentId, studentName: studentMap.get(studentId)?.studentName ?? '', paidAmount: 0, status: 'error', error: err?.message ?? 'خطأ غير متوقع' });
             }
         }
 
         const successCount = results.filter(r => r.status === 'success').length;
         const totalPaid    = results.filter(r => r.status === 'success').reduce((sum, r) => sum + r.paidAmount, 0);
+
+        // Invalidate dashboard cache after batch financial mutation
+        if (successCount > 0) cache.del(CacheKeys.dashboard(teacherId));
 
         return { results, successCount, failCount: results.length - successCount, totalPaid };
     }
@@ -410,53 +429,58 @@ export class PaymentsService {
 
         if (paidAmount > totalPrice) throw BadRequestException({ message: 'المبلغ المدفوع أكبر من إجمالي السعر' });
 
-        // 1. Create Reservation
-        const reservation = await NotebookReservationModel.create({
-            teacherId,
-            studentId: student._id,
-            notebookId: notebook._id,
-            quantity,
-            totalPrice,
-            paidAmount,
-            status: ReservationStatus.PENDING,
+        // ── All mutations wrapped in a transaction (all-or-nothing) ──
+        const reservation = await withTransaction(async (session) => {
+            // 1. Create Reservation
+            const [res] = await NotebookReservationModel.create([{
+                teacherId,
+                studentId: student._id,
+                notebookId: notebook._id,
+                quantity,
+                totalPrice,
+                paidAmount,
+                status: ReservationStatus.PENDING,
+            }], { session });
+
+            const promises: Promise<any>[] = [
+                // 2. Increment reservedCount
+                NotebookModel.findByIdAndUpdate(notebook._id, { $inc: { reservedCount: quantity } }, { session })
+            ];
+
+            // 3. Record Transaction if any payment made
+            if (paidAmount > 0) {
+                const [tx] = await TransactionModel.create([{
+                    teacherId,
+                    createdBy,
+                    type:           TransactionType.INCOME,
+                    category:       TransactionCategory.NOTEBOOK_RESERVATION,
+                    studentId:      student._id,
+                    studentName:    student.studentName,
+                    originalAmount: totalPrice,
+                    discountAmount: 0,
+                    paidAmount,
+                    date:           txDate,
+                    description:    data.description || `عربون حجز مذكرة: ${notebook.name}`,
+                }], { session });
+
+                promises.push(
+                    updateDailyLedger(teacherId, txDate, {
+                        transactionId: tx!._id,
+                        type:          TransactionType.INCOME,
+                        category:      TransactionCategory.NOTEBOOK_RESERVATION,
+                        paidAmount,
+                        studentName:   student.studentName,
+                        createdBy,
+                        time:          txDate,
+                    }, true, session),
+                    updateMonthlyLedger(teacherId, txDate, paidAmount, true, session)
+                );
+            }
+
+            await Promise.all(promises);
+            return res;
         });
 
-        const promises: Promise<any>[] = [
-            // 2. Increment reservedCount
-            NotebookModel.findByIdAndUpdate(notebook._id, { $inc: { reservedCount: quantity } })
-        ];
-
-        // 3. Record Transaction if any payment made
-        if (paidAmount > 0) {
-            const transaction = await TransactionModel.create({
-                teacherId,
-                createdBy,
-                type:           TransactionType.INCOME,
-                category:       TransactionCategory.NOTEBOOK_RESERVATION,
-                studentId:      student._id,
-                studentName:    student.studentName,
-                originalAmount: totalPrice,
-                discountAmount: 0,
-                paidAmount,
-                date:           txDate,
-                description:    data.description || `عربون حجز مذكرة: ${notebook.name}`,
-            });
-
-            promises.push(
-                updateDailyLedger(teacherId, txDate, {
-                    transactionId: transaction._id,
-                    type:          TransactionType.INCOME,
-                    category:      TransactionCategory.NOTEBOOK_RESERVATION,
-                    paidAmount,
-                    studentName:   student.studentName,
-                    createdBy,
-                    time:          txDate,
-                }, true),
-                updateMonthlyLedger(teacherId, txDate, paidAmount, true)
-            );
-        }
-
-        await Promise.all(promises);
         return reservation;
     }
 
@@ -487,53 +511,57 @@ export class PaymentsService {
 
         if (additionalPayment > remainingBalance) throw BadRequestException({ message: 'المبلغ المدفوع أكبر من المتبقي' });
 
-        // 1. Update Reservation
-        reservation.status = ReservationStatus.DELIVERED;
-        reservation.paidAmount += additionalPayment;
-        reservation.deliveredAt = txDate;
-        await reservation.save();
+        // ── All mutations wrapped in a transaction (all-or-nothing) ──
+        await withTransaction(async (session) => {
+            // 1. Update Reservation
+            reservation.status = ReservationStatus.DELIVERED;
+            reservation.paidAmount += additionalPayment;
+            reservation.deliveredAt = txDate;
+            await reservation.save({ session });
 
-        const promises: Promise<any>[] = [
-            // 2. Decrement Main Stock AND Decrement Reserved Count
-            NotebookModel.findByIdAndUpdate(notebook._id, { 
-                $inc: { 
-                    stock: -reservation.quantity,
-                    reservedCount: -reservation.quantity 
-                } 
-            })
-        ];
+            const promises: Promise<any>[] = [
+                // 2. Decrement Main Stock AND Decrement Reserved Count
+                NotebookModel.findByIdAndUpdate(notebook._id, { 
+                    $inc: { 
+                        stock: -reservation.quantity,
+                        reservedCount: -reservation.quantity 
+                    } 
+                }, { session })
+            ];
 
-        // 3. Record Transaction if any additional payment made
-        if (additionalPayment > 0) {
-            const transaction = await TransactionModel.create({
-                teacherId,
-                createdBy,
-                type:           TransactionType.INCOME,
-                category:       TransactionCategory.NOTEBOOK_DELIVERY,
-                studentId:      student._id,
-                studentName:    student.studentName,
-                originalAmount: reservation.totalPrice,
-                discountAmount: 0,
-                paidAmount:     additionalPayment,
-                date:           txDate,
-                description:    data.description || `تكملة ثمن مذكرة: ${notebook.name}`,
-            });
-
-            promises.push(
-                updateDailyLedger(teacherId, txDate, {
-                    transactionId: transaction._id,
-                    type:          TransactionType.INCOME,
-                    category:      TransactionCategory.NOTEBOOK_DELIVERY,
-                    paidAmount:    additionalPayment,
-                    studentName:   student.studentName,
+            // 3. Record Transaction if any additional payment made
+            if (additionalPayment > 0) {
+                const [tx] = await TransactionModel.create([{
+                    teacherId,
                     createdBy,
-                    time:          txDate,
-                }, true),
-                updateMonthlyLedger(teacherId, txDate, additionalPayment, true)
-            );
-        }
+                    type:           TransactionType.INCOME,
+                    category:       TransactionCategory.NOTEBOOK_DELIVERY,
+                    studentId:      student._id,
+                    studentName:    student.studentName,
+                    originalAmount: reservation.totalPrice,
+                    discountAmount: 0,
+                    paidAmount:     additionalPayment,
+                    date:           txDate,
+                    description:    data.description || `تكملة ثمن مذكرة: ${notebook.name}`,
+                }], { session });
 
-        await Promise.all(promises);
+                promises.push(
+                    updateDailyLedger(teacherId, txDate, {
+                        transactionId: tx!._id,
+                        type:          TransactionType.INCOME,
+                        category:      TransactionCategory.NOTEBOOK_DELIVERY,
+                        paidAmount:    additionalPayment,
+                        studentName:   student.studentName,
+                        createdBy,
+                        time:          txDate,
+                    }, true, session),
+                    updateMonthlyLedger(teacherId, txDate, additionalPayment, true, session)
+                );
+            }
+
+            await Promise.all(promises);
+        });
+
         return reservation;
     }
 
@@ -591,6 +619,8 @@ export class PaymentsService {
             targetId: transaction!._id.toString(),
             meta:     { amount: data.amount, category: data.category },
         });
+        // Invalidate dashboard cache so fresh financial data is shown
+        cache.del(CacheKeys.dashboard(teacherId));
 
         return transaction;
     }
