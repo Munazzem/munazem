@@ -8,7 +8,22 @@ import { NotFoundException } from '../../common/utils/response/error.responce.js
 import { UserRole } from '../../common/enums/enum.service.js';
 import { ErrorLogModel } from '../../database/models/error-log.model.js';
 
+import { generateWeeklyReports, generatePaymentReminders } from './../automation/automation.service.js';
+
 const adminRouter = Router();
+
+// ── GET /admin/test-automation ───────────────────────────────────────
+// Temporary endpoint to trigger automation locally without waiting for cron.
+adminRouter.post('/test-automation', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { type, teacherId } = req.body;
+        if (type === 'weekly_report') await generateWeeklyReports(teacherId, true);
+        else if (type === 'payment_reminder') await generatePaymentReminders(teacherId);
+        else return next(new Error('Invalid type. Use "weekly_report" or "payment_reminder"'));
+        
+        return SuccessResponse({ res, data: null, message: `Automation ${type} triggered successfully` });
+    } catch (error) { next(error); }
+});
 
 // All admin routes require authentication + superAdmin role
 adminRouter.use(authenticate);
