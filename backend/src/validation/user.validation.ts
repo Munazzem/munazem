@@ -8,6 +8,7 @@ export const userCreationSchema = z.object({
     email:    z.string().email("البريد الإلكتروني غير صحيح").optional().or(z.literal('')),
     password: z.string().min(6, "كلمة المرور يجب أن تكون 6 أحرف على الأقل"),
     stage:    z.string().optional(),
+    subject:  z.string().optional(),
     salary:   z.number().min(0, "الراتب يجب أن يكون صفر أو أكثر").optional().nullable(),
   })
 });
@@ -19,6 +20,7 @@ export const userUpdateSchema = z.object({
     email:    z.string().email("البريد الإلكتروني غير صحيح").optional().or(z.literal('')),
     password: z.string().min(6, "كلمة المرور يجب أن تكون 6 أحرف على الأقل").optional(),
     stage:    z.string().optional(),
+    subject:  z.string().optional(),
     salary:   z.number().min(0).optional().nullable(),
     isActive: z.boolean().optional(),
   })

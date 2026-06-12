@@ -78,7 +78,7 @@ export class SessionService {
     // Get all sessions for a teacher (paginated), optionally filtered by groupId or date
     static async getSessionsByTeacher(teacherId: string, queryFilters: any = {}) {
         const page  = Math.max(1, parseInt(queryFilters.page)  || 1);
-        const limit = Math.min(500, Math.max(1, parseInt(queryFilters.limit) || 20));
+        const limit = Math.min(100, Math.max(1, parseInt(queryFilters.limit) || 20));
         const skip  = (page - 1) * limit;
 
         const filter: any = { teacherId };

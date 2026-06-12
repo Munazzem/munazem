@@ -3,6 +3,7 @@ import { envVars } from '../../../config/env.service.js';
 import { logger }  from '../../common/utils/logger.util.js';
 import { generateWeeklyReports, generatePaymentReminders }
     from '../../modules/automation/automation.service.js';
+import { archiveOldData } from '../../scripts/archive-old-data.js';
 import { Worker } from 'bullmq';
 
 // ─── Automation Queue ────────────────────────────────────────────────────────
@@ -43,6 +44,10 @@ const SCHEDULES = [
         name:    'daily_payment_reminder',
         pattern: '0 10 * * *',   // Daily 1 PM Egypt (check if tomorrow is 2nd session day)
     },
+    {
+        name:    'weekly_data_archive',
+        pattern: '0 0 * * 6',    // Saturday 3 AM Egypt (00:00 UTC)
+    },
 ];
 
 // ─── Processor ───────────────────────────────────────────────────────────────
@@ -56,6 +61,10 @@ async function processAutomationJob(job: any): Promise<void> {
 
         case 'daily_payment_reminder':
             await generatePaymentReminders();
+            break;
+
+        case 'weekly_data_archive':
+            await archiveOldData();
             break;
 
         default:

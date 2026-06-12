@@ -29,6 +29,7 @@ export interface ExamResultPayload {
     grade:       string;   // A+, A, B … F
     passed:      boolean;
     examDate:    string;   // ISO string
+    teacherName: string;
 }
 
 /** Payload for a payment reminder sent to a parent */

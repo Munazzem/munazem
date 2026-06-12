@@ -17,6 +17,9 @@ export interface IUser {
     role: UserRole;
     teacherId?: string | null;
     stage?: TeacherStage | null;
+    subject?: string;
+    centerName?: string;
+    logoUrl?: string;
     isActive: boolean;
     createdAt: string;
     updatedAt: string;
