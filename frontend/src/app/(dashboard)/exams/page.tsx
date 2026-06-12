@@ -116,17 +116,15 @@ export default function ExamsPage() {
                 </div>
                 {isTeacher && (
                     <div className="flex gap-2 w-full sm:w-auto">
-                        {AI_ENABLED ? (
-                            <Button
-                                variant="outline"
-                                onClick={() => setShowAI(true)}
-                                className="gap-2 flex-1 sm:flex-none"
-                            >
-                                <Sparkles className="h-4 w-4" />
-                                <span className="hidden sm:inline">توليد بالذكاء الاصطناعي</span>
-                                <span className="sm:hidden">AI</span>
-                            </Button>
-                        ) : null}
+                        <Button
+                            variant="outline"
+                            onClick={() => setShowAI(true)}
+                            className="gap-2 flex-1 sm:flex-none"
+                        >
+                            <Sparkles className="h-4 w-4" />
+                            <span className="hidden sm:inline">توليد بالذكاء الاصطناعي</span>
+                            <span className="sm:hidden">AI</span>
+                        </Button>
                         <Button onClick={() => setShowCreate(true)} className="gap-2 flex-1 sm:flex-none">
                             <Plus className="h-4 w-4" />
                             <span>إنشاء امتحان</span>
@@ -325,9 +323,7 @@ export default function ExamsPage() {
 
             {/* Modals */}
             <CreateExamModal   open={showCreate} onOpenChange={setShowCreate} />
-            {AI_ENABLED && (
-                <AIGenerateExamModal open={showAI}  onOpenChange={setShowAI} />
-            )}
+            <AIGenerateExamModal open={showAI}  onOpenChange={setShowAI} />
             <ConfirmDialog
                 open={confirmDeleteExam !== null}
                 onOpenChange={(v) => { if (!v) setConfirmDeleteExam(null); }}

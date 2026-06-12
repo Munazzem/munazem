@@ -1,6 +1,7 @@
 import { ExamModel }       from '../../database/models/exam.model.js';
 import { ExamResultModel } from '../../database/models/exam-result.model.js';
 import { StudentModel }    from '../../database/models/student.model.js';
+import { UserModel }       from '../../database/models/user.model.js';
 import { ExamStatus, ExamSource } from '../../common/enums/enum.service.js';
 import { NotFoundException, BadRequestException, ConflictException } from '../../common/utils/response/error.responce.js';
 import { enqueueWhatsApp } from '../../infrastructure/queues/whatsapp.queue.js';
@@ -194,6 +195,11 @@ export class ExamsService {
         const result = await ExamResultModel.insertMany(docs, { ordered: false });
 
         // ── WhatsApp: notify parents of each recorded result (fire-and-forget) ────
+        const teacherDoc = await UserModel.findById(teacherId, { name: 1, subject: 1 }).lean().catch(() => null);
+        const rawTeacherName = (teacherDoc as any)?.name ?? '';
+        const subject = (teacherDoc as any)?.subject;
+        const teacherName = subject ? `${rawTeacherName} (${subject})` : rawTeacherName;
+
         for (const doc of docs) {
             if (!doc) continue;
             const student = studentMap.get(doc.studentId.toString());
@@ -212,6 +218,7 @@ export class ExamsService {
                 grade:       doc.grade,
                 passed:      doc.passed,
                 examDate:    exam.date.toISOString(),
+                teacherName,
             });
         }
 

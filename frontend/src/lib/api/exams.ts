@@ -94,3 +94,13 @@ export const generateExamFromPdf = async (formData: FormData): Promise<{ exam: I
     });
     return (res as any).data ?? res;
 };
+
+/**
+ * Lightweight AI proxy — sends text prompt to backend which forwards to Groq.
+ * PDF parsing happens on the client side; server only proxies the AI call.
+ */
+export const aiProxy = async (prompt: string): Promise<{ text: string }> => {
+    const res = await apiClient.post('/exams/ai-proxy', { prompt });
+    return (res as any).data ?? res;
+};
+

@@ -19,7 +19,7 @@ import attendanceRouter from './modules/attendance/attendance.controller.js';
 import paymentsRouter from './modules/payments/payments.controller.js';
 import notebooksRouter from './modules/notebooks/notebooks.controller.js';
 import reportsRouter from './modules/reports/reports.controller.js';
-import examsRouter  from './modules/exams/exams.controller.js';
+import examsRouter, { aiProxyRouter }  from './modules/exams/exams.controller.js';
 import parentRouter from './modules/parent/parent.controller.js';
 import adminRouter  from './modules/admin/admin.controller.js';
 import whatsappRouter from './modules/whatsapp/whatsapp.controller.js';
@@ -124,6 +124,7 @@ export const bootstrap = async () => {
         legacyHeaders: false,
     });
     app.use('/exams/ai/generate', aiLimiter);
+    app.use('/exams/ai-proxy', aiLimiter);
 
     // Rate limit: max 10 login attempts per 15 minutes per IP
     const loginLimiter = rateLimit({
@@ -154,6 +155,7 @@ export const bootstrap = async () => {
     app.use('/notebooks', notebooksRouter)    // Notebooks inventory routes
     app.use('/reports', reportsRouter)         // Reports routes
     app.use('/exams', examsRouter)              // Exams + AI Generation routes
+    app.use('/exams/ai-proxy', aiProxyRouter)   // AI proxy (lightweight — text only)
     app.use('/whatsapp', whatsappRouter)          // WhatsApp multi-tenant client mgmt
     app.use('/admin', adminRouter)              // Super Admin routes
 

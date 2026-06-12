@@ -11,6 +11,7 @@ import { authorizeRoles }  from '../../middlewares/roles.middleware.js';
 import { validate } from '../../middlewares/validate.middleware.js';
 import { createExamSchema, recordResultSchema, batchResultsSchema } from '../../validation/exam.validation.js';
 import multer from 'multer';
+import type { IJwtPayload } from '../../types/auth.types.js';
 
 const examsRouter = Router();
 examsRouter.use(authenticate);
@@ -18,8 +19,10 @@ examsRouter.use(authenticate);
 // Multer — memory storage (no disk write)
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB
 
-const resolveTeacherId = (user: any): string =>
-    user.role === UserRole.assistant ? user.teacherId : user.userId;
+const resolveTeacherId = (user?: IJwtPayload): string => {
+    if (!user) return '';
+    return user.role === UserRole.assistant ? (user.teacherId || '') : user.userId;
+};
 
 // ════════ EXAM CRUD ════════════════════════════════════════════════
 
@@ -30,7 +33,7 @@ examsRouter.post(
     validate(createExamSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const teacherId = resolveTeacherId((req as any).user);
+            const teacherId = resolveTeacherId(req.user);
             const exam = await ExamsService.createExam(teacherId, req.body);
             return SuccessResponse({ res, data: exam, message: 'تم إنشاء الامتحان بنجاح', status: 201 });
         } catch (error) { next(error); }
@@ -43,7 +46,7 @@ examsRouter.get(
     authorizeRoles(UserRole.teacher, UserRole.assistant),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const teacherId = resolveTeacherId((req as any).user);
+            const teacherId = resolveTeacherId(req.user);
             const result = await ExamsService.getExams(teacherId, req.query);
             return SuccessResponse({ res, data: result, message: 'تم جلب الامتحانات بنجاح' });
         } catch (error) { next(error); }
@@ -56,7 +59,7 @@ examsRouter.get(
     authorizeRoles(UserRole.teacher, UserRole.assistant),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const teacherId = resolveTeacherId((req as any).user);
+            const teacherId = resolveTeacherId(req.user);
             const exam = await ExamsService.getExamById(req.params['id'] as string, teacherId);
             return SuccessResponse({ res, data: exam, message: 'تم جلب الامتحان بنجاح' });
         } catch (error) { next(error); }
@@ -69,7 +72,7 @@ examsRouter.put(
     authorizeRoles(UserRole.teacher, UserRole.assistant),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const teacherId = resolveTeacherId((req as any).user);
+            const teacherId = resolveTeacherId(req.user);
             const exam = await ExamsService.updateExam(req.params['id'] as string, teacherId, req.body);
             return SuccessResponse({ res, data: exam, message: 'تم تعديل الامتحان بنجاح' });
         } catch (error) { next(error); }
@@ -82,7 +85,7 @@ examsRouter.patch(
     authorizeRoles(UserRole.teacher, UserRole.assistant),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const teacherId = resolveTeacherId((req as any).user);
+            const teacherId = resolveTeacherId(req.user);
             const exam = await ExamsService.publishExam(req.params['id'] as string, teacherId);
             return SuccessResponse({ res, data: exam, message: 'تم نشر الامتحان بنجاح — يمكن الآن إدخال الدرجات' });
         } catch (error) { next(error); }
@@ -95,7 +98,7 @@ examsRouter.delete(
     authorizeRoles(UserRole.teacher, UserRole.assistant),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const teacherId = resolveTeacherId((req as any).user);
+            const teacherId = resolveTeacherId(req.user);
             await ExamsService.deleteExam(req.params['id'] as string, teacherId);
             return SuccessResponse({ res, data: null, message: 'تم حذف الامتحان بنجاح' });
         } catch (error) { next(error); }
@@ -111,7 +114,8 @@ examsRouter.post(
     validate(recordResultSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const user = (req as any).user;
+            const user = req.user;
+            if (!user) return next(BadRequestException({ message: 'المستخدم غير موجود' }));
             const teacherId = resolveTeacherId(user);
             const result = await ExamsService.recordResult(teacherId, user.userId, {
                 examId:    req.params['id'] as string,
@@ -130,7 +134,8 @@ examsRouter.post(
     validate(batchResultsSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const user = (req as any).user;
+            const user = req.user;
+            if (!user) return next(BadRequestException({ message: 'المستخدم غير موجود' }));
             const teacherId = resolveTeacherId(user);
             const result = await ExamsService.batchRecordResults(teacherId, user.userId, {
                 examId:  req.params['id'] as string,
@@ -147,7 +152,7 @@ examsRouter.get(
     authorizeRoles(UserRole.teacher, UserRole.assistant),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const teacherId = resolveTeacherId((req as any).user);
+            const teacherId = resolveTeacherId(req.user);
             const data = await ExamsService.getExamResults(req.params['id'] as string, teacherId);
             return SuccessResponse({ res, data, message: 'تم جلب نتائج الامتحان بنجاح' });
         } catch (error) { next(error); }
@@ -163,13 +168,7 @@ examsRouter.post(
     upload.single('pdf'),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            if (!envVars.enableAIExams) {
-                return next(BadRequestException({
-                    message: 'ميزة توليد الامتحانات بالذكاء الاصطناعي متاحة في الخطة المدفوعة فقط حالياً',
-                }));
-            }
-
-            const teacherId = resolveTeacherId((req as any).user);
+            const teacherId = resolveTeacherId(req.user);
             if (!req.file) {
                 return next(new Error('الرجاء رفع ملف PDF'));
             }
@@ -206,3 +205,68 @@ examsRouter.post(
 );
 
 export default examsRouter;
+
+// ════════ AI PROXY (lightweight — no PDF, no DB) ═══════════════════
+// The frontend parses the PDF and sends the extracted text.
+// This endpoint just forwards the prompt to Groq and returns the AI
+// response.  No file upload, no DB writes — minimal server load.
+import Groq from 'groq-sdk';
+
+const aiProxyRouter = Router();
+aiProxyRouter.use(authenticate);
+
+aiProxyRouter.post(
+    '/',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const apiKey = envVars.groqApiKey;
+            if (!apiKey) {
+                return next(BadRequestException({ message: 'مفتاح Groq API غير مُهيأ في السيرفر' }));
+            }
+
+            const { prompt } = req.body;
+            if (!prompt || typeof prompt !== 'string') {
+                return next(BadRequestException({ message: 'الحقل prompt مطلوب وصالح' }));
+            }
+
+            const groq = new Groq({ apiKey });
+
+            const completion = await groq.chat.completions.create({
+                model:       'llama-3.3-70b-versatile',
+                messages: [
+                    {
+                        role:    'system',
+                        content: 'أنت مساعد تعليمي. أجب بـ JSON صالح فقط بدون أي نص إضافي.',
+                    },
+                    { role: 'user', content: prompt },
+                ],
+                temperature:     0.7,
+                max_tokens:      4096,
+                response_format: { type: 'json_object' },
+            });
+
+            const text = completion.choices[0]?.message?.content ?? '';
+            return SuccessResponse({ res, data: { text }, message: 'تم توليد الأسئلة بنجاح' });
+        } catch (error: any) {
+            // Check for specific API HTTP errors
+            if (error.status === 429) {
+                return next(BadRequestException({ 
+                    message: 'تجاوزت الحد الأقصى المسموح به لتوليد الامتحانات بالذكاء الاصطناعي (Rate Limit)، يرجى الانتظار دقيقة والمحاولة مجدداً.' 
+                }));
+            }
+            if (error.status === 401 || error.status === 403) {
+                return next(BadRequestException({ 
+                    message: 'حدث خطأ في صلاحيات ومفتاح الـ API الخاص بـ Groq. يرجى التواصل مع إدارة النظام.' 
+                }));
+            }
+            // Fallback for general errors
+            const errMsg = error.message || 'حدث خطأ غير متوقع أثناء الاتصال بالذكاء الاصطناعي';
+            return next(BadRequestException({ 
+                message: `فشل توليد الامتحان: ${errMsg}` 
+            }));
+        }
+    }
+);
+
+export { aiProxyRouter };
