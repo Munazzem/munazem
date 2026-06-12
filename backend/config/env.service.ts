@@ -21,7 +21,7 @@ const groqApiKey = process.env.GROQ_API_KEY; // console.groq.com — free tier
 const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000";
 // Feature flags
 const enableAIExams    = process.env.ENABLE_AI_EXAMS    === 'true';
-const redisUrl         = process.env.REDIS_URL         ?? 'redis://localhost:6379';
+const redisUrl         = process.env.REDIS_URL         ?? 'redis://localhost:6380';
 
 // ── Email (SMTP) — used for weekly teacher reports ──────────────────────────
 const smtpHost     = process.env.SMTP_HOST     ?? 'smtp.gmail.com';
@@ -29,6 +29,8 @@ const smtpPort     = Number(process.env.SMTP_PORT ?? '587');
 const smtpUser     = process.env.SMTP_USER     ?? 'munazzem1@gmail.com';
 const smtpPass     = process.env.SMTP_PASS     ?? '';
 const smtpFrom     = process.env.SMTP_FROM     ?? 'منظم <munazzem1@gmail.com>';
+
+
 
 export const envVars = {
   mongo_url,

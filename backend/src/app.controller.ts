@@ -25,6 +25,7 @@ import parentRouter from './modules/parent/parent.controller.js';
 import adminRouter  from './modules/admin/admin.controller.js';
 import whatsappRouter from './modules/whatsapp/whatsapp.controller.js';
 import { startWhatsAppWorker }    from './infrastructure/queues/whatsapp.processor.js';
+import { startEmailWorker }       from './infrastructure/queues/email.processor.js';
 import { autoReconnectClients }   from './common/utils/whatsapp.service.js';
 import { startAutomationScheduler } from './infrastructure/schedulers/automation.scheduler.js';
 
@@ -117,7 +118,9 @@ export const bootstrap = async () => {
     autoReconnectClients();
     // 2. Start the BullMQ worker that drains the whatsapp queue
     startWhatsAppWorker();
-    // 3. Start the automation scheduler (weekly reports, daily reminders, weekly archival)
+    // 3. Start the BullMQ worker for email jobs
+    startEmailWorker();
+    // 4. Register cron-based automation jobs (weekly report + payment reminders + weekly archival)
     startAutomationScheduler();
 
     // Global rate limiter: 3000 requests per 15 minutes per IP

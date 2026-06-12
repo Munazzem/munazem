@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import {
     Users, BookOpen, TrendingUp, AlertTriangle,
     UserCheck, UserX, BarChart2, RefreshCw,
-    ArrowUpRight, Server, Cpu, Clock, Zap,
+    ArrowUpRight, Server, Cpu, Clock, Zap, Play
 } from 'lucide-react';
 import { fetchAdminStats, fetchGrowthData, fetchAdminErrors, fetchAdminHealth } from '@/lib/api/admin';
 import { useAuthStore } from '@/lib/store/auth.store';
@@ -121,13 +121,22 @@ export default function AdminOverviewPage() {
                     <h1 className="text-2xl font-bold text-gray-900">لوحة تحكم الإدارة</h1>
                     <p className="text-sm text-gray-500 mt-1">نظرة عامة على المنصة</p>
                 </div>
-                <button
-                    onClick={() => refetchStats()}
-                    className="flex items-center gap-2 text-sm text-gray-500 hover:text-primary transition-colors bg-white border border-gray-200 rounded-xl px-4 py-2"
-                >
-                    <RefreshCw className="h-4 w-4" />
-                    تحديث
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => router.push('/admin/automation')}
+                        className="flex items-center gap-2 text-sm text-primary hover:text-white hover:bg-primary transition-colors bg-primary/10 border border-primary/20 rounded-xl px-4 py-2 font-medium"
+                    >
+                        <Play className="h-4 w-4" />
+                        اختبار الأتمتة
+                    </button>
+                    <button
+                        onClick={() => refetchStats()}
+                        className="flex items-center gap-2 text-sm text-gray-500 hover:text-primary transition-colors bg-white border border-gray-200 rounded-xl px-4 py-2"
+                    >
+                        <RefreshCw className="h-4 w-4" />
+                        تحديث
+                    </button>
+                </div>
             </div>
 
             {/* KPI Cards */}
