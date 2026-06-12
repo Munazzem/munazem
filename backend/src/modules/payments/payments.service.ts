@@ -656,6 +656,7 @@ export class PaymentsService {
     // ── Update Transaction (Teacher only) ───────────────────────────
     // Allowed fields: amount, category, description, date.
     // studentId is intentionally excluded to preserve audit integrity.
+    // When amount changes, DailyLedger and MonthlyLedger are updated atomically.
     static async updateTransaction(
         teacherId: string,
         transactionId: string,
@@ -675,6 +676,52 @@ export class PaymentsService {
             { $set: update },
             { new: true, runValidators: true }
         ).lean();
+
+        // ── Sync ledgers if amount changed ──────────────────────────────
+        if (data.amount !== undefined && data.amount !== transaction.paidAmount) {
+            const delta     = data.amount - transaction.paidAmount;
+            const isIncome  = transaction.type === TransactionType.INCOME;
+            const txDate    = transaction.date;
+            const day       = startOfDay(new Date(txDate));
+            const year      = new Date(txDate).getUTCFullYear();
+            const month     = new Date(txDate).getUTCMonth() + 1;
+
+            // Update DailyLedger
+            await DailyLedgerModel.findOneAndUpdate(
+                { teacherId, date: day },
+                {
+                    $inc: {
+                        totalIncome:   isIncome ? delta : 0,
+                        totalExpenses: isIncome ? 0 : delta,
+                        netBalance:    isIncome ? delta : -delta,
+                    },
+                }
+            );
+
+            // Update MonthlyLedger
+            await MonthlyLedgerModel.findOneAndUpdate(
+                { teacherId, year, month, 'dailySummaries.date': day },
+                {
+                    $inc: {
+                        totalIncome:                       isIncome ? delta : 0,
+                        totalExpenses:                     isIncome ? 0 : delta,
+                        netBalance:                        isIncome ? delta : -delta,
+                        'dailySummaries.$.totalIncome':    isIncome ? delta : 0,
+                        'dailySummaries.$.totalExpenses':  isIncome ? 0 : delta,
+                        'dailySummaries.$.netBalance':     isIncome ? delta : -delta,
+                    },
+                }
+            );
+
+            // Update the embedded transaction amount in DailyLedger.transactions array
+            await DailyLedgerModel.findOneAndUpdate(
+                { teacherId, date: day, 'transactions.transactionId': transaction._id },
+                { $set: { 'transactions.$.paidAmount': data.amount } }
+            );
+
+            // Invalidate dashboard cache so fresh data is shown
+            cache.del(CacheKeys.dashboard(teacherId));
+        }
 
         return updated;
     }

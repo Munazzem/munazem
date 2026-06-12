@@ -10,6 +10,7 @@ import { TransactionType, TransactionCategory, SessionStatus, UserRole, Attendan
 import { NotFoundException } from '../../common/utils/response/error.responce.js';
 import { BarcodeUtil } from '../../common/utils/barcode.util.js';
 import { cache, CacheKeys, CacheTTL } from '../../infrastructure/cache/cache.service.js';
+import { logger } from '../../common/utils/logger.util.js';
 
 export class ReportsService {
 
@@ -159,7 +160,7 @@ export class ReportsService {
         try {
             barcodeImageBase64 = await BarcodeUtil.generateBase64Barcode(codeToEncode);
         } catch (e) {
-            console.error('Failed to generate barcode image:', e);
+            logger.warn('barcode_generation_failed', { studentId, error: (e as Error).message });
         }
 
         return {

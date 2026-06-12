@@ -1,4 +1,5 @@
 import express from 'express';
+import os from 'os';
 import cors from 'cors';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
@@ -25,6 +26,7 @@ import adminRouter  from './modules/admin/admin.controller.js';
 import whatsappRouter from './modules/whatsapp/whatsapp.controller.js';
 import { startWhatsAppWorker }    from './infrastructure/queues/whatsapp.processor.js';
 import { autoReconnectClients }   from './common/utils/whatsapp.service.js';
+import { startAutomationScheduler } from './infrastructure/schedulers/automation.scheduler.js';
 
 export const bootstrap = async () => {
     const app = express();
@@ -92,6 +94,17 @@ export const bootstrap = async () => {
                 userId:     user?.userId ?? null,
                 role:       user?.role   ?? null,
             });
+
+            // Slow query warning — helps catch performance regressions early
+            if (durationMs > 3000) {
+                logger.warn('slow_request', {
+                    requestId:  req.requestId,
+                    method:     req.method,
+                    path:       req.path,
+                    durationMs: Math.round(durationMs),
+                    userId:     user?.userId ?? null,
+                });
+            }
         });
 
         next();
@@ -104,6 +117,8 @@ export const bootstrap = async () => {
     autoReconnectClients();
     // 2. Start the BullMQ worker that drains the whatsapp queue
     startWhatsAppWorker();
+    // 3. Start the automation scheduler (weekly reports, daily reminders, weekly archival)
+    startAutomationScheduler();
 
     // Global rate limiter: 3000 requests per 15 minutes per IP
     const globalLimiter = rateLimit({
@@ -170,6 +185,11 @@ export const bootstrap = async () => {
                 heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),
                 heapTotalMB: Math.round(mem.heapTotal / 1024 / 1024),
                 rssMB: Math.round(mem.rss / 1024 / 1024),
+            },
+            os: {
+                loadAvg: os.loadavg().map(l => Math.round(l * 100) / 100),
+                freeMemMB: Math.round(os.freemem() / 1024 / 1024),
+                totalMemMB: Math.round(os.totalmem() / 1024 / 1024),
             },
         });
     });
