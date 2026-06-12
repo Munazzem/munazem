@@ -15,6 +15,7 @@ export interface IUser {
   logoUrl?:    string;              // لوجو السنتر — للمدرسين فقط
   whatsappQr?:     string | null;   // QR data for frontend rendering
   whatsappStatus?: 'disconnected' | 'pending' | 'connected';
+  subject?:        string;
 }
 
 export interface IUserDocument extends IUser, Document {

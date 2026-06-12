@@ -58,7 +58,7 @@ router.get('/me', authenticate, async (req: Request, res: Response, next: NextFu
 router.patch('/me', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const userId = (req as any).user.userId;
-        const { name, email, phone } = req.body;
+        const { name, email, phone, subject } = req.body;
 
         if (phone) {
             const existing = await UserModel.findOne({ phone, _id: { $ne: userId } }).lean();
@@ -67,7 +67,12 @@ router.patch('/me', authenticate, async (req: Request, res: Response, next: Next
 
         const updated = await UserModel.findByIdAndUpdate(
             userId,
-            { ...(name && { name }), ...(email && { email }), ...(phone && { phone }) },
+            { 
+                ...(name && { name }), 
+                ...(email !== undefined && { email }), 
+                ...(phone && { phone }),
+                ...(subject !== undefined && { subject }),
+            },
             { new: true }
         ).select('-password').lean();
 

@@ -22,6 +22,13 @@ import {
     FormLabel,
     FormMessage,
 } from '@/components/ui/form';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 
 // ─── Schemas ────────────────────────────────────────────────────────────────
 
@@ -29,6 +36,7 @@ const profileSchema = z.object({
     name: z.string().min(3, 'الاسم يجب أن يكون 3 أحرف على الأقل'),
     phone: z.string().min(10, 'رقم الهاتف غير صحيح'),
     email: z.string().email('البريد الإلكتروني غير صحيح').optional().or(z.literal('')),
+    subject: z.string().optional(),
 });
 
 const passwordSchema = z.object({
@@ -47,6 +55,7 @@ export default function SettingsPage() {
     const { user: storeUser, token, login: loginStore } = useAuthStore();
     const isTeacher = storeUser?.role === 'teacher';
     const isAssistant = storeUser?.role === 'assistant';
+    const [showCustomSubject, setShowCustomSubject] = useState(false);
 
     const { data: meData, isLoading: meLoading } = useQuery({
         queryKey: ['me'],
@@ -56,15 +65,21 @@ export default function SettingsPage() {
     // ── Profile form ──────────────────────────────────────────────────────────
     const profileForm = useForm<z.infer<typeof profileSchema>>({
         resolver: zodResolver(profileSchema),
-        defaultValues: { name: '', phone: '', email: '' },
+        defaultValues: { name: '', phone: '', email: '', subject: '' },
     });
 
     useEffect(() => {
         if (meData) {
+            const presets = ['الرياضيات', 'الفيزياء', 'الكيمياء', 'الأحياء', 'اللغة العربية', 'اللغة الإنجليزية', 'اللغة الفرنسية', 'التاريخ', 'الجغرافيا', 'الفلسفة', 'العلوم'];
+            const hasSubject = !!meData.subject;
+            const isPreset = hasSubject && presets.includes(meData.subject);
+            setShowCustomSubject(hasSubject && !isPreset);
+
             profileForm.reset({
                 name: meData.name || '',
                 phone: meData.phone || '',
                 email: meData.email || '',
+                subject: meData.subject || '',
             });
             // Also sync branding states with current data
             setCenterName(meData.centerName || '');
@@ -74,9 +89,21 @@ export default function SettingsPage() {
 
     const profileMutation = useMutation({
         mutationFn: updateMe,
-        onSuccess: () => toast.success('تم تحديث البيانات بنجاح'),
-        
+        onSuccess: () => {
+            toast.success('تم تحديث البيانات بنجاح');
+            queryClient.invalidateQueries({ queryKey: ['me'] });
+        },
     });
+
+    const handleSubjectChange = (val: string) => {
+        if (val === 'OTHER') {
+            setShowCustomSubject(true);
+            profileForm.setValue('subject', '');
+        } else {
+            setShowCustomSubject(false);
+            profileForm.setValue('subject', val);
+        }
+    };
 
     // ── Password form ─────────────────────────────────────────────────────────
     const passwordForm = useForm<z.infer<typeof passwordSchema>>({
@@ -301,6 +328,56 @@ export default function SettingsPage() {
                                         )}
                                     />
                                 </div>
+
+                                {isTeacher && (
+                                    <FormField
+                                        control={profileForm.control}
+                                        name="subject"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel>المادة الدراسية</FormLabel>
+                                                {!showCustomSubject ? (
+                                                    <Select onValueChange={handleSubjectChange} value={field.value || ''}>
+                                                        <FormControl>
+                                                            <SelectTrigger><SelectValue placeholder="اختر المادة" /></SelectTrigger>
+                                                        </FormControl>
+                                                        <SelectContent dir="rtl">
+                                                            <SelectItem value="الرياضيات">الرياضيات</SelectItem>
+                                                            <SelectItem value="الفيزياء">الفيزياء</SelectItem>
+                                                            <SelectItem value="الكيمياء">الكيمياء</SelectItem>
+                                                            <SelectItem value="الأحياء">الأحياء</SelectItem>
+                                                            <SelectItem value="اللغة العربية">اللغة العربية</SelectItem>
+                                                            <SelectItem value="اللغة الإنجليزية">اللغة الإنجليزية</SelectItem>
+                                                            <SelectItem value="اللغة الفرنسية">اللغة الفرنسية</SelectItem>
+                                                            <SelectItem value="التاريخ">التاريخ</SelectItem>
+                                                            <SelectItem value="الجغرافيا">الجغرافيا</SelectItem>
+                                                            <SelectItem value="الفلسفة">الفلسفة</SelectItem>
+                                                            <SelectItem value="العلوم">العلوم</SelectItem>
+                                                            <SelectItem value="OTHER">مادة أخرى...</SelectItem>
+                                                        </SelectContent>
+                                                    </Select>
+                                                ) : (
+                                                    <div className="flex gap-2">
+                                                        <FormControl>
+                                                            <Input placeholder="اكتب اسم المادة..." {...field} autoFocus />
+                                                        </FormControl>
+                                                        <Button 
+                                                            type="button" 
+                                                            variant="outline" 
+                                                            onClick={() => {
+                                                                setShowCustomSubject(false);
+                                                                profileForm.setValue('subject', '');
+                                                            }}
+                                                        >
+                                                            إلغاء
+                                                        </Button>
+                                                    </div>
+                                                )}
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                )}
 
                                 <div className="flex justify-end pt-2">
                                     <Button type="submit" className="bg-primary hover:bg-primary/90 gap-2" disabled={profileMutation.isPending}>

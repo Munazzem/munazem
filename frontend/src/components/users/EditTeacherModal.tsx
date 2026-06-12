@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -43,6 +43,7 @@ const updateTeacherSchema = z.object({
   email: z.string().email('البريد الإلكتروني غير صحيح').optional().or(z.literal('')),
   password: z.string().min(6, 'كلمة المرور يجب أن تكون 6 أحرف على الأقل').optional().or(z.literal('')),
   stage: z.nativeEnum(TeacherStage).optional(),
+  subject: z.string().optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -54,6 +55,7 @@ interface EditTeacherModalProps {
 
 export function EditTeacherModal({ open, onOpenChange, teacher }: EditTeacherModalProps) {
   const queryClient = useQueryClient();
+  const [showCustomSubject, setShowCustomSubject] = useState(false);
 
   const form = useForm<z.infer<typeof updateTeacherSchema>>({
     resolver: zodResolver(updateTeacherSchema),
@@ -63,18 +65,25 @@ export function EditTeacherModal({ open, onOpenChange, teacher }: EditTeacherMod
       email: '',
       password: '',
       stage: TeacherStage.preparatory,
+      subject: '',
       isActive: true,
     },
   });
 
   useEffect(() => {
       if (teacher && open) {
+          const presets = ['الرياضيات', 'الفيزياء', 'الكيمياء', 'الأحياء', 'اللغة العربية', 'اللغة الإنجليزية', 'اللغة الفرنسية', 'التاريخ', 'الجغرافيا', 'الفلسفة', 'العلوم'];
+          const hasSubject = !!teacher.subject;
+          const isPreset = hasSubject && presets.includes(teacher.subject!);
+          setShowCustomSubject(hasSubject && !isPreset);
+
           form.reset({
               name: teacher.name,
               phone: teacher.phone,
               email: teacher.email || '',
               password: '', // Do not populate password
               stage: teacher.stage as TeacherStage || TeacherStage.preparatory,
+              subject: teacher.subject || '',
               isActive: teacher.isActive,
           });
       }
@@ -92,6 +101,16 @@ export function EditTeacherModal({ open, onOpenChange, teacher }: EditTeacherMod
       
     },
   });
+
+  const handleSubjectChange = (val: string) => {
+    if (val === 'OTHER') {
+      setShowCustomSubject(true);
+      form.setValue('subject', '');
+    } else {
+      setShowCustomSubject(false);
+      form.setValue('subject', val);
+    }
+  };
 
   const onSubmit = (values: z.infer<typeof updateTeacherSchema>) => {
     if (!teacher) return;
@@ -181,6 +200,54 @@ export function EditTeacherModal({ open, onOpenChange, teacher }: EditTeacherMod
                 )}
                 />
             </div>
+
+            <FormField
+              control={form.control}
+              name="subject"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>المادة الدراسية</FormLabel>
+                  {!showCustomSubject ? (
+                    <Select onValueChange={handleSubjectChange} value={field.value || ''}>
+                      <FormControl>
+                        <SelectTrigger><SelectValue placeholder="اختر المادة" /></SelectTrigger>
+                      </FormControl>
+                      <SelectContent dir="rtl">
+                        <SelectItem value="الرياضيات">الرياضيات</SelectItem>
+                        <SelectItem value="الفيزياء">الفيزياء</SelectItem>
+                        <SelectItem value="الكيمياء">الكيمياء</SelectItem>
+                        <SelectItem value="الأحياء">الأحياء</SelectItem>
+                        <SelectItem value="اللغة العربية">اللغة العربية</SelectItem>
+                        <SelectItem value="اللغة الإنجليزية">اللغة الإنجليزية</SelectItem>
+                        <SelectItem value="اللغة الفرنسية">اللغة الفرنسية</SelectItem>
+                        <SelectItem value="التاريخ">التاريخ</SelectItem>
+                        <SelectItem value="الجغرافيا">الجغرافيا</SelectItem>
+                        <SelectItem value="الفلسفة">الفلسفة</SelectItem>
+                        <SelectItem value="العلوم">العلوم</SelectItem>
+                        <SelectItem value="OTHER">مادة أخرى...</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <div className="flex gap-2">
+                      <FormControl>
+                        <Input placeholder="اكتب اسم المادة..." {...field} autoFocus />
+                      </FormControl>
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        onClick={() => {
+                          setShowCustomSubject(false);
+                          form.setValue('subject', '');
+                        }}
+                      >
+                        إلغاء
+                      </Button>
+                    </div>
+                  )}
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             <FormField
               control={form.control}
