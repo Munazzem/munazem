@@ -1,6 +1,7 @@
 import WAWebJS from 'whatsapp-web.js';
 const { Client, LocalAuth } = WAWebJS;
 import { UserModel } from '../../database/models/user.model.js';
+import { OptOutModel } from '../../database/models/opt-out.model.js';
 import { UserRole }  from '../enums/enum.service.js';
 import { logger }    from './logger.util.js';
 
@@ -95,6 +96,28 @@ export async function initializeClientForTeacher(teacherId: string): Promise<voi
     // ── Authenticated: informational only ─────────────────────────────────
     client.on('authenticated', () => {
         logger.info('whatsapp_authenticated', { teacherId });
+    });
+
+    // ── Incoming message: handle opt-out keywords ─────────────────────────
+    client.on('message', async (msg: WAWebJS.Message) => {
+        const body = (msg.body ?? '').trim().toLowerCase();
+        if (body === 'إلغاء' || body === 'الغاء' || body === 'stop') {
+            const phone = (msg.from ?? '').split('@')[0]; // e.g. "201012345678"
+            if (!phone) return;
+            try {
+                await OptOutModel.updateOne(
+                    { phone: phone, teacherId: teacherId },
+                    { $set: { phone: phone, teacherId: teacherId } },
+                    { upsert: true },
+                );
+                await msg.reply('تم إيقاف الرسائل التذكيرية بنجاح ✅');
+                logger.info('whatsapp_opt_out', { teacherId, phone });
+            } catch (err) {
+                logger.error('whatsapp_opt_out_failed', {
+                    teacherId, phone, error: (err as Error).message,
+                });
+            }
+        }
     });
 
     // ── Auth failure: clean up ────────────────────────────────────────────
