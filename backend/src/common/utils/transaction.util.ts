@@ -21,6 +21,11 @@ import mongoose from 'mongoose';
 export async function withTransaction<T>(
     fn: (session: mongoose.ClientSession) => Promise<T>
 ): Promise<T> {
+    if (process.env.DISABLE_TRANSACTIONS === 'true') {
+        // Skip transaction for local standalone MongoDB testing
+        return fn(undefined as unknown as mongoose.ClientSession);
+    }
+
     const session = await mongoose.startSession();
     session.startTransaction();
     try {

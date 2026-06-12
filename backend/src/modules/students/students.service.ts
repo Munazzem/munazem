@@ -6,6 +6,7 @@ import type { CreateStudentDTO, UpdateStudentDTO } from '../../types/dto.types.j
 import { GRADE_LETTER, GradeLevel, TransactionType, TransactionCategory } from '../../common/enums/enum.service.js';
 import { nextSequence } from '../../database/models/counter.model.js';
 import { trackEvent } from '../../common/utils/activity.service.js';
+import { withTransaction } from '../../common/utils/transaction.util.js';
 import crypto from 'crypto';
 
 export class StudentService {
@@ -84,67 +85,76 @@ export class StudentService {
     }
 
     static async bulkCreateStudents(teacherId: string, students: CreateStudentDTO[]) {
-        const results: { index: number; success: boolean; studentName?: string; studentCode?: string; error?: string }[] = [];
+        return await withTransaction(async (dbSession) => {
+            const results: { studentName: string; studentCode: string }[] = [];
 
-        for (let i = 0; i < students.length; i++) {
-            const data = students[i]!;
-            try {
-                // Verify group belongs to teacher
-                const group = await GroupModel.findOne({ _id: data.groupId, teacherId }).lean();
-                if (!group) {
-                    results.push({ index: i, success: false, error: 'المجموعة غير موجودة أو لا صلاحية لك عليها' });
-                    continue;
+            for (let i = 0; i < students.length; i++) {
+                const data = students[i]!;
+                try {
+                    // Verify group belongs to teacher
+                    const group = await GroupModel.findOne({ _id: data.groupId, teacherId }).session(dbSession).lean();
+                    if (!group) {
+                        throw new Error(`المجموعة المحددة غير موجودة أو لا صلاحية لك عليها في السطر ${i + 1}`);
+                    }
+
+                    // Enforce grade-level match
+                    if (group.gradeLevel !== data.gradeLevel) {
+                        throw new Error(`عفواً، المجموعة المحددة للمرحلة الدراسية مختلفة للطالب ${data.fullName} في السطر ${i + 1}`);
+                    }
+
+                    // Enforce capacity limit
+                    const capacity = group.capacity ?? 50;
+                    const currentCount = await StudentModel.countDocuments({ groupId: data.groupId, teacherId }).session(dbSession);
+                    if (currentCount >= capacity) {
+                        throw new Error(`عفواً، وصلت المجموعة إلى أقصى عدد متاح لرفع الطالب ${data.fullName} في السطر ${i + 1}`);
+                    }
+
+                    const { studentName, parentName } = this.parseFullName(data.fullName);
+
+                    const letter = GRADE_LETTER[data.gradeLevel as GradeLevel];
+                    const count  = await nextSequence(`${teacherId}_${data.gradeLevel}`);
+                    const studentCode = `${count}${letter}`;
+
+                    const [created] = await StudentModel.create([{
+                        studentName,
+                        parentName,
+                        studentPhone: data.studentPhone,
+                        parentPhone:  data.parentPhone,
+                        gradeLevel:   data.gradeLevel,
+                        groupId:      data.groupId,
+                        teacherId,
+                        studentCode,
+                        barcode: data.barcode || crypto.randomUUID(),
+                        monthlySessionsQuota: (group.schedule?.length ?? 2) * 4,
+                    }], { session: dbSession });
+
+                    if (!created) {
+                        throw new Error(`فشل إضافة الطالب ${data.fullName} في السطر ${i + 1}`);
+                    }
+
+                    results.push({ studentName: created.studentName, studentCode: created.studentCode });
+                } catch (error: any) {
+                    let message = error.message || 'حدث خطأ أثناء الإضافة';
+                    if (error.code === 11000) {
+                        if (error.keyPattern?.barcode) {
+                            message = `الباركود مستخدم مسبقاً للطالب ${data.fullName} في السطر ${i + 1}`;
+                        } else if (error.keyPattern?.studentCode) {
+                            message = `كود الطالب مستخدم مسبقاً في السطر ${i + 1}`;
+                        } else {
+                            message = `رقم الهاتف مسجل مسبقاً للطالب ${data.fullName} في السطر ${i + 1}`;
+                        }
+                    }
+                    throw BadRequestException({ message });
                 }
-
-                // Enforce grade-level match
-                if (group.gradeLevel !== data.gradeLevel) {
-                    results.push({ index: i, success: false, error: 'عفواً، هذه المجموعة لمرحلة دراسية مختلفة' });
-                    continue;
-                }
-
-                // Enforce capacity limit
-                const capacity = group.capacity ?? 50;
-                const currentCount = await StudentModel.countDocuments({ groupId: data.groupId, teacherId });
-                if (currentCount >= capacity) {
-                    results.push({ index: i, success: false, error: `عفواً، وصلت المجموعة إلى أقصى عدد متاح (الطاقة: ${capacity} طالب)` });
-                    continue;
-                }
-
-                const { studentName, parentName } = this.parseFullName(data.fullName);
-
-                const letter = GRADE_LETTER[data.gradeLevel as GradeLevel];
-                const count  = await nextSequence(`${teacherId}_${data.gradeLevel}`);
-                const studentCode = `${count}${letter}`;
-
-                const created = await StudentModel.create({
-                    studentName,
-                    parentName,
-                    studentPhone: data.studentPhone,
-                    parentPhone:  data.parentPhone,
-                    gradeLevel:   data.gradeLevel,
-                    groupId:      data.groupId,
-                    teacherId,
-                    studentCode,
-                    barcode: data.barcode || crypto.randomUUID(),
-                    monthlySessionsQuota: (group.schedule?.length ?? 2) * 4,
-                });
-
-                results.push({ index: i, success: true, studentName: created.studentName, studentCode: created.studentCode });
-            } catch (error: any) {
-                let message = 'حدث خطأ أثناء الإضافة';
-                if (error.code === 11000) {
-                    if (error.keyPattern?.barcode) message = 'الباركود مستخدم مسبقاً';
-                } else if (error.message) {
-                    message = error.message;
-                }
-                results.push({ index: i, success: false, error: message });
             }
-        }
 
-        const successCount = results.filter(r => r.success).length;
-        const failCount    = results.filter(r => !r.success).length;
-
-        return { results, successCount, failCount, total: students.length };
+            return {
+                results: results.map((r, idx) => ({ index: idx, success: true, ...r })),
+                successCount: results.length,
+                failCount: 0,
+                total: students.length,
+            };
+        });
     }
 
     static async getStudentsByTeacherId(teacherId: string, queryFilters: any) {

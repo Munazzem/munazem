@@ -7,7 +7,7 @@ export const fetchMe = async () => {
 };
 
 // PATCH /auth/me
-export const updateMe = async (data: { name?: string; email?: string; phone?: string }) => {
+export const updateMe = async (data: { name?: string; email?: string; phone?: string; subject?: string }) => {
     const res = await apiClient.patch('/auth/me', data);
     return (res as any).data;
 };

@@ -429,11 +429,13 @@ export class AttendanceService {
             ).lean().catch(() => null);
             const groupName = (groupDoc as any)?.name ?? 'المجموعة';
 
-            // Fetch teacher name for the message signature
+            // Fetch teacher name and subject for the message signature
             const teacherDoc = await UserModel.findById(
-                teacherId, { name: 1 }
+                teacherId, { name: 1, subject: 1 }
             ).lean().catch(() => null);
-            const teacherName = (teacherDoc as any)?.name ?? '';
+            const rawTeacherName = (teacherDoc as any)?.name ?? '';
+            const subject = (teacherDoc as any)?.subject;
+            const teacherName = subject ? `${rawTeacherName} (${subject})` : rawTeacherName;
 
             for (const absent of absentStudents) {
                 const parentPhone = phoneMap.get(absent.studentId.toString());
@@ -562,9 +564,19 @@ export class AttendanceService {
             const signature = teacherName ? `\n\nمع تحيات أ/ ${teacherName}` : '';
             if (isPresent) {
                 const timeStr = record.scannedAt.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
-                message = `أهلاً بك ولي أمر الطالب/ة: ${student.studentName}.\n\nنعلمكم بحضور الطالب لحصة [${groupName}] بتاريخ ${shortDate}.\nوقت الوصول: ${timeStr}.\n\nشكراً لتعاونكم.${signature}`;
+                const PRESENT_TEMPLATES = [
+                    `أهلاً بك ولي أمر الطالب/ة: ${student.studentName}.\n\nنعلمكم بحضور الطالب لحصة [${groupName}] بتاريخ ${shortDate}.\nوقت الوصول: ${timeStr}.\n\nشكراً لتعاونكم.${signature}`,
+                    `تحية طيبة،\n\nنود إعلامكم أن الطالب/ة: ${student.studentName} قد حضر/ت حصة [${groupName}] اليوم (${shortDate}) في تمام الساعة ${timeStr}.\n\nنشكركم على المتابعة.${signature}`,
+                    `السلام عليكم،\n\nتم تسجيل حضور الطالب/ة: ${student.studentName} في مجموعة [${groupName}] بتاريخ ${shortDate}.\nوقت الدخول: ${timeStr}.\n\nبالتوفيق دائماً.${signature}`
+                ];
+                message = PRESENT_TEMPLATES[Math.floor(Math.random() * PRESENT_TEMPLATES.length)] as string;
             } else {
-                message = `أهلاً بك ولي أمر الطالب/ة: ${student.studentName}.\n\nنعلمكم بغياب الطالب عن حصة [${groupName}] بتاريخ ${shortDate}.\nبرجاء متابعة الأمر، شكراً لتعاونكم.${signature}`;
+                const ABSENT_TEMPLATES = [
+                    `أهلاً بك ولي أمر الطالب/ة: ${student.studentName}.\n\nنعلمكم بغياب الطالب عن حصة [${groupName}] بتاريخ ${shortDate}.\nبرجاء متابعة الأمر، شكراً لتعاونكم.${signature}`,
+                    `تحية طيبة،\n\nنلفت انتباهكم إلى غياب الطالب/ة: ${student.studentName} عن حصة [${groupName}] اليوم (${shortDate}).\n\nبرجاء التأكد من سبب الغياب.${signature}`,
+                    `السلام عليكم،\n\nلم يسجل الطالب/ة: ${student.studentName} حضوراً في حصة [${groupName}] بتاريخ ${shortDate}.\n\nنتمنى أن يكون المانع خيراً.${signature}`
+                ];
+                message = ABSENT_TEMPLATES[Math.floor(Math.random() * ABSENT_TEMPLATES.length)] as string;
             }
 
             const encodedMessage = encodeURIComponent(message);

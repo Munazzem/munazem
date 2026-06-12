@@ -72,6 +72,11 @@ const userSchema = new Schema<IUserDocument>(
             enum: ['disconnected', 'pending', 'connected'],
             default: 'disconnected',
         },
+        subject: {
+            type: String,
+            trim: true,
+            default: '',
+        },
     },
     {
         timestamps: true,

@@ -9,10 +9,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { generateExamFromPdf } from '@/lib/api/exams';
+import { aiProxy, createExam } from '@/lib/api/exams';
 import { fetchGroups } from '@/lib/api/groups';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { getAllowedGrades } from '@/lib/utils/grades';
+import * as pdfjsLib from 'pdfjs-dist';
+
+// Configure PDF.js worker
+if (typeof window !== 'undefined') {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+}
 
 interface Props {
     open:         boolean;
@@ -32,6 +38,100 @@ const QUESTION_TYPES = [
     { value: 'ESSAY',      label: 'مقالي' },
 ];
 
+// ── Prompt builder (moved from backend) ──────────────────────────────────────
+function buildPrompt(content: string, options: {
+    questionCount: number;
+    difficulty: string;
+    questionTypes: string[];
+    marksPerQuestion: number;
+    language: string;
+}): string {
+    const typeMap: Record<string, string> = {
+        MCQ:        'اختيار من متعدد (4 خيارات أ/ب/ج/د مع تحديد الإجابة الصحيحة)',
+        TRUE_FALSE: 'صح وخطأ (correctAnswer: "صح" أو "خطأ")',
+        ESSAY:      'مقالي مفتوح (بدون correctAnswer)',
+    };
+    const typesText = options.questionTypes.map(t => typeMap[t] ?? t).join('\n  - ');
+
+    const languageInstruction = options.language === 'English' 
+        ? 'Write all questions, options, and answers entirely in English.'
+        : options.language === 'French'
+        ? 'Write all questions, options, and answers entirely in French.'
+        : 'اكتب جميع الأسئلة والخيارات والإجابات باللغة العربية.';
+
+    let difficultyInstruction = '';
+    if (options.difficulty === 'hard') {
+        difficultyInstruction = '- تأكد أن الأسئلة صعبة جداً، تعتمد على الفهم العميق والاستنتاج والتفكير النقدي، وتجنب الأسئلة المباشرة.';
+    } else if (options.difficulty === 'easy') {
+        difficultyInstruction = '- اجعل الأسئلة سهلة ومباشرة وتعتمد على التذكر الأساسي.';
+    }
+
+    return `
+أنت مساعد تعليمي متخصص في إنشاء اختبارات أكاديمية.
+
+بناءً على المحتوى التعليمي التالي، أنشئ امتحاناً يحتوي على بالضبط ${options.questionCount} سؤال.
+
+# المحتوى التعليمي:
+${content.slice(0, 8000)}
+
+# متطلبات الامتحان:
+- عدد الأسئلة المطلوب بالضبط: ${options.questionCount} سؤال (لا أقل ولا أكثر)
+- مستوى الصعوبة: ${options.difficulty}
+${difficultyInstruction}
+- أنواع الأسئلة المطلوبة:
+  - ${typesText}
+- درجة كل سؤال: ${options.marksPerQuestion}
+
+# تعليمات مهمة جداً:
+1. ${languageInstruction}
+2. أعد الإجابة كـ JSON صالح فقط — بدون أي نص إضافي قبله أو بعده.
+3. يجب أن يحتوي مصفوفة "questions" على ${options.questionCount} عنصر بالضبط.
+4. الصيغة المطلوبة (هذا مثال فقط، لا تعده كسؤال):
+{
+  "questions": [
+    {
+      "type": "MCQ",
+      "text": "نص السؤال هنا",
+      "marks": ${options.marksPerQuestion},
+      "options": ["الخيار الأول", "الخيار الثاني", "الخيار الثالث", "الخيار الرابع"],
+      "correctAnswer": "الخيار الأول"
+    }
+  ]
+}
+5. تأكد أن الأسئلة مرتبطة ارتباطاً وثيقاً بالمحتوى التعليمي المُعطى ولا تخرج عنه.
+6. تذكر: العدد المطلوب هو ${options.questionCount} سؤال بالضبط.
+`.trim();
+}
+
+// ── Type alias normalization ─────────────────────────────────────────────────
+const typeAliasMap: Record<string, string> = {
+    'TF':              'TRUE_FALSE',
+    'TRUE-FALSE':      'TRUE_FALSE',
+    'TRUE/FALSE':      'TRUE_FALSE',
+    'TRUEFALSE':       'TRUE_FALSE',
+    'BOOL':            'TRUE_FALSE',
+    'BOOLEAN':         'TRUE_FALSE',
+    'ESSAY':           'ESSAY',
+    'OPEN':            'ESSAY',
+    'OPEN_ENDED':      'ESSAY',
+    'MCQ':             'MCQ',
+    'MULTIPLE_CHOICE': 'MCQ',
+    'MULTIPLE-CHOICE': 'MCQ',
+    'MULTIPLE CHOICE': 'MCQ',
+    'اختيار من متعدد': 'MCQ',
+    'صح وخطأ':         'TRUE_FALSE',
+    'صح أم خطأ':       'TRUE_FALSE',
+    'مقالي':           'ESSAY',
+    'مقالي مفتوح':     'ESSAY',
+    'اختياري':         'MCQ',
+};
+
+function normalizeType(rawType: string): string {
+    if (!rawType) return 'MCQ'; // default
+    const t = String(rawType).trim().toUpperCase();
+    return typeAliasMap[t] ?? typeAliasMap[String(rawType).trim()] ?? t;
+}
+
 export function AIGenerateExamModal({ open, onOpenChange }: Props) {
     const user = useAuthStore((s) => s.user);
     const allowedGrades = getAllowedGrades(user?.stage);
@@ -47,8 +147,10 @@ export function AIGenerateExamModal({ open, onOpenChange }: Props) {
     const [selectedGroups,   setSelectedGroups]   = useState<string[]>([]);
     const [questionCount,    setQuestionCount]    = useState(10);
     const [difficulty,       setDifficulty]       = useState('mixed');
+    const [language,         setLanguage]         = useState('Arabic');
     const [selectedTypes,    setSelectedTypes]    = useState<string[]>(['MCQ']);
     const [marksPerQuestion, setMarksPerQuestion] = useState(2);
+    const [statusText,       setStatusText]       = useState('');
 
     const { data: groupsData } = useQuery({
         queryKey: ['groups'],
@@ -57,36 +159,96 @@ export function AIGenerateExamModal({ open, onOpenChange }: Props) {
     const groups = (groupsData as any)?.data ?? (groupsData as any) ?? [];
 
     const mutation = useMutation({
-        mutationFn: () => {
+        mutationFn: async () => {
             if (!file)  throw new Error('اختر ملف PDF أولاً');
             if (!title) throw new Error('أدخل عنوان الامتحان');
             if (!date)  throw new Error('أدخل التاريخ');
 
-            const fd = new FormData();
-            fd.append('pdf',             file);
-            fd.append('title',           title);
-            fd.append('date',            date);
-            // passingMarks = user override OR 50% of (questionCount × marksPerQuestion)
+            // Step 1: Parse PDF on the client
+            setStatusText('جاري قراءة ملف الـ PDF...');
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            
+            let fullText = '';
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const textContent = await page.getTextContent();
+                const pageText = textContent.items
+                    .map((item: any) => item.str)
+                    .join(' ');
+                fullText += pageText + '\n';
+            }
+
+            if (fullText.trim().length < 50) {
+                throw new Error('لم يتم العثور على نص كافٍ في الـ PDF');
+            }
+
+            // Step 2: Build prompt and send to proxy
+            setStatusText('جاري توليد الأسئلة بالذكاء الاصطناعي...');
+            const prompt = buildPrompt(fullText, {
+                questionCount,
+                difficulty,
+                questionTypes: selectedTypes,
+                marksPerQuestion,
+                language,
+            });
+
+            const { text: aiResponse } = await aiProxy(prompt);
+
+            // Step 3: Parse AI response
+            setStatusText('جاري تحليل الاستجابة...');
+            let parsed: { questions: any[] };
+            try {
+                const clean = aiResponse.replace(/```json|```/g, '').trim();
+                parsed = JSON.parse(clean);
+            } catch {
+                throw new Error('فشل في تحليل استجابة الذكاء الاصطناعي — حاول مجدداً');
+            }
+
+            if (!Array.isArray(parsed.questions) || parsed.questions.length === 0) {
+                throw new Error('لم يُولِّد الذكاء الاصطناعي أسئلة — حاول مجدداً');
+            }
+
+            // Normalize types
+            parsed.questions = parsed.questions.map((q: any) => ({
+                ...q,
+                type: normalizeType(q.type),
+            }));
+
+            // Step 4: Create exam via existing API
+            setStatusText('جاري حفظ الامتحان...');
+            const totalMarks = parsed.questions.reduce((sum: number, q: any) => sum + (q.marks ?? marksPerQuestion), 0);
             const autoPassingMarks = passingMarksOverride
                 ? Number(passingMarksOverride)
-                : Math.round(questionCount * marksPerQuestion * 0.5);
-            fd.append('passingMarks',    String(autoPassingMarks));
-            fd.append('questionCount',   String(questionCount));
-            fd.append('difficulty',      difficulty);
-            fd.append('marksPerQuestion',String(marksPerQuestion));
-            if (gradeLevel) fd.append('gradeLevel', gradeLevel);
-            selectedGroups.forEach((g) => fd.append('groupIds', g));
-            selectedTypes.forEach((t)  => fd.append('questionTypes', t));
+                : Math.round(totalMarks * 0.5);
 
-            return generateExamFromPdf(fd);
+            const exam = await createExam({
+                title,
+                date,
+                totalMarks,
+                passingMarks: autoPassingMarks,
+                questions:    parsed.questions,
+                source:       'AI_GENERATED' as any,
+                ...(gradeLevel ? { gradeLevel } : {}),
+                ...(selectedGroups.length > 0 ? { groupIds: selectedGroups } : {}),
+            });
+
+            return {
+                exam,
+                message: `تم توليد ${parsed.questions.length} سؤال بنجاح — راجع الامتحان واعتمده أو احذفه`,
+            };
         },
         onSuccess: (res) => {
-            toast.success(res.message ?? 'تم توليد الامتحان بنجاح');
+            setStatusText('');
+            toast.success(res.message);
             queryClient.invalidateQueries({ queryKey: ['exams'] });
             onOpenChange(false);
             router.push(`/exams/${res.exam._id}`);
         },
-        
+        onError: (err: any) => {
+            setStatusText('');
+            toast.error(err?.message ?? 'حدث خطأ');
+        },
     });
 
     const toggleGroup = (id: string) =>
@@ -207,7 +369,20 @@ export function AIGenerateExamModal({ open, onOpenChange }: Props) {
                     {/* AI Options */}
                     <div className="bg-gray-50 rounded-xl p-4 space-y-4 border border-gray-100">
                         <p className="text-sm font-semibold text-gray-700">إعدادات الذكاء الاصطناعي</p>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                            <div>
+                                <label className="text-xs font-medium text-gray-600 block mb-1">اللغة</label>
+                                <Select value={language} onValueChange={setLanguage} dir="rtl">
+                                    <SelectTrigger className="bg-white border-gray-200">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent dir="rtl">
+                                        <SelectItem value="Arabic">العربية</SelectItem>
+                                        <SelectItem value="English">الإنجليزية</SelectItem>
+                                        <SelectItem value="French">الفرنسية</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
                             <div>
                                 <label className="text-xs font-medium text-gray-600 block mb-1">عدد الأسئلة</label>
                                 <Input
@@ -261,7 +436,7 @@ export function AIGenerateExamModal({ open, onOpenChange }: Props) {
                     {mutation.isPending && (
                         <div className="flex flex-col items-center gap-3 py-4 text-primary">
                             <Loader2 className="h-8 w-8 animate-spin" />
-                            <p className="text-sm font-medium">جاري توليد الامتحان بالذكاء الاصطناعي...</p>
+                            <p className="text-sm font-medium">{statusText || 'جاري التحضير...'}</p>
                             <p className="text-xs text-gray-400">قد يستغرق ذلك دقيقة أو أكثر حسب حجم الملف</p>
                         </div>
                     )}

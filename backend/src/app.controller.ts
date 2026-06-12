@@ -1,4 +1,5 @@
 import express from 'express';
+import os from 'os';
 import cors from 'cors';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
@@ -19,7 +20,7 @@ import attendanceRouter from './modules/attendance/attendance.controller.js';
 import paymentsRouter from './modules/payments/payments.controller.js';
 import notebooksRouter from './modules/notebooks/notebooks.controller.js';
 import reportsRouter from './modules/reports/reports.controller.js';
-import examsRouter  from './modules/exams/exams.controller.js';
+import examsRouter, { aiProxyRouter }  from './modules/exams/exams.controller.js';
 import parentRouter from './modules/parent/parent.controller.js';
 import adminRouter  from './modules/admin/admin.controller.js';
 import whatsappRouter from './modules/whatsapp/whatsapp.controller.js';
@@ -94,6 +95,17 @@ export const bootstrap = async () => {
                 userId:     user?.userId ?? null,
                 role:       user?.role   ?? null,
             });
+
+            // Slow query warning — helps catch performance regressions early
+            if (durationMs > 3000) {
+                logger.warn('slow_request', {
+                    requestId:  req.requestId,
+                    method:     req.method,
+                    path:       req.path,
+                    durationMs: Math.round(durationMs),
+                    userId:     user?.userId ?? null,
+                });
+            }
         });
 
         next();
@@ -108,7 +120,7 @@ export const bootstrap = async () => {
     startWhatsAppWorker();
     // 3. Start the BullMQ worker for email jobs
     startEmailWorker();
-    // 4. Register cron-based automation jobs (weekly report + payment reminders)
+    // 4. Register cron-based automation jobs (weekly report + payment reminders + weekly archival)
     startAutomationScheduler();
 
     // Global rate limiter: 3000 requests per 15 minutes per IP
@@ -130,6 +142,7 @@ export const bootstrap = async () => {
         legacyHeaders: false,
     });
     app.use('/exams/ai/generate', aiLimiter);
+    app.use('/exams/ai-proxy', aiLimiter);
 
     // Rate limit: max 10 login attempts per 15 minutes per IP
     const loginLimiter = rateLimit({
@@ -160,6 +173,7 @@ export const bootstrap = async () => {
     app.use('/notebooks', notebooksRouter)    // Notebooks inventory routes
     app.use('/reports', reportsRouter)         // Reports routes
     app.use('/exams', examsRouter)              // Exams + AI Generation routes
+    app.use('/exams/ai-proxy', aiProxyRouter)   // AI proxy (lightweight — text only)
     app.use('/whatsapp', whatsappRouter)          // WhatsApp multi-tenant client mgmt
     app.use('/admin', adminRouter)              // Super Admin routes
 
@@ -174,6 +188,11 @@ export const bootstrap = async () => {
                 heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),
                 heapTotalMB: Math.round(mem.heapTotal / 1024 / 1024),
                 rssMB: Math.round(mem.rss / 1024 / 1024),
+            },
+            os: {
+                loadAvg: os.loadavg().map(l => Math.round(l * 100) / 100),
+                freeMemMB: Math.round(os.freemem() / 1024 / 1024),
+                totalMemMB: Math.round(os.totalmem() / 1024 / 1024),
             },
         });
     });

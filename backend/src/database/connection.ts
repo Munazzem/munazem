@@ -8,7 +8,11 @@ const BASE_DELAY_MS = 2_000; // 2s → 4s → 8s → 16s → 32s
 export const DBConnection = async (): Promise<void> => {
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
-            await mongoose.connect(envVars.mongo_url as string);
+            await mongoose.connect(envVars.mongo_url as string, {
+                maxPoolSize: 20,    // Appropriate for KVM 2 VPS — prevents connection exhaustion
+                minPoolSize: 2,     // Keep 2 connections warm for fast first queries
+                serverSelectionTimeoutMS: 10_000,
+            });
             logger.info('db_connected', { message: 'Connected to MongoDB' });
             return;
         } catch (error: any) {

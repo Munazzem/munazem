@@ -4,6 +4,7 @@ import { NotFoundException, BadRequestException } from '../../common/utils/respo
 import type { CreateGroupDTO, UpdateGroupDTO } from '../../types/dto.types.js';
 import { UserModel } from '../../database/models/user.model.js';
 import { STAGE_GRADES, GradeLevel, TeacherStage } from '../../common/enums/enum.service.js';
+import { cache, CacheKeys, CacheTTL } from '../../infrastructure/cache/cache.service.js';
 
 export class GroupService {
     
@@ -21,20 +22,34 @@ export class GroupService {
             }
         }
 
-        return await GroupModel.create({
+        const newGroup = await GroupModel.create({
             name:       data.name,
             gradeLevel: data.gradeLevel,
             schedule:   data.schedule,
             teacherId,
             ...(data.capacity ? { capacity: data.capacity } : {}),
         });
+
+        // Invalidate dashboard and groups cache
+        await cache.invalidate(`t:${teacherId}:*`);
+
+        return newGroup;
     }
 
     // Get all groups for a specific teacher with pagination
     static async getGroupsByTeacherId(teacherId: string, queryFilters: any = {}) {
         const page  = Math.max(1, parseInt(queryFilters.page)  || 1);
-        const limit = Math.min(500, Math.max(1, parseInt(queryFilters.limit) || 20));
+        const limit = Math.min(100, Math.max(1, parseInt(queryFilters.limit) || 20));
         const skip  = (page - 1) * limit;
+
+        // Try cache first (only for first page without filters)
+        const cacheKey = CacheKeys.groups(teacherId);
+        const isDefaultQuery = page === 1 && limit === 20 && !queryFilters.gradeLevel;
+        
+        if (isDefaultQuery) {
+            const cached = await cache.get(cacheKey);
+            if (cached) return cached;
+        }
 
         const filter: any = { teacherId };
         if (queryFilters.gradeLevel) filter.gradeLevel = queryFilters.gradeLevel;
@@ -63,7 +78,7 @@ export class GroupService {
             studentsCount: countMap.get(g._id.toString()) ?? 0,
         }));
 
-        return {
+        const result = {
             data,
             pagination: {
                 total,
@@ -72,6 +87,12 @@ export class GroupService {
                 totalPages: Math.ceil(total / limit)
             }
         };
+
+        if (isDefaultQuery) {
+            await cache.set(cacheKey, result, CacheTTL.GROUPS);
+        }
+
+        return result;
     }
 
     // Get a specific group details
@@ -90,6 +111,10 @@ export class GroupService {
         ).lean();
 
         if (!updatedGroup) throw NotFoundException({ message: 'المجموعة غير موجودة' });
+
+        // Invalidate cache
+        await cache.invalidate(`t:${teacherId}:*`);
+
         return updatedGroup;
     }
 
@@ -104,6 +129,10 @@ export class GroupService {
         }
 
         await GroupModel.findOneAndDelete({ _id: groupId, teacherId });
+        
+        // Invalidate cache
+        await cache.invalidate(`t:${teacherId}:*`);
+        
         return group;
     }
 }

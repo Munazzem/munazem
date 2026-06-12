@@ -164,7 +164,7 @@ export async function generatePaymentReminders(teacherId?: string): Promise<void
     const query: any = { role: UserRole.teacher, isActive: true, whatsappStatus: 'connected' };
     if (teacherId) query._id = teacherId;
 
-    const teachers = await UserModel.find(query, { _id: 1, name: 1, phone: 1 }).lean();
+    const teachers = await UserModel.find(query, { _id: 1, name: 1, phone: 1, subject: 1 }).lean();
 
     if (teachers.length === 0) {
         logger.info('automation_reminder_no_teachers');
@@ -268,7 +268,7 @@ export async function generatePaymentReminders(teacherId?: string): Promise<void
                         parentPhone: student.parentPhone,
                         studentName: student.studentName,
                         gradeLevel:  student.gradeLevel,
-                        teacherName: teacher.name,
+                        teacherName: (teacher as any).subject ? `${teacher.name} (${(teacher as any).subject})` : teacher.name,
                     });
 
                     totalReminders++;

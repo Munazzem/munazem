@@ -14,6 +14,7 @@ import {
     Trash2, 
     FileText,
     FileDown,
+    FileSpreadsheet,
     Loader2,
     AlertCircle,
     Phone,
@@ -34,6 +35,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { AddStudentModal } from '@/components/students/AddStudentModal';
 import { BulkAddStudentsModal } from '@/components/students/BulkAddStudentsModal';
+import { ImportExcelModal } from '@/components/students/ImportExcelModal';
 import { EditStudentModal } from '@/components/students/EditStudentModal';
 import { GroupAccordionView } from '@/components/students/GroupAccordionView';
 import { StudentsList } from '@/components/students/StudentsList';
@@ -68,6 +70,7 @@ export default function StudentsPage() {
     const [bulkPrinting, setBulkPrinting] = useState(false);
     const [sheetLoading, setSheetLoading] = useState(false);
     const [showUnpaidOnly, setShowUnpaidOnly] = useState(false);
+    const [showImportExcel, setShowImportExcel] = useState(false);
 
     const handleToggleSelect = (id: string) => {
         setSelectedIds((prev) => {
@@ -268,6 +271,15 @@ export default function StudentsPage() {
                                 طباعة كشف الحضور
                             </Button>
                         )}
+                        <Button
+                            variant="outline"
+                            onClick={() => setShowImportExcel(true)}
+                            className="gap-2 border-green-300 text-green-700 hover:bg-green-50"
+                        >
+                            <FileSpreadsheet className="h-4 w-4" />
+                            <span className="hidden sm:inline">استيراد Excel</span>
+                            <span className="sm:hidden">Excel</span>
+                        </Button>
                         <BulkAddStudentsModal />
                         <AddStudentModal />
                     </div>
@@ -412,6 +424,7 @@ export default function StudentsPage() {
             )}
 
             <EditStudentModal open={isEditModalOpen} onOpenChange={setIsEditModalOpen} student={selectedStudent} />
+            <ImportExcelModal open={showImportExcel} onOpenChange={setShowImportExcel} />
 
             <ConfirmDialog
                 open={confirmDeleteOpen}
