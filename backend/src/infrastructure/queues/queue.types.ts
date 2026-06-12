@@ -29,6 +29,7 @@ export interface ExamResultPayload {
     grade:       string;   // A+, A, B … F
     passed:      boolean;
     examDate:    string;   // ISO string
+    teacherName: string;
 }
 
 export type WhatsAppJobData = SessionAbsentPayload | ExamResultPayload;

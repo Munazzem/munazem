@@ -11,20 +11,87 @@ const INTER_MESSAGE_DELAY_MS = 4_000;
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
+// ─── Payment reminder templates (randomized to reduce ban risk) ───────────────
+const PAYMENT_REMINDER_TEMPLATES = [
+    (s: string, t: string) =>
+        `السلام عليكم ورحمة الله \n` +
+        `نُذكركم بضرورة سداد المصاريف المستحقة للطالب/ة: *${s}* عن هذا الشهر.\n\n` +
+        `لإيقاف هذه الرسائل، أرسل "إلغاء".\n\n` +
+        `مع تحيات أ/ ${t}`,
+
+    (s: string, t: string) =>
+        `أهلاً بكم \n` +
+        `نلفت انتباهكم إلى أن الطالب/ة: *${s}* لم يقم بتسديد اشتراك الشهر الحالي حتى الآن.\n\n` +
+        `لإيقاف هذه الرسائل، أرسل "إلغاء".\n\n` +
+        `مع تحيات أ/ ${t}`,
+
+    (s: string, t: string) =>
+        `تحية طيبة 🌟\n` +
+        `رسالة تذكيرية بخصوص سداد اشتراك الشهر للطالب/ة: *${s}* لتأكيد الاستمرار.\n\n` +
+        `لإيقاف هذه الرسائل، أرسل "إلغاء".\n\n` +
+        `مع تحيات أ/ ${t}`,
+];
+
+// ─── Absence templates (randomized to reduce ban risk) ────────────────────────
+const SESSION_ABSENT_TEMPLATES = [
+    (s: string, g: string, d: string, t: string) =>
+        `السلام عليكم ورحمة الله وبركاته 🌙\n\n` +
+        `نُعلمكم بغياب الطالب/ة: *${s}*\n` +
+        `عن حصة مجموعة: *${g}*\n` +
+        `بتاريخ: ${d}\n\n` +
+        `مع تحيات أ/ ${t}\n` +
+        `شكراً لمتابعتكم 🙏`,
+
+    (s: string, g: string, d: string, t: string) =>
+        `أهلاً بكم \n\n` +
+        `نلفت انتباهكم إلى أن الطالب/ة: *${s}*\n` +
+        `لم يحضر/تحضر حصة اليوم (${d}) لمجموعة: *${g}*.\n\n` +
+        `برجاء المتابعة، مع تحيات أ/ ${t}`,
+
+    (s: string, g: string, d: string, t: string) =>
+        `تحية طيبة 🌟\n\n` +
+        `نود إبلاغكم بغياب الطالب/ة: *${s}*\n` +
+        `عن حصة مجموعة: *${g}* بتاريخ ${d}.\n\n` +
+        `نتمنى أن يكون المانع خيراً. مع تحيات أ/ ${t}`,
+];
+
+// ─── Exam Result templates (randomized to reduce ban risk) ────────────────────
+const EXAM_RESULT_TEMPLATES = [
+    (s: string, ex: string, d: string, score: number, total: number, perc: string, g: string, passLabel: string, t: string) =>
+        `السلام عليكم ورحمة الله وبركاته \n\n` +
+        `نتيجة امتحان: *${ex}*\n` +
+        `الطالب/ة: *${s}*\n` +
+        `التاريخ: ${d}\n\n` +
+        `الدرجة: *${score} / ${total}* (${perc}%)\n` +
+        `التقدير: *${g}* — ${passLabel}\n\n` +
+        `مع تحيات أ/ ${t}\n` +
+        `شكراً لمتابعتكم 🙏`,
+
+    (s: string, ex: string, d: string, score: number, total: number, perc: string, g: string, passLabel: string, t: string) =>
+        `أهلاً بكم \n\n` +
+        `نرفق لكم نتيجة الطالب/ة: *${s}* في امتحان *${ex}* (${d}):\n\n` +
+        `▪️ الدرجة: *${score} من ${total}*\n` +
+        `▪️ النسبة: ${perc}%\n` +
+        `▪️ التقدير العام: *${g}* (${passLabel})\n\n` +
+        `مع تحيات أ/ ${t}\n` +
+        `بالتوفيق دائماً 🌟`,
+
+    (s: string, ex: string, d: string, score: number, total: number, perc: string, g: string, passLabel: string, t: string) =>
+        `تحية طيبة 🌟\n\n` +
+        `تم رصد درجات امتحان *${ex}* بتاريخ ${d}.\n` +
+        `حصل الطالب/ة: *${s}* على درجة *${score} / ${total}* (${perc}%).\n\n` +
+        `مستوى الطالب: *${g}* (${passLabel})\n\n` +
+        `مع تحيات أ/ ${t}\n` +
+        `شكراً لتعاونكم.`,
+];
 // ─── Message builders ─────────────────────────────────────────────────────────
 function buildMessage(data: WhatsAppJobData): string {
     if (data.kind === 'session_absent') {
         const date = new Date(data.sessionDate).toLocaleDateString('ar-EG', {
             weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
         });
-        return (
-            `السلام عليكم ورحمة الله وبركاته 🌙\n\n` +
-            `نُعلمكم بغياب الطالب/ة: *${data.studentName}*\n` +
-            `عن حصة مجموعة: *${data.groupName}*\n` +
-            `بتاريخ: ${date}\n\n` +
-            `للتواصل: ${data.teacherName}\n` +
-            `شكراً لمتابعتكم 🙏`
-        );
+        const idx = Math.floor(Math.random() * SESSION_ABSENT_TEMPLATES.length);
+        return SESSION_ABSENT_TEMPLATES[idx]!(data.studentName, data.groupName, date, data.teacherName);
     }
 
     // kind === 'exam_result'
@@ -32,14 +99,12 @@ function buildMessage(data: WhatsAppJobData): string {
         year: 'numeric', month: 'long', day: 'numeric',
     });
     const passLabel = data.passed ? '✅ ناجح' : '❌ راسب';
-    return (
-        `السلام عليكم ورحمة الله وبركاته 🌙\n\n` +
-        `نتيجة امتحان: *${data.examTitle}*\n` +
-        `الطالب/ة: *${data.studentName}*\n` +
-        `التاريخ: ${date}\n\n` +
-        `الدرجة: *${data.score} / ${data.totalMarks}* (${data.percentage}%)\n` +
-        `التقدير: *${data.grade}* — ${passLabel}\n\n` +
-        `شكراً لمتابعتكم 🙏`
+    
+    const idx = Math.floor(Math.random() * EXAM_RESULT_TEMPLATES.length);
+    return EXAM_RESULT_TEMPLATES[idx]!(
+        data.studentName, data.examTitle, date, 
+        data.score, data.totalMarks, data.percentage.toString(), 
+        data.grade, passLabel, data.teacherName || ''
     );
 }
 
