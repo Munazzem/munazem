@@ -9,6 +9,7 @@ import mongoose from 'mongoose';
 import { TransactionType, TransactionCategory, SessionStatus, UserRole, AttendanceStatus } from '../../common/enums/enum.service.js';
 import { NotFoundException } from '../../common/utils/response/error.responce.js';
 import { BarcodeUtil } from '../../common/utils/barcode.util.js';
+import { cache, CacheKeys, CacheTTL } from '../../infrastructure/cache/cache.service.js';
 
 export class ReportsService {
 
@@ -26,7 +27,37 @@ export class ReportsService {
         // Get group name — scoped to same teacher for safety
         const group = await GroupModel.findOne({ _id: student.groupId, teacherId }, { name: 1 }).lean();
 
-        // Attendance: search all snapshots for sessions where this student appears
+        // Attendance: use aggregation for counts (avoids loading all snapshots into memory)
+        const [attendanceCounts] = await AttendanceSnapshotModel.aggregate([
+            {
+                $match: {
+                    teacherId: new mongoose.Types.ObjectId(teacherId),
+                    $or: [
+                        { 'presentStudents.studentId': student._id },
+                        { 'absentStudents.studentId':  student._id },
+                        { 'guestStudents.studentId':   student._id },
+                    ],
+                },
+            },
+            {
+                $project: {
+                    isPresent: { $cond: [{ $in: [student._id, '$presentStudents.studentId'] }, 1, 0] },
+                    isAbsent:  { $cond: [{ $in: [student._id, '$absentStudents.studentId'] }, 1, 0] },
+                },
+            },
+            {
+                $group: {
+                    _id: null,
+                    presentCount: { $sum: '$isPresent' },
+                    absentCount:  { $sum: '$isAbsent' },
+                },
+            },
+        ]);
+
+        const presentCount = attendanceCounts?.presentCount ?? 0;
+        const absentCount  = attendanceCounts?.absentCount  ?? 0;
+
+        // Attendance history — last 30 entries only (DB-level limit)
         const snapshots = await AttendanceSnapshotModel.find({
             teacherId,
             $or: [
@@ -36,46 +67,45 @@ export class ReportsService {
             ],
         }, {
             date: 1, presentStudents: 1, absentStudents: 1, guestStudents: 1,
-        }).sort({ date: -1 }).lean();
+        }).sort({ date: -1 }).limit(30).lean();
 
-        let presentCount = 0;
-        let absentCount  = 0;
-
-        // Build attendance history (per snapshot, last 30 entries)
-        const attendanceHistory = snapshots.slice(0, 30).map((snap: any) => {
+        const attendanceHistory = snapshots.map((snap: any) => {
             const isPresent = snap.presentStudents.some((s: any) => s.studentId.toString() === studentId);
             const isAbsent  = snap.absentStudents.some((s: any)  => s.studentId.toString() === studentId);
             const status    = isPresent ? 'PRESENT' : isAbsent ? 'ABSENT' : 'GUEST';
-            if (isPresent) presentCount++;
-            else if (isAbsent) absentCount++;
             return { date: snap.date, status };
         });
-
-        // Fix counts: iterate remaining snapshots not in history
-        for (const snap of snapshots.slice(30)) {
-            if (snap.presentStudents.some((s: any) => s.studentId.toString() === studentId)) presentCount++;
-            else if (snap.absentStudents.some((s: any) => s.studentId.toString() === studentId)) absentCount++;
-        }
 
         const totalSessions  = presentCount + absentCount;
         const attendanceRate = totalSessions > 0
             ? Math.round((presentCount / totalSessions) * 100)
             : 0;
 
-        // Payment history — subscriptions + notebooks for this student
-        const payments = await TransactionModel.find({
-            teacherId,
-            studentId:  student._id,
-            type:       TransactionType.INCOME,
-        }, {
-            category: 1, paidAmount: 1, originalAmount: 1,
-            discountAmount: 1, date: 1, description: 1,
-        }).sort({ date: -1 }).lean();
+        // Payment history — last 50 entries + totals via aggregation
+        const [payments, paymentTotals] = await Promise.all([
+            TransactionModel.find({
+                teacherId,
+                studentId:  student._id,
+                type:       TransactionType.INCOME,
+            }, {
+                category: 1, paidAmount: 1, originalAmount: 1,
+                discountAmount: 1, date: 1, description: 1,
+            }).sort({ date: -1 }).limit(50).lean(),
+            TransactionModel.aggregate([
+                { $match: { teacherId: new mongoose.Types.ObjectId(teacherId), studentId: student._id, type: TransactionType.INCOME } },
+                { $group: {
+                    _id: '$category',
+                    total: { $sum: '$paidAmount' },
+                    totalDiscount: { $sum: '$discountAmount' },
+                    count: { $sum: 1 },
+                }},
+            ]),
+        ]);
 
-        const totalPaid      = payments.reduce((sum, p) => sum + p.paidAmount, 0);
-        const totalDiscount  = payments.reduce((sum, p) => sum + p.discountAmount, 0);
-        const subscriptions  = payments.filter(p => p.category === TransactionCategory.SUBSCRIPTION);
-        const notebookSales  = payments.filter(p => p.category === TransactionCategory.NOTEBOOK_SALE);
+        const totalPaid     = paymentTotals.reduce((sum: number, p: any) => sum + p.total, 0);
+        const totalDiscount = paymentTotals.reduce((sum: number, p: any) => sum + p.totalDiscount, 0);
+        const subscriptionsCount = paymentTotals.find((p: any) => p._id === TransactionCategory.SUBSCRIPTION)?.count ?? 0;
+        const notebookSalesCount = paymentTotals.find((p: any) => p._id === TransactionCategory.NOTEBOOK_SALE)?.count ?? 0;
 
         // Active subscription = student still has remaining sessions in their cycle
         const hasActiveSubscription = ((student as any).remainingSessions ?? 0) > 0;
@@ -154,9 +184,8 @@ export class ReportsService {
             payments: {
                 totalPaid,
                 totalDiscount,
-                subscriptionsCount:  subscriptions.length,
-                notebookSalesCount:  notebookSales.length,
-                subscriptions,
+                subscriptionsCount,
+                notebookSalesCount,
                 history: payments,
             },
         };
@@ -179,15 +208,26 @@ export class ReportsService {
 
         const sessionIds = sessions.map(s => s._id);
 
-        // All snapshots for those sessions
+        // All snapshots for those sessions — paginated to prevent memory spikes
         const snapshots = await AttendanceSnapshotModel.find(
             { sessionId: { $in: sessionIds } },
             { date: 1, presentCount: 1, absentCount: 1, totalCount: 1 }
-        ).sort({ date: -1 }).lean();
+        ).sort({ date: -1 }).limit(100).lean();
 
-        const totalSessions      = snapshots.length;
-        const totalPresences     = snapshots.reduce((sum, s) => sum + s.presentCount, 0);
-        const totalAbsences      = snapshots.reduce((sum, s) => sum + s.absentCount,  0);
+        // Get total counts via aggregation (without loading all docs)
+        const [snapshotTotals] = await AttendanceSnapshotModel.aggregate([
+            { $match: { sessionId: { $in: sessionIds } } },
+            { $group: {
+                _id: null,
+                totalSessions:  { $sum: 1 },
+                totalPresences: { $sum: '$presentCount' },
+                totalAbsences:  { $sum: '$absentCount' },
+            }},
+        ]);
+
+        const totalSessions      = snapshotTotals?.totalSessions  ?? 0;
+        const totalPresences     = snapshotTotals?.totalPresences ?? 0;
+        const totalAbsences      = snapshotTotals?.totalAbsences  ?? 0;
         const avgAttendanceRate  = totalSessions > 0
             ? Math.round((totalPresences / (totalPresences + totalAbsences)) * 100)
             : 0;
@@ -291,6 +331,11 @@ export class ReportsService {
     // 4. Dashboard Summary — quick stats for the teacher's home page
     // ══════════════════════════════════════════════════════════════
     static async getDashboardSummary(teacherId: string, role: UserRole) {
+        // Check cache first
+        const cacheKey = CacheKeys.dashboard(teacherId);
+        const cached = await cache.get(cacheKey);
+        if (cached) return cached;
+
         const now   = new Date();
         const year  = now.getUTCFullYear();
         const month = now.getUTCMonth() + 1;
@@ -436,7 +481,7 @@ export class ReportsService {
             income: rawMap.get(`${y}-${m}`) ?? 0,
         }));
 
-        return {
+        const result = {
             totalStudents,
             totalGroups,
             sessionsThisMonth,
@@ -452,6 +497,11 @@ export class ReportsService {
                 attendanceTrend
             }
         };
+
+        // Cache the result for 5 minutes
+        await cache.set(cacheKey, result, CacheTTL.DASHBOARD);
+
+        return result;
     }
 
     // ══════════════════════════════════════════════════════════════
