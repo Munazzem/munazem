@@ -6,9 +6,9 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// explicitly load env from this config folder; dotenv defaults to
-// process.cwd() so it might miss a config subdir.
-dotenv.config({ path: path.resolve(__dirname, ".env") });
+// explicitly load env from this config folder using process.cwd()
+// so it works correctly both in dev (src/) and production (dist/)
+dotenv.config({ path: path.join(process.cwd(), "config", ".env") });
 
 const mongo_url = process.env.MONGO_URL;
 const port = process.env.PORT;

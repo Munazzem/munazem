@@ -13,43 +13,14 @@ import { NotFoundException, BadRequestException } from '../../common/utils/respo
 import { trackEvent } from '../../common/utils/activity.service.js';
 import { withTransaction } from '../../common/utils/transaction.util.js';
 import { cache, CacheKeys, CacheTTL } from '../../infrastructure/cache/cache.service.js';
+import { startOfDayEgypt, resolveTransactionDate } from '../../common/utils/date.util.js';
 import type { IPriceSetting } from '../../types/price-settings.types.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────
+// Date helpers (startOfDayEgypt, resolveTransactionDate) are imported from common/utils/date.util.ts
 
-// Maps any timestamp to the midnight UTC of the day it falls on in Egypt.
-// Example: 10 PM Egypt time (19:00 UTC) on May 18 → May 18 00:00:00 UTC.
-// Example: 1 AM Egypt time (22:00 UTC) on May 19 → May 19 00:00:00 UTC.
-// This perfectly aligns with existing data keys (which were saved exactly at 00:00:00 UTC).
-function startOfDay(date: Date): Date {
-    const EGYPT_OFFSET_MS = 3 * 60 * 60 * 1000;
-    const local = new Date(date.getTime() + EGYPT_OFFSET_MS);
-    return new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate(), 0, 0, 0, 0));
-}
-
-// Resolves a transaction date string to a precise Date object.
-// If it's today's date in Egypt, it uses the exact current time.
-// If it's backdated, it defaults to 12:00 PM (Noon) Egypt time to avoid 3:00 AM weirdness.
-export function resolveTransactionDate(dateStr?: string): Date {
-    if (!dateStr) return new Date();
-    if (dateStr.includes('T')) return new Date(dateStr);
-    
-    const parts = dateStr.split('-');
-    if (parts.length === 3) {
-        const EGYPT_OFFSET_MS = 3 * 60 * 60 * 1000;
-        const now = new Date();
-        const egyptNow = new Date(now.getTime() + EGYPT_OFFSET_MS);
-        const todayStr = egyptNow.toISOString().split('T')[0];
-        
-        if (dateStr === todayStr) {
-            return now; // exact current time
-        } else {
-            // Noon Egypt time (09:00 UTC)
-            return new Date(Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 9, 0, 0, 0));
-        }
-    }
-    return new Date(dateStr);
-}
+// Alias for backward compatibility within this file
+const startOfDay = startOfDayEgypt;
 
 // Atomically updates (upsert) the DailyLedger when a transaction occurs
 async function updateDailyLedger(
@@ -671,55 +642,65 @@ export class PaymentsService {
         if (data.description !== undefined)   update['description']     = data.description;
         if (data.date        !== undefined)   update['date']            = resolveTransactionDate(data.date);
 
-        const updated = await TransactionModel.findByIdAndUpdate(
-            transactionId,
-            { $set: update },
-            { new: true, runValidators: true }
-        ).lean();
+        // ── All mutations wrapped in a transaction (all-or-nothing) ──
+        const updated = await withTransaction(async (session) => {
+            const result = await TransactionModel.findByIdAndUpdate(
+                transactionId,
+                { $set: update },
+                { new: true, runValidators: true, session }
+            ).lean();
 
-        // ── Sync ledgers if amount changed ──────────────────────────────
+            // ── Sync ledgers if amount changed ──────────────────────────────
+            if (data.amount !== undefined && data.amount !== transaction.paidAmount) {
+                const delta     = data.amount - transaction.paidAmount;
+                const isIncome  = transaction.type === TransactionType.INCOME;
+                const txDate    = transaction.date;
+                const day       = startOfDay(new Date(txDate));
+                const year      = new Date(txDate).getUTCFullYear();
+                const month     = new Date(txDate).getUTCMonth() + 1;
+
+                await Promise.all([
+                    // Update DailyLedger totals
+                    DailyLedgerModel.findOneAndUpdate(
+                        { teacherId, date: day },
+                        {
+                            $inc: {
+                                totalIncome:   isIncome ? delta : 0,
+                                totalExpenses: isIncome ? 0 : delta,
+                                netBalance:    isIncome ? delta : -delta,
+                            },
+                        },
+                        { session }
+                    ),
+                    // Update MonthlyLedger totals + daily summary entry
+                    MonthlyLedgerModel.findOneAndUpdate(
+                        { teacherId, year, month, 'dailySummaries.date': day },
+                        {
+                            $inc: {
+                                totalIncome:                       isIncome ? delta : 0,
+                                totalExpenses:                     isIncome ? 0 : delta,
+                                netBalance:                        isIncome ? delta : -delta,
+                                'dailySummaries.$.totalIncome':    isIncome ? delta : 0,
+                                'dailySummaries.$.totalExpenses':  isIncome ? 0 : delta,
+                                'dailySummaries.$.netBalance':     isIncome ? delta : -delta,
+                            },
+                        },
+                        { session }
+                    ),
+                    // Update the embedded transaction amount in DailyLedger.transactions array
+                    DailyLedgerModel.findOneAndUpdate(
+                        { teacherId, date: day, 'transactions.transactionId': transaction._id },
+                        { $set: { 'transactions.$.paidAmount': data.amount } },
+                        { session }
+                    ),
+                ]);
+            }
+
+            return result;
+        });
+
+        // Cache invalidation AFTER successful commit (fire-and-forget)
         if (data.amount !== undefined && data.amount !== transaction.paidAmount) {
-            const delta     = data.amount - transaction.paidAmount;
-            const isIncome  = transaction.type === TransactionType.INCOME;
-            const txDate    = transaction.date;
-            const day       = startOfDay(new Date(txDate));
-            const year      = new Date(txDate).getUTCFullYear();
-            const month     = new Date(txDate).getUTCMonth() + 1;
-
-            // Update DailyLedger
-            await DailyLedgerModel.findOneAndUpdate(
-                { teacherId, date: day },
-                {
-                    $inc: {
-                        totalIncome:   isIncome ? delta : 0,
-                        totalExpenses: isIncome ? 0 : delta,
-                        netBalance:    isIncome ? delta : -delta,
-                    },
-                }
-            );
-
-            // Update MonthlyLedger
-            await MonthlyLedgerModel.findOneAndUpdate(
-                { teacherId, year, month, 'dailySummaries.date': day },
-                {
-                    $inc: {
-                        totalIncome:                       isIncome ? delta : 0,
-                        totalExpenses:                     isIncome ? 0 : delta,
-                        netBalance:                        isIncome ? delta : -delta,
-                        'dailySummaries.$.totalIncome':    isIncome ? delta : 0,
-                        'dailySummaries.$.totalExpenses':  isIncome ? 0 : delta,
-                        'dailySummaries.$.netBalance':     isIncome ? delta : -delta,
-                    },
-                }
-            );
-
-            // Update the embedded transaction amount in DailyLedger.transactions array
-            await DailyLedgerModel.findOneAndUpdate(
-                { teacherId, date: day, 'transactions.transactionId': transaction._id },
-                { $set: { 'transactions.$.paidAmount': data.amount } }
-            );
-
-            // Invalidate dashboard cache so fresh data is shown
             cache.del(CacheKeys.dashboard(teacherId));
         }
 

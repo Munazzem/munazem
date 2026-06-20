@@ -11,6 +11,7 @@ import { NotFoundException } from '../../common/utils/response/error.responce.js
 import { BarcodeUtil } from '../../common/utils/barcode.util.js';
 import { cache, CacheKeys, CacheTTL } from '../../infrastructure/cache/cache.service.js';
 import { logger } from '../../common/utils/logger.util.js';
+import { todayEgypt, egyptDayBounds } from '../../common/utils/date.util.js';
 
 export class ReportsService {
 
@@ -512,21 +513,13 @@ export class ReportsService {
         // dateStr arrives as "YYYY-MM-DD" (local date chosen by the user).
         // When omitted, we default to "today" in Egypt timezone (UTC+3).
         // This prevents showing yesterday's data after midnight Egypt time.
-        const dateKey = (() => {
-            if (dateStr) return dateStr;
-            // Current date in Egypt timezone (UTC+3)
-            const EGYPT_OFFSET_MS = 3 * 60 * 60 * 1000;
-            const egyptNow = new Date(Date.now() + EGYPT_OFFSET_MS);
-            return egyptNow.toISOString().split('T')[0]!;
-        })();
+        const dateKey = dateStr || todayEgypt();
         const parts   = dateKey.split('-').map(Number);
         const y = parts[0]!;
         const m = parts[1]!;
         const d = parts[2]!;
-        // Use Egypt midnight boundaries (21:00 UTC prev day → 21:00 UTC this day)
-        const EGYPT_OFFSET_MS = 3 * 60 * 60 * 1000;
-        const dayStart = new Date(Date.UTC(y, m - 1, d, 0,  0,  0,   0) - EGYPT_OFFSET_MS);
-        const dayEnd   = new Date(Date.UTC(y, m - 1, d, 23, 59, 59, 999) - EGYPT_OFFSET_MS);
+        // Use centralized Egypt day boundaries
+        const { dayStart, dayEnd } = egyptDayBounds(y, m, d);
 
         const tid = new mongoose.Types.ObjectId(teacherId);
 
