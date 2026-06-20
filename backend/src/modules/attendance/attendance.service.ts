@@ -11,15 +11,11 @@ import { withTransaction } from '../../common/utils/transaction.util.js';
 import type { RecordAttendanceDTO, BatchAttendanceDTO } from '../../types/attendance-dto.types.js';
 import { enqueueWhatsApp } from '../../infrastructure/queues/whatsapp.queue.js';
 import mongoose from 'mongoose';
+import { startOfDayEgyptMs } from '../../common/utils/date.util.js';
 
 // ─── Date helper ─────────────────────────────────────────────────────────────
-/** Returns midnight of the given date in Egypt timezone (UTC+3), as ms. */
-const startOfDay = (d: Date): number => {
-    const EGYPT_OFFSET_MS = 3 * 60 * 60 * 1000;
-    const local = new Date(d.getTime() + EGYPT_OFFSET_MS);
-    local.setUTCHours(0, 0, 0, 0);
-    return local.getTime() - EGYPT_OFFSET_MS;
-};
+// Centralized in common/utils/date.util.ts — returns midnight Egypt time as ms
+const startOfDay = startOfDayEgyptMs;
 
 export class AttendanceService {
 

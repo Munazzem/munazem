@@ -8,24 +8,11 @@ import { UserRole, SessionStatus, TransactionType, TransactionCategory }
     from '../../common/enums/enum.service.js';
 import { enqueueWhatsApp, enqueueEmail } from '../../infrastructure/queues/whatsapp.queue.js';
 import { logger }           from '../../common/utils/logger.util.js';
+import { DAY_MAP, startOfDayEgypt } from '../../common/utils/date.util.js';
 
-// ─── Day-name helper (same mapping used in sessions.service.ts) ──────────────
-const DAY_MAP: Record<string, number> = {
-    'الأحد': 0, 'الاحد': 0,
-    'الاثنين': 1, 'الإثنين': 1,
-    'الثلاثاء': 2,
-    'الأربعاء': 3, 'الاربعاء': 3,
-    'الخميس': 4,
-    'الجمعة': 5,
-    'السبت': 6,
-};
-
-// Egypt UTC offset (UTC+2 base, but we simplify to +3 for EET summer)
-const EGYPT_OFFSET_MS = 3 * 60 * 60 * 1000;
-
+// egyptToday: returns midnight UTC of today in Egypt timezone
 function egyptToday(): Date {
-    const now = new Date(Date.now() + EGYPT_OFFSET_MS);
-    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    return startOfDayEgypt(new Date());
 }
 
 function formatDateAr(date: Date): string {
