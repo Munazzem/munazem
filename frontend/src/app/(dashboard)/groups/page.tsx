@@ -96,8 +96,7 @@ export default function GroupsPage() {
             setGroupToDelete(null);
         },
         onError: (error: { response?: { data?: { message?: string } } } | Error) => {
-            const err = error as { response?: { data?: { message?: string } } };
-            toast.error(err.response?.data?.message || 'فشل حذف المجموعة.');
+            // Handled globally
         }
     });
 

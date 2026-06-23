@@ -100,8 +100,7 @@ export function CreateExamModal({ open, onOpenChange }: Props) {
             onOpenChange(false);
         },
         onError: (err: any) => {
-            const backendMsg = err.response?.data?.message;
-            toast.error(backendMsg || err.message || 'حدث خطأ أثناء إنشاء الامتحان');
+            // Handled globally
         }
     });
 

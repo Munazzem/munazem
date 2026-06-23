@@ -114,7 +114,7 @@ export default function StudentsPage() {
             printHtmlContent(combined);
             toast.success(`تم طباعة ${htmlParts.length} تقرير`);
         } catch {
-            toast.error('حدث خطأ أثناء الطباعة');
+            // Handled globally
         } finally {
             setBulkPrinting(false);
         }
@@ -135,7 +135,7 @@ export default function StudentsPage() {
             printHtmlContent(html);
             toast.success(`تم طباعة ${selectedStudents.length} كارت`);
         } catch {
-            toast.error('حدث خطأ أثناء طباعة الكروت');
+            // Handled globally
         } finally {
             setBulkCardsPrinting(false);
         }
@@ -148,7 +148,7 @@ export default function StudentsPage() {
             const html = await fetchGroupAttendanceSheetHtml(selectedGroup._id);
             printHtmlContent(html);
         } catch {
-            toast.error('فشل تحميل الكشف');
+            // Handled globally
         } finally {
             setSheetLoading(false);
         }

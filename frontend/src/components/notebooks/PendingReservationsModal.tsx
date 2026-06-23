@@ -62,7 +62,7 @@ export function PendingReservationsModal({ open, onOpenChange }: Props) {
             setAdditionalPayment('');
         },
         onError: (err: any) => {
-            toast.error(err?.response?.data?.message || 'حدث خطأ أثناء التسليم');
+            // Handled globally
         }
     });
 

@@ -5,7 +5,11 @@ import { SessionModel }      from '../../database/models/session.model.js';
 import { SubscriptionModel } from '../../database/models/subscription.model.js';
 import { ErrorLogModel }     from '../../database/models/error-log.model.js';
 import { ActivityLogModel }   from '../../database/models/activity-log.model.js';
-import { UserRole, SubscriptionStatus } from '../../common/enums/enum.service.js';
+import { PlatformSettingsModel } from '../../database/models/platform-settings.model.js';
+import { PromoCodeModel } from '../../database/models/promo-code.model.js';
+import { AnnouncementModel } from '../../database/models/announcement.model.js';
+import { UserRole, SubscriptionStatus, PLAN_PRICES } from '../../common/enums/enum.service.js';
+import { NotFoundException, BadRequestException } from '../../common/utils/response/error.responce.js';
 
 export class AdminService {
 
@@ -32,12 +36,55 @@ export class AdminService {
             ErrorLogModel.countDocuments({ level: { $in: ['error', 'critical'] }, createdAt: { $gte: monthStart } }),
         ]);
 
-        // Monthly revenue from active subscriptions
+        // MRR (Monthly Recurring Revenue) Calculation
+        // Sum of (amount / durationMonths) for all currently ACTIVE subscriptions
+        const mrrAgg = await SubscriptionModel.aggregate([
+            { $match: { status: SubscriptionStatus.ACTIVE } },
+            { 
+                $group: { 
+                    _id: null, 
+                    mrr: { $sum: { $divide: ['$amount', '$durationMonths'] } } 
+                } 
+            }
+        ]);
+        const mrr = Math.round(mrrAgg[0]?.mrr ?? 0);
+
+        // Monthly revenue (cash collected this month)
         const revenueAgg = await SubscriptionModel.aggregate([
             { $match: { createdAt: { $gte: monthStart } } },
             { $group: { _id: null, total: { $sum: '$amount' } } },
         ]);
-        const monthlyRevenue = revenueAgg[0]?.total ?? 0;
+        const monthlyRevenue = Math.round(revenueAgg[0]?.total ?? 0);
+
+        // Churn Rate: percentage of teachers whose subscriptions expired in the last 30 days and didn't renew
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const recentlyExpired = await SubscriptionModel.distinct('teacherId', { 
+            status: SubscriptionStatus.EXPIRED,
+            endDate: { $gte: thirtyDaysAgo }
+        });
+        const activeNow = await SubscriptionModel.distinct('teacherId', { status: SubscriptionStatus.ACTIVE });
+        const churnedTeachers = recentlyExpired.filter(id => !activeNow.some(aId => aId.toString() === id.toString())).length;
+        const totalEligible = recentlyExpired.length;
+        const churnRate = totalEligible > 0 ? Math.round((churnedTeachers / totalEligible) * 100) : 0;
+
+        // Top 5 Teachers by Student Count
+        const topTeachersAgg = await StudentModel.aggregate([
+            { $group: { _id: '$teacherId', studentCount: { $sum: 1 } } },
+            { $sort: { studentCount: -1 } },
+            { $limit: 5 },
+            { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'teacher' } },
+            { $unwind: '$teacher' },
+            { $project: { _id: 1, studentCount: 1, name: '$teacher.name', phone: '$teacher.phone' } }
+        ]);
+
+        // Expiring Soon Subscriptions (Next 15 days)
+        const fifteenDaysFromNow = new Date();
+        fifteenDaysFromNow.setDate(fifteenDaysFromNow.getDate() + 15);
+        const expiringSoon = await SubscriptionModel.find({
+            status: SubscriptionStatus.ACTIVE,
+            endDate: { $gte: now, $lte: fifteenDaysFromNow }
+        }).populate('teacherId', 'name phone').sort({ endDate: 1 }).lean();
 
         return {
             totalTeachers,
@@ -48,7 +95,16 @@ export class AdminService {
             expiredSubscriptions,
             newTeachersThisMonth,
             monthlyRevenue,
+            mrr,
+            churnRate,
             recentErrorsThisMonth: recentErrors,
+            topTeachers: topTeachersAgg,
+            expiringSoon: expiringSoon.map(sub => ({
+                _id: sub._id,
+                planTier: sub.planTier,
+                endDate: sub.endDate,
+                teacher: sub.teacherId
+            })),
         };
     }
 
@@ -206,5 +262,103 @@ export class AdminService {
         }));
 
         return { data: enriched, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } };
+    }
+
+    // ── Platform Settings (Dynamic Pricing) ───────────────────────────
+    static async getPlatformSettings() {
+        let settings = await PlatformSettingsModel.findOne({ key: 'PLAN_PRICES' }).lean();
+        if (!settings) {
+            // Seed with defaults if not exists
+            settings = await PlatformSettingsModel.create({
+                key: 'PLAN_PRICES',
+                value: PLAN_PRICES
+            });
+        }
+        return settings.value;
+    }
+
+    static async updatePlanPrices(newPrices: Record<string, number>) {
+        const settings = await PlatformSettingsModel.findOneAndUpdate(
+            { key: 'PLAN_PRICES' },
+            { value: newPrices },
+            { new: true, upsert: true }
+        ).lean();
+        return settings.value;
+    }
+
+    // ── Promo Codes ────────────────────────────────────────────────────────
+
+    static async getPromoCodes() {
+        return PromoCodeModel.find().sort({ createdAt: -1 }).lean();
+    }
+
+    static async createPromoCode(data: { code: string; discountPercentage: number; maxUses?: number; expiresAt?: Date }) {
+        const existing = await PromoCodeModel.findOne({ code: data.code.toUpperCase() });
+        if (existing) throw BadRequestException({ message: 'كود الخصم موجود بالفعل' });
+        
+        return PromoCodeModel.create({
+            ...data,
+            code: data.code.toUpperCase()
+        });
+    }
+
+    static async togglePromoCode(id: string) {
+        const promo = await PromoCodeModel.findById(id);
+        if (!promo) throw NotFoundException({ message: 'كود الخصم غير موجود' });
+        
+        promo.isActive = !promo.isActive;
+        await promo.save();
+        return promo;
+    }
+
+    static async deletePromoCode(id: string) {
+        const result = await PromoCodeModel.findByIdAndDelete(id);
+        if (!result) throw NotFoundException({ message: 'كود الخصم غير موجود' });
+        return true;
+    }
+
+    static async validatePromoCode(code: string) {
+        const promo = await PromoCodeModel.findOne({ code: code.toUpperCase() });
+        if (!promo) throw BadRequestException({ message: 'كود الخصم غير صحيح' });
+        if (!promo.isActive) throw BadRequestException({ message: 'كود الخصم غير مفعل' });
+        if (promo.expiresAt && promo.expiresAt < new Date()) throw BadRequestException({ message: 'كود الخصم منتهي الصلاحية' });
+        if (promo.maxUses && promo.usedCount >= promo.maxUses) throw BadRequestException({ message: 'تم تجاوز الحد الأقصى لاستخدام كود الخصم' });
+        
+        return promo;
+    }
+
+    // ── Announcements ──────────────────────────────────────────────────────
+
+    static async getAnnouncements() {
+        return AnnouncementModel.find().sort({ createdAt: -1 }).lean();
+    }
+
+    static async getActiveAnnouncements() {
+        return AnnouncementModel.find({ 
+            isActive: true,
+            $or: [
+                { expiresAt: null },
+                { expiresAt: { $gt: new Date() } }
+            ]
+        }).sort({ createdAt: -1 }).lean();
+    }
+
+    static async createAnnouncement(data: { title: string; content: string; type: 'info' | 'warning' | 'success'; expiresAt?: Date }) {
+        return AnnouncementModel.create(data);
+    }
+
+    static async toggleAnnouncement(id: string) {
+        const ann = await AnnouncementModel.findById(id);
+        if (!ann) throw NotFoundException({ message: 'الإشعار غير موجود' });
+        
+        ann.isActive = !ann.isActive;
+        await ann.save();
+        return ann;
+    }
+
+    static async deleteAnnouncement(id: string) {
+        const result = await AnnouncementModel.findByIdAndDelete(id);
+        if (!result) throw NotFoundException({ message: 'الإشعار غير موجود' });
+        return true;
     }
 }
