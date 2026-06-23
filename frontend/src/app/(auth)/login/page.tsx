@@ -48,7 +48,7 @@ export default function LoginPage() {
             }
         } catch (error: { response?: { data?: { message?: string } } } | unknown) {
             const err = error as { response?: { data?: { message?: string } } };
-            
+            toast.error(err.response?.data?.message || 'فشل تسجيل الدخول. يرجى المحاولة مرة أخرى.');
         } finally {
             setIsLoading(false);
         }

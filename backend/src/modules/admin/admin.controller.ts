@@ -7,6 +7,7 @@ import { SuccessResponse }  from '../../common/utils/response/success.responce.j
 import { NotFoundException } from '../../common/utils/response/error.responce.js';
 import { UserRole } from '../../common/enums/enum.service.js';
 import { ErrorLogModel } from '../../database/models/error-log.model.js';
+import { SubscriptionService } from '../subscriptions/subscriptions.service.js';
 
 import { generateWeeklyReports, generatePaymentReminders } from './../automation/automation.service.js';
 
@@ -86,6 +87,15 @@ adminRouter.post('/tenants/:id/activate', async (req: Request, res: Response, ne
     } catch (error) { next(error); }
 });
 
+// ── POST /admin/tenants/:id/subscription ────────────────────────────
+adminRouter.post('/tenants/:id/subscription', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { planTier, durationMonths, paymentMethod, promoCode } = req.body;
+        const data = await SubscriptionService.createSubscription(req.params['id'] as string, { planTier, durationMonths, paymentMethod, promoCode });
+        return SuccessResponse({ res, data, message: 'تم إضافة الاشتراك بنجاح' });
+    } catch (error) { next(error); }
+});
+
 // ── GET /admin/errors ────────────────────────────────────────────────
 adminRouter.get('/errors', async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -158,5 +168,92 @@ function formatUptime(seconds: number): string {
     if (h > 0) return `${h} ساعة ${m} دقيقة`;
     return `${m} دقيقة`;
 }
+
+// ── GET /admin/platform-settings ──────────────────────────────────────
+adminRouter.get('/platform-settings', async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+        const data = await AdminService.getPlatformSettings();
+        return SuccessResponse({ res, data, message: 'Platform settings fetched successfully' });
+    } catch (error) { next(error); }
+});
+
+// ── PATCH /admin/platform-settings/plan-prices ──────────────────────
+adminRouter.patch('/platform-settings/plan-prices', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { prices } = req.body;
+        const data = await AdminService.updatePlanPrices(prices);
+        return SuccessResponse({ res, data, message: 'Plan prices updated successfully' });
+    } catch (error) { next(error); }
+});
+
+
+// ── GET /admin/promo-codes ──────────────────────────────────────────
+adminRouter.get('/promo-codes', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const data = await AdminService.getPromoCodes();
+        return SuccessResponse({ res, data, message: 'تم استرجاع أكواد الخصم' });
+    } catch (error) { next(error); }
+});
+
+// ── POST /admin/promo-codes ─────────────────────────────────────────
+adminRouter.post('/promo-codes', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const data = await AdminService.createPromoCode(req.body);
+        return SuccessResponse({ res, data, message: 'تم إنشاء كود الخصم بنجاح' });
+    } catch (error) { next(error); }
+});
+
+// ── PATCH /admin/promo-codes/:id/toggle ─────────────────────────────
+adminRouter.patch('/promo-codes/:id/toggle', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const data = await AdminService.togglePromoCode(req.params['id'] as string);
+        return SuccessResponse({ res, data, message: 'تم تغيير حالة كود الخصم' });
+    } catch (error) { next(error); }
+});
+
+// ── DELETE /admin/promo-codes/:id ───────────────────────────────────
+adminRouter.delete('/promo-codes/:id', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        await AdminService.deletePromoCode(req.params['id'] as string);
+        return SuccessResponse({ res, message: 'تم حذف كود الخصم بنجاح' });
+    } catch (error) { next(error); }
+});
+
+// ── Announcements ──────────────────────────────────────────────────────
+
+adminRouter.get('/announcements', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const data = await AdminService.getAnnouncements();
+        return SuccessResponse({ res, data, message: 'تم استرجاع الإشعارات' });
+    } catch (error) { next(error); }
+});
+
+adminRouter.get('/announcements/active', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const data = await AdminService.getActiveAnnouncements();
+        return SuccessResponse({ res, data, message: 'تم استرجاع الإشعارات النشطة' });
+    } catch (error) { next(error); }
+});
+
+adminRouter.post('/announcements', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const data = await AdminService.createAnnouncement(req.body);
+        return SuccessResponse({ res, data, message: 'تم إنشاء الإشعار بنجاح' });
+    } catch (error) { next(error); }
+});
+
+adminRouter.patch('/announcements/:id/toggle', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const data = await AdminService.toggleAnnouncement(req.params['id'] as string);
+        return SuccessResponse({ res, data, message: 'تم تحديث حالة الإشعار' });
+    } catch (error) { next(error); }
+});
+
+adminRouter.delete('/announcements/:id', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        await AdminService.deleteAnnouncement(req.params['id'] as string);
+        return SuccessResponse({ res, message: 'تم حذف الإشعار بنجاح' });
+    } catch (error) { next(error); }
+});
 
 export default adminRouter;

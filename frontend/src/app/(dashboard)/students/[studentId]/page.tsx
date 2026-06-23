@@ -117,7 +117,7 @@ export default function StudentProfilePage() {
             const html = await fetchStudentReportHtml(studentId);
             printHtmlContent(html);
         } catch {
-            toast.error('فشل تحميل التقرير');
+            // Handled globally
         } finally {
             setPdfLoading(false);
         }
@@ -131,7 +131,7 @@ export default function StudentProfilePage() {
             const html = await generateIdCardsHtml([student], user?.centerName, user?.logoUrl);
             printHtmlContent(html);
         } catch {
-            toast.error('فشل توليد الكارت الخاص بالطالب');
+            // Handled globally
         } finally {
             setCardLoading(false);
         }

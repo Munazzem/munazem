@@ -53,7 +53,7 @@ export function GroupReportModal({ groupId, groupName, open, onOpenChange }: Gro
             const html = await fetchGroupReportHtml(groupId);
             printHtmlContent(html);
         } catch {
-            toast.error('فشل تحميل التقرير');
+            // Handled globally
         } finally {
             setPdfLoading(false);
         }
@@ -66,7 +66,7 @@ export function GroupReportModal({ groupId, groupName, open, onOpenChange }: Gro
             const html = await fetchGroupAttendanceSheetHtml(groupId);
             printHtmlContent(html);
         } catch {
-            toast.error('فشل تحميل الكشف');
+            // Handled globally
         } finally {
             setPdfLoading(false);
         }

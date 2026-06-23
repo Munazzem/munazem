@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchUsers, addUser, deleteUser, paySalary } from '@/lib/api/users';
+import { toggleAssistantAccess } from '@/lib/api/auth';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { toast } from 'sonner';
 import {
@@ -15,6 +16,8 @@ import {
     ShieldCheck,
     AlertCircle,
     Banknote,
+    Lock,
+    Unlock,
 } from 'lucide-react';
 import { TableSkeleton } from '@/components/layout/skeletons/TableSkeleton';
 import { Button } from '@/components/ui/button';
@@ -56,11 +59,31 @@ export default function AssistantsPage() {
 }
 
 function AssistantsContent() {
+    const user = useAuthStore((s) => s.user);
+    const loginStore = useAuthStore((s) => s.login);
+    const token = useAuthStore((s) => s.token);
+
     const queryClient = useQueryClient();
     const [search,        setSearch]        = useState('');
     const [showAdd,       setShowAdd]        = useState(false);
     const [deleteTarget,  setDeleteTarget]   = useState<{ id: string; name: string } | null>(null);
     const [salaryTarget,  setSalaryTarget]   = useState<{ id: string; name: string; salary: number | null } | null>(null);
+
+    const [isAccessEnabled, setIsAccessEnabled] = useState(user?.assistantsAccessEnabled ?? true);
+
+    const toggleMutation = useMutation({
+        mutationFn: (enabled: boolean) => toggleAssistantAccess(enabled),
+        onSuccess: (data) => {
+            setIsAccessEnabled(data.assistantsAccessEnabled);
+            if (user && token) {
+                loginStore({ ...user, assistantsAccessEnabled: data.assistantsAccessEnabled }, token);
+            }
+            toast.success(data.assistantsAccessEnabled ? 'تم فتح النظام للمساعدين بنجاح' : 'تم إغلاق النظام وطرد المساعدين');
+        },
+        onError: () => {
+            // Handled globally
+        }
+    });
 
     const { data, isLoading } = useQuery({
         queryKey: ['assistants', search],
@@ -96,10 +119,33 @@ function AssistantsContent() {
                         المساعدون لديهم نفس صلاحيات المدرس تقريباً، ماعدا التقارير المالية
                     </p>
                 </div>
-                <Button onClick={() => setShowAdd(true)} className="gap-2 shrink-0">
-                    <UserPlus className="h-4 w-4" />
-                    إضافة مساعد
-                </Button>
+                <div className="flex items-center gap-2 shrink-0 overflow-x-auto pb-1 sm:pb-0">
+                    <Button 
+                        variant={isAccessEnabled ? "outline" : "destructive"}
+                        onClick={() => toggleMutation.mutate(!isAccessEnabled)}
+                        disabled={toggleMutation.isPending}
+                        className={cn("gap-2 shrink-0 transition-all", isAccessEnabled ? "border-green-200 text-green-700 hover:bg-green-50 hover:text-green-800" : "")}
+                    >
+                        {toggleMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : isAccessEnabled ? (
+                            <Unlock className="h-4 w-4" />
+                        ) : (
+                            <Lock className="h-4 w-4" />
+                        )}
+                        <span className="hidden sm:inline">
+                            {isAccessEnabled ? 'النظام مفتوح للمساعدين' : 'النظام مغلق للمساعدين'}
+                        </span>
+                        <span className="sm:hidden">
+                            {isAccessEnabled ? 'مفتوح' : 'مغلق'}
+                        </span>
+                    </Button>
+                    <Button onClick={() => setShowAdd(true)} className="gap-2 shrink-0">
+                        <UserPlus className="h-4 w-4" />
+                        <span className="hidden sm:inline">إضافة مساعد</span>
+                        <span className="sm:hidden">إضافة</span>
+                    </Button>
+                </div>
             </div>
 
             {/* Search */}

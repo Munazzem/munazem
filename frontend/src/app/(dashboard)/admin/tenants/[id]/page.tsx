@@ -9,6 +9,7 @@ import {
 import { fetchTenantDetail, suspendTenant, activateTenant } from '@/lib/api/admin';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import AddSubscriptionModal from './AddSubscriptionModal';
 
 function InfoRow({ label, value }: { label: string; value?: string | number | null }) {
     return (
@@ -52,13 +53,13 @@ export default function TenantDetailPage() {
     const suspendMutation = useMutation({
         mutationFn: () => suspendTenant(id),
         onSuccess: () => { toast.success('تم تعليق الحساب'); queryClient.invalidateQueries({ queryKey: ['admin-tenant', id] }); },
-        onError:   () => toast.error('حدث خطأ'),
+        onError:   () => {},
     });
 
     const activateMutation = useMutation({
         mutationFn: () => activateTenant(id),
         onSuccess: () => { toast.success('تم تفعيل الحساب'); queryClient.invalidateQueries({ queryKey: ['admin-tenant', id] }); },
-        onError:   () => toast.error('حدث خطأ'),
+        onError:   () => {},
     });
 
     if (isLoading) {
@@ -109,6 +110,7 @@ export default function TenantDetailPage() {
                     </p>
                 </div>
                 <div className="flex gap-2 shrink-0">
+                    <AddSubscriptionModal tenantId={id} disabled={!isActive} />
                     {isActive ? (
                         <Button
                             variant="outline" size="sm"

@@ -62,6 +62,11 @@ const userSchema = new Schema<IUserDocument>(
         logoUrl: {
             type: String,
         },
+        // Global switch for the teacher to allow/block assistants from accessing the system
+        assistantsAccessEnabled: {
+            type: Boolean,
+            default: true,
+        },
         // ── WhatsApp multi-tenant fields (teacher only) ──────────────────
         whatsappQr: {
             type: String,

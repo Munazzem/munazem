@@ -9,6 +9,7 @@ import type { AdminTenant } from '@/lib/api/admin';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { AddTeacherModal } from '@/components/users/AddTeacherModal';
 
 function StatusBadge({ isActive }: { isActive: boolean }) {
     return (
@@ -52,13 +53,13 @@ export default function TenantsPage() {
     const suspendMutation = useMutation({
         mutationFn: suspendTenant,
         onSuccess: () => { toast.success('تم تعليق الحساب'); queryClient.invalidateQueries({ queryKey: ['admin-tenants'] }); },
-        onError:   () => toast.error('حدث خطأ'),
+        onError:   () => {},
     });
 
     const activateMutation = useMutation({
         mutationFn: activateTenant,
         onSuccess: () => { toast.success('تم تفعيل الحساب'); queryClient.invalidateQueries({ queryKey: ['admin-tenants'] }); },
-        onError:   () => toast.error('حدث خطأ'),
+        onError:   () => {},
     });
 
     const tenants    = data?.data ?? [];
@@ -67,11 +68,14 @@ export default function TenantsPage() {
     return (
         <div className="space-y-5 p-4 sm:p-6 max-w-7xl mx-auto" dir="rtl">
             {/* Header */}
-            <div>
-                <h1 className="text-2xl font-bold text-gray-900">المعلمون (Tenants)</h1>
-                <p className="text-sm text-gray-500 mt-1">
-                    {pagination ? `${pagination.total} معلم مسجل` : ''}
-                </p>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-900">المعلمون (Tenants)</h1>
+                    <p className="text-sm text-gray-500 mt-1">
+                        {pagination ? `${pagination.total} معلم مسجل` : ''}
+                    </p>
+                </div>
+                <AddTeacherModal />
             </div>
 
             {/* Filters */}

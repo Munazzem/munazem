@@ -1,5 +1,6 @@
-import { Worker, type Job } from 'bullmq';
+import { Worker, type Job, DelayedError } from 'bullmq';
 import { envVars }               from '../../../config/env.service.js';
+import { Redis }                 from 'ioredis';
 import { logger }                from '../../common/utils/logger.util.js';
 import { sendWhatsAppMessage }   from '../../common/utils/whatsapp.service.js';
 import type { WhatsAppJobData }  from './queue.types.js';
@@ -9,7 +10,8 @@ import type { WhatsAppJobData }  from './queue.types.js';
 // 12 000 ms between messages ≈ 5 messages/minute — safe for automation.
 const INTER_MESSAGE_DELAY_MS = 12_000;
 
-const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+// Redis client for teacher-specific rate limiting (locks)
+const redis = new Redis(envVars.redisUrl);
 
 // ─── Payment reminder templates (randomized to reduce ban risk) ───────────────
 const PAYMENT_REMINDER_TEMPLATES = [
@@ -116,6 +118,19 @@ function buildMessage(data: WhatsAppJobData): string {
 // ─── Processor function ───────────────────────────────────────────────────────
 async function processWhatsAppJob(job: Job<WhatsAppJobData>): Promise<void> {
     const data = job.data;
+    const lockKey = `whatsapp:lock:${data.teacherId}`;
+
+    // ── Multi-Tenant Rate Limiting (Redis Lock) ─────────────────────────────
+    // Try to acquire a lock for this specific teacher for 12 seconds.
+    // NX = Only set if not exists, PX = Expire in milliseconds
+    const acquired = await redis.set(lockKey, '1', 'PX', INTER_MESSAGE_DELAY_MS, 'NX');
+
+    if (!acquired) {
+        // Teacher sent a message recently. Delay this job for 12 seconds.
+        // job.token is required by BullMQ v3+ for moveToDelayed
+        await job.moveToDelayed(Date.now() + INTER_MESSAGE_DELAY_MS, job.token);
+        throw new DelayedError();
+    }
 
     logger.info('whatsapp_job_start', {
         jobId: job.id,
@@ -127,11 +142,6 @@ async function processWhatsAppJob(job: Job<WhatsAppJobData>): Promise<void> {
     const message = buildMessage(data);
     await sendWhatsAppMessage(data.parentPhone, message, data.teacherId);
 
-    // ── Rate-limit delay ──────────────────────────────────────────────────────
-    // Sleep AFTER sending so the delay is between outgoing messages,
-    // not added before the first one (which would feel slow to the user).
-    await sleep(INTER_MESSAGE_DELAY_MS);
-
     logger.info('whatsapp_job_done', { jobId: job.id, kind: data.kind });
 }
 
@@ -140,8 +150,9 @@ async function processWhatsAppJob(job: Job<WhatsAppJobData>): Promise<void> {
  * Creates and starts the BullMQ Worker.
  * Call this once from `bootstrap()` in app.controller.ts.
  *
- * concurrency: 1 — processes one job at a time so the 12 s delay actually
- * enforces a gap between messages (higher concurrency would bypass it).
+ * concurrency: 50 — allows processing multiple messages simultaneously.
+ * The Redis Lock inside processWhatsAppJob ensures that messages from the 
+ * SAME teacher are spaced by 12 seconds, while different teachers run in parallel.
  */
 export function startWhatsAppWorker(): Worker<WhatsAppJobData> {
     const worker = new Worker<WhatsAppJobData>(
@@ -149,7 +160,7 @@ export function startWhatsAppWorker(): Worker<WhatsAppJobData> {
         processWhatsAppJob,
         {
             connection: { url: envVars.redisUrl },
-            concurrency: 1,
+            concurrency: 50, // Process up to 50 jobs concurrently
         },
     );
 
@@ -166,6 +177,6 @@ export function startWhatsAppWorker(): Worker<WhatsAppJobData> {
         logger.error('whatsapp_worker_error', { error: err.message });
     });
 
-    logger.info('whatsapp_worker_started', { concurrency: 1, delayMs: INTER_MESSAGE_DELAY_MS });
+    logger.info('whatsapp_worker_started', { concurrency: 50, delayMs: INTER_MESSAGE_DELAY_MS });
     return worker;
 }
