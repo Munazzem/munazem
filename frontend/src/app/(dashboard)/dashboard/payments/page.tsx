@@ -392,7 +392,7 @@ function MonthlyTab() {
             const html = await fetchMonthlyReportHtml(year, month);
             printHtmlContent(html);
         } catch {
-            toast.error('فشل تحميل التقرير');
+            // Handled globally
         } finally {
             setPdfLoading(false);
         }

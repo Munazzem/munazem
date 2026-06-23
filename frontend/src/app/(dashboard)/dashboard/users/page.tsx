@@ -58,7 +58,7 @@ export default function UsersPage() {
             queryClient.invalidateQueries({ queryKey: ['users'] });
         },
         onError: (error: any) => {
-            toast.error(error?.response?.data?.message || 'حدث خطأ أثناء الحذف');
+            // Handled globally
         }
     });
 
@@ -85,7 +85,7 @@ export default function UsersPage() {
             if (context?.previousUsers) {
                 queryClient.setQueryData(['users', { search: searchTerm }], context.previousUsers);
             }
-            toast.error(error?.response?.data?.message || 'حدث خطأ أثناء لتحديث');
+            // Handled globally
         },
         onSettled: () => {
             queryClient.invalidateQueries({ queryKey: ['users'] });

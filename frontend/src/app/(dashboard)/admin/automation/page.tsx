@@ -41,7 +41,7 @@ export default function AdminAutomationTestPage() {
             setLastResult(`نجاح: ${res?.message}`);
         } catch (error: any) {
             const msg = error.response?.data?.message || error.message || 'حدث خطأ';
-            toast.error(msg);
+            // Handled globally
             setLastResult(`خطأ: ${msg}`);
         } finally {
             setLoading(null);

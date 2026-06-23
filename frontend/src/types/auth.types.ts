@@ -10,6 +10,7 @@ export interface User {
     teacherId?: string | null;
     centerName?: string;
     logoUrl?: string;
+    assistantsAccessEnabled?: boolean;
 }
 
 export interface AuthState {

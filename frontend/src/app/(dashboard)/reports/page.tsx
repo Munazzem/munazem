@@ -113,7 +113,7 @@ export default function ReportsPage() {
         try {
             const html = await fetchDailySummaryHtml(dailyDate);
             printHtmlContent(html);
-        } catch { toast.error('فشل تحميل تقرير اليوم'); }
+        } catch { /* Handled by interceptor */ }
         finally { setPdfLoading(false); }
     };
 
@@ -123,7 +123,7 @@ export default function ReportsPage() {
         try {
             const html = await fetchStudentReportHtml(selectedStudent.id);
             printHtmlContent(html);
-        } catch { toast.error('فشل تحميل التقرير'); }
+        } catch { /* Handled by interceptor */ }
         finally { setPdfLoading(false); }
     };
 
@@ -133,7 +133,7 @@ export default function ReportsPage() {
         try {
             const html = await fetchGroupReportHtml(selectedGroup.id);
             printHtmlContent(html);
-        } catch { toast.error('فشل تحميل التقرير'); }
+        } catch { /* Handled by interceptor */ }
         finally { setPdfLoading(false); }
     };
 
@@ -143,7 +143,7 @@ export default function ReportsPage() {
         try {
             const html = await fetchGroupAttendanceSheetHtml(selectedGroup.id);
             printHtmlContent(html);
-        } catch { toast.error('فشل تحميل الكشف'); }
+        } catch { /* Handled by interceptor */ }
         finally { setPdfLoading(false); }
     };
 
@@ -152,7 +152,7 @@ export default function ReportsPage() {
         try {
             const html = await fetchMonthlyReportHtml(finYear, finMonth);
             printHtmlContent(html);
-        } catch { toast.error('فشل تحميل التقرير'); }
+        } catch { /* Handled by interceptor */ }
         finally { setPdfLoading(false); }
     };
 

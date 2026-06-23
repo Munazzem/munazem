@@ -23,3 +23,9 @@ export const updateSettings = async (data: { centerName?: string; logoUrl?: stri
     const res = await apiClient.patch('/auth/settings', data);
     return (res as any).data;
 };
+
+// PATCH /auth/assistants-access (teacher only)
+export const toggleAssistantAccess = async (enabled: boolean) => {
+    const res = await apiClient.patch('/auth/assistants-access', { enabled });
+    return (res as any).data;
+};

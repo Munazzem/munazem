@@ -21,6 +21,7 @@ export interface IUser {
     centerName?: string;
     logoUrl?: string;
     isActive: boolean;
+    assistantsAccessEnabled?: boolean;
     createdAt: string;
     updatedAt: string;
 }

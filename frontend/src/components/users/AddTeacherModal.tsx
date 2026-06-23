@@ -67,6 +67,7 @@ export function AddTeacherModal() {
     onSuccess: () => {
       toast.success('تم إضافة المعلم بنجاح');
       queryClient.invalidateQueries({ queryKey: QK.users.all });
+      queryClient.invalidateQueries({ queryKey: ['admin-tenants'] });
       form.reset();
       setOpen(false);
     },

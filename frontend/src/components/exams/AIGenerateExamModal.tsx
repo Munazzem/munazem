@@ -247,7 +247,7 @@ export function AIGenerateExamModal({ open, onOpenChange }: Props) {
         },
         onError: (err: any) => {
             setStatusText('');
-            toast.error(err?.message ?? 'حدث خطأ');
+            // Handled globally
         },
     });
 

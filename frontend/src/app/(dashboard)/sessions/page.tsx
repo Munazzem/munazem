@@ -142,7 +142,6 @@ export default function SessionsPage() {
             queryClient.invalidateQueries({ queryKey: ['sessions'] });
         },
         onError: () => {
-            toast.error('حدث خطأ أثناء إلغاء الحصة');
             setCancelSessionId(null);
         },
     });
@@ -155,7 +154,6 @@ export default function SessionsPage() {
             queryClient.invalidateQueries({ queryKey: ['sessions'] });
         },
         onError: () => {
-            toast.error('حدث خطأ أثناء حذف الحصة');
             setDeleteSessionId(null);
         },
     });

@@ -232,7 +232,7 @@ export function ImportExcelModal({ open, onOpenChange }: Props) {
             toast.success(`تم إضافة ${data.successCount} طالب بنجاح`);
         },
         onError: (err: any) => {
-            toast.error(err?.message ?? 'حدث خطأ أثناء الإرسال');
+            // Handled globally
         },
     });
 

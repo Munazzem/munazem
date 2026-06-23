@@ -41,7 +41,10 @@ apiClient.interceptors.response.use(
                 import('@/lib/store/auth.store').then(({ useAuthStore }) => {
                     useAuthStore.getState().logout();
                 });
-                window.location.href = '/login';
+                
+                if (window.location.pathname !== '/login') {
+                    window.location.href = '/login';
+                }
             } else if (!error.config?.headers?.['x-skip-error-toast']) {
                 // Determine error message safely
                 const errorMsg = error.response?.data?.message || 'تعذر الاتصال بالخادم، حاول مرة أخرى لاحقاً';

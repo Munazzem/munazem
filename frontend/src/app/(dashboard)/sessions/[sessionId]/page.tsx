@@ -123,7 +123,8 @@ export default function SessionDetailPage() {
             const html = await fetchAttendanceHtml(sessionId);
             printHtmlContent(html);
         } catch {
-            toast.error('فشل تحميل تقرير الحضور');
+            // Handled by interceptor
+
         } finally {
             setPdfLoading(false);
         }
@@ -242,10 +243,10 @@ export default function SessionDetailPage() {
             }
 
             const msg = err?.response?.data?.message ?? 'حدث خطأ (قد يكون بسبب انقطاع الاتصال)';
+            // Note: The global axios interceptor will automatically display the error message as a toast.
             if (msg.includes('بالفعل')) {
-                toast.warning('تم تسجيل حضور هذا الطالب مسبقاً');
-            } else {
-                toast.error(msg);
+                // If it's already registered, we can rely on the interceptor's error toast, or we could skip it.
+                // We'll let the interceptor handle it to avoid duplicate toasts.
             }
         },
         onSettled: () => {
@@ -291,7 +292,7 @@ export default function SessionDetailPage() {
             setExcuseStudent(null);
         },
         onError: (err: any) => {
-            toast.error(err?.response?.data?.message ?? 'حدث خطأ أثناء حفظ الإذن');
+            // Handled by interceptor
         }
     });
 

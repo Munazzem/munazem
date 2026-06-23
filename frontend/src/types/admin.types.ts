@@ -16,7 +16,21 @@ export interface AdminStats {
     expiredSubscriptions:  number;
     newTeachersThisMonth:  number;
     monthlyRevenue:        number;
+    mrr:                   number;
+    churnRate:             number;
     recentErrorsThisMonth: number;
+    topTeachers: Array<{
+        _id: string;
+        name: string;
+        phone: string;
+        studentCount: number;
+    }>;
+    expiringSoon: Array<{
+        _id: string;
+        planTier: string;
+        endDate: string;
+        teacher: { _id: string; name: string; phone: string };
+    }>;
 }
 
 export interface GrowthDataPoint {

@@ -160,16 +160,18 @@ export default function AdminOverviewPage() {
                         value={stats.totalStudents}
                     />
                     <StatCard
-                        icon={TrendingUp} label="إيرادات الشهر" color="green"
-                        value={`${stats.monthlyRevenue.toLocaleString()} ج`}
+                        icon={TrendingUp} label="الدخل الشهري (MRR)" color="green"
+                        value={`${stats.mrr?.toLocaleString() ?? 0} ج`}
+                        sub={`إيرادات الشهر: ${stats.monthlyRevenue?.toLocaleString() ?? 0} ج`}
                     />
                     <StatCard
-                        icon={UserCheck} label="اشتراكات نشطة" color="green"
+                        icon={UserX} label="معدل الإلغاء (Churn)" color="orange"
+                        value={`${stats.churnRate ?? 0}%`}
+                        sub="آخر 30 يوم"
+                    />
+                    <StatCard
+                        icon={UserCheck} label="اشتراكات نشطة" color="blue"
                         value={stats.activeSubscriptions}
-                    />
-                    <StatCard
-                        icon={UserX} label="اشتراكات منتهية" color="orange"
-                        value={stats.expiredSubscriptions}
                     />
                     <StatCard
                         icon={AlertTriangle} label="أخطاء هذا الشهر" color="red"
@@ -261,6 +263,80 @@ export default function AdminOverviewPage() {
                     <div className="h-24 bg-gray-50 rounded-xl animate-pulse" />
                 )}
             </div>
+
+            {/* Top Teachers & Expiring Subscriptions Grid */}
+            {stats && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Top Teachers */}
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                        <div className="flex items-center gap-2 mb-4">
+                            <div className="p-2 bg-purple-50 rounded-xl border border-purple-100">
+                                <Users className="h-4 w-4 text-purple-600" />
+                            </div>
+                            <h2 className="text-base font-bold text-gray-800">أكثر المعلمين نشاطاً (بالطلاب)</h2>
+                        </div>
+                        <div className="space-y-3">
+                            {stats.topTeachers?.length === 0 ? (
+                                <p className="text-sm text-gray-400 text-center py-4">لا توجد بيانات</p>
+                            ) : (
+                                stats.topTeachers?.map((teacher, idx) => (
+                                    <div key={teacher._id} className="flex items-center justify-between p-3 rounded-xl border border-gray-50 bg-gray-50/50 hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => router.push(`/admin/tenants/${teacher._id}`)}>
+                                        <div className="flex items-center gap-3">
+                                            <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs shrink-0">
+                                                {idx + 1}
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-semibold text-gray-900">{teacher.name}</p>
+                                                <p className="text-xs text-gray-500 font-mono mt-0.5">{teacher.phone}</p>
+                                            </div>
+                                        </div>
+                                        <div className="text-left">
+                                            <p className="text-sm font-bold text-gray-900">{teacher.studentCount}</p>
+                                            <p className="text-[10px] text-gray-400">طالب</p>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Expiring Soon */}
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-2">
+                                <div className="p-2 bg-orange-50 rounded-xl border border-orange-100">
+                                    <Clock className="h-4 w-4 text-orange-600" />
+                                </div>
+                                <h2 className="text-base font-bold text-gray-800">اشتراكات تقترب من الانتهاء</h2>
+                            </div>
+                            <span className="text-xs text-gray-400">خلال 15 يوم</span>
+                        </div>
+                        <div className="space-y-3">
+                            {stats.expiringSoon?.length === 0 ? (
+                                <p className="text-sm text-gray-400 text-center py-4">لا توجد اشتراكات تقترب من الانتهاء 🎉</p>
+                            ) : (
+                                stats.expiringSoon?.map((sub) => {
+                                    const daysLeft = Math.ceil((new Date(sub.endDate).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
+                                    return (
+                                        <div key={sub._id} className="flex items-center justify-between p-3 rounded-xl border border-gray-50 bg-gray-50/50 hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => router.push(`/admin/tenants/${sub.teacher?._id}`)}>
+                                            <div className="flex flex-col">
+                                                <p className="text-sm font-semibold text-gray-900 truncate max-w-[150px] sm:max-w-[200px]">{sub.teacher?.name || 'غير معروف'}</p>
+                                                <p className="text-xs text-gray-500 font-mono mt-0.5">{sub.teacher?.phone || '-'}</p>
+                                            </div>
+                                            <div className="text-left flex items-center gap-3">
+                                                <span className="text-[10px] font-bold px-2 py-1 rounded bg-gray-100 text-gray-600">{sub.planTier}</span>
+                                                <div className={`text-xs font-bold px-2.5 py-1 rounded-full ${daysLeft <= 3 ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>
+                                                    باقي {daysLeft} أيام
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Growth Chart */}
             {growth && growth.length > 0 && (

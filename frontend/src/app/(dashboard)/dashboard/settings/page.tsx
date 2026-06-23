@@ -186,7 +186,7 @@ export default function SettingsPage() {
             startPolling();
         } catch {
             setWaConnecting(false);
-            toast.error('فشل بدء اتصال الواتساب');
+            // Handled globally
         }
     }, [startPolling]);
 
@@ -201,7 +201,7 @@ export default function SettingsPage() {
             if (waIntervalRef.current) { clearInterval(waIntervalRef.current); waIntervalRef.current = null; }
             toast.success('تم فصل الواتساب بنجاح');
         } catch {
-            toast.error('فشل فصل الواتساب');
+            // Handled globally
         }
     }, []);
 
@@ -250,7 +250,9 @@ export default function SettingsPage() {
         try {
             const compressed = await compressImage(file);
             setLogoBase64(compressed);
-        } catch (error) { toast.error('فشل معالجة الصورة'); }
+        } catch (error) { 
+            // Handled globally
+        }
     };
 
     return (

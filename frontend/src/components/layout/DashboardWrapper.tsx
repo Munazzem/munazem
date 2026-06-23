@@ -5,6 +5,7 @@ import { useAuthStore } from '@/lib/store/auth.store';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Header } from '@/components/layout/Header';
 import { SuperAdminHeader } from '@/components/layout/SuperAdminHeader';
+import { AnnouncementsBanner } from '@/components/layout/AnnouncementsBanner';
 import { Loader2 } from 'lucide-react';
 
 export function DashboardWrapper({ children }: { children: ReactNode }) {
@@ -29,6 +30,7 @@ export function DashboardWrapper({ children }: { children: ReactNode }) {
         return (
             <div className="min-h-screen bg-[#f9f9fb] flex flex-col">
                 <SuperAdminHeader />
+                <AnnouncementsBanner />
                 <main className="flex-1 w-full max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
                     {children}
                 </main>
@@ -44,6 +46,7 @@ export function DashboardWrapper({ children }: { children: ReactNode }) {
             {/* Main Content Area (offset by sidebar width on large screens) */}
             <main className="flex-1 flex flex-col transition-all duration-300 sm:pr-64">
                 <Header />
+                <AnnouncementsBanner />
 
                 <div className="p-4 sm:p-8 flex-1 overflow-auto">
                     {children}
