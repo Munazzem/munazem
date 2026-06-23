@@ -1,0 +1,1 @@
+{"version":3,"file":"opt-out.model.d.ts","sourceRoot":"","sources":["../../../src/database/models/opt-out.model.ts"],"names":[],"mappings":"AAAA,OAAO,QAAQ,EAAE,EAAU,KAAK,EAAE,MAAM,UAAU,CAAC;AAOnD,MAAM,WAAW,OAAO;IACpB,KAAK,EAAM,MAAM,CAAC;IAClB,SAAS,EAAE,QAAQ,CAAC,KAAK,CAAC,QAAQ,CAAC;IACnC,SAAS,CAAC,EAAE,IAAI,CAAC;CACpB;AAqBD,eAAO,MAAM,WAAW,EAAE,KAAK,CAAC,OAAO,CACY,CAAC"}

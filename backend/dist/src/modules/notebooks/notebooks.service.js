@@ -1,0 +1,98 @@
+import { NotebookModel } from '../../database/models/notebook.model.js';
+import { NotebookReservationModel } from '../../database/models/notebook-reservation.model.js';
+import { ReservationStatus } from '../../types/notebook-reservation.types.js';
+import { GradeLevel } from '../../common/enums/enum.service.js';
+import { NotFoundException, BadRequestException, ConflictException } from '../../common/utils/response/error.responce.js';
+export class NotebooksService {
+    // ── Create ──────────────────────────────────────────────────────
+    static async createNotebook(teacherId, data) {
+        try {
+            return await NotebookModel.create({ ...data, teacherId, stock: data.stock ?? 0 });
+        }
+        catch (error) {
+            if (error.code === 11000) {
+                throw ConflictException({ message: 'يوجد مذكرة بنفس الاسم لهذه المرحلة بالفعل' });
+            }
+            throw error;
+        }
+    }
+    // ── List — with optional gradeLevel filter ──────────────────────
+    static async getNotebooks(teacherId, queryFilters = {}) {
+        const filter = { teacherId };
+        if (queryFilters.gradeLevel)
+            filter.gradeLevel = queryFilters.gradeLevel;
+        const page = Math.max(1, parseInt(queryFilters.page) || 1);
+        const limit = Math.min(100, Math.max(1, parseInt(queryFilters.limit) || 50));
+        const skip = (page - 1) * limit;
+        const [data, total] = await Promise.all([
+            NotebookModel.find(filter).sort({ gradeLevel: 1, name: 1 }).skip(skip).limit(limit).lean(),
+            NotebookModel.countDocuments(filter),
+        ]);
+        return { data, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } };
+    }
+    // ── Get single ──────────────────────────────────────────────────
+    static async getNotebookById(notebookId, teacherId) {
+        const nb = await NotebookModel.findOne({ _id: notebookId, teacherId }).lean();
+        if (!nb)
+            throw NotFoundException({ message: 'المذكرة غير موجودة' });
+        return nb;
+    }
+    // ── Update details (name, gradeLevel, price) ────────────────────
+    static async updateNotebook(notebookId, teacherId, data) {
+        const nb = await NotebookModel.findOneAndUpdate({ _id: notebookId, teacherId }, data, { new: true, runValidators: true }).lean();
+        if (!nb)
+            throw NotFoundException({ message: 'المذكرة غير موجودة' });
+        return nb;
+    }
+    // ── Add stock (restock) ─────────────────────────────────────────
+    static async addStock(notebookId, teacherId, quantity) {
+        if (quantity <= 0)
+            throw BadRequestException({ message: 'الكمية يجب أن تكون أكبر من الصفر' });
+        const nb = await NotebookModel.findOneAndUpdate({ _id: notebookId, teacherId }, { $inc: { stock: quantity } }, { new: true }).lean();
+        if (!nb)
+            throw NotFoundException({ message: 'المذكرة غير موجودة' });
+        return nb;
+    }
+    // ── Decrement stock on sale (called from PaymentsService) ────────
+    static async decrementStock(notebookId, teacherId, quantity = 1) {
+        const nb = await NotebookModel.findOne({ _id: notebookId, teacherId }).lean();
+        if (!nb)
+            throw NotFoundException({ message: 'المذكرة غير موجودة' });
+        if (nb.stock < quantity) {
+            throw BadRequestException({ message: `الكمية المتاحة في المخزن: ${nb.stock}` });
+        }
+        return await NotebookModel.findByIdAndUpdate(notebookId, { $inc: { stock: -quantity } }, { new: true }).lean();
+    }
+    // ── Delete ──────────────────────────────────────────────────────
+    static async deleteNotebook(notebookId, teacherId) {
+        const nb = await NotebookModel.findOneAndDelete({ _id: notebookId, teacherId }).lean();
+        if (!nb)
+            throw NotFoundException({ message: 'المذكرة غير موجودة' });
+        return nb;
+    }
+    // ── List Reservations ───────────────────────────────────────────
+    static async getReservations(teacherId, queryFilters = {}) {
+        const filter = { teacherId };
+        if (queryFilters.status)
+            filter.status = queryFilters.status;
+        if (queryFilters.studentId)
+            filter.studentId = queryFilters.studentId;
+        if (queryFilters.notebookId)
+            filter.notebookId = queryFilters.notebookId;
+        const page = Math.max(1, parseInt(queryFilters.page) || 1);
+        const limit = Math.min(100, Math.max(1, parseInt(queryFilters.limit) || 50));
+        const skip = (page - 1) * limit;
+        const [data, total] = await Promise.all([
+            NotebookReservationModel.find(filter)
+                .populate('studentId', 'studentName studentPhone gradeLevel')
+                .populate('notebookId', 'name price')
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            NotebookReservationModel.countDocuments(filter),
+        ]);
+        return { data, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } };
+    }
+}
+//# sourceMappingURL=notebooks.service.js.map
