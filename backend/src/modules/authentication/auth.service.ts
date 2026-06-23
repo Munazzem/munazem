@@ -3,6 +3,7 @@ import { UserModel } from "../../database/models/user.model.js";
 import { PasswordUtil } from "../../common/utils/password.util.js";
 import { TokenUtil } from "../../common/utils/token.util.js";
 import { trackEvent } from "../../common/utils/activity.service.js";
+import { cache, CacheKeys, CacheTTL } from "../../infrastructure/cache/cache.service.js";
 import type { ILoginRequest, IAuthResponse } from "../../types/auth.types.js";
 
 export const login = async (data: ILoginRequest): Promise<IAuthResponse> => {
@@ -27,6 +28,23 @@ export const login = async (data: ILoginRequest): Promise<IAuthResponse> => {
 
     if (!user.isActive) {
         throw UnauthorizedException({ message: 'تم إيقاف هذا الحساب، يرجى مراجعة الإدارة' });
+    }
+
+    // ── Assistant Kill Switch Check ──────────────────────────────────────
+    if (user.role === 'assistant' && user.teacherId) {
+        const teacherIdStr = user.teacherId.toString();
+        const cacheKey = CacheKeys.assistantsAccess(teacherIdStr);
+        let isAccessEnabled = await cache.get<boolean>(cacheKey);
+
+        if (isAccessEnabled === null) {
+            const teacher = await UserModel.findById(teacherIdStr).select('assistantsAccessEnabled').lean();
+            isAccessEnabled = teacher?.assistantsAccessEnabled ?? true;
+            await cache.set(cacheKey, isAccessEnabled, CacheTTL.ASSISTANTS_ACCESS);
+        }
+
+        if (isAccessEnabled === false) {
+            throw UnauthorizedException({ message: 'النظام مغلق حالياً للمساعدين بناءً على إعدادات المعلم. برجاء المحاولة في وقت لاحق.' });
+        }
     }
 
     const payload = {

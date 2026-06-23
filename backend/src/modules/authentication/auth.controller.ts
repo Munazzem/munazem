@@ -7,7 +7,8 @@ import { loginSchema } from '../../validation/auth.validation.js';
 import { authenticate } from '../../middlewares/auth.middleware.js';
 import { UserModel } from '../../database/models/user.model.js';
 import { PasswordUtil } from '../../common/utils/password.util.js';
-import { BadRequestException, UnauthorizedException } from '../../common/utils/response/error.responce.js';
+import { BadRequestException, UnauthorizedException, ForbiddenException } from '../../common/utils/response/error.responce.js';
+import { cache, CacheKeys, CacheTTL } from '../../infrastructure/cache/cache.service.js';
 
 const router = Router();
 
@@ -120,6 +121,38 @@ router.patch('/settings', authenticate, async (req: Request, res: Response, next
         }
 
         SuccessResponse({ res, message: 'تم حفظ الإعدادات بنجاح', data: responseData });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// PATCH /auth/assistants-access — toggle assistant login permission (Teacher only)
+router.patch('/assistants-access', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { userId, role } = (req as any).user;
+        const { enabled } = req.body;
+
+        if (role !== 'teacher') {
+            throw ForbiddenException({ message: 'غير مصرح لك بتعديل هذه الإعدادات' });
+        }
+        if (typeof enabled !== 'boolean') {
+            throw BadRequestException({ message: 'القيمة يجب أن تكون صحيحة (boolean)' });
+        }
+
+        const updated = await UserModel.findByIdAndUpdate(
+            userId,
+            { assistantsAccessEnabled: enabled },
+            { new: true }
+        ).select('-password').lean();
+
+        if (!updated) {
+            throw BadRequestException({ message: 'المعلم غير موجود' });
+        }
+
+        // Update the cache immediately so it takes effect on the next request
+        await cache.set(CacheKeys.assistantsAccess(userId), enabled, CacheTTL.ASSISTANTS_ACCESS);
+
+        SuccessResponse({ res, message: enabled ? 'تم فتح النظام للمساعدين' : 'تم إغلاق النظام للمساعدين', data: updated });
     } catch (error) {
         next(error);
     }
