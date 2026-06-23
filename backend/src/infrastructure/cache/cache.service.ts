@@ -129,13 +129,15 @@ export const CacheKeys = {
     dashboard:     (teacherId: string) => `t:${teacherId}:dashboard`,
     priceSettings: (teacherId: string) => `t:${teacherId}:prices`,
     groups:        (teacherId: string) => `t:${teacherId}:groups`,
+    assistantsAccess: (teacherId: string) => `t:${teacherId}:assistants_access`,
     /** Pattern to invalidate ALL cache for a teacher */
     teacherAll:    (teacherId: string) => `t:${teacherId}:*`,
 };
 
 // ── Cache TTLs (seconds) ─────────────────────────────────────────────────────
 export const CacheTTL = {
-    DASHBOARD:      5 * 60,     // 5 minutes
-    PRICE_SETTINGS: 60 * 60,    // 1 hour
-    GROUPS:         10 * 60,    // 10 minutes
+    DASHBOARD:         5 * 60,     // 5 minutes
+    PRICE_SETTINGS:    60 * 60,    // 1 hour
+    GROUPS:            10 * 60,    // 10 minutes
+    ASSISTANTS_ACCESS: 12 * 60 * 60, // 12 hours
 };
