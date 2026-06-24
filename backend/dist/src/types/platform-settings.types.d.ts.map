@@ -1,0 +1,1 @@
+{"version":3,"file":"platform-settings.types.d.ts","sourceRoot":"","sources":["../../../src/types/platform-settings.types.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,QAAQ,EAAE,MAAM,UAAU,CAAC;AAEzC,MAAM,WAAW,iBAAiB;IAC9B,GAAG,EAAE,MAAM,CAAC;IACZ,KAAK,EAAE,MAAM,CAAC,MAAM,EAAE,GAAG,CAAC,CAAC;IAC3B,SAAS,EAAE,IAAI,CAAC;CACnB;AAED,MAAM,WAAW,yBAA0B,SAAQ,iBAAiB,EAAE,QAAQ;CAAG"}

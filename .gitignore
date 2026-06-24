@@ -1,5 +1,5 @@
 node_modules
-dist
+# dist  # Intentionally tracked: server cannot compile — pushing pre-built dist
 build
 .env
 .next
