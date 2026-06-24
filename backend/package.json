@@ -30,6 +30,7 @@
   },
   "type": "module",
   "scripts": {
+    "build": "tsc",
     "dev": "tsc-watch --onSuccess \"node dist/src/main.js\"",
     "start": "node dist/src/main.js"
   },
