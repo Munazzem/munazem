@@ -4,6 +4,7 @@ import { UserModel } from '../../database/models/user.model.js';
 import { OptOutModel } from '../../database/models/opt-out.model.js';
 import { UserRole }  from '../enums/enum.service.js';
 import { logger }    from './logger.util.js';
+import { getWhatsAppGateway, WA_EVENTS } from '../../infrastructure/socket/whatsapp.gateway.js';
 
 // ─── Pool types ───────────────────────────────────────────────────────────────
 interface PoolEntry {
@@ -90,7 +91,10 @@ export async function initializeClientForTeacher(teacherId: string): Promise<voi
     // ── QR: save to DB so frontend can render it ──────────────────────────
     client.on('qr', (qr: string) => {
         logger.info('whatsapp_qr_received', { teacherId });
+        // Persist to DB (fire-and-forget — for page refresh recovery)
         updateTeacherWA(teacherId, { whatsappQr: qr, whatsappStatus: 'pending' });
+        // Push to teacher's browser in real-time via Socket.io
+        getWhatsAppGateway().emitToTeacher(teacherId, WA_EVENTS.QR, { qr });
     });
 
     // ── Ready: mark connected ─────────────────────────────────────────────
@@ -98,7 +102,10 @@ export async function initializeClientForTeacher(teacherId: string): Promise<voi
         const entry = clientsPool.get(teacherId);
         if (entry) entry.ready = true;
         logger.info('whatsapp_client_ready', { teacherId });
+        // Persist to DB (fire-and-forget — clears QR, marks connected)
         updateTeacherWA(teacherId, { whatsappStatus: 'connected', whatsappQr: null });
+        // Notify the teacher's browser instantly via Socket.io
+        getWhatsAppGateway().emitToTeacher(teacherId, WA_EVENTS.CONNECTED, {});
     });
 
     // ── Authenticated: informational only ─────────────────────────────────
@@ -133,6 +140,7 @@ export async function initializeClientForTeacher(teacherId: string): Promise<voi
         logger.error('whatsapp_auth_failure', { teacherId, error: msg });
         clientsPool.delete(teacherId);
         updateTeacherWA(teacherId, { whatsappStatus: 'disconnected', whatsappQr: null });
+        getWhatsAppGateway().emitToTeacher(teacherId, WA_EVENTS.DISCONNECTED, { reason: 'auth_failure' });
     });
 
     // ── Disconnected: clean up + destroy browser ──────────────────────────
@@ -140,6 +148,7 @@ export async function initializeClientForTeacher(teacherId: string): Promise<voi
         logger.warn('whatsapp_disconnected', { teacherId, reason });
         clientsPool.delete(teacherId);
         updateTeacherWA(teacherId, { whatsappStatus: 'disconnected', whatsappQr: null });
+        getWhatsAppGateway().emitToTeacher(teacherId, WA_EVENTS.DISCONNECTED, { reason });
         client.destroy().catch(() => {});
     });
 
