@@ -7,10 +7,12 @@ import * as z from 'zod';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { fetchMe, updateMe, changePassword, updateSettings } from '@/lib/api/auth';
 import { useAuthStore } from '@/lib/store/auth.store';
-import { apiClient } from '@/lib/api/axios';
+import { apiClient, API_BASE_URL } from '@/lib/api/axios';
 import { toast } from 'sonner';
 import { Loader2, User, Lock, Phone, Mail, Save, UploadCloud, Image as ImageIcon, Trash2, Wifi, WifiOff, MessageSquare } from 'lucide-react';
 import QRCode from 'qrcode';
+import { io, type Socket } from 'socket.io-client';
+import Cookies from 'js-cookie';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -131,9 +133,10 @@ export default function SettingsPage() {
     const [waQrCode, setWaQrCode] = useState<string | null>(null);
     const [waQrDataUrl, setWaQrDataUrl] = useState<string | null>(null);
     const [waConnecting, setWaConnecting] = useState(false);
-    const waIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    // Stable ref to the Socket.io connection — never triggers re-renders
+    const waSocketRef = useRef<Socket | null>(null);
 
-    // Generate QR data URL whenever raw qrCode string changes
+    // ── Convert raw QR string → renderable Data URL ───────────────────────────
     useEffect(() => {
         if (!waQrCode) { setWaQrDataUrl(null); return; }
         QRCode.toDataURL(waQrCode, { width: 260, margin: 2 })
@@ -141,64 +144,98 @@ export default function SettingsPage() {
             .catch(() => setWaQrDataUrl(null));
     }, [waQrCode]);
 
-    // Fetch initial WA status on mount
+    // ── Socket.io real-time listener + initial HTTP hydration ─────────────────
     useEffect(() => {
         if (!isTeacher) return;
+
+        // 1️⃣  Hydrate UI immediately from DB (handles page-refresh while connected)
         apiClient.get('/whatsapp/status')
             .then((res: any) => {
                 setWaStatus(res.data?.status ?? 'disconnected');
-                setWaQrCode(res.data?.qrCode ?? null);
+                setWaQrCode(res.data?.qrCode   ?? null);
             })
             .catch(() => {});
-    }, [isTeacher]);
 
-    // Cleanup interval on unmount
-    useEffect(() => {
+        // 2️⃣  Get the JWT from the cookie (same source as apiClient)
+        const token = Cookies.get('token');
+        if (!token) return;   // unauthenticated — skip socket setup
+
+        // 3️⃣  Open the Socket.io connection to the dedicated /whatsapp namespace
+        const socket = io(`${API_BASE_URL}/whatsapp`, {
+            auth:       { token },           // validated by the gateway JWT middleware
+            transports: ['websocket', 'polling'],
+            reconnection:        true,
+            reconnectionAttempts: 5,
+            reconnectionDelay:    2000,
+        });
+
+        waSocketRef.current = socket;
+
+        // ── Event: new QR code generated ──────────────────────────────────────
+        socket.on('wa:qr', ({ qr }: { qr: string }) => {
+            setWaStatus('pending');
+            setWaQrCode(qr);
+            setWaConnecting(false);   // Puppeteer is up — stop the spinner
+        });
+
+        // ── Event: QR scanned, client authenticated & ready ───────────────────
+        socket.on('wa:connected', () => {
+            setWaStatus('connected');
+            setWaQrCode(null);
+            setWaConnecting(false);
+            toast.success('تم ربط الواتساب بنجاح! ✅');
+        });
+
+        // ── Event: client disconnected / auth failure ─────────────────────────
+        socket.on('wa:disconnected', () => {
+            setWaStatus('disconnected');
+            setWaQrCode(null);
+            setWaConnecting(false);
+        });
+
+        // ── Socket error (connection refused / auth rejected) ─────────────────
+        socket.on('connect_error', (err) => {
+            // Silently log — don't surface raw socket errors to the user
+            console.warn('[WA Gateway] connection error:', err.message);
+        });
+
+        // ── Clean Teardown on unmount ─────────────────────────────────────────
+        // Removes ALL listeners and closes the WebSocket connection cleanly.
+        // Prevents memory leaks if the user navigates away mid-scan.
         return () => {
-            if (waIntervalRef.current) clearInterval(waIntervalRef.current);
+            socket.off('wa:qr');
+            socket.off('wa:connected');
+            socket.off('wa:disconnected');
+            socket.off('connect_error');
+            socket.disconnect();
+            waSocketRef.current = null;
         };
-    }, []);
-
-    const startPolling = useCallback(() => {
-        if (waIntervalRef.current) clearInterval(waIntervalRef.current);
-        waIntervalRef.current = setInterval(async () => {
-            try {
-                const res: any = await apiClient.get('/whatsapp/status');
-                const status: WaStatus = res.data?.status ?? 'disconnected';
-                const qr: string | null = res.data?.qrCode ?? null;
-                setWaStatus(status);
-                setWaQrCode(qr);
-                if (status === 'connected') {
-                    if (waIntervalRef.current) clearInterval(waIntervalRef.current);
-                    waIntervalRef.current = null;
-                    setWaConnecting(false);
-                    toast.success('تم ربط الواتساب بنجاح! ✅');
-                }
-            } catch { /* silent */ }
-        }, 3000);
-    }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isTeacher]);  // run once when teacher status is confirmed
 
     const handleWaConnect = useCallback(async () => {
         setWaConnecting(true);
         try {
+            // Triggers Puppeteer on the backend — the QR will arrive via Socket.io wa:qr event
             await apiClient.post('/whatsapp/connect');
+            // Keep status as 'pending' visually while Puppeteer starts
             setWaStatus('pending');
-            startPolling();
         } catch {
             setWaConnecting(false);
-            // Handled globally
+            // Handled globally by axios interceptor
         }
-    }, [startPolling]);
+    }, []);
 
     const handleWaDisconnect = useCallback(async () => {
         const ok = window.confirm('هل أنت متأكد من إلغاء ربط حساب الواتساب؟ سيتوقف إرسال الرسائل التلقائية.');
         if (!ok) return;
         try {
             await apiClient.post('/whatsapp/disconnect');
+            // The backend will emit wa:disconnected via Socket.io,
+            // but we also update local state immediately for instant UX.
             setWaStatus('disconnected');
             setWaQrCode(null);
             setWaQrDataUrl(null);
-            if (waIntervalRef.current) { clearInterval(waIntervalRef.current); waIntervalRef.current = null; }
             toast.success('تم فصل الواتساب بنجاح');
         } catch {
             // Handled globally
