@@ -163,13 +163,28 @@ export default function SettingsPage() {
         // 3️⃣  Open the Socket.io connection to the dedicated /whatsapp namespace
         const socket = io(`${API_BASE_URL}/whatsapp`, {
             auth:       { token },           // validated by the gateway JWT middleware
-            transports: ['websocket', 'polling'],
+            transports: ['polling', 'websocket'],
             reconnection:        true,
-            reconnectionAttempts: 5,
+            // No limit — socket must survive backend restarts without dying
+            reconnectionDelayMax: 10_000,
             reconnectionDelay:    2000,
         });
 
         waSocketRef.current = socket;
+
+        // ── Event: socket connected / reconnected ─────────────────────────────
+        // Re-poll DB status after every (re)connect to catch events that were
+        // emitted while the socket was offline (e.g. after a backend restart).
+        socket.on('connect', () => {
+            console.info('[WA] socket connected:', socket.id);
+            apiClient.get('/whatsapp/status')
+                .then((res: any) => {
+                    setWaStatus(res.data?.status ?? 'disconnected');
+                    setWaQrCode(res.data?.qrCode   ?? null);
+                    setWaConnecting(false);
+                })
+                .catch(() => {});
+        });
 
         // ── Event: new QR code generated ──────────────────────────────────────
         socket.on('wa:qr', ({ qr }: { qr: string }) => {
@@ -179,11 +194,18 @@ export default function SettingsPage() {
         });
 
         // ── Event: QR scanned, client authenticated & ready ───────────────────
+        // NOTE: This event may fire twice — once from 'authenticated' (immediately
+        // after scan) and once from 'ready' (after full session init). The status
+        // check makes this handler idempotent: only the first emit triggers the
+        // toast and state change.
         socket.on('wa:connected', () => {
-            setWaStatus('connected');
+            setWaStatus((prev) => {
+                if (prev === 'connected') return prev; // already transitioned — ignore duplicate
+                toast.success('تم ربط الواتساب بنجاح! ✅');
+                return 'connected';
+            });
             setWaQrCode(null);
             setWaConnecting(false);
-            toast.success('تم ربط الواتساب بنجاح! ✅');
         });
 
         // ── Event: client disconnected / auth failure ─────────────────────────
@@ -195,14 +217,12 @@ export default function SettingsPage() {
 
         // ── Socket error (connection refused / auth rejected) ─────────────────
         socket.on('connect_error', (err) => {
-            // Silently log — don't surface raw socket errors to the user
             console.warn('[WA Gateway] connection error:', err.message);
         });
 
         // ── Clean Teardown on unmount ─────────────────────────────────────────
-        // Removes ALL listeners and closes the WebSocket connection cleanly.
-        // Prevents memory leaks if the user navigates away mid-scan.
         return () => {
+            socket.off('connect');
             socket.off('wa:qr');
             socket.off('wa:connected');
             socket.off('wa:disconnected');
@@ -215,15 +235,35 @@ export default function SettingsPage() {
 
     const handleWaConnect = useCallback(async () => {
         setWaConnecting(true);
+
+        // 45-second safety net: if Puppeteer never emits wa:qr, reset the UI
+        // and tell the user to retry instead of leaving them on the spinner forever.
+        const qrTimeoutId = setTimeout(() => {
+            setWaConnecting(false);
+            setWaStatus('disconnected');
+            toast.error('انتهت مهلة توليد رمز QR. تحقق من اتصال الخادم وحاول مجدداً.');
+        }, 45_000);
+
+        // Cancel the timeout as soon as any terminal event arrives
+        const socket = waSocketRef.current;
+        if (socket) {
+            const clearQrTimeout = () => clearTimeout(qrTimeoutId);
+            socket.once('wa:qr',           clearQrTimeout);
+            socket.once('wa:connected',     clearQrTimeout);
+            socket.once('wa:disconnected',  clearQrTimeout);
+        }
+
         try {
             // Triggers Puppeteer on the backend — the QR will arrive via Socket.io wa:qr event
             await apiClient.post('/whatsapp/connect');
             // Keep status as 'pending' visually while Puppeteer starts
             setWaStatus('pending');
         } catch {
+            clearTimeout(qrTimeoutId);
             setWaConnecting(false);
             // Handled globally by axios interceptor
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const handleWaDisconnect = useCallback(async () => {
