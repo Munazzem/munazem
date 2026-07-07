@@ -13,6 +13,7 @@ export interface IUser {
   isActive:  boolean;
   centerName?: string;              // اسم السنتر — للمدرسين فقط
   logoUrl?:    string;              // لوجو السنتر — للمدرسين فقط
+  assistantsAccessEnabled?: boolean; // مفتاح تفعيل/تعطيل وصول المساعدين
   whatsappQr?:     string | null;   // QR data for frontend rendering
   whatsappStatus?: 'disconnected' | 'pending' | 'connected';
   subject?:        string;

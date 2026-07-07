@@ -1,4 +1,5 @@
 import express from 'express';
+import { createServer } from 'http';
 import os from 'os';
 import cors from 'cors';
 import compression from 'compression';
@@ -28,6 +29,7 @@ import { startWhatsAppWorker }    from './infrastructure/queues/whatsapp.process
 import { startEmailWorker }       from './infrastructure/queues/email.processor.js';
 import { autoReconnectClients }   from './common/utils/whatsapp.service.js';
 import { startAutomationScheduler } from './infrastructure/schedulers/automation.scheduler.js';
+import { initWhatsAppGateway }    from './infrastructure/socket/whatsapp.gateway.js';
 
 export const bootstrap = async () => {
     const app = express();
@@ -207,7 +209,13 @@ export const bootstrap = async () => {
 
     app.use(globalErrorHandler) // Global error handling middleware
 
-    app.listen(envVars.port, () => {
+    // ── Attach Socket.io to the HTTP server ─────────────────────────────────
+    // We use Node's native http.Server so Socket.io can share the same port
+    // as Express — no extra port, no extra process.
+    const server = createServer(app);
+    initWhatsAppGateway(server);
+
+    server.listen(envVars.port, () => {
         console.log(`Server running on http://localhost:${envVars.port}`);
     });
 }

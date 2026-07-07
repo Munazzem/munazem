@@ -10,6 +10,7 @@ export interface SessionAbsentPayload {
     kind:        'session_absent';
     teacherId:   string;
     parentPhone: string;
+    studentId:   string;   // needed for per-student job deduplication
     studentName: string;
     groupName:   string;
     sessionDate: string;   // ISO string — formatted inside the processor
