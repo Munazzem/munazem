@@ -5,7 +5,7 @@ import { SuccessResponse } from '../../common/utils/response/success.responce.js
 import { BadRequestException } from '../../common/utils/response/error.responce.js';
 import { authenticate } from '../../middlewares/auth.middleware.js';
 import { authorizeRoles } from '../../middlewares/roles.middleware.js';
-import { initializeClientForTeacher, getClientStatus } from '../../common/utils/whatsapp.service.js';
+import { initializeClientForTeacher, getClientStatus, destroyClientForTeacher } from '../../common/utils/whatsapp.service.js';
 import { UserModel } from '../../database/models/user.model.js';
 
 const whatsappRouter = Router();
@@ -76,7 +76,10 @@ whatsappRouter.post(
             const user = (req as any).user;
             const teacherId: string = user.userId;
 
-            // Update DB first — pool cleanup happens via the 'disconnected' event
+            // 1. Kill Puppeteer + delete local session → next connect = fresh QR
+            await destroyClientForTeacher(teacherId);
+
+            // 2. Update DB
             await UserModel.updateOne(
                 { _id: teacherId },
                 { whatsappStatus: 'disconnected', whatsappQr: null },

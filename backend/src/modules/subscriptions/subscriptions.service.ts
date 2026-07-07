@@ -14,7 +14,7 @@ import { BadRequestException, NotFoundException } from '../../common/utils/respo
 export class SubscriptionService {
     static async createSubscription(
         teacherId: string,
-        data: { planTier: SubscriptionPlan; durationMonths: DurationMonths; paymentMethod?: string },
+        data: { planTier: SubscriptionPlan; durationMonths: DurationMonths; paymentMethod?: string; promoCode?: string },
         session?: ClientSession
     ) {
         const teacher = await UserModel.findById(teacherId).session(session || null).lean();
