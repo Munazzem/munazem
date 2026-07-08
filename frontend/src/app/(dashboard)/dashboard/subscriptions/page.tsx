@@ -25,8 +25,8 @@ import { RenewSubscriptionModal } from '@/components/subscriptions/RenewSubscrip
 import { Button } from '@/components/ui/button';
 
 const PLAN_BADGE: Record<SubscriptionPlan, { label: string; className: string }> = {
+    MINI:    { label: 'المصغرة',    className: 'bg-indigo-100 text-indigo-700 border-indigo-200' },
     BASIC:   { label: 'الأساسية',   className: 'bg-blue-100 text-blue-700 border-blue-200' },
-    PRO:     { label: 'الاحترافية', className: 'bg-purple-100 text-purple-700 border-purple-200' },
     PREMIUM: { label: 'المتميزة',   className: 'bg-amber-100 text-amber-700 border-amber-200' },
 };
 

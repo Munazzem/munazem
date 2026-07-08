@@ -13,10 +13,10 @@ import AnnouncementsSettings from './AnnouncementsSettings';
 
 function PricingSettings() {
     const queryClient = useQueryClient();
-    const [prices, setPrices] = useState<Record<string, number>>({
-        BASIC: 1000,
-        PRO: 1500,
-        PREMIUM: 2000,
+    const [prices, setPrices] = useState<Record<string, string>>({
+        MINI: '500',
+        BASIC: '900',
+        PREMIUM: '1200',
     });
 
     const { data: settings, isLoading } = useQuery({
@@ -26,12 +26,25 @@ function PricingSettings() {
 
     useEffect(() => {
         if (settings) {
-            setPrices(settings);
+            // Convert numbers to strings for input fields
+            setPrices({
+                MINI: String(settings.MINI ?? 500),
+                BASIC: String(settings.BASIC ?? 900),
+                PREMIUM: String(settings.PREMIUM ?? 1200),
+            });
         }
     }, [settings]);
 
     const updateMutation = useMutation({
-        mutationFn: (newPrices: Record<string, number>) => updatePlanPrices(newPrices),
+        mutationFn: (newPrices: Record<string, string>) => {
+            // Convert back to numbers before sending
+            const numericPrices = {
+                MINI: Number(newPrices.MINI),
+                BASIC: Number(newPrices.BASIC),
+                PREMIUM: Number(newPrices.PREMIUM),
+            };
+            return updatePlanPrices(numericPrices);
+        },
         onSuccess: () => {
             toast.success('تم تحديث أسعار الباقات بنجاح');
             queryClient.invalidateQueries({ queryKey: ['admin-platform-settings'] });
@@ -57,13 +70,13 @@ function PricingSettings() {
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="space-y-2">
-                            <label className="text-sm font-semibold text-gray-700">الباقة الأساسية (BASIC)</label>
+                            <label className="text-sm font-semibold text-gray-700">الباقة المصغرة (MINI)</label>
                             <div className="relative">
                                 <Input
                                     type="number"
                                     min="0"
-                                    value={prices.BASIC}
-                                    onChange={(e) => setPrices(p => ({ ...p, BASIC: Number(e.target.value) }))}
+                                    value={prices.MINI}
+                                    onChange={(e) => setPrices(p => ({ ...p, MINI: e.target.value }))}
                                     className="pl-12 font-medium"
                                 />
                                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">
@@ -73,13 +86,13 @@ function PricingSettings() {
                         </div>
 
                         <div className="space-y-2">
-                            <label className="text-sm font-semibold text-gray-700">الباقة الاحترافية (PRO)</label>
+                            <label className="text-sm font-semibold text-gray-700">الباقة الأساسية (BASIC)</label>
                             <div className="relative">
                                 <Input
                                     type="number"
                                     min="0"
-                                    value={prices.PRO}
-                                    onChange={(e) => setPrices(p => ({ ...p, PRO: Number(e.target.value) }))}
+                                    value={prices.BASIC}
+                                    onChange={(e) => setPrices(p => ({ ...p, BASIC: e.target.value }))}
                                     className="pl-12 font-medium"
                                 />
                                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">
@@ -95,7 +108,7 @@ function PricingSettings() {
                                     type="number"
                                     min="0"
                                     value={prices.PREMIUM}
-                                    onChange={(e) => setPrices(p => ({ ...p, PREMIUM: Number(e.target.value) }))}
+                                    onChange={(e) => setPrices(p => ({ ...p, PREMIUM: e.target.value }))}
                                     className="pl-12 font-medium"
                                 />
                                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">

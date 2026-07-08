@@ -1,8 +1,14 @@
 node_modules
-dist
 build
+dist
 .env
 .next
+
+# Compiled TypeScript output (should only exist in dist/)
+backend/src/**/*.js
+backend/src/**/*.js.map
+backend/src/**/*.d.ts
+backend/src/**/*.d.ts.map
 walkthrough
 README_AR.md
 CHANGES.md

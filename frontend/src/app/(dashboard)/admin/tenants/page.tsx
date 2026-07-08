@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { AddTeacherModal } from '@/components/users/AddTeacherModal';
+import { AddSubscriptionModal } from '@/components/subscriptions/AddSubscriptionModal';
 
 function StatusBadge({ isActive }: { isActive: boolean }) {
     return (
@@ -75,7 +76,10 @@ export default function TenantsPage() {
                         {pagination ? `${pagination.total} معلم مسجل` : ''}
                     </p>
                 </div>
-                <AddTeacherModal />
+                <div className="flex items-center gap-2">
+                    <AddSubscriptionModal />
+                    <AddTeacherModal />
+                </div>
             </div>
 
             {/* Filters */}
@@ -173,6 +177,9 @@ export default function TenantsPage() {
                                                     تفعيل
                                                 </Button>
                                             )}
+                                            <div className="mr-2 inline-block">
+                                                <AddSubscriptionModal tenantId={t._id} disabled={!t.isActive} />
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}

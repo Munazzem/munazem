@@ -60,8 +60,9 @@ export default function SettingsPage() {
     const [showCustomSubject, setShowCustomSubject] = useState(false);
 
     const { data: meData, isLoading: meLoading } = useQuery({
-        queryKey: ['me'],
+        queryKey: ['me', storeUser?.id],
         queryFn: fetchMe,
+        enabled: !!storeUser?.id,
     });
 
     // ── Profile form ──────────────────────────────────────────────────────────
@@ -93,7 +94,7 @@ export default function SettingsPage() {
         mutationFn: updateMe,
         onSuccess: () => {
             toast.success('تم تحديث البيانات بنجاح');
-            queryClient.invalidateQueries({ queryKey: ['me'] });
+            queryClient.invalidateQueries({ queryKey: ['me', storeUser?.id] });
         },
     });
 
@@ -289,7 +290,7 @@ export default function SettingsPage() {
             if (storeUser && token) {
                 loginStore({ ...storeUser, ...updatedUser }, token);
             }
-            queryClient.invalidateQueries({ queryKey: ['me'] });
+            queryClient.invalidateQueries({ queryKey: ['me', storeUser?.id] });
         },
         
     });
@@ -622,7 +623,7 @@ export default function SettingsPage() {
             )}
 
             {/* WhatsApp Integration Card (Teachers Only) */}
-            {isTeacher && (
+            {isTeacher && storeUser?.planTier === 'PREMIUM' && (
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                     <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-100 bg-gray-50/50">
                         <div className={`h-9 w-9 rounded-xl flex items-center justify-center ${

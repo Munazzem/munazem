@@ -33,6 +33,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc-watch --onSuccess \"node dist/src/main.js\"",
+    "build": "tsc",
     "start": "node dist/src/main.js"
   },
   "devDependencies": {

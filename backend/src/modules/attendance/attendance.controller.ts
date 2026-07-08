@@ -141,7 +141,7 @@ attendanceRouter.get(
 // ─── PATCH /attendance/:id — Manually update attendance status (assistant only)
 attendanceRouter.patch(
     '/:id',
-    authorizeRoles(UserRole.assistant),
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
     validate(updateAttendanceSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {

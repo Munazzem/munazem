@@ -9,9 +9,10 @@ const pdfParse: (buffer: Buffer) => Promise<{ text: string }> =
         ? _pdfParseModule
         : (_pdfParseModule.default ?? _pdfParseModule);
 import { ExamsService } from './exams.service.js';
-import { ExamSource, QuestionType } from '../../common/enums/enum.service.js';
+import { ExamSource, QuestionType, SubscriptionStatus, SubscriptionPlan } from '../../common/enums/enum.service.js';
 import { BadRequestException } from '../../common/utils/response/error.responce.js';
 import { envVars } from '../../../config/env.service.js';
+import { SubscriptionModel } from '../../database/models/subscription.model.js';
 
 interface GenerateExamOptions {
     questionCount:    number;
@@ -83,6 +84,18 @@ export class AIExamService {
         if (!envVars.enableAIExams) {
             throw BadRequestException({
                 message: 'ميزة توليد الامتحانات بالذكاء الاصطناعي متاحة في الخطة المدفوعة فقط حالياً',
+            });
+        }
+
+        const activeSubscription = await SubscriptionModel.findOne({
+            teacherId,
+            status: SubscriptionStatus.ACTIVE,
+            endDate: { $gt: new Date() },
+        }).sort({ endDate: -1 }).lean();
+
+        if (!activeSubscription || activeSubscription.planTier !== SubscriptionPlan.PREMIUM) {
+            throw BadRequestException({
+                message: 'ميزة توليد الامتحانات بالذكاء الاصطناعي متاحة فقط في الباقة المتميزة',
             });
         }
 

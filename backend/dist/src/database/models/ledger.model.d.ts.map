@@ -1,0 +1,1 @@
+{"version":3,"file":"ledger.model.d.ts","sourceRoot":"","sources":["../../../../src/database/models/ledger.model.ts"],"names":[],"mappings":"AAAA,OAAiB,EAAU,KAAK,EAAE,MAAM,UAAU,CAAC;AACnD,OAAO,KAAK,EAAE,oBAAoB,EAAE,sBAAsB,EAAE,MAAM,6BAA6B,CAAC;AAgChG,eAAO,MAAM,gBAAgB,EAAE,KAAK,CAAC,oBAAoB,CACiB,CAAC;AA6B3E,eAAO,MAAM,kBAAkB,EAAE,KAAK,CAAC,sBAAsB,CACmB,CAAC"}

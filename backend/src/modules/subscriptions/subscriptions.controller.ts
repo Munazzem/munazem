@@ -11,10 +11,10 @@ import { createSubscriptionSchema } from '../../validation/subscriptions.validat
 class SubscriptionController {
     static async createSubscription(req: Request, res: Response, next: NextFunction) {
         try {
-            const { teacherId, planTier, durationMonths, paymentMethod } = req.body;
+            const { teacherId, planTier, durationMonths, isFreeTrial, studentsCount, paymentMethod, promoCode } = req.body;
             const newSubscription = await SubscriptionService.createSubscription(
                 teacherId,
-                { planTier, durationMonths, paymentMethod }
+                { planTier, durationMonths, isFreeTrial, studentsCount, paymentMethod, promoCode }
             );
             return SuccessResponse({
                 res,
@@ -56,7 +56,7 @@ class SubscriptionController {
 
     static async getAvailablePlans(_req: Request, res: Response, next: NextFunction) {
         try {
-            const plans = SubscriptionService.getAvailablePlans();
+            const plans = await SubscriptionService.getAvailablePlans();
             return SuccessResponse({
                 res,
                 message: 'تم جلب الباقات المتاحة بنجاح',

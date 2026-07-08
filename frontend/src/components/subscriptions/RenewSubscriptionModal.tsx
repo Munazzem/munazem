@@ -37,23 +37,26 @@ import {
     type SubscriptionPlan,
     type DurationMonths,
     PLAN_PRICES,
+    PLAN_CONFIG,
     PLAN_LABELS,
     DURATION_LABELS,
     DURATION_MONTHS,
 } from '@/types/subscription.types';
+import { Input } from '@/components/ui/input';
 import type { ISubscription } from '@/types/subscription.types';
 
 const schema = z.object({
-    planTier: z.enum(['BASIC', 'PRO', 'PREMIUM'] as const),
-    durationMonths: z.union([z.literal(1), z.literal(4), z.literal(9), z.literal(12)]),
+    planTier: z.enum(['MINI', 'BASIC', 'PREMIUM'] as const),
+    durationMonths: z.number().min(1, 'المدة يجب أن تكون شهراً واحداً على الأقل'),
+    studentsCount: z.number().min(0, 'عدد الطلاب يجب أن يكون 0 أو أكثر').optional(),
     paymentMethod: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof schema>;
 
-const PLAN_CONFIG: Record<SubscriptionPlan, { color: string; border: string; bg: string }> = {
+const PLAN_CARD_STYLE: Record<SubscriptionPlan, { color: string; border: string; bg: string }> = {
+    MINI:    { color: 'text-indigo-600', border: 'border-indigo-500', bg: 'bg-indigo-50' },
     BASIC:   { color: 'text-blue-600',   border: 'border-blue-500',   bg: 'bg-blue-50'   },
-    PRO:     { color: 'text-purple-600', border: 'border-purple-500', bg: 'bg-purple-50' },
     PREMIUM: { color: 'text-amber-600',  border: 'border-amber-500',  bg: 'bg-amber-50'  },
 };
 
@@ -75,6 +78,7 @@ export function RenewSubscriptionModal({ open, onOpenChange, subscription }: Pro
         defaultValues: {
             planTier: 'BASIC',
             durationMonths: 1,
+            studentsCount: subscription?.studentsCount || 250,
             paymentMethod: '',
         },
     });
@@ -85,6 +89,7 @@ export function RenewSubscriptionModal({ open, onOpenChange, subscription }: Pro
             form.reset({
                 planTier: subscription.planTier || 'BASIC',
                 durationMonths: 1,
+                studentsCount: subscription.studentsCount || 250,
                 paymentMethod: '',
             });
         }
@@ -92,7 +97,13 @@ export function RenewSubscriptionModal({ open, onOpenChange, subscription }: Pro
 
     const selectedPlan = form.watch('planTier') as SubscriptionPlan;
     const selectedDuration = form.watch('durationMonths') as DurationMonths;
-    const total = PLAN_PRICES[selectedPlan] * selectedDuration;
+    const studentsCount = form.watch('studentsCount') || 0;
+    
+    const config = PLAN_CONFIG[selectedPlan];
+    const extraStudents = Math.max(0, studentsCount - config.baseStudents);
+    const extraHundreds = Math.ceil(extraStudents / 100);
+    const monthlyAmount = PLAN_PRICES[selectedPlan] + (extraHundreds * config.extraPricePer100);
+    const total = monthlyAmount * selectedDuration;
 
     const mutation = useMutation({
         mutationFn: createSubscription,
@@ -135,8 +146,8 @@ export function RenewSubscriptionModal({ open, onOpenChange, subscription }: Pro
                                 <FormItem>
                                     <FormLabel>الباقة <span className="text-red-500">*</span></FormLabel>
                                     <div className="grid grid-cols-3 gap-3 mt-1">
-                                        {(['BASIC', 'PRO', 'PREMIUM'] as SubscriptionPlan[]).map((plan) => {
-                                            const config = PLAN_CONFIG[plan];
+                                        {(['MINI', 'BASIC', 'PREMIUM'] as SubscriptionPlan[]).map((plan) => {
+                                            const configStyle = PLAN_CARD_STYLE[plan];
                                             const isSelected = field.value === plan;
                                             return (
                                                 <button
@@ -146,17 +157,17 @@ export function RenewSubscriptionModal({ open, onOpenChange, subscription }: Pro
                                                     className={cn(
                                                         'relative rounded-xl border-2 py-3 px-2 text-center transition-all cursor-pointer',
                                                         isSelected
-                                                            ? `${config.border} ${config.bg}`
+                                                            ? `${configStyle.border} ${configStyle.bg}`
                                                             : 'border-gray-200 bg-white hover:border-gray-300'
                                                     )}
                                                 >
                                                     {isSelected && (
-                                                        <CheckCircle2 className={cn('absolute top-2 left-2 h-3.5 w-3.5', config.color)} />
+                                                        <CheckCircle2 className={cn('absolute top-2 left-2 h-3.5 w-3.5', configStyle.color)} />
                                                     )}
-                                                    <p className={cn('font-bold text-sm', isSelected ? config.color : 'text-gray-700')}>
+                                                    <p className={cn('font-bold text-sm', isSelected ? configStyle.color : 'text-gray-700')}>
                                                         {PLAN_LABELS[plan]}
                                                     </p>
-                                                    <p className={cn('text-xl font-extrabold mt-0.5', isSelected ? config.color : 'text-gray-900')}>
+                                                    <p className={cn('text-xl font-extrabold mt-0.5', isSelected ? configStyle.color : 'text-gray-900')}>
                                                         {PLAN_PRICES[plan].toLocaleString('ar-EG')}
                                                     </p>
                                                     <p className="text-xs text-gray-400">ج / شهر</p>
@@ -176,41 +187,30 @@ export function RenewSubscriptionModal({ open, onOpenChange, subscription }: Pro
                                 name="durationMonths"
                                 render={({ field }) => (
                                     <FormItem>
-                                        <FormLabel>المدة <span className="text-red-500">*</span></FormLabel>
-                                        <div className="space-y-2 mt-1">
-                                            {DURATION_MONTHS.map((months) => {
-                                                const isSelected = field.value === months;
-                                                const durationTotal = PLAN_PRICES[selectedPlan] * months;
-                                                return (
-                                                    <button
-                                                        key={months}
-                                                        type="button"
-                                                        onClick={() => field.onChange(months)}
-                                                        className={cn(
-                                                            'w-full flex items-center justify-between rounded-xl border-2 px-3 py-2 transition-all cursor-pointer',
-                                                            isSelected
-                                                                ? 'border-primary bg-primary/5'
-                                                                : 'border-gray-200 bg-white hover:border-gray-300'
-                                                        )}
-                                                    >
-                                                        <div className="flex items-center gap-2">
-                                                            <div className={cn(
-                                                                'h-3.5 w-3.5 rounded-full border-2 flex items-center justify-center shrink-0',
-                                                                isSelected ? 'border-primary' : 'border-gray-300'
-                                                            )}>
-                                                                {isSelected && <div className="h-1.5 w-1.5 rounded-full bg-primary" />}
-                                                            </div>
-                                                            <span className={cn('text-xs font-medium', isSelected ? 'text-primary' : 'text-gray-700')}>
-                                                                {DURATION_LABELS[months as DurationMonths]}
-                                                            </span>
-                                                        </div>
-                                                        <span className={cn('text-xs font-bold shrink-0', isSelected ? 'text-primary' : 'text-gray-500')}>
-                                                            {durationTotal.toLocaleString('ar-EG')} ج
-                                                        </span>
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
+                                        <FormLabel>المدة (بالشهور) <span className="text-red-500">*</span></FormLabel>
+                                        <FormControl>
+                                            <Input 
+                                                type="number" 
+                                                min={1} 
+                                                {...field} 
+                                                onChange={e => field.onChange(Number(e.target.value))} 
+                                                placeholder="أدخل عدد الشهور..."
+                                            />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+
+                            <FormField
+                                control={form.control}
+                                name="studentsCount"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>عدد الطلاب المتوقع (اختياري)</FormLabel>
+                                        <FormControl>
+                                            <Input type="number" {...field} value={field.value ?? ''} min={0} onChange={e => field.onChange(e.target.value ? Number(e.target.value) : undefined)} placeholder="يترك فارغاً لاعتماد الباقة" />
+                                        </FormControl>
                                         <FormMessage />
                                     </FormItem>
                                 )}
@@ -246,7 +246,7 @@ export function RenewSubscriptionModal({ open, onOpenChange, subscription }: Pro
                             <div>
                                 <p className="text-xs text-gray-500">الإجمالي</p>
                                 <p className="text-xs text-gray-400">
-                                    {PLAN_PRICES[selectedPlan].toLocaleString('ar-EG')} ج × {selectedDuration} شهر
+                                    {monthlyAmount.toLocaleString('ar-EG')} ج × {selectedDuration} شهر
                                 </p>
                             </div>
                             <div className="flex items-center gap-4">
