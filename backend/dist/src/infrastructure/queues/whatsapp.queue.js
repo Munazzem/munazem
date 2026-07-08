@@ -67,8 +67,10 @@ export function enqueueEmail(data, forceTest = false) {
 // ─── Deduplication key (WhatsApp) ─────────────────────────────────────────────
 function buildWhatsAppJobId(data) {
     if (data.kind === 'session_absent') {
-        // One job per teacher per student per session day
-        return `absent-${data.teacherId}-${data.parentPhone}-${data.sessionDate.slice(0, 10)}`;
+        // One job per teacher per STUDENT per session day.
+        // Using studentId (not parentPhone) prevents siblings from deduplicating
+        // each other when they share the same parent phone number.
+        return `absent-${data.teacherId}-${data.studentId}-${data.sessionDate.slice(0, 10)}`;
     }
     if (data.kind === 'payment_reminder') {
         // One reminder per teacher per parent phone per month

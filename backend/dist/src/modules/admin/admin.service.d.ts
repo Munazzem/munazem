@@ -46,10 +46,10 @@ export declare class AdminService {
             isActive: boolean;
             centerName?: string;
             logoUrl?: string;
+            assistantsAccessEnabled?: boolean;
             whatsappQr?: string | null;
             whatsappStatus?: "disconnected" | "pending" | "connected";
             subject?: string;
-            assistantsAccessEnabled?: boolean;
             _id: import("mongoose").Types.ObjectId;
             $locals: Record<string, unknown>;
             $op: "save" | "validate" | "remove" | null;
@@ -84,6 +84,17 @@ export declare class AdminService {
             __v: number;
         }) | null;
     } | null>;
+    static updateTenant(id: string, updateData: {
+        name?: string;
+        phone?: string;
+        stage?: string;
+        subject?: string;
+        centerName?: string;
+    }): Promise<import("../../types/user.types.js").IUserDocument & Required<{
+        _id: import("mongoose").Types.ObjectId;
+    }> & {
+        __v: number;
+    }>;
     static getRecentErrors(query: {
         limit?: number;
         level?: string;

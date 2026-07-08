@@ -7,6 +7,8 @@ import { authenticate } from '../../middlewares/auth.middleware.js';
 import { authorizeRoles } from '../../middlewares/roles.middleware.js';
 import { initializeClientForTeacher, getClientStatus, destroyClientForTeacher } from '../../common/utils/whatsapp.service.js';
 import { UserModel } from '../../database/models/user.model.js';
+import { SubscriptionModel } from '../../database/models/subscription.model.js';
+import { SubscriptionStatus, SubscriptionPlan } from '../../common/enums/enum.service.js';
 
 const whatsappRouter = Router();
 
@@ -21,6 +23,18 @@ whatsappRouter.post(
         try {
             const user = (req as any).user;
             const teacherId: string = user.userId;
+
+            const activeSubscription = await SubscriptionModel.findOne({
+                teacherId,
+                status: SubscriptionStatus.ACTIVE,
+                endDate: { $gt: new Date() },
+            }).sort({ endDate: -1 }).lean();
+
+            if (!activeSubscription || activeSubscription.planTier !== SubscriptionPlan.PREMIUM) {
+                return next(BadRequestException({
+                    message: 'ميزة إشعارات الواتساب متاحة فقط في الباقة المتميزة',
+                }));
+            }
 
             // Kick off the client (non-blocking — Puppeteer starts in bg)
             await initializeClientForTeacher(teacherId);

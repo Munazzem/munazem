@@ -9,7 +9,8 @@ import {
 import { fetchTenantDetail, suspendTenant, activateTenant } from '@/lib/api/admin';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import AddSubscriptionModal from './AddSubscriptionModal';
+import { AddSubscriptionModal } from '@/components/subscriptions/AddSubscriptionModal';
+import { EditTeacherModal } from './EditTeacherModal';
 
 function InfoRow({ label, value }: { label: string; value?: string | number | null }) {
     return (
@@ -110,6 +111,7 @@ export default function TenantDetailPage() {
                     </p>
                 </div>
                 <div className="flex gap-2 shrink-0">
+                    <EditTeacherModal teacher={teacher} />
                     <AddSubscriptionModal tenantId={id} disabled={!isActive} />
                     {isActive ? (
                         <Button

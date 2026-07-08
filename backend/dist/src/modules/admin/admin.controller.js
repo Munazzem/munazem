@@ -26,8 +26,20 @@ adminRouter.post('/test-automation', async (req, res, next) => {
         next(error);
     }
 });
-// All admin routes require authentication + superAdmin role
+// All admin routes require authentication
 adminRouter.use(authenticate);
+// ── Public (any authenticated user) ────────────────────────────────
+// Active announcements are displayed to ALL users (teachers, assistants, superAdmin)
+adminRouter.get('/announcements/active', async (req, res, next) => {
+    try {
+        const data = await AdminService.getActiveAnnouncements();
+        return SuccessResponse({ res, data, message: 'تم استرجاع الإشعارات النشطة' });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+// Everything below requires superAdmin role
 adminRouter.use(authorizeRoles(UserRole.superAdmin));
 // ── GET /admin/stats ─────────────────────────────────────────────────
 adminRouter.get('/stats', async (_req, res, next) => {
@@ -77,6 +89,16 @@ adminRouter.get('/tenants/:id', async (req, res, next) => {
         next(error);
     }
 });
+// ── PATCH /admin/tenants/:id ─────────────────────────────────────────
+adminRouter.patch('/tenants/:id', async (req, res, next) => {
+    try {
+        const data = await AdminService.updateTenant(req.params['id'], req.body);
+        return SuccessResponse({ res, data, message: 'Teacher updated successfully' });
+    }
+    catch (error) {
+        next(error);
+    }
+});
 // ── POST /admin/tenants/:id/suspend ─────────────────────────────────
 adminRouter.post('/tenants/:id/suspend', async (req, res, next) => {
     try {
@@ -104,8 +126,8 @@ adminRouter.post('/tenants/:id/activate', async (req, res, next) => {
 // ── POST /admin/tenants/:id/subscription ────────────────────────────
 adminRouter.post('/tenants/:id/subscription', async (req, res, next) => {
     try {
-        const { planTier, durationMonths, paymentMethod, promoCode } = req.body;
-        const data = await SubscriptionService.createSubscription(req.params['id'], { planTier, durationMonths, paymentMethod, promoCode });
+        const { planTier, durationMonths, studentsCount, paymentMethod, promoCode } = req.body;
+        const data = await SubscriptionService.createSubscription(req.params['id'], { planTier, durationMonths, studentsCount, paymentMethod, promoCode });
         return SuccessResponse({ res, data, message: 'تم إضافة الاشتراك بنجاح' });
     }
     catch (error) {
@@ -255,15 +277,6 @@ adminRouter.get('/announcements', async (req, res, next) => {
     try {
         const data = await AdminService.getAnnouncements();
         return SuccessResponse({ res, data, message: 'تم استرجاع الإشعارات' });
-    }
-    catch (error) {
-        next(error);
-    }
-});
-adminRouter.get('/announcements/active', async (req, res, next) => {
-    try {
-        const data = await AdminService.getActiveAnnouncements();
-        return SuccessResponse({ res, data, message: 'تم استرجاع الإشعارات النشطة' });
     }
     catch (error) {
         next(error);

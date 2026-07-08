@@ -4,6 +4,7 @@ export interface SessionAbsentPayload {
     kind: 'session_absent';
     teacherId: string;
     parentPhone: string;
+    studentId: string;
     studentName: string;
     groupName: string;
     sessionDate: string;

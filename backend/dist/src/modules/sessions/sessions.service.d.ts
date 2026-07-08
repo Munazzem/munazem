@@ -32,13 +32,7 @@ export declare class SessionService {
         }> & {
             __v: number;
         }) | null;
-        replacementSession: (import("mongoose").Document<unknown, {}, import("../../types/session.types.js").ISessionDocument, {}, import("mongoose").DefaultSchemaOptions> & import("../../types/session.types.js").ISessionDocument & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        } & {
-            id: string;
-        }) | null;
+        replacementSession: null;
     }>;
     static deleteSession(sessionId: string, teacherId: string): Promise<{
         message: string;

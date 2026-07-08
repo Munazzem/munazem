@@ -43,16 +43,41 @@ export class SessionService {
         const existing = await SessionModel.findOne({
             groupId: data.groupId,
             date: { $gte: sessionDate, $lt: nextDay },
+            startTime: data.startTime,
         }).lean();
         if (existing)
-            throw ConflictException({ message: 'يوجد حصة مسجلة لهذه المجموعة في هذا اليوم بالفعل' });
-        return await SessionModel.create({
+            throw ConflictException({ message: 'يوجد حصة مسجلة لهذه المجموعة في نفس اليوم والوقت بالفعل' });
+        const session = await SessionModel.create({
             groupId: data.groupId,
             teacherId,
             date: new Date(data.date),
             startTime: data.startTime,
             status: SessionStatus.SCHEDULED,
         });
+        // ── Enforce monthly quota ───────────────────────────────────────
+        const targetDate = new Date(data.date);
+        const year = targetDate.getUTCFullYear();
+        const month = targetDate.getUTCMonth(); // 0-11
+        const monthStart = new Date(Date.UTC(year, month, 1));
+        const monthEnd = new Date(Date.UTC(year, month + 1, 1));
+        const currentCount = await SessionModel.countDocuments({
+            groupId: data.groupId,
+            date: { $gte: monthStart, $lt: monthEnd },
+            status: { $ne: SessionStatus.CANCELLED }
+        });
+        const maxSessions = (group.schedule?.length ?? 2) * 4;
+        if (currentCount > maxSessions) {
+            const lastSession = await SessionModel.findOne({
+                groupId: data.groupId,
+                status: SessionStatus.SCHEDULED,
+                date: { $gte: monthStart, $lt: monthEnd }
+            }).sort({ date: -1, startTime: -1 }).lean();
+            if (lastSession && lastSession._id.toString() !== session._id.toString()) {
+                await SessionModel.findByIdAndDelete(lastSession._id);
+                await AttendanceModel.deleteMany({ sessionId: lastSession._id });
+            }
+        }
+        return session;
     }
     // Get all sessions for a teacher (paginated), optionally filtered by groupId or date
     static async getSessionsByTeacher(teacherId, queryFilters = {}) {
@@ -115,41 +140,11 @@ export class SessionService {
         if (session.status === SessionStatus.COMPLETED) {
             throw BadRequestException({ message: 'لا يمكن تعديل حصة مكتملة' });
         }
-        // ── Handle CANCELLED — clean up + auto-replacement ──────────────────
+        // ── Handle CANCELLED — clean up ──────────────────
         let replacementSession = null;
         if (status === SessionStatus.CANCELLED) {
             // 1. Delete any attendance records linked to this session
             await AttendanceModel.deleteMany({ sessionId });
-            // 2. Generate a replacement session after the last non-cancelled session
-            const group = await GroupModel.findById(session.groupId, { schedule: 1 }).lean();
-            if (group && group.schedule && group.schedule.length > 0) {
-                // Find the last non-cancelled session for this group
-                const lastSession = await SessionModel.findOne({
-                    groupId: session.groupId,
-                    status: { $ne: SessionStatus.CANCELLED },
-                    _id: { $ne: sessionId }, // exclude the one being cancelled
-                }).sort({ date: -1 }).lean();
-                const referenceDate = lastSession?.date || session.date;
-                const nextSlot = findNextScheduleSlot(group.schedule, referenceDate);
-                if (nextSlot) {
-                    // Duplicate guard — avoid creating on a day that already has a session
-                    const nextDay = new Date(nextSlot.date);
-                    nextDay.setUTCDate(nextDay.getUTCDate() + 1);
-                    const exists = await SessionModel.findOne({
-                        groupId: session.groupId,
-                        date: { $gte: nextSlot.date, $lt: nextDay },
-                    }).lean();
-                    if (!exists) {
-                        replacementSession = await SessionModel.create({
-                            groupId: session.groupId,
-                            teacherId: session.teacherId,
-                            date: nextSlot.date,
-                            startTime: nextSlot.time,
-                            status: SessionStatus.SCHEDULED,
-                        });
-                    }
-                }
-            }
         }
         const updated = await SessionModel.findByIdAndUpdate(sessionId, { status }, { new: true, runValidators: true }).lean();
         return { session: updated, replacementSession };

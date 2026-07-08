@@ -3,11 +3,13 @@ export declare const createSubscriptionSchema: z.ZodObject<{
     body: z.ZodObject<{
         teacherId: z.ZodString;
         planTier: z.ZodEnum<{
+            MINI: "MINI";
             BASIC: "BASIC";
-            PRO: "PRO";
             PREMIUM: "PREMIUM";
         }>;
-        durationMonths: z.ZodUnion<readonly [z.ZodLiteral<1>, z.ZodLiteral<4>, z.ZodLiteral<9>, z.ZodLiteral<12>]>;
+        durationMonths: z.ZodOptional<z.ZodNumber>;
+        isFreeTrial: z.ZodOptional<z.ZodBoolean>;
+        studentsCount: z.ZodOptional<z.ZodNumber>;
         paymentMethod: z.ZodOptional<z.ZodString>;
         promoCode: z.ZodOptional<z.ZodString>;
     }, z.core.$strip>;

@@ -113,7 +113,7 @@ attendanceRouter.get('/snapshot/:sessionId', authorizeRoles(UserRole.teacher, Us
     }
 });
 // ─── PATCH /attendance/:id — Manually update attendance status (assistant only)
-attendanceRouter.patch('/:id', authorizeRoles(UserRole.assistant), validate(updateAttendanceSchema), async (req, res, next) => {
+attendanceRouter.patch('/:id', authorizeRoles(UserRole.teacher, UserRole.assistant), validate(updateAttendanceSchema), async (req, res, next) => {
     try {
         const user = req.user;
         const teacherId = resolveTeacherId(user);

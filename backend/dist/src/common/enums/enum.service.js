@@ -12,14 +12,20 @@ export var SubscriptionStatus;
 })(SubscriptionStatus || (SubscriptionStatus = {}));
 export var SubscriptionPlan;
 (function (SubscriptionPlan) {
+    SubscriptionPlan["MINI"] = "MINI";
     SubscriptionPlan["BASIC"] = "BASIC";
-    SubscriptionPlan["PRO"] = "PRO";
     SubscriptionPlan["PREMIUM"] = "PREMIUM";
 })(SubscriptionPlan || (SubscriptionPlan = {}));
 export const PLAN_PRICES = {
-    [SubscriptionPlan.BASIC]: 1000,
-    [SubscriptionPlan.PRO]: 1500,
-    [SubscriptionPlan.PREMIUM]: 2000,
+    [SubscriptionPlan.MINI]: 500,
+    [SubscriptionPlan.BASIC]: 900,
+    [SubscriptionPlan.PREMIUM]: 1200,
+};
+// Configuration for dynamic student-based pricing
+export const PLAN_CONFIG = {
+    [SubscriptionPlan.MINI]: { baseStudents: 250, extraPricePer100: 250 },
+    [SubscriptionPlan.BASIC]: { baseStudents: 500, extraPricePer100: 200 },
+    [SubscriptionPlan.PREMIUM]: { baseStudents: 500, extraPricePer100: 200 },
 };
 export const DURATION_MONTHS = [1, 4, 9, 12];
 export const DURATION_LABELS = {

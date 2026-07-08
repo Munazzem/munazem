@@ -22,6 +22,13 @@ export declare function initializeClientForTeacher(teacherId: string): Promise<v
 export declare function sendWhatsAppMessage(rawParentPhone: string, message: string, teacherId: string): Promise<void>;
 export declare function getClientStatus(teacherId: string): 'connected' | 'initializing' | 'disconnected';
 /**
+ * Tears down the Puppeteer browser for `teacherId` and removes its local
+ * session folder so the next scan pairs a completely fresh WhatsApp number.
+ *
+ * Safe to call even if no client exists in the pool (no-op).
+ */
+export declare function destroyClientForTeacher(teacherId: string): Promise<void>;
+/**
  * Re-initializes clients for all teachers whose `whatsappStatus` was
  * `connected` before the server restarted.
  *

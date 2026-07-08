@@ -44,6 +44,15 @@ router.get('/me', authenticate, async (req, res, next) => {
                 userObject.logoUrl = teacher.logoUrl;
             }
         }
+        // Fetch active subscription to include planTier
+        const { SubscriptionModel } = await import('../../database/models/subscription.model.js');
+        const { SubscriptionStatus } = await import('../../common/enums/enum.service.js');
+        const activeSubscription = await SubscriptionModel.findOne({
+            teacherId: user.role === 'teacher' ? userId : user.teacherId,
+            status: SubscriptionStatus.ACTIVE,
+            endDate: { $gt: new Date() },
+        }).sort({ endDate: -1 }).lean();
+        userObject.planTier = activeSubscription?.planTier || null;
         SuccessResponse({ res, message: 'تم جلب بيانات الحساب', data: userObject });
     }
     catch (error) {

@@ -4,8 +4,10 @@ import { SuccessResponse } from '../../common/utils/response/success.responce.js
 import { BadRequestException } from '../../common/utils/response/error.responce.js';
 import { authenticate } from '../../middlewares/auth.middleware.js';
 import { authorizeRoles } from '../../middlewares/roles.middleware.js';
-import { initializeClientForTeacher, getClientStatus } from '../../common/utils/whatsapp.service.js';
+import { initializeClientForTeacher, getClientStatus, destroyClientForTeacher } from '../../common/utils/whatsapp.service.js';
 import { UserModel } from '../../database/models/user.model.js';
+import { SubscriptionModel } from '../../database/models/subscription.model.js';
+import { SubscriptionStatus, SubscriptionPlan } from '../../common/enums/enum.service.js';
 const whatsappRouter = Router();
 whatsappRouter.use(authenticate);
 // ─── POST /whatsapp/connect — Start WhatsApp client for the logged-in teacher
@@ -14,6 +16,16 @@ whatsappRouter.post('/connect', authorizeRoles(UserRole.teacher), async (req, re
     try {
         const user = req.user;
         const teacherId = user.userId;
+        const activeSubscription = await SubscriptionModel.findOne({
+            teacherId,
+            status: SubscriptionStatus.ACTIVE,
+            endDate: { $gt: new Date() },
+        }).sort({ endDate: -1 }).lean();
+        if (!activeSubscription || activeSubscription.planTier !== SubscriptionPlan.PREMIUM) {
+            return next(BadRequestException({
+                message: 'ميزة إشعارات الواتساب متاحة فقط في الباقة المتميزة',
+            }));
+        }
         // Kick off the client (non-blocking — Puppeteer starts in bg)
         await initializeClientForTeacher(teacherId);
         return SuccessResponse({
@@ -56,7 +68,9 @@ whatsappRouter.post('/disconnect', authorizeRoles(UserRole.teacher), async (req,
     try {
         const user = req.user;
         const teacherId = user.userId;
-        // Update DB first — pool cleanup happens via the 'disconnected' event
+        // 1. Kill Puppeteer + delete local session → next connect = fresh QR
+        await destroyClientForTeacher(teacherId);
+        // 2. Update DB
         await UserModel.updateOne({ _id: teacherId }, { whatsappStatus: 'disconnected', whatsappQr: null });
         return SuccessResponse({
             res,

@@ -9,13 +9,17 @@ export declare enum SubscriptionStatus {
     PENDING = "PENDING"
 }
 export declare enum SubscriptionPlan {
+    MINI = "MINI",
     BASIC = "BASIC",
-    PRO = "PRO",
     PREMIUM = "PREMIUM"
 }
 export declare const PLAN_PRICES: Record<SubscriptionPlan, number>;
+export declare const PLAN_CONFIG: Record<SubscriptionPlan, {
+    baseStudents: number;
+    extraPricePer100: number;
+}>;
 export declare const DURATION_MONTHS: readonly [1, 4, 9, 12];
-export type DurationMonths = typeof DURATION_MONTHS[number];
+export type DurationMonths = number;
 export declare const DURATION_LABELS: Record<DurationMonths, string>;
 export declare enum GradeLevel {
     PREP_1 = "\u0627\u0644\u0635\u0641 \u0627\u0644\u0623\u0648\u0644 \u0627\u0644\u0625\u0639\u062F\u0627\u062F\u064A",

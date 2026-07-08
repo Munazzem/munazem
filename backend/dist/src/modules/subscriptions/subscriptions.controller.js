@@ -9,8 +9,8 @@ import { createSubscriptionSchema } from '../../validation/subscriptions.validat
 class SubscriptionController {
     static async createSubscription(req, res, next) {
         try {
-            const { teacherId, planTier, durationMonths, paymentMethod, promoCode } = req.body;
-            const newSubscription = await SubscriptionService.createSubscription(teacherId, { planTier, durationMonths, paymentMethod, promoCode });
+            const { teacherId, planTier, durationMonths, isFreeTrial, studentsCount, paymentMethod, promoCode } = req.body;
+            const newSubscription = await SubscriptionService.createSubscription(teacherId, { planTier, durationMonths, isFreeTrial, studentsCount, paymentMethod, promoCode });
             return SuccessResponse({
                 res,
                 message: 'تم إضافة الاشتراك بنجاح وتفعيل حساب المعلم',

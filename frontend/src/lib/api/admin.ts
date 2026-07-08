@@ -63,6 +63,11 @@ export const activateTenant = async (id: string): Promise<void> => {
     await apiClient.post(`/admin/tenants/${id}/activate`);
 };
 
+export const updateTenant = async (tenantId: string, payload: { name?: string; phone?: string; stage?: string; subject?: string; centerName?: string }) => {
+    const res = await apiClient.patch(`/admin/tenants/${tenantId}`, payload);
+    return (res as any).data;
+};
+
 export const fetchAdminErrors = async (params?: {
     page?: number; limit?: number; level?: string;
 }): Promise<Paginated<AdminErrorLog>> => {

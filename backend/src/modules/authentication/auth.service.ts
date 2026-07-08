@@ -70,6 +70,17 @@ export const login = async (data: ILoginRequest): Promise<IAuthResponse> => {
         }
     }
 
+    // Fetch active subscription to include planTier
+    const { SubscriptionModel } = await import('../../database/models/subscription.model.js');
+    const { SubscriptionStatus } = await import('../../common/enums/enum.service.js');
+    const activeSubscription = await SubscriptionModel.findOne({
+        teacherId: user.role === 'teacher' ? user._id : user.teacherId,
+        status: SubscriptionStatus.ACTIVE,
+        endDate: { $gt: new Date() },
+    }).sort({ endDate: -1 }).lean();
+    
+    userObject.planTier = activeSubscription?.planTier || null;
+
     trackEvent('user_login', {
         tenantId: (user.teacherId || user._id).toString(),
         userId:   user._id.toString(),

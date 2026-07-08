@@ -12,10 +12,10 @@ export interface IUser {
     isActive: boolean;
     centerName?: string;
     logoUrl?: string;
+    assistantsAccessEnabled?: boolean;
     whatsappQr?: string | null;
     whatsappStatus?: 'disconnected' | 'pending' | 'connected';
     subject?: string;
-    assistantsAccessEnabled?: boolean;
 }
 export interface IUserDocument extends IUser, Document {
     createdAt: Date;

@@ -10,5 +10,8 @@ export interface ISubscription extends Document {
     endDate: Date;
     amount: number;
     status: SubscriptionStatus;
+    studentsCount?: number;
     paymentMethod?: string;
+    promoCode?: string;
+    isFreeTrial?: boolean;
 }

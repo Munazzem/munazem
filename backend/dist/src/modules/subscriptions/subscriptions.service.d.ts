@@ -1,11 +1,13 @@
 import type { ClientSession } from 'mongoose';
-import { SubscriptionPlan, type DurationMonths } from '../../common/enums/enum.service.js';
+import { SubscriptionPlan } from '../../common/enums/enum.service.js';
 export declare class SubscriptionService {
     static createSubscription(teacherId: string, data: {
         planTier: SubscriptionPlan;
-        durationMonths: DurationMonths;
+        durationMonths?: number;
+        studentsCount?: number;
         paymentMethod?: string;
         promoCode?: string;
+        isFreeTrial?: boolean;
     }, session?: ClientSession): Promise<(import("mongoose").Document<unknown, {}, import("../../types/subscription.types.js").ISubscription, {}, import("mongoose").DefaultSchemaOptions> & import("../../types/subscription.types.js").ISubscription & Required<{
         _id: import("mongoose").Types.ObjectId;
     }> & {
