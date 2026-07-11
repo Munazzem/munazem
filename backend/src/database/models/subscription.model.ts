@@ -16,7 +16,6 @@ const subscriptionSchema = new Schema<ISubscription>({
     },
     durationMonths: {
         type: Number,
-        enum: [...DURATION_MONTHS],
         required: true,
     },
     startDate: { 
@@ -40,6 +39,18 @@ const subscriptionSchema = new Schema<ISubscription>({
     paymentMethod: { 
         type: String, 
         required: false 
+    },
+    studentsCount: {
+        type: Number,
+        required: true,
+    },
+    promoCode: {
+        type: String,
+        required: false
+    },
+    isFreeTrial: {
+        type: Boolean,
+        default: false
     }
 }, {
     timestamps: true

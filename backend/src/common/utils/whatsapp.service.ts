@@ -4,6 +4,7 @@ import { UserModel } from '../../database/models/user.model.js';
 import { OptOutModel } from '../../database/models/opt-out.model.js';
 import { UserRole }  from '../enums/enum.service.js';
 import { logger }    from './logger.util.js';
+import { getWhatsAppGateway, WA_EVENTS } from '../../infrastructure/socket/whatsapp.gateway.js';
 
 // ─── Pool types ───────────────────────────────────────────────────────────────
 interface PoolEntry {
@@ -90,7 +91,10 @@ export async function initializeClientForTeacher(teacherId: string): Promise<voi
     // ── QR: save to DB so frontend can render it ──────────────────────────
     client.on('qr', (qr: string) => {
         logger.info('whatsapp_qr_received', { teacherId });
+        // Persist to DB (fire-and-forget — for page refresh recovery)
         updateTeacherWA(teacherId, { whatsappQr: qr, whatsappStatus: 'pending' });
+        // Push to teacher's browser in real-time via Socket.io
+        getWhatsAppGateway().emitToTeacher(teacherId, WA_EVENTS.QR, { qr });
     });
 
     // ── Ready: mark connected ─────────────────────────────────────────────
@@ -98,12 +102,20 @@ export async function initializeClientForTeacher(teacherId: string): Promise<voi
         const entry = clientsPool.get(teacherId);
         if (entry) entry.ready = true;
         logger.info('whatsapp_client_ready', { teacherId });
+        // Persist to DB (fire-and-forget — clears QR, marks connected)
         updateTeacherWA(teacherId, { whatsappStatus: 'connected', whatsappQr: null });
+        // Notify the teacher's browser instantly via Socket.io
+        getWhatsAppGateway().emitToTeacher(teacherId, WA_EVENTS.CONNECTED, {});
     });
 
-    // ── Authenticated: informational only ─────────────────────────────────
+    // ── Authenticated: QR was scanned & session confirmed ────────────────────
+    // whatsapp-web.js fires 'authenticated' immediately after the QR is scanned,
+    // BEFORE 'ready'. In some flows (e.g. existing session re-auth), 'ready'
+    // may not re-fire. Emitting here guarantees the frontend transitions the
+    // moment the scan is confirmed — 'ready' emit below is a safe double-send.
     client.on('authenticated', () => {
         logger.info('whatsapp_authenticated', { teacherId });
+        getWhatsAppGateway().emitToTeacher(teacherId, WA_EVENTS.CONNECTED, {});
     });
 
     // ── Incoming message: handle opt-out keywords ─────────────────────────
@@ -133,6 +145,7 @@ export async function initializeClientForTeacher(teacherId: string): Promise<voi
         logger.error('whatsapp_auth_failure', { teacherId, error: msg });
         clientsPool.delete(teacherId);
         updateTeacherWA(teacherId, { whatsappStatus: 'disconnected', whatsappQr: null });
+        getWhatsAppGateway().emitToTeacher(teacherId, WA_EVENTS.DISCONNECTED, { reason: 'auth_failure' });
     });
 
     // ── Disconnected: clean up + destroy browser ──────────────────────────
@@ -140,6 +153,7 @@ export async function initializeClientForTeacher(teacherId: string): Promise<voi
         logger.warn('whatsapp_disconnected', { teacherId, reason });
         clientsPool.delete(teacherId);
         updateTeacherWA(teacherId, { whatsappStatus: 'disconnected', whatsappQr: null });
+        getWhatsAppGateway().emitToTeacher(teacherId, WA_EVENTS.DISCONNECTED, { reason });
         client.destroy().catch(() => {});
     });
 
@@ -148,6 +162,9 @@ export async function initializeClientForTeacher(teacherId: string): Promise<voi
         logger.error('whatsapp_init_failed', { teacherId, error: err.message });
         clientsPool.delete(teacherId);
         updateTeacherWA(teacherId, { whatsappStatus: 'disconnected', whatsappQr: null });
+        // Notify the frontend so the UI snaps back to 'disconnected' instead of
+        // staying frozen on the "جاري تجهيز كود الربط..." spinner indefinitely.
+        getWhatsAppGateway().emitToTeacher(teacherId, WA_EVENTS.DISCONNECTED, { reason: 'init_failed' });
     });
 }
 
@@ -183,6 +200,50 @@ export function getClientStatus(teacherId: string): 'connected' | 'initializing'
     const entry = clientsPool.get(teacherId);
     if (!entry) return 'disconnected';
     return entry.ready ? 'connected' : 'initializing';
+}
+
+// ─── Graceful disconnect (called from the REST disconnect endpoint) ────────────────
+/**
+ * Tears down the Puppeteer browser for `teacherId` and removes its local
+ * session folder so the next scan pairs a completely fresh WhatsApp number.
+ *
+ * Safe to call even if no client exists in the pool (no-op).
+ */
+export async function destroyClientForTeacher(teacherId: string): Promise<void> {
+    const entry = clientsPool.get(teacherId);
+    clientsPool.delete(teacherId);              // remove from pool first
+
+    if (entry) {
+        try {
+            // logout() tells WhatsApp servers to invalidate the session,
+            // then destroy() closes the Puppeteer browser process.
+            await entry.client.logout();         // revoke session on WA servers
+        } catch {
+            // logout can fail if the session is already broken — that's OK
+        }
+        try {
+            await entry.client.destroy();        // kill the Puppeteer browser
+        } catch { /* ignore */ }
+    }
+
+    // LocalAuth stores session in .wwebjs_auth/session-<clientId>/
+    // Delete it so the next connect generates a fresh QR for a new number.
+    try {
+        const { rm } = await import('fs/promises');
+        const path    = await import('path');
+        const sessionDir = path.join(
+            process.cwd(),
+            '.wwebjs_auth',
+            `session-session-${teacherId}`,   // clientId = 'session-<teacherId>'
+        );
+        await rm(sessionDir, { recursive: true, force: true });
+        logger.info('whatsapp_session_deleted', { teacherId, sessionDir });
+    } catch (err) {
+        // Non-fatal: session folder may not exist yet
+        logger.warn('whatsapp_session_delete_failed', { teacherId, error: (err as Error).message });
+    }
+
+    logger.info('whatsapp_client_destroyed', { teacherId });
 }
 
 // ─── Auto-reconnect on server boot ────────────────────────────────────────────

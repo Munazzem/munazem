@@ -116,15 +116,17 @@ export default function ExamsPage() {
                 </div>
                 {isTeacher && (
                     <div className="flex gap-2 w-full sm:w-auto">
-                        <Button
-                            variant="outline"
-                            onClick={() => setShowAI(true)}
-                            className="gap-2 flex-1 sm:flex-none"
-                        >
-                            <Sparkles className="h-4 w-4" />
-                            <span className="hidden sm:inline">توليد بالذكاء الاصطناعي</span>
-                            <span className="sm:hidden">AI</span>
-                        </Button>
+                        {user?.planTier === 'PREMIUM' && (
+                            <Button
+                                variant="outline"
+                                onClick={() => setShowAI(true)}
+                                className="gap-2 flex-1 sm:flex-none"
+                            >
+                                <Sparkles className="h-4 w-4" />
+                                <span className="hidden sm:inline">توليد بالذكاء الاصطناعي</span>
+                                <span className="sm:hidden">AI</span>
+                            </Button>
+                        )}
                         <Button onClick={() => setShowCreate(true)} className="gap-2 flex-1 sm:flex-none">
                             <Plus className="h-4 w-4" />
                             <span>إنشاء امتحان</span>

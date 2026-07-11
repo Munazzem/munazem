@@ -11,6 +11,7 @@ export interface User {
     centerName?: string;
     logoUrl?: string;
     assistantsAccessEnabled?: boolean;
+    planTier?: 'MINI' | 'BASIC' | 'PREMIUM' | null;
 }
 
 export interface AuthState {

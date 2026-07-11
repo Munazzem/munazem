@@ -43,7 +43,15 @@ export class AdminService {
             { 
                 $group: { 
                     _id: null, 
-                    mrr: { $sum: { $divide: ['$amount', '$durationMonths'] } } 
+                    mrr: { 
+                        $sum: { 
+                            $cond: [
+                                { $eq: [{ $ifNull: ['$durationMonths', 0] }, 0] }, 
+                                0, 
+                                { $divide: ['$amount', '$durationMonths'] }
+                            ]
+                        } 
+                    } 
                 } 
             }
         ]);
@@ -199,6 +207,18 @@ export class AdminService {
         if (!teacher) return null;
 
         return { teacher, studentCount, groupCount, sessionsThisMonth, subscription };
+    }
+
+    // ── Update Tenant Profile ─────────────────────────────────────────
+    static async updateTenant(id: string, updateData: { name?: string; phone?: string; stage?: string; subject?: string; centerName?: string }) {
+        const teacher = await UserModel.findByIdAndUpdate(
+            id,
+            { $set: updateData },
+            { new: true, runValidators: true }
+        ).select('-password').lean();
+        
+        if (!teacher) throw NotFoundException({ message: 'Teacher not found' });
+        return teacher;
     }
 
     // ── Get recent error logs ─────────────────────────────────────────

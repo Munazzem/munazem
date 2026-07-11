@@ -441,6 +441,7 @@ export class AttendanceService {
                     kind:        'session_absent',
                     teacherId,
                     parentPhone,
+                    studentId:   absent.studentId.toString(),  // scopes dedup per student, not per phone
                     studentName: absent.studentName,
                     groupName,
                     sessionDate: session.date.toISOString(),

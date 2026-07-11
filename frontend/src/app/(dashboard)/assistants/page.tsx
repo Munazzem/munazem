@@ -476,22 +476,40 @@ function PaySalaryModal({
     onOpenChange: (v: boolean) => void;
     onSuccess: () => void;
 }) {
-    const [amount, setAmount] = useState(assistant.salary != null ? String(assistant.salary) : '');
+    const hasFixedSalary = assistant.salary != null && assistant.salary > 0;
+    const [amount, setAmount] = useState(hasFixedSalary ? String(assistant.salary) : '');
+    const [bonus, setBonus] = useState('');
+    const [deduction, setDeduction] = useState('');
     const [notes,  setNotes]  = useState('');
     const [error,  setError]  = useState('');
 
+    const netAmount = hasFixedSalary 
+        ? Math.max(0, (assistant.salary || 0) + (Number(bonus) || 0) - (Number(deduction) || 0))
+        : Number(amount) || 0;
+
     const mutation = useMutation({
-        mutationFn: () => paySalary(assistant.id, { amount: Number(amount), notes: notes.trim() || undefined }),
+        mutationFn: () => {
+            const finalNotes = [];
+            if (hasFixedSalary) {
+                if (Number(bonus) > 0) finalNotes.push(`مكافأة: ${bonus} ج`);
+                if (Number(deduction) > 0) finalNotes.push(`خصم: ${deduction} ج`);
+            }
+            if (notes.trim()) finalNotes.push(notes.trim());
+            
+            return paySalary(assistant.id, { 
+                amount: netAmount, 
+                notes: finalNotes.join(' | ') || undefined 
+            });
+        },
         onSuccess: () => {
             toast.success(`تم تسجيل راتب ${assistant.name} بنجاح`);
             onSuccess();
         },
-        
     });
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!amount || Number(amount) <= 0) { setError('أدخل مبلغاً صحيحاً'); return; }
+        if (netAmount <= 0) { setError('المبلغ الصافي غير صحيح'); return; }
         setError('');
         mutation.mutate();
     };
@@ -507,44 +525,81 @@ function PaySalaryModal({
                 </DialogHeader>
 
                 <form onSubmit={handleSubmit} className="space-y-4 pt-2">
-                    <div>
-                        <label className="text-sm font-medium text-gray-700 block mb-1">المبلغ *</label>
-                        <div className="relative">
-                            <Input
-                                type="number"
-                                min="1"
-                                value={amount}
-                                onChange={(e) => setAmount(e.target.value)}
-                                placeholder="0"
-                                dir="ltr"
-                                className="pl-10"
-                            />
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">ج</span>
+                    {hasFixedSalary ? (
+                        <div className="space-y-3">
+                            <div className="bg-gray-50 border border-gray-100 rounded-xl p-3 flex justify-between items-center">
+                                <span className="text-sm text-gray-500 font-medium">الراتب الأساسي</span>
+                                <span className="text-sm font-bold text-gray-900">{assistant.salary?.toLocaleString('ar-EG')} ج</span>
+                            </div>
+                            
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-xs font-medium text-gray-700 block mb-1">مكافأة (زيادة)</label>
+                                    <div className="relative">
+                                        <Input 
+                                            type="number" min="0" value={bonus} onChange={(e) => setBonus(e.target.value)} 
+                                            placeholder="0" dir="ltr" 
+                                            className="pl-7 h-10 text-sm text-green-700 font-bold border-green-200 focus-visible:ring-green-500" 
+                                        />
+                                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400">ج</span>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-medium text-gray-700 block mb-1">خصم</label>
+                                    <div className="relative">
+                                        <Input 
+                                            type="number" min="0" value={deduction} onChange={(e) => setDeduction(e.target.value)} 
+                                            placeholder="0" dir="ltr" 
+                                            className="pl-7 h-10 text-sm text-red-600 font-bold border-red-200 focus-visible:ring-red-500" 
+                                        />
+                                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400">ج</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div className="bg-primary/5 border border-primary/10 rounded-xl p-3 flex justify-between items-center mt-2">
+                                <span className="text-sm text-primary font-bold">الصافي للدفع</span>
+                                <span className="text-lg font-black text-primary">{netAmount.toLocaleString('ar-EG')} ج</span>
+                            </div>
                         </div>
-                        {assistant.salary != null && (
-                            <p className="text-xs text-gray-400 mt-1">الراتب الشهري المحدد: {assistant.salary.toLocaleString('ar-EG')} ج</p>
-                        )}
-                        {error && <p className="text-red-500 text-xs mt-1">{error}</p>}
-                    </div>
+                    ) : (
+                        <div>
+                            <label className="text-sm font-medium text-gray-700 block mb-1">المبلغ *</label>
+                            <div className="relative">
+                                <Input
+                                    type="number"
+                                    min="1"
+                                    value={amount}
+                                    onChange={(e) => setAmount(e.target.value)}
+                                    placeholder="0"
+                                    dir="ltr"
+                                    className="pl-10 h-11"
+                                />
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">ج</span>
+                            </div>
+                        </div>
+                    )}
+                    {error && <p className="text-red-500 text-xs mt-1">{error}</p>}
 
                     <div>
-                        <label className="text-sm font-medium text-gray-700 block mb-1">ملاحظات <span className="text-gray-400 font-normal">(اختياري)</span></label>
+                        <label className="text-sm font-medium text-gray-700 block mb-1">ملاحظات إضافية <span className="text-gray-400 font-normal">(اختياري)</span></label>
                         <Input
                             value={notes}
                             onChange={(e) => setNotes(e.target.value)}
-                            placeholder={`راتب ${assistant.name}`}
+                            placeholder="أي تفاصيل أخرى..."
+                            className="h-10"
                         />
                     </div>
 
                     <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-xs text-blue-700">
-                        سيتم تسجيل هذا المبلغ كمصروف (راتب) في سجل الماليات.
+                        سيتم تسجيل الصافي كمصروف (راتب) في سجل الماليات، وسيتم تدوين الزيادات أو الخصومات في ملاحظات العملية.
                     </div>
 
                     <div className="flex gap-2 pt-2">
-                        <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="flex-1">
+                        <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="flex-1 h-11">
                             إلغاء
                         </Button>
-                        <Button type="submit" disabled={mutation.isPending} className="flex-1 gap-2 bg-green-600 hover:bg-green-700">
+                        <Button type="submit" disabled={mutation.isPending} className="flex-1 gap-2 bg-green-600 hover:bg-green-700 h-11">
                             {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
                             تأكيد الدفع
                         </Button>

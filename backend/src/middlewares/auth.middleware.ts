@@ -2,11 +2,13 @@ import type { Request, Response, NextFunction } from 'express';
 import { UnauthorizedException } from '../common/utils/response/error.responce.js';
 import { TokenUtil } from '../common/utils/token.util.js';
 import type { IJwtPayload } from '../types/auth.types.js';
+import { cache, CacheKeys, CacheTTL } from '../infrastructure/cache/cache.service.js';
+import { UserModel } from '../database/models/user.model.js';
 
 // Threshold: issue fresh token if less than 5 minutes remain
 const SLIDING_THRESHOLD_SECONDS = 5 * 60;
 
-export const authenticate = (req: Request, res: Response, next: NextFunction) => {
+export const authenticate = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -21,6 +23,24 @@ export const authenticate = (req: Request, res: Response, next: NextFunction) =>
     // isActive is embedded in the JWT payload — zero DB cost
     if (!payload.isActive) {
       throw UnauthorizedException({ message: 'تم إيقاف هذا الحساب، يرجى مراجعة الإدارة' });
+    }
+
+    // ── Assistant Kill Switch Check ──────────────────────────────────────
+    if (payload.role === 'assistant' && payload.teacherId) {
+      const cacheKey = CacheKeys.assistantsAccess(payload.teacherId);
+      let isAccessEnabled = await cache.get<boolean>(cacheKey);
+
+      if (isAccessEnabled === null) {
+        // Cache miss -> fetch from DB
+        const teacher = await UserModel.findById(payload.teacherId).select('assistantsAccessEnabled').lean();
+        isAccessEnabled = teacher?.assistantsAccessEnabled ?? true;
+        // Save to cache
+        await cache.set(cacheKey, isAccessEnabled, CacheTTL.ASSISTANTS_ACCESS);
+      }
+
+      if (isAccessEnabled === false) {
+        throw UnauthorizedException({ message: 'النظام مغلق حالياً من قبل المعلم، يرجى المحاولة لاحقاً' });
+      }
     }
 
     // Attach payload to request for downstream handlers

@@ -11,19 +11,26 @@ export enum SubscriptionStatus {
 }
 
 export enum SubscriptionPlan {
+    MINI    = 'MINI',
     BASIC   = 'BASIC',
-    PRO     = 'PRO',
     PREMIUM = 'PREMIUM',
 }
 
 export const PLAN_PRICES: Record<SubscriptionPlan, number> = {
-    [SubscriptionPlan.BASIC]:   1000,
-    [SubscriptionPlan.PRO]:     1500,
-    [SubscriptionPlan.PREMIUM]: 2000,
+    [SubscriptionPlan.MINI]:    500,
+    [SubscriptionPlan.BASIC]:   900,
+    [SubscriptionPlan.PREMIUM]: 1200,
+};
+
+// Configuration for dynamic student-based pricing
+export const PLAN_CONFIG: Record<SubscriptionPlan, { baseStudents: number; extraPricePer100: number }> = {
+    [SubscriptionPlan.MINI]:    { baseStudents: 250, extraPricePer100: 250 },
+    [SubscriptionPlan.BASIC]:   { baseStudents: 500, extraPricePer100: 200 },
+    [SubscriptionPlan.PREMIUM]: { baseStudents: 500, extraPricePer100: 200 },
 };
 
 export const DURATION_MONTHS = [1, 4, 9, 12] as const;
-export type DurationMonths = typeof DURATION_MONTHS[number];
+export type DurationMonths = number;
 
 export const DURATION_LABELS: Record<DurationMonths, string> = {
     1:  'شهر واحد',
