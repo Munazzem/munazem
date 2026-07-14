@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/store/auth.store';
-import { LogOut, LayoutDashboard, Building2, AlertTriangle, Activity, CreditCard, Users, Settings } from 'lucide-react';
+import { LogOut, LayoutDashboard, Building2, AlertTriangle, Activity, CreditCard, Users, Settings, Bot } from 'lucide-react';
 import { Button } from '../ui/button';
 
 export function SuperAdminHeader() {
@@ -28,6 +28,7 @@ export function SuperAdminHeader() {
         { name: 'لوحة التحكم',  href: '/admin',          icon: LayoutDashboard },
         { name: 'العملاء',      href: '/admin/tenants',  icon: Users           },
         { name: 'السجلات',      href: '/admin/logs',     icon: Activity        },
+        { name: 'الأتمتة',      href: '/admin/automation', icon: Bot           },
         { name: 'الإعدادات',    href: '/admin/settings', icon: Settings        },
     ];
 

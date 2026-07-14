@@ -44,5 +44,8 @@ transactionSchema.index({ teacherId: 1, date: -1 });
 // Fast queries: all transactions for a specific student
 transactionSchema.index({ teacherId: 1, studentId: 1, date: -1 });
 
+// Fast queries: all transactions by category for reports
+transactionSchema.index({ teacherId: 1, category: 1, date: -1 });
+
 export const TransactionModel: Model<ITransactionDocument> =
     mongoose.model<ITransactionDocument>('Transaction', transactionSchema);

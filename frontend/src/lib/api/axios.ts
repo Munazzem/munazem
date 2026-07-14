@@ -45,6 +45,15 @@ apiClient.interceptors.response.use(
                 if (window.location.pathname !== '/login') {
                     window.location.href = '/login';
                 }
+            } else if (error.response?.status === 403) {
+                // Silently suppress 403s from superAdmin-only routes (/admin/*, /subscriptions)
+                // to avoid confusing teachers/assistants from stale background queries.
+                const url: string = error.config?.url || '';
+                const isSuperAdminRoute = url.startsWith('/admin') || url === '/subscriptions';
+                if (!isSuperAdminRoute && !error.config?.headers?.['x-skip-error-toast']) {
+                    const errorMsg = error.response?.data?.message || 'ليس لديك الصلاحيات الكافية للوصول إلى هذا المسار';
+                    toast.error(errorMsg);
+                }
             } else if (!error.config?.headers?.['x-skip-error-toast']) {
                 // Determine error message safely
                 const errorMsg = error.response?.data?.message || 'تعذر الاتصال بالخادم، حاول مرة أخرى لاحقاً';

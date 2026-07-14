@@ -59,7 +59,7 @@ export default function ExamsPage() {
     const isTeacher = user?.role === 'teacher' || user?.role === 'assistant';
     const router    = useRouter();
     const queryClient = useQueryClient();
-    const allowedGrades = getAllowedGrades(user?.stage);
+    const allowedGrades = getAllowedGrades(user?.stages);
 
     const [search,        setSearch]        = useState('');
     const [statusFilter,  setStatusFilter]  = useState('');
@@ -94,7 +94,7 @@ export default function ExamsPage() {
     const pagination     = (data as any)?.pagination;
 
     // Enforce stage-based grade filtering on the frontend as well
-    const stageFiltered = user?.stage
+    const stageFiltered = user?.stages && user.stages.length > 0
         ? exams.filter((e) => !e.gradeLevel || allowedGrades.includes(e.gradeLevel))
         : exams;
 

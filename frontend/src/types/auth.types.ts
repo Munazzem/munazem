@@ -6,7 +6,7 @@ export interface User {
     id: string;
     name: string;
     role: 'superAdmin' | 'teacher' | 'assistant';
-    stage?: 'PREPARATORY' | 'SECONDARY' | null;
+    stages?: ('PRIMARY' | 'PREPARATORY' | 'SECONDARY')[];
     teacherId?: string | null;
     centerName?: string;
     logoUrl?: string;

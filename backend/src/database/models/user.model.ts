@@ -39,11 +39,11 @@ const userSchema = new Schema<IUserDocument>(
             default: null,
             index: true,
         },
-        // stage — required for teachers: determines allowed grade levels (PREPARATORY | SECONDARY)
-        stage: {
-            type:    String,
-            enum:    [...Object.values(TeacherStage), null],
-            default: null,
+        // stages — required for teachers: determines allowed grade levels (PRIMARY, PREPARATORY, SECONDARY)
+        stages: {
+            type:    [String],
+            enum:    Object.values(TeacherStage),
+            default: [],
         },
         // Monthly salary — only relevant for assistants
         salary: {
@@ -62,7 +62,14 @@ const userSchema = new Schema<IUserDocument>(
         logoUrl: {
             type: String,
         },
-        // Global switch for the teacher to allow/block assistants from accessing the system
+        // Assistant permissions configuration for the teacher
+        assistantPermissions: {
+            canTakeAttendance: { type: Boolean, default: true },
+            canEditAttendance: { type: Boolean, default: false },
+            canViewAttendance: { type: Boolean, default: true },
+            canRecordPayments: { type: Boolean, default: true },
+            canViewReports:    { type: Boolean, default: true },
+        },
         assistantsAccessEnabled: {
             type: Boolean,
             default: true,

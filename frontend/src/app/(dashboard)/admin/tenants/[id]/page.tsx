@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { AddSubscriptionModal } from '@/components/subscriptions/AddSubscriptionModal';
 import { EditTeacherModal } from './EditTeacherModal';
+import { formatStages } from '@/lib/utils/grades';
 
 function InfoRow({ label, value }: { label: string; value?: string | number | null }) {
     return (
@@ -156,7 +157,7 @@ export default function TenantDetailPage() {
                     <InfoRow label="الاسم"    value={teacher.name} />
                     <InfoRow label="الهاتف"   value={teacher.phone} />
                     <InfoRow label="البريد"   value={teacher.email} />
-                    <InfoRow label="المرحلة"  value={teacher.stage} />
+                    <InfoRow label="المراحل"  value={formatStages(teacher.stages)} />
                     <InfoRow label="الحالة"   value={isActive ? 'نشط ✅' : 'موقوف ❌'} />
                 </div>
 

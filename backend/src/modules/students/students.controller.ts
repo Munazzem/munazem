@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { StudentService } from './students.service.js';
+import { GroupCardsPdfService } from './group-cards-pdf.service.js';
 import { SuccessResponse } from '../../common/utils/response/success.responce.js';
 import { UnauthorizedException } from '../../common/utils/response/error.responce.js';
 import { authenticate } from '../../middlewares/auth.middleware.js';
@@ -83,6 +84,18 @@ class StudentController {
             next(error);
         }
     }
+
+    static async printGroupCards(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const teacherId = StudentController.extractTeacherId(user);
+            const html = await GroupCardsPdfService.generateGroupCardsHtml(req.params.groupId as string, teacherId);
+            res.setHeader('Content-Type', 'text/html; charset=utf-8');
+            return res.status(200).send(html);
+        } catch (error) {
+            next(error);
+        }
+    }
 }
 
 const router = Router();
@@ -100,6 +113,7 @@ router.put('/:id', authorizeRoles(UserRole.assistant, UserRole.teacher), validat
 router.delete('/:id', authorizeRoles(UserRole.assistant, UserRole.teacher), StudentController.deleteStudent);
 
 router.get('/', authorizeRoles(UserRole.teacher, UserRole.assistant), StudentController.getStudents);
+router.get('/group/:groupId/cards', authorizeRoles(UserRole.teacher, UserRole.assistant), StudentController.printGroupCards);
 router.get('/:id', authorizeRoles(UserRole.teacher, UserRole.assistant), StudentController.getStudentById);
 
 export default router;

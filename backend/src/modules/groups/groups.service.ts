@@ -11,14 +11,13 @@ export class GroupService {
     // Create a new group (Only Assistants can trigger this in the controller)
     static async createGroup(teacherId: string, data: CreateGroupDTO) {
         // Enforce teacher stage limits
-        const teacher = await UserModel.findById(teacherId, { stage: 1 }).lean();
+        const teacher = await UserModel.findById(teacherId, { stages: 1 }).lean();
         if (!teacher) throw NotFoundException({ message: 'المعلم غير موجود' });
 
-        if (teacher.stage) {
-            const allowedGrades = STAGE_GRADES[teacher.stage as TeacherStage];
+        if (teacher.stages && teacher.stages.length > 0) {
+            const allowedGrades = teacher.stages.flatMap(s => STAGE_GRADES[s as TeacherStage] || []);
             if (!allowedGrades.includes(data.gradeLevel as GradeLevel)) {
-                const stageName = teacher.stage === TeacherStage.PREPARATORY ? 'الإعدادية' : 'الثانوية';
-                throw BadRequestException({ message: `هذا المعلم مسجل للمرحلة ${stageName} فقط. لا يمكن إنشاء مجموعة لهذه المرحلة الدراسية.` });
+                throw BadRequestException({ message: `هذا المعلم غير مسجل للمرحلة الخاصة بهذه المجموعة.` });
             }
         }
 

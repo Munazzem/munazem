@@ -24,6 +24,7 @@ import {
     RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatStages } from '@/lib/utils/grades';
 
 const STATUS_CONFIG: Record<string, { label: string; cls: string; icon: React.ElementType }> = {
     ACTIVE:  { label: 'نشط',   cls: 'bg-green-100 text-green-700',  icon: CheckCircle2 },
@@ -110,10 +111,10 @@ export default function TeacherDetailPage() {
                                     <Phone className="h-3.5 w-3.5" />
                                     {teacher.phone}
                                 </span>
-                                {teacher.stage && (
+                                {teacher.stages && teacher.stages.length > 0 && (
                                     <span className="flex items-center gap-1 text-sm text-gray-500">
                                         <GraduationCap className="h-3.5 w-3.5" />
-                                        {teacher.stage === 'PREPARATORY' ? 'إعدادي' : 'ثانوي'}
+                                        {formatStages(teacher.stages)}
                                     </span>
                                 )}
                             </div>

@@ -9,6 +9,7 @@ import { addUser } from '@/lib/api/users';
 import { toast } from 'sonner';
 import { Loader2, Plus } from 'lucide-react';
 import { QK } from '@/lib/query-keys';
+import { Checkbox } from '@/components/ui/checkbox';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -41,7 +42,7 @@ const teacherSchema = z.object({
   phone: z.string().min(10, 'رقم الهاتف غير صحيح'),
   email: z.string().email('البريد الإلكتروني غير صحيح').optional().or(z.literal('')),
   password: z.string().min(6, 'كلمة المرور يجب أن تكون 6 أحرف على الأقل'),
-  stage: z.nativeEnum(TeacherStage),
+  stages: z.array(z.nativeEnum(TeacherStage)).min(1, 'اختر مرحلة واحدة على الأقل'),
   subject: z.string().optional(),
 });
 
@@ -57,7 +58,7 @@ export function AddTeacherModal() {
       phone: '',
       email: '',
       password: '',
-      stage: TeacherStage.preparatory,
+      stages: [TeacherStage.preparatory],
       subject: '',
     },
   });
@@ -157,23 +158,51 @@ export function AddTeacherModal() {
                 />
 
                 <FormField
-                control={form.control}
-                name="stage"
-                render={({ field }) => (
-                    <FormItem>
-                    <FormLabel>المرحلة الدراسية <span className="text-red-500">*</span></FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                        <SelectTrigger><SelectValue placeholder="اختر المرحلة" /></SelectTrigger>
-                        </FormControl>
-                        <SelectContent dir="rtl">
-                            <SelectItem value={TeacherStage.preparatory}>إعدادي</SelectItem>
-                            <SelectItem value={TeacherStage.secondary}>ثانوي</SelectItem>
-                        </SelectContent>
-                    </Select>
-                    <FormMessage />
+                  control={form.control}
+                  name="stages"
+                  render={() => (
+                    <FormItem className="col-span-2 mt-2">
+                      <div className="mb-2">
+                        <FormLabel>المراحل الدراسية <span className="text-red-500">*</span></FormLabel>
+                      </div>
+                      <div className="flex gap-6">
+                        {Object.values(TeacherStage).map((stageValue) => (
+                          <FormField
+                            key={stageValue}
+                            control={form.control}
+                            name="stages"
+                            render={({ field }) => {
+                              return (
+                                <FormItem
+                                  key={stageValue}
+                                  className="flex flex-row items-center space-x-2 space-x-reverse space-y-0"
+                                >
+                                  <FormControl>
+                                    <Checkbox
+                                      checked={field.value?.includes(stageValue)}
+                                      onCheckedChange={(checked) => {
+                                        return checked
+                                          ? field.onChange([...(field.value || []), stageValue])
+                                          : field.onChange(
+                                              field.value?.filter(
+                                                (val) => val !== stageValue
+                                              )
+                                            )
+                                      }}
+                                    />
+                                  </FormControl>
+                                  <FormLabel className="text-sm font-normal cursor-pointer">
+                                    {stageValue === TeacherStage.primary ? 'ابتدائي' : stageValue === TeacherStage.preparatory ? 'إعدادي' : 'ثانوي'}
+                                  </FormLabel>
+                                </FormItem>
+                              )
+                            }}
+                          />
+                        ))}
+                      </div>
+                      <FormMessage />
                     </FormItem>
-                )}
+                  )}
                 />
             </div>
 

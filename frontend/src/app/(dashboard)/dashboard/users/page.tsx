@@ -14,6 +14,7 @@ import {
     ShieldBan,
     ShieldCheck
 } from 'lucide-react';
+import { formatStages } from '@/lib/utils/grades';
 
 import { CardSkeleton } from '@/components/layout/skeletons/CardSkeleton';
 import { cn } from '@/lib/utils';
@@ -164,7 +165,7 @@ export default function UsersPage() {
                                 <div className="flex justify-between items-start mb-4">
                                     <div className="flex-1 min-w-0">
                                         <Badge variant="outline" className="mb-2 bg-primary/10 text-primary border-primary/20">
-                                            {teacher.stage === 'PREPARATORY' ? 'إعدادي' : teacher.stage === 'SECONDARY' ? 'ثانوي' : 'غير محدد'}
+                                            {formatStages(teacher.stages)}
                                         </Badge>
                                         <h3 className="text-xl font-bold text-gray-900">{teacher.name}</h3>
                                         <p className="text-sm text-gray-500 mt-1" dir="ltr">{teacher.phone}</p>

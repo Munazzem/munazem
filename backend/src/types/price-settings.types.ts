@@ -6,9 +6,15 @@ export interface IPriceSetting {
     amount:     number;
 }
 
+export interface ICenterDiscount {
+    centerName: string;
+    discountAmount: number;
+}
+
 export interface IPriceSettings {
     teacherId: Types.ObjectId;   // unique per teacher
     prices:    IPriceSetting[];
+    centerDiscounts?: ICenterDiscount[];
     updatedAt?: Date;
     createdAt?: Date;
 }

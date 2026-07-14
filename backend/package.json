@@ -23,6 +23,7 @@
     "multer": "^2.1.1",
     "nodemailer": "^8.0.8",
     "pdf-parse": "^1.1.1",
+    "qrcode": "^1.5.4",
     "qrcode-terminal": "^0.12.0",
     "socket.io": "^4.8.3",
     "typescript": "^5.9.3",
@@ -33,7 +34,6 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc-watch --onSuccess \"node dist/src/main.js\"",
-    "build": "tsc",
     "start": "node dist/src/main.js"
   },
   "devDependencies": {
@@ -47,6 +47,7 @@
     "@types/multer": "^2.0.0",
     "@types/nodemailer": "^8.0.0",
     "@types/pdf-parse": "^1.1.5",
+    "@types/qrcode": "^1.5.6",
     "tsc-watch": "^7.2.0",
     "tsx": "^4.21.0"
   }

@@ -17,15 +17,15 @@ export class UserService {
             // Force the role to Assistant (ignoring whatever was sent)
             data.role = UserRole.assistant;
             data.teacherId = creatorId;
-            data.stage = null; // Assistants don't have a stage
+            data.stages = []; // Assistants don't have stages
         }
 
         if (creatorRole === UserRole.superAdmin || creatorRole === 'SUPER_ADMIN') {
             // Force the role to Teacher (ignoring whatever was sent)
             data.role = UserRole.teacher;
             data.teacherId = null;
-            if (!data.stage) {
-                throw BadRequestException({ message: 'يجب تحديد المرحلة الدراسية للمعلم (إعدادي أو ثانوي)' });
+            if (!data.stages || data.stages.length === 0) {
+                throw BadRequestException({ message: 'يجب تحديد مرحلة دراسية واحدة على الأقل للمعلم' });
             }
         }
 

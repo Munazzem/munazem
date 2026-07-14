@@ -79,3 +79,11 @@ export const bulkCreateStudents = async (students: BulkStudentInput[]): Promise<
     const res = await apiClient.post('/students/bulk', { students });
     return (res as any).data;
 };
+
+/**
+ * Fetch group cards HTML for printing
+ */
+export const fetchGroupCardsHtml = async (groupId: string): Promise<string> => {
+    const res = await apiClient.get(`/students/group/${groupId}/cards`, { responseType: 'text' });
+    return res.data;
+};

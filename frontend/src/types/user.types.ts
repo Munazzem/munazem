@@ -5,6 +5,7 @@ export enum UserRole {
 }
 
 export enum TeacherStage {
+    primary = 'PRIMARY',
     preparatory = 'PREPARATORY',
     secondary = 'SECONDARY',
 }
@@ -16,7 +17,7 @@ export interface IUser {
     phone: string;
     role: UserRole;
     teacherId?: string | null;
-    stage?: TeacherStage | null;
+    stages?: TeacherStage[];
     subject?: string;
     centerName?: string;
     logoUrl?: string;

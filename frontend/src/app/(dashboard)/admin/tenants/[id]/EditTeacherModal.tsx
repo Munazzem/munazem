@@ -9,6 +9,7 @@ import { updateTenant } from '@/lib/api/admin';
 import { toast } from 'sonner';
 import { Loader2, Edit, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
     Dialog,
     DialogContent,
@@ -29,7 +30,7 @@ import { Input } from '@/components/ui/input';
 const schema = z.object({
     name: z.string().min(2, 'الاسم مطلوب'),
     phone: z.string().min(10, 'رقم الهاتف مطلوب'),
-    stage: z.string().optional(),
+    stages: z.array(z.string()).min(1, 'اختر مرحلة واحدة على الأقل').optional(),
     subject: z.string().optional(),
 });
 
@@ -44,7 +45,7 @@ export function EditTeacherModal({ teacher }: { teacher: any }) {
         defaultValues: {
             name: teacher?.name || '',
             phone: teacher?.phone || '',
-            stage: teacher?.stage || '',
+            stages: teacher?.stages || [],
             subject: teacher?.subject || '',
         },
     });
@@ -67,7 +68,7 @@ export function EditTeacherModal({ teacher }: { teacher: any }) {
             if (val) form.reset({
                 name: teacher?.name || '',
                 phone: teacher?.phone || '',
-                stage: teacher?.stage || '',
+                stages: teacher?.stages || [],
                 subject: teacher?.subject || '',
             });
             setOpen(val);
@@ -115,14 +116,48 @@ export function EditTeacherModal({ teacher }: { teacher: any }) {
 
                         <FormField
                             control={form.control}
-                            name="stage"
-                            render={({ field }) => (
-                                <FormItem>
-                                    <FormLabel>المرحلة</FormLabel>
-                                    <FormControl>
-                                        <Input {...field} placeholder="مثال: الثانوية العامة" />
-                                    </FormControl>
-                                    <FormMessage />
+                            name="stages"
+                            render={() => (
+                                <FormItem className="col-span-2 mt-2">
+                                <div className="mb-2">
+                                    <FormLabel>المراحل الدراسية</FormLabel>
+                                </div>
+                                <div className="flex gap-6">
+                                    {['PRIMARY', 'PREPARATORY', 'SECONDARY'].map((stageValue) => (
+                                    <FormField
+                                        key={stageValue}
+                                        control={form.control}
+                                        name="stages"
+                                        render={({ field }) => {
+                                        return (
+                                            <FormItem
+                                            key={stageValue}
+                                            className="flex flex-row items-center space-x-2 space-x-reverse space-y-0"
+                                            >
+                                            <FormControl>
+                                                <Checkbox
+                                                checked={field.value?.includes(stageValue)}
+                                                onCheckedChange={(checked) => {
+                                                    return checked
+                                                    ? field.onChange([...(field.value || []), stageValue])
+                                                    : field.onChange(
+                                                        field.value?.filter(
+                                                            (val) => val !== stageValue
+                                                        )
+                                                        )
+                                                }}
+                                                />
+                                            </FormControl>
+                                            <FormLabel className="text-sm font-normal cursor-pointer">
+                                                {stageValue === 'PRIMARY' ? 'ابتدائي' : stageValue === 'PREPARATORY' ? 'إعدادي' : 'ثانوي'}
+                                            </FormLabel>
+                                            </FormItem>
+                                        )
+                                        }}
+                                    />
+                                    ))}
+                                </div>
+                                <FormMessage />
                                 </FormItem>
                             )}
                         />

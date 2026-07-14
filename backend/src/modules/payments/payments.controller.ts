@@ -28,7 +28,7 @@ paymentsRouter.put(
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const teacherId = (req as any).user.userId;
-            const result = await PaymentsService.upsertPriceSettings(teacherId, req.body.prices);
+            const result = await PaymentsService.upsertPriceSettings(teacherId, req.body);
             return SuccessResponse({ res, data: result, message: 'تم حفظ أسعار المراحل بنجاح' });
         } catch (error) { next(error); }
     }
@@ -203,6 +203,27 @@ paymentsRouter.patch(
             const teacherId = (req as any).user.userId;
             const updated = await PaymentsService.updateTransaction(teacherId, req.params['id'] as string, req.body);
             return SuccessResponse({ res, data: updated, message: 'تم تعديل المعاملة بنجاح' });
+        } catch (error) { next(error); }
+    }
+);
+
+// ════════════════════════════════════════════════════════════════
+// CENTER DEDUCTION — Deduct center share from teacher earnings
+// ════════════════════════════════════════════════════════════════
+
+// POST /payments/center-deduction — Record center fee deduction (Teacher only)
+paymentsRouter.post(
+    '/center-deduction',
+    authorizeRoles(UserRole.teacher),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = (req as any).user.userId;
+            const { centerName, amount, date, description } = req.body;
+            if (!centerName || !amount || amount <= 0) {
+                throw new Error('اسم السنتر والمبلغ مطلوبان');
+            }
+            const result = await PaymentsService.recordCenterDeduction(teacherId, { centerName, amount, date, description });
+            return SuccessResponse({ res, data: result, message: 'تم تسجيل خصم السنتر بنجاح', status: 201 });
         } catch (error) { next(error); }
     }
 );

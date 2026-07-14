@@ -3,6 +3,7 @@ import { envVars }               from '../../../config/env.service.js';
 import { Redis }                 from 'ioredis';
 import { logger }                from '../../common/utils/logger.util.js';
 import { sendWhatsAppMessage }   from '../../common/utils/whatsapp.service.js';
+import { getWhatsAppGateway }    from '../socket/whatsapp.gateway.js';
 import type { WhatsAppJobData }  from './queue.types.js';
 
 // ─── Rate-limit delay ─────────────────────────────────────────────────────────
@@ -164,6 +165,10 @@ export function startWhatsAppWorker(): Worker<WhatsAppJobData> {
         },
     );
 
+    worker.on('completed', (job) => {
+        getWhatsAppGateway().emitToSuperAdmins('wa:queue:updated', {});
+    });
+
     worker.on('failed', (job, err) => {
         logger.error('whatsapp_job_failed', {
             jobId:   job?.id,
@@ -171,6 +176,7 @@ export function startWhatsAppWorker(): Worker<WhatsAppJobData> {
             attempt: job?.attemptsMade,
             error:   err.message,
         });
+        getWhatsAppGateway().emitToSuperAdmins('wa:queue:updated', {});
     });
 
     worker.on('error', (err) => {

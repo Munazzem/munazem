@@ -62,7 +62,18 @@ export const generateMonthSessions = async (year: number, month: number): Promis
     return (res as any).data;
 };
 
+export const generateTodaySessions = async (): Promise<{
+    date: string;
+    createdCount: number;
+    skippedCount: number;
+    message: string;
+}> => {
+    const res = await apiClient.post('/sessions/generate/today');
+    return (res as any).data;
+};
+
 export const deleteSession = async (sessionId: string): Promise<{ message: string }> => {
     const res = await apiClient.delete(`/sessions/${sessionId}`);
     return (res as any).data;
 };
+
