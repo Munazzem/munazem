@@ -22,8 +22,8 @@ export const getPriceSettings = async (): Promise<IPriceSettings> => {
     return (res as any).data;
 };
 
-export const savePriceSettings = async (prices: IPriceSetting[]): Promise<IPriceSettings> => {
-    const res = await apiClient.put('/payments/prices', { prices });
+export const savePriceSettings = async (data: { prices: IPriceSetting[], centerDiscounts?: any[] }): Promise<IPriceSettings> => {
+    const res = await apiClient.put('/payments/prices', data);
     return (res as any).data;
 };
 
@@ -110,5 +110,15 @@ export const updateTransaction = async (
     }
 ): Promise<ITransaction> => {
     const res = await apiClient.patch(`/payments/${transactionId}`, data);
+    return (res as any).data;
+};
+
+export const recordCenterDeduction = async (data: {
+    centerName: string;
+    amount: number;
+    description?: string;
+    date?: string;
+}): Promise<ITransaction> => {
+    const res = await apiClient.post('/payments/center-deduction', data);
     return (res as any).data;
 };

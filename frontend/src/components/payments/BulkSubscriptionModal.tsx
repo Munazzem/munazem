@@ -7,6 +7,9 @@ import { fetchStudents } from '@/lib/api/students';
 import { recordBatchSubscription } from '@/lib/api/payments';
 import { toast } from 'sonner';
 import { QK } from '@/lib/query-keys';
+import { useAuthStore } from '@/lib/store/auth.store';
+import { generateBatchReceiptsHtml } from '@/lib/utils/receiptHtml';
+import { printHtmlContent } from '@/lib/utils/print';
 import {
     Dialog,
     DialogContent,
@@ -27,6 +30,7 @@ import {
     CheckCircle2,
     XCircle,
     Users,
+    Printer,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { StudentWithGroup } from '@/types/student.types';
@@ -40,6 +44,7 @@ type Phase = 'select' | 'result';
 
 export function BulkSubscriptionModal({ open, onOpenChange }: Props) {
     const queryClient = useQueryClient();
+    const user = useAuthStore(s => s.user);
 
     const [groupId,     setGroupId]     = useState('');
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -300,6 +305,24 @@ export function BulkSubscriptionModal({ open, onOpenChange }: Props) {
                             <Button variant="outline" onClick={() => { setPhase('select'); setGroupId(''); }} className="flex-1">
                                 دفعة جديدة
                             </Button>
+                            {results.some(r => r.status === 'success') && (
+                                <Button 
+                                    className="flex-1 gap-2 bg-blue-600 hover:bg-blue-700 text-white"
+                                    onClick={() => {
+                                        const successfulReceipts = results.filter(r => r.status === 'success').map(r => ({
+                                            teacherName: user?.name || 'السنتر',
+                                            studentName: r.studentName || r.studentId,
+                                            amount: r.paidAmount,
+                                            description: 'اشتراك شهر',
+                                            date: new Date().toISOString(),
+                                        }));
+                                        printHtmlContent(generateBatchReceiptsHtml(successfulReceipts));
+                                    }}
+                                >
+                                    <Printer size={16} />
+                                    طباعة الوصلات
+                                </Button>
+                            )}
                             <Button onClick={() => onOpenChange(false)} className="flex-1">
                                 إغلاق
                             </Button>

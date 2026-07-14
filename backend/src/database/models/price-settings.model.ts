@@ -23,6 +23,14 @@ const priceSettingsSchema = new Schema<IPriceSettingsDocument>({
         },
         _id: false,
     }],
+    centerDiscounts: {
+        type: [{
+            centerName: { type: String, required: true },
+            discountAmount: { type: Number, required: true, min: 0 },
+            _id: false
+        }],
+        default: [],
+    },
 }, {
     timestamps: true,
 });
