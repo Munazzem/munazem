@@ -8,6 +8,7 @@ export {
     SECONDARY_GRADES,
     ALL_GRADES,
     getAllowedGrades,
+    formatStages,
     type GradeLevel,
 } from '@/lib/constants/grade.constants';
 
