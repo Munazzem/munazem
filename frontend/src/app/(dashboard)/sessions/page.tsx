@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchSessions, generateMonthSessions, updateSessionStatus, deleteSession } from '@/lib/api/sessions';
+import { fetchSessions, generateMonthSessions, generateTodaySessions, updateSessionStatus, deleteSession } from '@/lib/api/sessions';
 import { fetchGroups } from '@/lib/api/groups';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { CreateSessionModal } from '@/components/sessions/CreateSessionModal';
@@ -134,6 +134,17 @@ export default function SessionsPage() {
         },
     });
 
+    const generateTodayMutation = useMutation({
+        mutationFn: () => generateTodaySessions(),
+        onSuccess: (result) => {
+            toast.success(result.message);
+            queryClient.invalidateQueries({ queryKey: ['sessions'] });
+            // Switch to viewing today
+            setDateFilter(today);
+            setPage(1);
+        },
+    });
+
     const cancelMutation = useMutation({
         mutationFn: (sessionId: string) => updateSessionStatus(sessionId, 'CANCELLED'),
         onSuccess: () => {
@@ -233,6 +244,24 @@ export default function SessionsPage() {
                 </div>
                 {canWrite && (
                     <div className="relative flex gap-2 shrink-0">
+                        {/* 1. Generate Today (Primary Action) */}
+                        <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => generateTodayMutation.mutate()}
+                            disabled={generateTodayMutation.isPending}
+                            className="gap-1.5 text-xs sm:text-sm bg-primary hover:bg-primary/90 text-white shadow-sm"
+                        >
+                            {generateTodayMutation.isPending ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                                <Wand2 className="h-3.5 w-3.5" />
+                            )}
+                            <span className="hidden sm:inline">توليد حصص اليوم</span>
+                            <span className="sm:hidden">اليوم</span>
+                        </Button>
+
+                        {/* 2. Generate Month (Secondary Action) */}
                         <div className="relative">
                             <Button
                                 variant="outline"
@@ -244,10 +273,10 @@ export default function SessionsPage() {
                                 {generateMutation.isPending ? (
                                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                                 ) : (
-                                    <Wand2 className="h-3.5 w-3.5" />
+                                    <Calendar className="h-3.5 w-3.5" />
                                 )}
-                                <span className="hidden sm:inline">توليد حصص الشهر</span>
-                                <span className="sm:hidden">توليد</span>
+                                <span className="hidden sm:inline">توليد الشهر</span>
+                                <span className="sm:hidden">الشهر</span>
                                 {showMonthPicker ? (
                                     <ChevronUp className="h-3 w-3" />
                                 ) : (

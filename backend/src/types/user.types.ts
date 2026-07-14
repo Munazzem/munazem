@@ -8,15 +8,22 @@ export interface IUser {
   password?: string;
   role:      UserRole;
   teacherId: Types.ObjectId | null;
-  stage:     TeacherStage | null;   // إعدادي أو ثانوي — للمدرسين فقط
+  stages:    TeacherStage[];        // إعدادي، ثانوي، أو كلاهما — للمدرسين فقط
   salary:    number | null;         // راتب شهري — للمساعدين فقط
   isActive:  boolean;
   centerName?: string;              // اسم السنتر — للمدرسين فقط
   logoUrl?:    string;              // لوجو السنتر — للمدرسين فقط
-  assistantsAccessEnabled?: boolean; // مفتاح تفعيل/تعطيل وصول المساعدين
+  assistantPermissions?: {
+    canTakeAttendance: boolean;
+    canEditAttendance: boolean;
+    canViewAttendance: boolean;
+    canRecordPayments: boolean;
+    canViewReports:    boolean;
+  };
   whatsappQr?:     string | null;   // QR data for frontend rendering
   whatsappStatus?: 'disconnected' | 'pending' | 'connected';
   subject?:        string;
+  assistantsAccessEnabled?: boolean;
 }
 
 export interface IUserDocument extends IUser, Document {

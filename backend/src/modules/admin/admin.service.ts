@@ -210,7 +210,7 @@ export class AdminService {
     }
 
     // ── Update Tenant Profile ─────────────────────────────────────────
-    static async updateTenant(id: string, updateData: { name?: string; phone?: string; stage?: string; subject?: string; centerName?: string }) {
+    static async updateTenant(id: string, updateData: { name?: string; phone?: string; stages?: string[]; subject?: string; centerName?: string }) {
         const teacher = await UserModel.findByIdAndUpdate(
             id,
             { $set: updateData },
@@ -381,4 +381,83 @@ export class AdminService {
         if (!result) throw NotFoundException({ message: 'الإشعار غير موجود' });
         return true;
     }
+
+    // ── Queues (WhatsApp) ────────────────────────────────────────────
+    static async getWhatsAppQueueStatus(filters?: { phone?: string; teacherId?: string }) {
+        const { whatsAppQueue } = await import('../../infrastructure/queues/whatsapp.queue.js');
+        const [waiting, active, completed, failed, delayed] = await Promise.all([
+            whatsAppQueue.getWaitingCount(),
+            whatsAppQueue.getActiveCount(),
+            whatsAppQueue.getCompletedCount(),
+            whatsAppQueue.getFailedCount(),
+            whatsAppQueue.getDelayedCount(),
+        ]);
+
+        let recentFailed = await whatsAppQueue.getFailed(0, 50);
+        let recentCompleted = await whatsAppQueue.getCompleted(0, 50);
+
+        if (filters?.phone) {
+            const phone = filters.phone.replace(/\D/g, '');
+            recentFailed = recentFailed.filter(job => {
+                const d = job?.data as any;
+                const jobPhone = String(d?.parentPhone || d?.phone || '').replace(/\D/g, '');
+                return jobPhone.includes(phone);
+            });
+            recentCompleted = recentCompleted.filter(job => {
+                const d = job?.data as any;
+                const jobPhone = String(d?.parentPhone || d?.phone || '').replace(/\D/g, '');
+                return jobPhone.includes(phone);
+            });
+        }
+        if (filters?.teacherId) {
+            recentFailed = recentFailed.filter(job => {
+                const d = job?.data as any;
+                return String(d?.teacherId) === filters.teacherId;
+            });
+            recentCompleted = recentCompleted.filter(job => {
+                const d = job?.data as any;
+                return String(d?.teacherId) === filters.teacherId;
+            });
+        }
+
+        return {
+            counts: { waiting, active, completed, failed, delayed },
+            recentFailed: recentFailed.slice(0, 20).map(job => ({
+                id: job?.id,
+                name: job?.name,
+                data: job?.data,
+                failedReason: job?.failedReason,
+                timestamp: job?.timestamp
+            })),
+            recentCompleted: recentCompleted.slice(0, 20).map(job => ({
+                id: job?.id,
+                name: job?.name,
+                data: job?.data,
+                timestamp: job?.timestamp,
+                finishedOn: job?.finishedOn
+            }))
+        };
+    }
+
+    static async retryAllFailedWhatsAppJobs() {
+        const { whatsAppQueue } = await import('../../infrastructure/queues/whatsapp.queue.js');
+        const failedJobs = await whatsAppQueue.getFailed(0, 100);
+        let retried = 0;
+        for (const job of failedJobs) {
+            try { await job.retry(); retried++; } catch { /* skip */ }
+        }
+        return { retried };
+    }
+
+    static async clearAllFailedWhatsAppJobs() {
+        const { whatsAppQueue } = await import('../../infrastructure/queues/whatsapp.queue.js');
+        const failedJobs = await whatsAppQueue.getFailed(0, 500);
+        let cleared = 0;
+        for (const job of failedJobs) {
+            try { await job.remove(); cleared++; } catch { /* skip */ }
+        }
+        return { cleared };
+    }
+
+
 }

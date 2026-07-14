@@ -26,7 +26,7 @@ export function Header() {
                         id:         fresh._id ?? fresh.id,
                         name:       fresh.name,
                         role:       fresh.role,
-                        stage:      fresh.stage ?? null,
+                        stages:     fresh.stages ?? [],
                         teacherId:  fresh.teacherId ?? null,
                         centerName: fresh.centerName,
                         logoUrl:    fresh.logoUrl,

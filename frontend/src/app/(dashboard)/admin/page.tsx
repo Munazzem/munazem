@@ -83,26 +83,32 @@ export default function AdminOverviewPage() {
     const user   = useAuthStore(s => s.user);
     const router = useRouter();
 
+    const isSuperAdmin = user?.role === 'superAdmin';
+
     const { data: stats, isLoading: statsLoading, refetch: refetchStats } = useQuery({
         queryKey: ['admin-stats'],
         queryFn:  fetchAdminStats,
+        enabled:  isSuperAdmin,
         refetchInterval: 60_000,
     });
 
     const { data: growth } = useQuery({
         queryKey: ['admin-growth'],
         queryFn:  fetchGrowthData,
+        enabled:  isSuperAdmin,
     });
 
     const { data: errorsData } = useQuery({
         queryKey: ['admin-errors', { limit: 10 }],
         queryFn:  () => fetchAdminErrors({ limit: 10 }),
+        enabled:  isSuperAdmin,
         refetchInterval: 30_000,
     });
 
     const { data: health, isFetching: healthFetching } = useQuery({
         queryKey: ['admin-health'],
         queryFn:  fetchAdminHealth,
+        enabled:  isSuperAdmin,
         refetchInterval: 30_000,
     });
 

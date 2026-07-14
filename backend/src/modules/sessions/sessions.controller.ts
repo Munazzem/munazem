@@ -100,6 +100,19 @@ sessionRouter.post(
     }
 );
 
+// ─── POST /sessions/generate/today — Auto-generate sessions for today
+sessionRouter.post(
+    '/generate/today',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = resolveTeacherId((req as any).user);
+            const result = await SessionService.generateTodaySessions(teacherId);
+            return SuccessResponse({ res, data: result, message: result.message });
+        } catch (error) { next(error); }
+    }
+);
+
 // ─── POST /sessions/generate-month?year=2026&month=3 — Auto-generate sessions for a full month
 sessionRouter.post(
     '/generate-month',

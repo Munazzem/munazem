@@ -269,4 +269,36 @@ adminRouter.delete('/announcements/:id', async (req: Request, res: Response, nex
     } catch (error) { next(error); }
 });
 
+// ── Queues Diagnosis ───────────────────────────────────────────────────
+
+adminRouter.get('/queues/whatsapp', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const phone     = req.query['phone']     as string | undefined;
+        const teacherId = req.query['teacherId'] as string | undefined;
+        const filters: { phone?: string; teacherId?: string } = {};
+        if (phone)     filters.phone     = phone;
+        if (teacherId) filters.teacherId = teacherId;
+        const data = await AdminService.getWhatsAppQueueStatus(filters);
+        return SuccessResponse({ res, data, message: 'Queue status fetched' });
+    } catch (error) { next(error); }
+});
+
+// ── Queue Management — Retry & Clear Failed Jobs ─────────────────────────────
+
+// POST /admin/queues/whatsapp/retry-all — Retry all failed WhatsApp jobs
+adminRouter.post('/queues/whatsapp/retry-all', async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+        const data = await AdminService.retryAllFailedWhatsAppJobs();
+        return SuccessResponse({ res, data, message: `تم إعادة محاولة ${data.retried} رسالة فاشلة` });
+    } catch (error) { next(error); }
+});
+
+// DELETE /admin/queues/whatsapp/failed — Clear all failed WhatsApp jobs
+adminRouter.delete('/queues/whatsapp/failed', async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+        const data = await AdminService.clearAllFailedWhatsAppJobs();
+        return SuccessResponse({ res, data, message: `تم مسح ${data.cleared} رسالة فاشلة` });
+    } catch (error) { next(error); }
+});
+
 export default adminRouter;

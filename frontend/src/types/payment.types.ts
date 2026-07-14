@@ -79,9 +79,15 @@ export interface IPriceSetting {
     amount: number;
 }
 
+export interface ICenterDiscount {
+    centerName: string;
+    discountAmount: number;
+}
+
 export interface IPriceSettings {
     teacherId: string;
     prices: IPriceSetting[];
+    centerDiscounts?: ICenterDiscount[];
 }
 
 // ── Batch Operations ────────────────────────────────────────────────

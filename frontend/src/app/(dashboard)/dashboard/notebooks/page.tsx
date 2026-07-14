@@ -184,7 +184,7 @@ export default function NotebooksPage() {
     const user = useAuthStore((s) => s.user);
     const isTeacher = user?.role === 'teacher';
     const canManage = user?.role === 'teacher' || user?.role === 'assistant';
-    const allowedGrades = getAllowedGrades(user?.stage);
+    const allowedGrades = getAllowedGrades(user?.stages);
 
     const [search, setSearch] = useState('');
     const [gradeFilter, setGradeFilter] = useState('');

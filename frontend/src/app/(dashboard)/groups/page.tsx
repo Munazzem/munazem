@@ -15,6 +15,7 @@ import {
     Clock,
     Loader2,
     FileText,
+    QrCode,
 } from 'lucide-react';
 import { CardSkeleton } from '@/components/layout/skeletons/CardSkeleton';
 import { cn } from '@/lib/utils';
@@ -41,6 +42,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import { fetchGroupCardsHtml } from '@/lib/api/students';
 import {
     Accordion,
     AccordionContent,
@@ -56,12 +58,14 @@ export default function GroupsPage() {
     const [searchTerm, setSearchTerm] = useState('');
     const [gradeFilter, setGradeFilter] = useState('');
     const limit = 20; // Lower limit for pagination is better for performance when infinite scroll is applied
-    const allowedGrades = getAllowedGrades(user?.stage);
+    const allowedGrades = getAllowedGrades(user?.stages);
 
     const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [reportGroupId, setReportGroupId] = useState<string | null>(null);
     const [reportGroupName, setReportGroupName] = useState('');
+
+    const [isPrintingCards, setIsPrintingCards] = useState<string | null>(null);
 
     const [isConfirmDeleteDialogOpen, setIsConfirmDeleteDialogOpen] = useState(false);
     const [groupToDelete, setGroupToDelete] = useState<{ id: string; name: string } | null>(null);
@@ -99,6 +103,25 @@ export default function GroupsPage() {
             // Handled globally
         }
     });
+
+    const handlePrintCards = async (groupId: string) => {
+        setIsPrintingCards(groupId);
+        try {
+            const html = await fetchGroupCardsHtml(groupId);
+            const printWindow = window.open('', '_blank');
+            if (printWindow) {
+                printWindow.document.open();
+                printWindow.document.write(html);
+                printWindow.document.close();
+            } else {
+                toast.error('يرجى السماح بالنوافذ المنبثقة (Pop-ups) للطباعة');
+            }
+        } catch (error) {
+            toast.error('حدث خطأ أثناء تحميل كروت المجموعة');
+        } finally {
+            setIsPrintingCards(null);
+        }
+    };
 
     const handleDeleteClick = (id: string, name: string) => {
         setGroupToDelete({ id, name });
@@ -213,6 +236,14 @@ export default function GroupsPage() {
                                                                 <>
                                                                     <DropdownMenuItem className="cursor-pointer focus:text-primary" onClick={() => handleEditClick(group)}>
                                                                         <Edit className="mr-2 h-4 w-4 ml-2" /> تعديل المجموعة
+                                                                    </DropdownMenuItem>
+                                                                    <DropdownMenuItem className="cursor-pointer focus:text-primary" onClick={() => handlePrintCards(group._id)}>
+                                                                        {isPrintingCards === group._id ? (
+                                                                            <Loader2 className="mr-2 h-4 w-4 ml-2 animate-spin" />
+                                                                        ) : (
+                                                                            <QrCode className="mr-2 h-4 w-4 ml-2" />
+                                                                        )}
+                                                                        طباعة كروت المجموعة
                                                                     </DropdownMenuItem>
                                                                     <DropdownMenuItem className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50" onClick={() => handleDeleteClick(group._id, group.name)}>
                                                                         <Trash2 className="mr-2 h-4 w-4 ml-2" /> حذف المجموعة

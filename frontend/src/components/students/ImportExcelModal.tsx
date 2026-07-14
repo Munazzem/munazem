@@ -43,7 +43,7 @@ interface ParsedRow {
 
 export function ImportExcelModal({ open, onOpenChange }: Props) {
     const user = useAuthStore((s) => s.user);
-    const allowedGrades = getAllowedGrades(user?.stage);
+    const allowedGrades = getAllowedGrades(user?.stages);
     const queryClient = useQueryClient();
     const fileInputRef = useRef<HTMLInputElement>(null);
 

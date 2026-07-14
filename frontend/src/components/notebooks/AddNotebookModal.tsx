@@ -49,7 +49,7 @@ export function AddNotebookModal() {
     const [open, setOpen] = useState(false);
     const queryClient = useQueryClient();
     const user = useAuthStore((s) => s.user);
-    const allowedGrades = getAllowedGrades(user?.stage);
+    const allowedGrades = getAllowedGrades(user?.stages);
 
     const form = useForm<FormValues>({
         resolver: zodResolver(schema),

@@ -197,6 +197,85 @@ export class SessionService {
         return { message: 'تم حذف الحصة بدون تعويض' };
     }
 
+    // ─── Auto-generate today's sessions from group schedules ─────────
+    static async generateTodaySessions(teacherId: string) {
+        const today = new Date();
+        today.setUTCHours(0, 0, 0, 0);
+        const todayDayOfWeek = today.getUTCDay(); // 0-6
+        const dateStr = today.toISOString().split('T')[0];
+
+        // Get all active groups with schedule
+        const groups = await GroupModel.find(
+            { teacherId },
+            { _id: 1, schedule: 1 }
+        ).lean();
+
+        // Step 1: Build candidate sessions for today
+        const candidates: { groupId: any; date: Date; time: string }[] = [];
+
+        for (const group of groups) {
+            if (!group.schedule || group.schedule.length === 0) continue;
+
+            for (const slot of group.schedule) {
+                const targetDay = DAY_MAP[slot.day];
+                if (targetDay === todayDayOfWeek) {
+                    candidates.push({ groupId: group._id, date: today, time: slot.time });
+                }
+            }
+        }
+
+        if (candidates.length === 0) {
+            return { date: dateStr, createdCount: 0, skippedCount: 0, message: 'لا توجد حصص مجدولة لهذا اليوم' };
+        }
+
+        // Step 2: Single batch existence check for today
+        const nextDay = new Date(today);
+        nextDay.setUTCDate(today.getUTCDate() + 1);
+
+        const groupIds = [...new Set(candidates.map(c => c.groupId.toString()))];
+        const existingSessions = await SessionModel.find(
+            {
+                groupId: { $in: groupIds },
+                date: { $gte: today, $lt: nextDay },
+            },
+            { groupId: 1, date: 1, startTime: 1 }
+        ).lean();
+
+        const existingSet = new Set(
+            existingSessions.map(s => `${s.groupId.toString()}_${s.startTime}`)
+        );
+
+        // Step 3: Filter out duplicates and insertMany
+        const toCreate = candidates
+            .filter(c => !existingSet.has(`${c.groupId.toString()}_${c.time}`))
+            .map(c => ({
+                groupId:   c.groupId,
+                teacherId,
+                date:      c.date,
+                startTime: c.time,
+                status:    SessionStatus.SCHEDULED,
+            }));
+
+        const skippedCount = candidates.length - toCreate.length;
+
+        if (toCreate.length > 0) {
+            await SessionModel.insertMany(toCreate);
+        }
+
+        trackEvent('sessions_generated', {
+            tenantId: teacherId,
+            userId:   teacherId,
+            meta:     { type: 'today', date: dateStr, createdCount: toCreate.length, skippedCount },
+        });
+
+        return {
+            date: dateStr,
+            createdCount: toCreate.length,
+            skippedCount,
+            message: `تم إنشاء ${toCreate.length} حصة لليوم، تم تجاهل ${skippedCount} حصة موجودة مسبقاً`,
+        };
+    }
+
     // ─── Auto-generate week sessions from group schedules ────────────
     // weekStart: ISO date string of the week's start day (e.g., Saturday "2026-03-07")
     // Optimized: uses batch existence check + insertMany instead of N+1 queries
