@@ -71,6 +71,7 @@ export async function initializeClientForTeacher(teacherId: string): Promise<voi
 
     const client = new Client({
         authStrategy: new LocalAuth({ clientId: `session-${teacherId}` }),
+        webVersionCache: { type: 'local' },
         puppeteer: {
             headless: true,
             args: [
@@ -81,6 +82,7 @@ export async function initializeClientForTeacher(teacherId: string): Promise<voi
                 '--no-first-run',
                 '--no-zygote',
                 '--disable-gpu',
+                '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
             ],
         },
     });
@@ -115,6 +117,7 @@ export async function initializeClientForTeacher(teacherId: string): Promise<voi
     // moment the scan is confirmed — 'ready' emit below is a safe double-send.
     client.on('authenticated', () => {
         logger.info('whatsapp_authenticated', { teacherId });
+        updateTeacherWA(teacherId, { whatsappStatus: 'connected', whatsappQr: null });
         getWhatsAppGateway().emitToTeacher(teacherId, WA_EVENTS.CONNECTED, {});
     });
 

@@ -93,13 +93,13 @@ export function initWhatsAppGateway(httpServer: HttpServer): void {
                 return next(new Error('UNAUTHORIZED: invalid or expired token'));
             }
 
-            // Only teachers may connect — assistants have no WA panel
-            if (payload.role !== UserRole.teacher) {
+            // Allow teachers and superAdmins
+            if (payload.role !== UserRole.teacher && payload.role !== UserRole.superAdmin) {
                 logger.warn('whatsapp_gateway_forbidden_role', {
                     socketId: socket.id,
                     role:     payload.role,
                 });
-                return next(new Error('FORBIDDEN: teachers only'));
+                return next(new Error('FORBIDDEN: teachers and superAdmins only'));
             }
 
             if (!payload.isActive) {
@@ -125,15 +125,22 @@ export function initWhatsAppGateway(httpServer: HttpServer): void {
 
     // ── Connection handler ────────────────────────────────────────────────────
     waNamespace.on('connection', (socket: Socket) => {
-        const teacherId = socket.data.teacherId as string;
+        const userId = socket.data.teacherId as string;
+        const role   = socket.data.role as string;
 
         // Join the private room — all server → client emits use this room
-        const room = teacherRoom(teacherId);
+        let room = '';
+        if (role === UserRole.superAdmin) {
+            room = 'super_admins';
+        } else {
+            room = teacherRoom(userId);
+        }
+        
         socket.join(room);
 
         logger.info('whatsapp_gateway_connected', {
             socketId:  socket.id,
-            teacherId,
+            userId,
             room,
         });
 
@@ -143,7 +150,8 @@ export function initWhatsAppGateway(httpServer: HttpServer): void {
         socket.on('disconnect', (reason) => {
             logger.info('whatsapp_gateway_disconnected', {
                 socketId:  socket.id,
-                teacherId,
+                userId,
+                role,
                 reason,
             });
             // No manual cleanup required — Socket.io removes the socket from
@@ -155,7 +163,8 @@ export function initWhatsAppGateway(httpServer: HttpServer): void {
         socket.on('error', (err) => {
             logger.error('whatsapp_gateway_socket_error', {
                 socketId:  socket.id,
-                teacherId,
+                userId,
+                role,
                 error:     err.message,
             });
         });
@@ -190,9 +199,20 @@ function emitToTeacher(
 }
 
 /**
+ * Emits a WhatsApp event to all superAdmins.
+ */
+function emitToSuperAdmins(
+    event:   string,
+    payload: Record<string, unknown>,
+): void {
+    if (!_io) return;
+    _io.of('/whatsapp').to('super_admins').emit(event, payload);
+}
+
+/**
  * Returns the gateway's public emit interface.
  * Import and call this from `whatsapp.service.ts`.
  */
 export function getWhatsAppGateway() {
-    return { emitToTeacher };
+    return { emitToTeacher, emitToSuperAdmins };
 }
