@@ -34,7 +34,7 @@ export function FreeTrialBanner() {
                     setFreeTrialSub(activeTrial);
                 }
             } catch (error) {
-                console.error("Failed to check free trial status", error);
+                // Silently fail if blocked by AdBlocker (Network Error) or other issues
             } finally {
                 setLoading(false);
             }

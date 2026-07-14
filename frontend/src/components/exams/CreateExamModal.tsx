@@ -50,7 +50,7 @@ const QUESTION_TYPES: { value: QuestionType; label: string }[] = [
 
 export function CreateExamModal({ open, onOpenChange }: Props) {
     const user = useAuthStore((s) => s.user);
-    const allowedGrades = getAllowedGrades(user?.stage);
+    const allowedGrades = getAllowedGrades(user?.stages);
     const queryClient = useQueryClient();
 
     const { register, control, handleSubmit, watch, setValue, reset, formState: { errors } } = useForm<FormValues>({

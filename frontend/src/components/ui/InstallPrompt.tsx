@@ -90,6 +90,9 @@ export function InstallPrompt() {
                         <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
                             لتثبيت التطبيق على الآيفون، اضغط على زر المشاركة <Share className="inline w-3 h-3 mx-1" /> بالأسفل ثم اختر <strong className="text-gray-700">"إضافة للشاشة الرئيسية"</strong> (Add to Home Screen).
                         </p>
+                        <p className="text-[10px] text-orange-600 mt-1.5 font-medium bg-orange-50 p-1.5 rounded-lg border border-orange-100">
+                            ملاحظة هامة: يجب فتح الموقع من متصفح سفاري (Safari) لتتمكن من التثبيت.
+                        </p>
                     </div>
                 </div>
 

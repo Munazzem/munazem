@@ -85,11 +85,13 @@ export function SuperAdminDashboard() {
     const { data: subscriptions = [], isLoading: loadingSubs, isError: errorSubs } = useQuery<ISubscription[]>({
         queryKey: ['superAdminSubscriptions'],
         queryFn: fetchSubscriptions,
+        enabled: user?.role === 'superAdmin',
     });
 
     const { data: usersData, isLoading: loadingUsers } = useQuery({
         queryKey: ['superAdminUsers'],
         queryFn: () => fetchUsers(),
+        enabled: user?.role === 'superAdmin',
     });
 
     const isLoading = loadingSubs || loadingUsers;

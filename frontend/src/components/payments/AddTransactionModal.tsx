@@ -2,12 +2,16 @@
 
 import { useState, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { recordSubscription, recordNotebookSale, recordExpense, updateTransaction, reserveNotebook } from '@/lib/api/payments';
+import { recordSubscription, recordNotebookSale, recordExpense, updateTransaction, reserveNotebook, getPriceSettings } from '@/lib/api/payments';
 import { fetchStudents } from '@/lib/api/students';
 import { toast } from 'sonner';
-import { Plus, Loader2, User, BookOpen, TrendingDown, Search, Bookmark } from 'lucide-react';
+import { Plus, Loader2, User, BookOpen, TrendingDown, Search, Bookmark, Check, Printer } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { QK } from '@/lib/query-keys';
+import { useAuthStore } from '@/lib/store/auth.store';
+import { generateReceiptHtml, type ReceiptData } from '@/lib/utils/receiptHtml';
+import { printHtmlContent } from '@/lib/utils/print';
+import type { ITransaction } from '@/types/payment.types';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -78,7 +82,9 @@ export function AddTransactionModal({
     };
 
     const [mode, setMode] = useState<TxMode>(initialData?.mode ?? 'subscription');
+    const [successTransaction, setSuccessTransaction] = useState<ITransaction | null>(null);
     const queryClient = useQueryClient();
+    const user = useAuthStore(s => s.user);
 
     // Shared fields
     const [studentSearch, setStudentSearch] = useState('');
@@ -136,6 +142,14 @@ export function AddTransactionModal({
             ? rawStudents.data
             : [];
 
+    // Price Settings (for center discounts)
+    const { data: settings } = useQuery({
+        queryKey: QK.payments.priceSettings,
+        queryFn: getPriceSettings,
+        enabled: open && mode === 'subscription' && !isEditMode,
+    });
+    const centerDiscounts = settings?.centerDiscounts || [];
+
     // Notebooks list
     const { data: notebooksData } = useQuery({
         queryKey: QK.notebooks.listForModal,
@@ -170,6 +184,7 @@ export function AddTransactionModal({
         queryClient.invalidateQueries({ queryKey: QK.payments.dailyLedgerBase });
         queryClient.invalidateQueries({ queryKey: QK.payments.monthlyLedgerBase });
         setOpen(false);
+        setSuccessTransaction(null);
         if (!isEditMode) resetForm();
         onSuccess?.();
     };
@@ -177,17 +192,32 @@ export function AddTransactionModal({
     // ── Add mutations ────────────────────────────────────────────────
     const subscriptionMutation = useMutation({
         mutationFn: recordSubscription,
-        onSuccess: () => { toast.success('تم تسجيل الاشتراك بنجاح'); invalidateAndClose(); },
+        onSuccess: (data) => { 
+            toast.success('تم تسجيل الاشتراك بنجاح'); 
+            queryClient.invalidateQueries({ queryKey: QK.payments.dailyLedgerBase });
+            queryClient.invalidateQueries({ queryKey: QK.payments.monthlyLedgerBase });
+            setSuccessTransaction(data);
+        },
     });
 
     const notebookMutation = useMutation({
         mutationFn: recordNotebookSale,
-        onSuccess: () => { toast.success('تم تسجيل بيع المذكرة بنجاح'); invalidateAndClose(); },
+        onSuccess: (data) => { 
+            toast.success('تم تسجيل بيع المذكرة بنجاح'); 
+            queryClient.invalidateQueries({ queryKey: QK.payments.dailyLedgerBase });
+            queryClient.invalidateQueries({ queryKey: QK.payments.monthlyLedgerBase });
+            setSuccessTransaction(data);
+        },
     });
 
     const reservationMutation = useMutation({
         mutationFn: reserveNotebook,
-        onSuccess: () => { toast.success('تم حجز المذكرة بنجاح'); invalidateAndClose(); },
+        onSuccess: (data) => { 
+            toast.success('تم حجز المذكرة بنجاح'); 
+            queryClient.invalidateQueries({ queryKey: QK.payments.dailyLedgerBase });
+            queryClient.invalidateQueries({ queryKey: QK.payments.monthlyLedgerBase });
+            setSuccessTransaction(data?.transaction || data); // Just in case backend wraps it
+        },
     });
 
     const expenseMutation = useMutation({
@@ -265,6 +295,45 @@ export function AddTransactionModal({
     };
 
     const dialogTitle = isEditMode ? 'تعديل المعاملة' : 'تسجيل معاملة جديدة';
+
+    if (successTransaction && !isEditMode) {
+        return (
+            <Dialog open={open} onOpenChange={(v) => { if (!v) invalidateAndClose(); }}>
+                <DialogContent className="sm:max-w-[400px]" dir="rtl">
+                    <div className="flex flex-col items-center justify-center p-6 text-center">
+                        <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4">
+                            <Check className="h-8 w-8" />
+                        </div>
+                        <h2 className="text-xl font-bold mb-2">تم تسجيل المعاملة بنجاح</h2>
+                        <p className="text-sm text-gray-500 mb-6">يمكنك الآن طباعة إيصال الاستلام للطالب.</p>
+                        
+                        <div className="flex gap-3 w-full">
+                            <Button className="flex-1" variant="outline" onClick={invalidateAndClose}>
+                                إغلاق
+                            </Button>
+                            <Button 
+                                className="flex-1 gap-2" 
+                                onClick={() => {
+                                    const receiptData: ReceiptData = {
+                                        teacherName: user?.name || 'السنتر',
+                                        studentName: successTransaction.studentName || selectedStudentName,
+                                        amount: successTransaction.paidAmount || (expenseAmount ? parseFloat(expenseAmount) : 0),
+                                        description: successTransaction.description || CATEGORY_LABELS[successTransaction.category] || MODE_LABELS[mode],
+                                        date: successTransaction.date || date || new Date().toISOString(),
+                                        transactionId: successTransaction._id,
+                                    };
+                                    printHtmlContent(generateReceiptHtml(receiptData));
+                                }}
+                            >
+                                <Printer className="w-4 h-4" />
+                                طباعة الإيصال
+                            </Button>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
+        );
+    }
 
     return (
         <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v && !isEditMode) resetForm(); }}>
@@ -423,13 +492,35 @@ export function AddTransactionModal({
                             <label className="text-sm font-medium text-gray-700 mb-1.5 block">
                                 خصم (ج) <span className="text-gray-400 font-normal">— اختياري</span>
                             </label>
-                            <Input
-                                type="number"
-                                min="0"
-                                placeholder="0"
-                                value={discountAmount}
-                                onChange={(e) => setDiscountAmount(e.target.value)}
-                            />
+                            <div className="flex gap-2">
+                                {centerDiscounts.length > 0 && mode === 'subscription' && (
+                                    <Select 
+                                        onValueChange={(val) => {
+                                            const center = centerDiscounts.find(c => c.centerName === val);
+                                            if (center) setDiscountAmount(center.discountAmount.toString());
+                                        }}
+                                    >
+                                        <SelectTrigger className="w-[140px]">
+                                            <SelectValue placeholder="خصم سنتر..." />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {centerDiscounts.map(c => (
+                                                <SelectItem key={c.centerName} value={c.centerName}>
+                                                    {c.centerName} ({c.discountAmount} ج)
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                )}
+                                <Input
+                                    type="number"
+                                    min="0"
+                                    placeholder="0"
+                                    value={discountAmount}
+                                    onChange={(e) => setDiscountAmount(e.target.value)}
+                                    className="flex-1"
+                                />
+                            </div>
                         </div>
                     )}
 

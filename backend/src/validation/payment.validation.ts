@@ -63,6 +63,10 @@ export const upsertPriceSettingsSchema = z.object({
       gradeLevel: z.nativeEnum(GradeLevel),
       amount:     z.number().positive('السعر يجب أن يكون أكبر من صفر'),
     })).min(1, 'يجب تحديد سعر على الأقل'),
+    centerDiscounts: z.array(z.object({
+      centerName: z.string().min(1, 'اسم السنتر مطلوب'),
+      discountAmount: z.number().min(0, 'الخصم لا يمكن أن يكون سالباً')
+    })).optional(),
   }),
 });
 

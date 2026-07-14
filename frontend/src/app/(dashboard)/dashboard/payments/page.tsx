@@ -10,6 +10,7 @@ import { useAuthStore } from '@/lib/store/auth.store';
 import { AddTransactionModal } from '@/components/payments/AddTransactionModal';
 import { PriceSettingsModal } from '@/components/payments/PriceSettingsModal';
 import { BatchSubscriptionModal } from '@/components/payments/BatchSubscriptionModal';
+import { CenterDeductionModal } from '@/components/payments/CenterDeductionModal';
 import { TableSkeleton } from '@/components/layout/skeletons/TableSkeleton';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -188,8 +189,9 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                 </div>
 
                 {canWrite && (
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                         <BatchSubscriptionModal />
+                        <CenterDeductionModal onSuccess={() => refetch()} />
                         <AddTransactionModal onSuccess={() => refetch()} />
                     </div>
                 )}

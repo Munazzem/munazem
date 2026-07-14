@@ -63,7 +63,7 @@ export const activateTenant = async (id: string): Promise<void> => {
     await apiClient.post(`/admin/tenants/${id}/activate`);
 };
 
-export const updateTenant = async (tenantId: string, payload: { name?: string; phone?: string; stage?: string; subject?: string; centerName?: string }) => {
+export const updateTenant = async (tenantId: string, payload: { name?: string; phone?: string; stages?: string[]; subject?: string; centerName?: string }) => {
     const res = await apiClient.patch(`/admin/tenants/${tenantId}`, payload);
     return (res as any).data;
 };
@@ -176,4 +176,25 @@ export const toggleAnnouncement = async (id: string): Promise<Announcement> => {
 
 export const deleteAnnouncement = async (id: string): Promise<void> => {
     await apiClient.delete(`/admin/announcements/${id}`);
+};
+
+// ── QUEUES DIAGNOSIS ────────────────────────────────────
+
+export const fetchWhatsAppQueueStatus = async (filters?: { phone?: string; teacherId?: string }): Promise<any> => {
+    const q = new URLSearchParams();
+    if (filters?.phone)     q.set('phone',     filters.phone);
+    if (filters?.teacherId) q.set('teacherId', filters.teacherId);
+    const qs = q.toString();
+    const res = await apiClient.get(`/admin/queues/whatsapp${qs ? `?${qs}` : ''}`);
+    return (res as any).data;
+};
+
+export const retryAllFailedWhatsAppJobs = async (): Promise<{ retried: number }> => {
+    const res = await apiClient.post('/admin/queues/whatsapp/retry-all');
+    return (res as any).data;
+};
+
+export const clearAllFailedWhatsAppJobs = async (): Promise<{ cleared: number }> => {
+    const res = await apiClient.delete('/admin/queues/whatsapp/failed');
+    return (res as any).data;
 };

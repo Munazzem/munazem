@@ -702,9 +702,20 @@ export default function SettingsPage() {
                                                 className="w-[200px] h-[200px]"
                                             />
                                         </div>
-                                        <div className="flex items-center justify-center gap-2 text-xs text-amber-600">
-                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                            <span>جاري مراقبة عملية المسح...</span>
+                                        <div className="flex flex-col items-center justify-center gap-3">
+                                            <div className="flex items-center gap-2 text-xs text-amber-600">
+                                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                <span>جاري مراقبة عملية المسح...</span>
+                                            </div>
+                                            <Button
+                                                onClick={handleWaDisconnect}
+                                                variant="ghost"
+                                                size="sm"
+                                                className="text-red-500 hover:text-red-600 hover:bg-red-50 text-xs"
+                                            >
+                                                <WifiOff className="h-3.5 w-3.5 ml-1 inline-block" />
+                                                إلغاء ومسح الجلسة المعلقة
+                                            </Button>
                                         </div>
                                     </>
                                 ) : (

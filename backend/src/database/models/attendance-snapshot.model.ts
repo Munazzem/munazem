@@ -44,7 +44,7 @@ const attendanceSnapshotSchema = new Schema<IAttendanceSnapshotDocument>({
 });
 
 // Fast report queries: all snapshots for a group ordered by date
-attendanceSnapshotSchema.index({ groupId: 1, date: -1 });
+attendanceSnapshotSchema.index({ groupId: 1, teacherId: 1, date: -1 });
 
 // Fast report queries: all snapshots for a teacher on a specific date
 attendanceSnapshotSchema.index({ teacherId: 1, date: -1 });

@@ -60,7 +60,7 @@ export function AddStudentModal() {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
-  const allowedGrades = getAllowedGrades(user?.stage);
+  const allowedGrades = getAllowedGrades(user?.stages);
 
   // Define the form
   const form = useForm<z.infer<typeof formSchema>>({

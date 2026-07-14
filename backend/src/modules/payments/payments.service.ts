@@ -109,10 +109,14 @@ async function updateMonthlyLedger(
 export class PaymentsService {
 
     // ── Price Settings ──────────────────────────────────────────────
-    static async upsertPriceSettings(teacherId: string, prices: IPriceSetting[]) {
+    static async upsertPriceSettings(teacherId: string, data: { prices: IPriceSetting[], centerDiscounts?: any[] }) {
         const result = await PriceSettingsModel.findOneAndUpdate(
             { teacherId },
-            { teacherId, prices },
+            { 
+                teacherId, 
+                prices: data.prices, 
+                ...(data.centerDiscounts ? { centerDiscounts: data.centerDiscounts } : {}) 
+            },
             { upsert: true, new: true, runValidators: true }
         ).lean();
         // Invalidate cached price settings
@@ -236,72 +240,156 @@ export class PaymentsService {
 
         const results: { studentId: string; studentName: string; paidAmount: number; status: 'success' | 'error'; error?: string }[] = [];
 
-        // Batch fetch all students to avoid N+1 queries
+        // Batch fetch all students and their groups to avoid N+1 queries
         const studentDocs = await StudentModel.find(
             { _id: { $in: data.studentIds }, teacherId },
-            { studentName: 1, gradeLevel: 1, teacherId: 1 }
+            { studentName: 1, gradeLevel: 1, teacherId: 1, groupId: 1, monthlySessionsQuota: 1 }
         ).lean();
         const studentMap = new Map(studentDocs.map(s => [s._id.toString(), s]));
 
+        const groupIds = [...new Set(studentDocs.map(s => s.groupId?.toString()).filter(Boolean))];
+        const groupDocs = await GroupModel.find({ _id: { $in: groupIds as string[] } }, { schedule: 1 }).lean();
+        const groupMap = new Map(groupDocs.map(g => [g._id.toString(), g]));
+
+        const validStudents: any[] = [];
+        
         for (const studentId of data.studentIds) {
+            const student = studentMap.get(studentId);
+            if (!student) {
+                results.push({ studentId, studentName: '', paidAmount: 0, status: 'error', error: 'الطالب غير موجود أو لا ينتمي إلى هذا المعلم' });
+                continue;
+            }
+
+            const priceSetting = settings.prices.find(p => p.gradeLevel === student.gradeLevel);
+            if (!priceSetting) {
+                results.push({ studentId, studentName: student.studentName, paidAmount: 0, status: 'error', error: `لم يتم تحديد سعر للمرحلة: ${student.gradeLevel}` });
+                continue;
+            }
+
+            const originalAmount = priceSetting.amount;
+            const paidAmount = Math.max(0, originalAmount - discountAmount);
+            
+            const group = student.groupId ? groupMap.get(student.groupId.toString()) : null;
+            const quota = (student as any).monthlySessionsQuota || (group?.schedule?.length ?? 2) * 4;
+
+            validStudents.push({
+                student,
+                originalAmount,
+                discountAmount,
+                paidAmount,
+                quota
+            });
+        }
+
+        if (validStudents.length > 0) {
             try {
-                const student = studentMap.get(studentId);
-
-                if (!student) {
-                    results.push({ studentId, studentName: '', paidAmount: 0, status: 'error', error: 'الطالب غير موجود أو لا ينتمي إلى هذا المعلم' });
-                    continue;
-                }
-
-                const priceSetting = settings.prices.find(p => p.gradeLevel === student.gradeLevel);
-                if (!priceSetting) {
-                    results.push({ studentId, studentName: student.studentName, paidAmount: 0, status: 'error', error: `لم يتم تحديد سعر للمرحلة: ${student.gradeLevel}` });
-                    continue;
-                }
-
-                const originalAmount = priceSetting.amount;
-                const paidAmount = Math.max(0, originalAmount - discountAmount);
-
-                // ── Each student wrapped in its own transaction (atomic per student) ──
+                // ── All valid students are processed in ONE single atomic transaction ──
                 await withTransaction(async (session) => {
-                    const [tx] = await TransactionModel.create([{
+                    // 1. Create all transactions in bulk
+                    const txDocsToInsert = validStudents.map(vs => ({
                         teacherId,
                         createdBy,
                         type:           TransactionType.INCOME,
                         category:       TransactionCategory.SUBSCRIPTION,
-                        studentId:      student._id,
-                        studentName:    student.studentName,
-                        gradeLevel:     student.gradeLevel,
-                        originalAmount,
-                        discountAmount,
-                        paidAmount,
+                        studentId:      vs.student._id,
+                        studentName:    vs.student.studentName,
+                        gradeLevel:     vs.student.gradeLevel,
+                        originalAmount: vs.originalAmount,
+                        discountAmount: vs.discountAmount,
+                        paidAmount:     vs.paidAmount,
                         date:           txDate,
                         ...(data.description ? { description: data.description } : {}),
-                    }], { session });
+                    }));
+                    
+                    const insertedTxs = await TransactionModel.insertMany(txDocsToInsert, { session });
+                    
+                    // 2. Update students quotas in bulk
+                    const studentBulkOps = validStudents.map(vs => ({
+                        updateOne: {
+                            filter: { _id: vs.student._id },
+                            update: { $set: { remainingSessions: vs.quota } }
+                        }
+                    }));
+                    await StudentModel.bulkWrite(studentBulkOps, { session });
+                    
+                    // 3. Update ledgers in bulk for the day
+                    const totalPaid = validStudents.reduce((sum, vs) => sum + vs.paidAmount, 0);
+                    const dailyTransactions = insertedTxs.map((tx, idx) => ({
+                        transactionId: tx._id,
+                        type:          TransactionType.INCOME,
+                        category:      TransactionCategory.SUBSCRIPTION,
+                        paidAmount:    validStudents[idx]!.paidAmount,
+                        studentName:   validStudents[idx]!.student.studentName,
+                        createdBy,
+                        time:          txDate,
+                    }));
 
-                    // Get group quota info
-                    const group = await GroupModel.findById(student.groupId, { schedule: 1 }).session(session).lean();
-                    const quota = (student as any).monthlySessionsQuota || (group?.schedule?.length ?? 2) * 4;
+                    const day = startOfDay(txDate);
+                    
+                    // Update Daily Ledger
+                    await DailyLedgerModel.findOneAndUpdate(
+                        { teacherId, date: day },
+                        {
+                            $push:  { transactions: { $each: dailyTransactions } },
+                            $inc:   {
+                                totalIncome:   totalPaid,
+                                netBalance:    totalPaid,
+                            },
+                        },
+                        { upsert: true, session }
+                    );
 
-                    await Promise.all([
-                        updateDailyLedger(teacherId, txDate, {
-                            transactionId: tx!._id,
-                            type:          TransactionType.INCOME,
-                            category:      TransactionCategory.SUBSCRIPTION,
-                            paidAmount,
-                            studentName:   student.studentName,
-                            createdBy,
-                            time:          txDate,
-                        }, true, session),
-                        updateMonthlyLedger(teacherId, txDate, paidAmount, true, session),
-                        StudentModel.findByIdAndUpdate(studentId, {
-                            $set: { remainingSessions: quota }
-                        }, { session }),
-                    ]);
+                    // Update Monthly Ledger
+                    const year  = txDate.getUTCFullYear();
+                    const month = txDate.getUTCMonth() + 1;
+                    
+                    const topLevelInc = {
+                        totalIncome:   totalPaid,
+                        netBalance:    totalPaid,
+                    };
+                    
+                    const updatedMonthly = await MonthlyLedgerModel.findOneAndUpdate(
+                        { teacherId, year, month, 'dailySummaries.date': day },
+                        {
+                            $inc: {
+                                ...topLevelInc,
+                                'dailySummaries.$.totalIncome':      totalPaid,
+                                'dailySummaries.$.netBalance':       totalPaid,
+                                'dailySummaries.$.transactionCount': validStudents.length,
+                            },
+                        },
+                        { session }
+                    );
+                    
+                    if (!updatedMonthly) {
+                        await MonthlyLedgerModel.findOneAndUpdate(
+                            { teacherId, year, month },
+                            {
+                                $inc:  topLevelInc,
+                                $push: {
+                                    dailySummaries: {
+                                        date:             day,
+                                        totalIncome:      totalPaid,
+                                        totalExpenses:    0,
+                                        netBalance:       totalPaid,
+                                        transactionCount: validStudents.length,
+                                    },
+                                },
+                            },
+                            { upsert: true, session }
+                        );
+                    }
                 });
 
-                results.push({ studentId, studentName: student.studentName, paidAmount, status: 'success' });
+                // Populate success results
+                for (const vs of validStudents) {
+                    results.push({ studentId: vs.student._id.toString(), studentName: vs.student.studentName, paidAmount: vs.paidAmount, status: 'success' });
+                }
             } catch (err: any) {
-                results.push({ studentId, studentName: studentMap.get(studentId)?.studentName ?? '', paidAmount: 0, status: 'error', error: err?.message ?? 'خطأ غير متوقع' });
+                // If the entire transaction fails, all valid students are marked as failed
+                for (const vs of validStudents) {
+                    results.push({ studentId: vs.student._id.toString(), studentName: vs.student.studentName, paidAmount: 0, status: 'error', error: err?.message ?? 'فشل في حفظ المعاملة' });
+                }
             }
         }
 
@@ -705,5 +793,49 @@ export class PaymentsService {
         }
 
         return updated;
+    }
+
+    // ── Record Center Deduction (Center Commission) ─────────────────────
+    /**
+     * Records a center-share deduction as an EXPENSE transaction.
+     * This is used when a teacher wants to log the amount owed
+     * to the center (e.g. monthly commission or percentage share).
+     */
+    static async recordCenterDeduction(
+        teacherId: string,
+        data: { centerName: string; amount: number; date?: string; description?: string }
+    ) {
+        const txDate = resolveTransactionDate(data.date);
+        const description = data.description || `خصم سنتر: ${data.centerName}`;
+
+        return await withTransaction(async (session) => {
+            const [tx] = await TransactionModel.create([{
+                teacherId,
+                createdBy: teacherId,
+                type:           TransactionType.EXPENSE,
+                category:       TransactionCategory.OTHER_EXPENSE,
+                originalAmount: data.amount,
+                discountAmount: 0,
+                paidAmount:     data.amount,
+                description,
+                date: txDate,
+            }], { session });
+
+            await Promise.all([
+                updateDailyLedger(teacherId, txDate, {
+                    transactionId: tx!._id,
+                    type:          TransactionType.EXPENSE,
+                    category:      TransactionCategory.OTHER_EXPENSE,
+                    paidAmount:    data.amount,
+                    description,
+                    createdBy:     teacherId,
+                    time:          txDate,
+                }, false, session),
+                updateMonthlyLedger(teacherId, txDate, data.amount, false, session),
+            ]);
+
+            cache.del(CacheKeys.dashboard(teacherId));
+            return tx;
+        });
     }
 }

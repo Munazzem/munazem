@@ -3,12 +3,14 @@
 import { useState, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchStudents } from '@/lib/api/students';
-import { recordBatchSubscription, type IBatchSubscriptionResult } from '@/lib/api/payments';
+import { recordBatchSubscription, type IBatchSubscriptionResult, getPriceSettings } from '@/lib/api/payments';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { getAllowedGrades } from '@/lib/utils/grades';
 import { toast } from 'sonner';
-import { Users, Check, X, Loader2, CheckSquare, Square, ChevronDown } from 'lucide-react';
+import { Users, Check, X, Loader2, CheckSquare, Square, ChevronDown, Printer } from 'lucide-react';
 import { QK } from '@/lib/query-keys';
+import { generateBatchReceiptsHtml } from '@/lib/utils/receiptHtml';
+import { printHtmlContent } from '@/lib/utils/print';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -44,13 +46,20 @@ export function BatchSubscriptionModal() {
 
     const queryClient = useQueryClient();
     const user = useAuthStore((s) => s.user);
-    const allowedGrades = getAllowedGrades(user?.stage);
+    const allowedGrades = getAllowedGrades(user?.stages);
 
     const { data: studentsData, isLoading } = useQuery({
         queryKey: QK.payments.batchStudents(search),
         queryFn: () => fetchStudents({ limit: 200, search }),
         enabled: open,
     });
+
+    const { data: settings } = useQuery({
+        queryKey: QK.payments.priceSettings,
+        queryFn: getPriceSettings,
+        enabled: open,
+    });
+    const centerDiscounts = settings?.centerDiscounts || [];
 
     const students: Student[] = useMemo(() => {
         const all = (studentsData as any)?.data ?? (studentsData as any) ?? [];
@@ -173,6 +182,24 @@ export function BatchSubscriptionModal() {
                             <Button variant="outline" onClick={() => { setResults(null); setSelectedIds(new Set()); }}>
                                 دفع اشتراكات أخرى
                             </Button>
+                            {results.some(r => r.status === 'success') && (
+                                <Button 
+                                    className="gap-2 bg-blue-600 hover:bg-blue-700 text-white" 
+                                    onClick={() => {
+                                        const successfulReceipts = results.filter(r => r.status === 'success').map(r => ({
+                                            teacherName: user?.name || 'السنتر',
+                                            studentName: r.studentName || r.studentId,
+                                            amount: r.paidAmount,
+                                            description: 'اشتراك شهر',
+                                            date: new Date().toISOString(),
+                                        }));
+                                        printHtmlContent(generateBatchReceiptsHtml(successfulReceipts));
+                                    }}
+                                >
+                                    <Printer size={16} />
+                                    طباعة الوصلات
+                                </Button>
+                            )}
                             <Button onClick={() => handleClose(false)}>إغلاق</Button>
                         </div>
                     </div>
@@ -252,17 +279,39 @@ export function BatchSubscriptionModal() {
                         </div>
 
                         {/* Discount field */}
-                        <div className="flex items-center gap-3">
-                            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">خصم (ج):</label>
-                            <Input
-                                type="number"
-                                min={0}
-                                value={discount}
-                                onChange={(e) => setDiscount(Number(e.target.value))}
-                                className="w-32 bg-gray-50 border-gray-200"
-                                dir="ltr"
-                            />
-                            <p className="text-xs text-gray-400">ينطبق على جميع الطلاب المحددين</p>
+                        <div className="flex flex-col gap-2">
+                            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                                خصم (ج) <span className="text-gray-400 font-normal">— ينطبق على جميع الطلاب المحددين</span>
+                            </label>
+                            <div className="flex items-center gap-2">
+                                {centerDiscounts.length > 0 && (
+                                    <Select 
+                                        onValueChange={(val) => {
+                                            const center = centerDiscounts.find(c => c.centerName === val);
+                                            if (center) setDiscount(center.discountAmount);
+                                        }}
+                                    >
+                                        <SelectTrigger className="w-[160px] bg-gray-50 border-gray-200">
+                                            <SelectValue placeholder="خصم سنتر..." />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {centerDiscounts.map(c => (
+                                                <SelectItem key={c.centerName} value={c.centerName}>
+                                                    {c.centerName} ({c.discountAmount} ج)
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                )}
+                                <Input
+                                    type="number"
+                                    min={0}
+                                    value={discount}
+                                    onChange={(e) => setDiscount(Number(e.target.value))}
+                                    className="w-32 bg-gray-50 border-gray-200"
+                                    dir="ltr"
+                                />
+                            </div>
                         </div>
 
                         {/* Footer */}

@@ -79,4 +79,7 @@ studentSchema.index({ studentPhone: 1, teacherId: 1 }, { unique: false, name: 'i
 // Ensure student code is unique per teacher system
 studentSchema.index({ studentCode: 1, teacherId: 1 }, { unique: true });
 
+// Fast queries: fetching active students in a specific group for a teacher
+studentSchema.index({ groupId: 1, teacherId: 1, isActive: 1 });
+
 export const StudentModel: Model<IStudent> = mongoose.model<IStudent>('Student', studentSchema);

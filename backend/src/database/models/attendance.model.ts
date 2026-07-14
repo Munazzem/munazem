@@ -56,5 +56,8 @@ attendanceSchema.index(
     }
 );
 
+// Fast queries: checking if a student attended a specific session
+attendanceSchema.index({ sessionId: 1, studentId: 1 });
+
 export const AttendanceModel: Model<IAttendanceDocument> =
     mongoose.model<IAttendanceDocument>('Attendance', attendanceSchema);

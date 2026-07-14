@@ -127,14 +127,29 @@ const typeAliasMap: Record<string, string> = {
 };
 
 function normalizeType(rawType: string): string {
-    if (!rawType) return 'MCQ'; // default
+    if (!rawType) return 'MCQ';
     const t = String(rawType).trim().toUpperCase();
-    return typeAliasMap[t] ?? typeAliasMap[String(rawType).trim()] ?? t;
+    
+    // Direct match
+    if (t === 'MCQ' || t === 'TRUE_FALSE' || t === 'ESSAY') return t;
+    
+    // Alias match
+    if (typeAliasMap[t]) return typeAliasMap[t];
+    const originalTrimmed = String(rawType).trim();
+    if (typeAliasMap[originalTrimmed]) return typeAliasMap[originalTrimmed];
+
+    // Keyword matching fallback
+    if (t.includes('MCQ') || t.includes('MULTIPLE') || t.includes('اختيار') || t.includes('متعدد') || t.includes('CHOICE')) return 'MCQ';
+    if (t.includes('TRUE') || t.includes('FALSE') || t.includes('صح') || t.includes('خطأ') || t.includes('TF')) return 'TRUE_FALSE';
+    if (t.includes('ESSAY') || t.includes('OPEN') || t.includes('مقال')) return 'ESSAY';
+
+    // Ultimate default to prevent validation crash
+    return 'MCQ';
 }
 
 export function AIGenerateExamModal({ open, onOpenChange }: Props) {
     const user = useAuthStore((s) => s.user);
-    const allowedGrades = getAllowedGrades(user?.stage);
+    const allowedGrades = getAllowedGrades(user?.stages);
     const router = useRouter();
     const queryClient = useQueryClient();
     const fileInputRef = useRef<HTMLInputElement>(null);
