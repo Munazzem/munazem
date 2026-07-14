@@ -2,6 +2,7 @@ import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { ExamsService }  from './exams.service.js';
 import { AIExamService } from './ai-exam.service.js';
+import { ExamPdfService } from './exam-pdf.service.js';
 import { UserRole, QuestionType } from '../../common/enums/enum.service.js';
 import { SuccessResponse } from '../../common/utils/response/success.responce.js';
 import { BadRequestException } from '../../common/utils/response/error.responce.js';
@@ -62,6 +63,20 @@ examsRouter.get(
             const teacherId = resolveTeacherId(req.user);
             const exam = await ExamsService.getExamById(req.params['id'] as string, teacherId);
             return SuccessResponse({ res, data: exam, message: 'تم جلب الامتحان بنجاح' });
+        } catch (error) { next(error); }
+    }
+);
+
+// GET /exams/:id/print — Get HTML template for printing
+examsRouter.get(
+    '/:id/print',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = resolveTeacherId(req.user);
+            const html = await ExamPdfService.generateExamHtml(req.params['id'] as string, teacherId);
+            res.setHeader('Content-Type', 'text/html; charset=utf-8');
+            return res.status(200).send(html);
         } catch (error) { next(error); }
     }
 );

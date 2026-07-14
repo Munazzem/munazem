@@ -18,12 +18,13 @@ import {
     BarChart2,
     AlertTriangle,
     MessageCircle,
+    Printer,
 } from 'lucide-react';
 import { ReportCardSkeleton } from '@/components/layout/skeletons/ReportCardSkeleton';
 import { TableSkeleton } from '@/components/layout/skeletons/TableSkeleton';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { fetchExamById, getExamResults, publishExam, deleteExam } from '@/lib/api/exams';
+import { fetchExamById, getExamResults, publishExam, deleteExam, fetchExamPrintHtml } from '@/lib/api/exams';
 import type { IExam, ExamStatus, IQuestion } from '@/lib/api/exams';
 import dynamic from 'next/dynamic';
 const BatchResultsModal = dynamic(
@@ -113,6 +114,23 @@ export default function ExamDetailPage() {
         
     });
 
+    const printMutation = useMutation({
+        mutationFn: () => fetchExamPrintHtml(examId),
+        onSuccess: (html) => {
+            const printWindow = window.open('', '_blank');
+            if (printWindow) {
+                printWindow.document.open();
+                printWindow.document.write(html);
+                printWindow.document.close();
+            } else {
+                toast.error('يرجى السماح بالنوافذ المنبثقة (Pop-ups) لطباعة الامتحان');
+            }
+        },
+        onError: () => {
+            toast.error('حدث خطأ أثناء تجهيز ورقة الامتحان');
+        }
+    });
+
     if (examLoading) {
         return <div className="p-6"><ReportCardSkeleton /></div>;
     }
@@ -167,6 +185,18 @@ export default function ExamDetailPage() {
             {/* Teacher action buttons */}
             {isTeacher && (
                 <div className="flex flex-wrap gap-2">
+                    <Button
+                        variant="outline"
+                        onClick={() => printMutation.mutate()}
+                        disabled={printMutation.isPending}
+                        className="gap-2 flex-1 sm:flex-none border-gray-300 text-gray-700 hover:bg-gray-50"
+                    >
+                        {printMutation.isPending
+                            ? <Loader2 className="h-4 w-4 animate-spin" />
+                            : <Printer className="h-4 w-4" />
+                        }
+                        طباعة الامتحان
+                    </Button>
                     {examData.status === 'DRAFT' && (
                         <>
                             <Button

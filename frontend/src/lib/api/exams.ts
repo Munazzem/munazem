@@ -51,6 +51,11 @@ export const fetchExamById = async (id: string): Promise<IExam> => {
     return (res as any).data ?? res;
 };
 
+export const fetchExamPrintHtml = async (id: string): Promise<string> => {
+    const res = await apiClient.get(`/exams/${id}/print`, { responseType: 'text' });
+    return res as unknown as string;
+};
+
 export const createExam = async (data: CreateExamInput): Promise<IExam> => {
     const res = await apiClient.post('/exams', data);
     return (res as any).data ?? res;
