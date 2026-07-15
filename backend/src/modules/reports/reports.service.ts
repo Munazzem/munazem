@@ -5,6 +5,8 @@ import { AttendanceSnapshotModel } from '../../database/models/attendance-snapsh
 import { TransactionModel }        from '../../database/models/transaction.model.js';
 import { SessionModel }            from '../../database/models/session.model.js';
 import { DailyLedgerModel, MonthlyLedgerModel } from '../../database/models/ledger.model.js';
+import { ExamResultModel }         from '../../database/models/exam-result.model.js';
+import { ExamModel }               from '../../database/models/exam.model.js';
 import mongoose from 'mongoose';
 import { TransactionType, TransactionCategory, SessionStatus, UserRole, AttendanceStatus } from '../../common/enums/enum.service.js';
 import { NotFoundException } from '../../common/utils/response/error.responce.js';
@@ -164,6 +166,32 @@ export class ReportsService {
             logger.warn('barcode_generation_failed', { studentId, error: (e as Error).message });
         }
 
+        // ── Exam Results — student's full exam history ───────────────
+        const examResults = await ExamResultModel.find(
+            { teacherId, studentId: student._id },
+            { examId: 1, score: 1, totalMarks: 1, passingMarks: 1, percentage: 1, grade: 1, passed: 1, date: 1 }
+        ).sort({ date: -1 }).lean();
+
+        // Populate exam titles
+        const examIds = [...new Set(examResults.map(r => r.examId.toString()))];
+        const exams   = await ExamModel.find(
+            { _id: { $in: examIds } },
+            { title: 1 }
+        ).lean();
+        const examTitleMap = new Map(exams.map(e => [e._id.toString(), e.title]));
+
+        const gradesHistory = examResults.map(r => ({
+            examId:      r.examId,
+            examTitle:   examTitleMap.get(r.examId.toString()) ?? 'امتحان',
+            score:       r.score,
+            totalMarks:  r.totalMarks,
+            passingMarks: r.passingMarks,
+            percentage:  r.percentage,
+            grade:       r.grade,
+            passed:      r.passed,
+            date:        r.date,
+        }));
+
         return {
             student: {
                 ...student,
@@ -189,6 +217,10 @@ export class ReportsService {
                 subscriptionsCount,
                 notebookSalesCount,
                 history: payments,
+            },
+            grades: {
+                total: gradesHistory.length,
+                history: gradesHistory,
             },
         };
     }
