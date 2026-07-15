@@ -234,7 +234,7 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
                     )}
                 </div>
 
-                {/* Monthly Session Quota */}
+                {/* Monthly Session Tracker */}
                 <div className="pt-2 mt-2 border-t border-gray-100">
                     <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
@@ -273,9 +273,9 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
                         </div>
                     </div>
 
-                    {/* Progress Grid */}
+                    {/* Sessions Stats Bar */}
                     <div className="bg-white rounded-xl border border-gray-100 p-4">
-                        <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center justify-between mb-4">
                             <span className="text-xs text-gray-500 font-medium">
                                 تم حضور {usedSessionsThisMonth} من {monthlySessionsQuota} حصص
                             </span>
@@ -284,73 +284,52 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
                             </span>
                         </div>
 
-                        <div className="flex flex-wrap gap-2.5">
-                            {/* 1. Real Scheduled Sessions */}
-                            {report?.student?.monthlySessions?.map((s: { sessionId: string; date: string; status: string }, i: number) => {
-                                const isPresent = s.status === 'PRESENT' || s.status === 'LATE';
-                                const dateStr = s.date ? new Date(s.date).toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' }) : '—';
-
-                                return (
-                                    <div
-                                        key={`session-${s.sessionId}-${i}`}
-                                        title={`${dateStr} - ${isPresent ? 'حاضر' : 'غائب'}`}
-                                        className={cn(
-                                            "w-8 h-8 sm:w-10 sm:h-10 rounded-xl border-2 flex items-center justify-center cursor-pointer transition-all relative group",
-                                            isPresent
-                                                ? "bg-green-500 border-green-500 text-white shadow-md shadow-green-500/20"
-                                                : "bg-gray-50 border-gray-200 text-gray-400 hover:border-[#1e3a6e] hover:text-[#1e3a6e]"
-                                        )}
-                                        onClick={() => {
-                                            if (!isPresent && canWrite) {
-                                                setAttendanceConfirm({ label: `حضور حصة يوم ${dateStr}` });
-                                            }
-                                        }}
-                                    >
-                                        {isPresent ? (
-                                            <Check className="h-4 w-4 sm:h-5 sm:w-5" />
-                                        ) : (
-                                            <span className="text-xs sm:text-sm font-bold">{i + 1}</span>
-                                        )}
-
-                                        <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
-                                            {dateStr}
-                                        </div>
-                                    </div>
-                                );
-                            })}
-
-                            {/* 2. Extra Manual Slots (if quota > sessions) */}
-                            {Array.from({ length: Math.max(0, monthlySessionsQuota - (report?.student?.monthlySessions?.length ?? 0)) }).map((_, i) => {
-                                const realIndex = (report?.student?.monthlySessions?.length ?? 0) + i;
-                                const isManualFilled = i < (report?.student?.manualRecordsCount ?? 0);
-
-                                return (
-                                    <div
-                                        key={`manual-${i}`}
-                                        title={isManualFilled ? 'حصة إضافية مسجلة يدوياً' : 'مكان شاغر لحصة'}
-                                        className={cn(
-                                            "w-8 h-8 sm:w-10 sm:h-10 rounded-xl border-2 border-dashed flex items-center justify-center cursor-pointer transition-all",
-                                            isManualFilled
-                                                ? "bg-green-100 border-green-500 text-green-700 shadow-sm"
-                                                : "bg-gray-50 border-gray-200 text-gray-300 hover:border-[#1e3a6e] hover:text-[#1e3a6e]"
-                                        )}
-                                        onClick={() => {
-                                            if (!isManualFilled && canWrite) {
-                                                setAttendanceConfirm({ label: 'حضور حصة إضافية' });
-                                            }
-                                        }}
-                                    >
-                                        {isManualFilled ? (
-                                            <Check className="h-4 w-4 sm:h-5 sm:w-5" />
-                                        ) : (
-                                            <span className="text-xs sm:text-sm">{realIndex + 1}</span>
-                                        )}
-                                    </div>
-                                );
-                            })}
+                        {/* Progress bar */}
+                        <div className="w-full bg-gray-100 rounded-full h-1.5 mb-4">
+                            <div
+                                className="bg-[#1e3a6e] h-1.5 rounded-full transition-all"
+                                style={{ width: `${Math.min(100, attendancePercentage)}%` }}
+                            />
                         </div>
+
+                        {/* Session cards — one per attended/absent session */}
+                        {(!report?.student?.monthlySessions || report.student.monthlySessions.length === 0) ? (
+                            <div className="text-center py-6 text-gray-400">
+                                <Clock className="h-8 w-8 mx-auto mb-2 text-gray-200" />
+                                <p className="text-xs font-medium">لا توجد حصص مسجلة هذا الشهر</p>
+                            </div>
+                        ) : (
+                            <div className="flex flex-wrap gap-2">
+                                {report.student.monthlySessions.map((s: { sessionId: string; date: string; status: string }, i: number) => {
+                                    const isPresent = s.status === 'PRESENT' || s.status === 'LATE';
+                                    const dateStr = s.date
+                                        ? new Date(s.date).toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' })
+                                        : '—';
+
+                                    return (
+                                        <div
+                                            key={`session-${s.sessionId}-${i}`}
+                                            title={`${dateStr} — ${isPresent ? 'حاضر' : 'غائب'}`}
+                                            className={cn(
+                                                'flex flex-col items-center justify-center gap-0.5 px-2.5 py-2 rounded-xl border-2 min-w-[52px] transition-all select-none',
+                                                isPresent
+                                                    ? 'bg-green-50 border-green-400 text-green-700'
+                                                    : 'bg-red-50 border-red-200 text-red-400'
+                                            )}
+                                        >
+                                            {isPresent
+                                                ? <Check className="h-3.5 w-3.5" />
+                                                : <span className="text-[10px] font-bold">غ</span>
+                                            }
+                                            <span className="text-[10px] font-bold leading-none">{dateStr}</span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </div>
                 </div>
+
             </div>
         </div>
 

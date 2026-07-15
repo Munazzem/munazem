@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchSessions, generateMonthSessions, generateTodaySessions, updateSessionStatus, deleteSession } from '@/lib/api/sessions';
+import { fetchSessions, generateTodaySessions, updateSessionStatus, deleteSession } from '@/lib/api/sessions';
 import { fetchGroups } from '@/lib/api/groups';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { CreateSessionModal } from '@/components/sessions/CreateSessionModal';
@@ -19,8 +19,6 @@ import {
     Loader2,
     Wand2,
     ArrowLeft,
-    ChevronDown,
-    ChevronUp,
     XCircle,
     Calendar,
     CalendarX,
@@ -93,17 +91,6 @@ export default function SessionsPage() {
     const [deleteSessionId, setDeleteSessionId] = useState<string | null>(null);
     const isViewingToday = dateFilter === today;
 
-    // Month generation
-    const now = new Date();
-    const [showMonthPicker, setShowMonthPicker] = useState(false);
-    const [genYear,  setGenYear]  = useState(now.getFullYear());
-    const [genMonth, setGenMonth] = useState(now.getMonth() + 1);
-
-    const MONTH_NAMES = [
-        'يناير','فبراير','مارس','أبريل','مايو','يونيو',
-        'يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر',
-    ];
-
     const { data, isLoading, isFetching } = useQuery({
         queryKey: ['sessions', page, groupFilter, statusFilter, dateFilter],
         queryFn: () =>
@@ -121,18 +108,6 @@ export default function SessionsPage() {
         queryFn: () => fetchGroups({ limit: 100 }),
     });
 
-    const generateMutation = useMutation({
-        mutationFn: ({ year, month }: { year: number; month: number }) =>
-            generateMonthSessions(year, month),
-        onSuccess: (result) => {
-            toast.success(result.message);
-            setShowMonthPicker(false);
-            queryClient.invalidateQueries({ queryKey: ['sessions'] });
-        },
-        onError: (err: any) => {
-            
-        },
-    });
 
     const generateTodayMutation = useMutation({
         mutationFn: () => generateTodaySessions(),
@@ -169,9 +144,6 @@ export default function SessionsPage() {
         },
     });
 
-    const handleGenerateMonth = () => {
-        generateMutation.mutate({ year: genYear, month: genMonth });
-    };
 
     const sessions = data?.data ?? [];
     const pagination = data?.pagination;
@@ -243,8 +215,8 @@ export default function SessionsPage() {
                     </p>
                 </div>
                 {canWrite && (
-                    <div className="relative flex gap-2 shrink-0">
-                        {/* 1. Generate Today (Primary Action) */}
+                    <div className="flex gap-2 shrink-0">
+                        {/* Generate Today */}
                         <Button
                             variant="default"
                             size="sm"
@@ -260,74 +232,6 @@ export default function SessionsPage() {
                             <span className="hidden sm:inline">توليد حصص اليوم</span>
                             <span className="sm:hidden">اليوم</span>
                         </Button>
-
-                        {/* 2. Generate Month (Secondary Action) */}
-                        <div className="relative">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setShowMonthPicker((v) => !v)}
-                                disabled={generateMutation.isPending}
-                                className="gap-1.5 text-xs sm:text-sm"
-                            >
-                                {generateMutation.isPending ? (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                    <Calendar className="h-3.5 w-3.5" />
-                                )}
-                                <span className="hidden sm:inline">توليد الشهر</span>
-                                <span className="sm:hidden">الشهر</span>
-                                {showMonthPicker ? (
-                                    <ChevronUp className="h-3 w-3" />
-                                ) : (
-                                    <ChevronDown className="h-3 w-3" />
-                                )}
-                            </Button>
-
-                            {showMonthPicker && (
-                                <div className="absolute top-full mt-2 right-0 sm:left-0 sm:right-auto z-50 bg-white border border-gray-200 rounded-xl shadow-lg p-4 w-64" dir="rtl">
-                                    <p className="text-xs font-bold text-gray-600 mb-3">اختر الشهر للتوليد</p>
-                                    <div className="flex items-center justify-between mb-3">
-                                        <button onClick={() => setGenYear((y) => y - 1)} className="p-1 hover:text-primary rounded">
-                                            <ChevronRight className="h-4 w-4" />
-                                        </button>
-                                        <span className="font-bold text-gray-800 text-sm">{genYear}</span>
-                                        <button onClick={() => setGenYear((y) => y + 1)} className="p-1 hover:text-primary rounded">
-                                            <ChevronLeft className="h-4 w-4" />
-                                        </button>
-                                    </div>
-                                    <div className="grid grid-cols-3 gap-1.5 mb-3">
-                                        {MONTH_NAMES.map((name, i) => (
-                                            <button
-                                                key={i}
-                                                onClick={() => setGenMonth(i + 1)}
-                                                className={cn(
-                                                    'py-1.5 rounded-lg text-xs font-medium transition-colors',
-                                                    genMonth === i + 1
-                                                        ? 'bg-primary text-white'
-                                                        : 'text-gray-600 hover:bg-gray-100'
-                                                )}
-                                            >
-                                                {name}
-                                            </button>
-                                        ))}
-                                    </div>
-                                    <Button
-                                        className="w-full gap-1.5 text-xs"
-                                        size="sm"
-                                        onClick={handleGenerateMonth}
-                                        disabled={generateMutation.isPending}
-                                    >
-                                        {generateMutation.isPending ? (
-                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                        ) : (
-                                            <Wand2 className="h-3.5 w-3.5" />
-                                        )}
-                                        توليد {MONTH_NAMES[genMonth - 1]} {genYear}
-                                    </Button>
-                                </div>
-                            )}
-                        </div>
                         <CreateSessionModal />
                     </div>
                 )}
@@ -437,11 +341,11 @@ export default function SessionsPage() {
                     <p className="text-sm font-medium">
                         {isViewingToday ? 'لا توجد حصص اليوم' : 'لا توجد حصص'}
                     </p>
-                    {isViewingToday && canWrite && (
-                        <p className="text-xs text-gray-400">يمكنك إنشاء حصة جديدة أو توليد حصص الشهر</p>
+                {isViewingToday && canWrite && (
+                        <p className="text-xs text-gray-400">يمكنك إنشاء حصة جديدة أو توليد حصص اليوم</p>
                     )}
                     {!isViewingToday && canWrite && (
-                        <p className="text-xs text-gray-400">ابدأ بإنشاء حصة جديدة أو توليد حصص الأسبوع</p>
+                        <p className="text-xs text-gray-400">ابدأ بإنشاء حصة جديدة أو توليد حصص اليوم</p>
                     )}
                 </div>
             )}
