@@ -17,6 +17,7 @@ import { StudentProfileTab } from '@/components/students/profile/StudentProfileT
 import { StudentAttendanceTab } from '@/components/students/profile/StudentAttendanceTab';
 import { StudentSubscriptionsTab } from '@/components/students/profile/StudentSubscriptionsTab';
 import { StudentPaymentsTab } from '@/components/students/profile/StudentPaymentsTab';
+import { StudentGradesTab } from '@/components/students/profile/StudentGradesTab';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -50,6 +51,7 @@ import {
     Calendar,
     BookOpen,
     ArrowRight,
+    GraduationCap,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -263,6 +265,11 @@ export default function StudentProfilePage() {
                                 <Receipt className="h-3.5 w-3.5" /> المدفوعات للمنصة
                             </TabsTrigger>
                         )}
+                        {canWrite && (
+                            <TabsTrigger value="grades" className="text-xs gap-1.5 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md py-2">
+                                <GraduationCap className="h-3.5 w-3.5" /> الدرجات
+                            </TabsTrigger>
+                        )}
                     </TabsList>
 
                     {/* ── Tab 1: Profile + QR ── */}
@@ -296,6 +303,13 @@ export default function StudentProfilePage() {
                     {canWrite && (
                         <TabsContent value="payments" className="m-0 flex-1 p-4 sm:p-6 bg-gray-50/20">
                             <StudentPaymentsTab reportLoading={reportLoading} report={report} />
+                        </TabsContent>
+                    )}
+
+                    {/* ── Tab 5: Grades ── */}
+                    {canWrite && (
+                        <TabsContent value="grades" className="m-0 flex-1 p-4 sm:p-6 bg-gray-50/20">
+                            <StudentGradesTab reportLoading={reportLoading} report={report} />
                         </TabsContent>
                     )}
                 </Tabs>

@@ -41,26 +41,6 @@ export const updateSessionStatus = async (
     return (res as any).data;
 };
 
-export const generateWeekSessions = async (weekStart: string): Promise<{
-    weekStart: string;
-    createdCount: number;
-    skippedCount: number;
-    message: string;
-}> => {
-    const res = await apiClient.post(`/sessions/generate-week?weekStart=${weekStart}`);
-    return (res as any).data;
-};
-
-export const generateMonthSessions = async (year: number, month: number): Promise<{
-    year: number;
-    month: number;
-    createdCount: number;
-    skippedCount: number;
-    message: string;
-}> => {
-    const res = await apiClient.post(`/sessions/generate-month?year=${year}&month=${month}`);
-    return (res as any).data;
-};
 
 export const generateTodaySessions = async (): Promise<{
     date: string;
