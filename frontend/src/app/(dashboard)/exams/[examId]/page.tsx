@@ -72,6 +72,14 @@ const TYPE_LABELS: Record<string, string> = {
 
 type Tab = 'questions' | 'results';
 
+const formatWhatsAppNumber = (phone: string) => {
+    let clean = phone.replace(/[^0-9]/g, '');
+    if (clean.startsWith('01') && clean.length === 11) {
+        return '2' + clean;
+    }
+    return clean;
+};
+
 export default function ExamDetailPage() {
     const { examId } = useParams<{ examId: string }>();
     const router     = useRouter();
@@ -416,7 +424,7 @@ export default function ExamDetailPage() {
                                                                 </td>
                                                                 <td className="px-4 py-3 text-center">
                                                                     <a
-                                                                        href={r.parentPhone ? `https://wa.me/${r.parentPhone.replace(/[^0-9]/g, '')}?text=${waMsg}` : `https://wa.me/?text=${waMsg}`}
+                                                                        href={r.parentPhone ? `https://wa.me/${formatWhatsAppNumber(r.parentPhone)}?text=${waMsg}` : `https://wa.me/?text=${waMsg}`}
                                                                         target="_blank"
                                                                         rel="noopener noreferrer"
                                                                         className="inline-flex items-center justify-center h-7 w-7 rounded-full bg-green-50 hover:bg-green-100 text-green-600 transition-colors"
@@ -451,7 +459,7 @@ export default function ExamDetailPage() {
                                                                     {r.passed ? 'ناجح' : 'راسب'}
                                                                 </span>
                                                                 <a
-                                                                    href={r.parentPhone ? `https://wa.me/${r.parentPhone.replace(/[^0-9]/g, '')}?text=${waMsg}` : `https://wa.me/?text=${waMsg}`}
+                                                                    href={r.parentPhone ? `https://wa.me/${formatWhatsAppNumber(r.parentPhone)}?text=${waMsg}` : `https://wa.me/?text=${waMsg}`}
                                                                     target="_blank"
                                                                     rel="noopener noreferrer"
                                                                     className="inline-flex items-center justify-center h-7 w-7 rounded-full bg-green-50 hover:bg-green-100 text-green-600 transition-colors"
