@@ -394,6 +394,29 @@ export class AttendanceService {
                 );
             }
 
+            // Update consecutiveAbsences
+            const absentIdsForConsecutive = absentStudents.map(s => s.studentId);
+            if (absentIdsForConsecutive.length > 0) {
+                await StudentModel.updateMany(
+                    { _id: { $in: absentIdsForConsecutive } },
+                    { $inc: { consecutiveAbsences: 1 } },
+                    { session: dbSession }
+                );
+            }
+            
+            // Present and Excused students reset their absence streak
+            const presentExcusedIdsForConsecutive = [
+                ...presentStudents.map(s => s.studentId),
+                ...guestStudents.map(s => s.studentId),
+            ];
+            if (presentExcusedIdsForConsecutive.length > 0) {
+                await StudentModel.updateMany(
+                    { _id: { $in: presentExcusedIdsForConsecutive } },
+                    { $set: { consecutiveAbsences: 0 } },
+                    { session: dbSession }
+                );
+            }
+
             return { updatedSession, snapshot };
         });
 

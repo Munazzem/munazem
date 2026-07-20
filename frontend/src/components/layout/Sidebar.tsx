@@ -43,6 +43,7 @@ const getNavItems = (role?: string) => {
         { name: 'لوحة التحكم',       href: '/dashboard',           icon: LayoutDashboard },
         { name: 'المجموعات الدراسية', href: '/groups',              icon: GraduationCap   },
         { name: 'إدارة الطلاب',      href: '/students',            icon: Users           },
+        { name: 'شئون الطلاب',       href: '/students/affairs', icon: AlertTriangle },
         { name: 'الحصص والغياب',     href: '/sessions',            icon: CalendarCheck   },
         { name: 'الامتحانات',        href: '/exams',               icon: ClipboardList   },
         { name: 'الماليات',          href: '/dashboard/payments',  icon: Wallet          },
@@ -133,7 +134,9 @@ export function Sidebar() {
             {/* Navigation Links */}
             <div className="flex-1 overflow-y-auto min-h-0 py-4 px-3 space-y-1">
                 {navItems.map((item) => {
-                    const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                    const isActive = item.href === '/students'
+                        ? pathname === '/students' || (pathname.startsWith('/students/') && !pathname.startsWith('/students/affairs'))
+                        : pathname === item.href || pathname.startsWith(`${item.href}/`);
                     return (
                         <Link
                             key={item.href}

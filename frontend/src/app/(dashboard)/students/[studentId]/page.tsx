@@ -7,7 +7,7 @@ import { useParams, useRouter } from 'next/navigation';
 import type { StudentWithGroup } from '@/types/student.types';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/lib/store/auth.store';
-import { recordSubscription } from '@/lib/api/payments';
+import { recordSubscription, payDebt } from '@/lib/api/payments';
 import { fetchStudentReport, fetchStudentReportHtml } from '@/lib/api/reports';
 import { fetchGroups } from '@/lib/api/groups';
 import { updateStudent, fetchStudentById } from '@/lib/api/students';
@@ -20,6 +20,13 @@ import { StudentPaymentsTab } from '@/components/students/profile/StudentPayment
 import { StudentGradesTab } from '@/components/students/profile/StudentGradesTab';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import {
     Tabs,
     TabsContent,
@@ -67,6 +74,10 @@ export default function StudentProfilePage() {
     const canWrite = user?.role === 'assistant' || user?.role === 'teacher';
     const queryClient = useQueryClient();
     const [confirmSubscribeOpen, setConfirmSubscribeOpen] = useState(false);
+    
+    // Pay Debt Modal State
+    const [payDebtOpen, setPayDebtOpen] = useState(false);
+    const [payDebtAmount, setPayDebtAmount] = useState('');
 
     // Fetch the single student (we use fetchStudents with search by ID for now, or just trust the report)
     // Actually, report brings back student data anyway, but let's fetch students list filtered by ID.
@@ -107,7 +118,22 @@ export default function StudentProfilePage() {
             queryClient.invalidateQueries({ queryKey: QK.payments.all });
         },
         onError: (err: any) => {
-            
+            // Error is handled by global axios interceptor
+        },
+    });
+
+    const payDebtMutation = useMutation({
+        mutationFn: (amount: number) => payDebt({ studentId: studentId, amount }),
+        onSuccess: () => {
+            toast.success(`تم سداد مديونية ${student?.studentName} بنجاح`);
+            queryClient.invalidateQueries({ queryKey: QK.students.detail(studentId) });
+            queryClient.invalidateQueries({ queryKey: QK.students.report(studentId) });
+            queryClient.invalidateQueries({ queryKey: QK.payments.all });
+            setPayDebtOpen(false);
+            setPayDebtAmount('');
+        },
+        onError: (err: any) => {
+            toast.error(err?.message || 'حدث خطأ أثناء السداد');
         },
     });
 
@@ -197,6 +223,11 @@ export default function StudentProfilePage() {
                                 <span className="text-[11px] sm:text-xs font-semibold text-gray-500 bg-white px-2 py-0.5 rounded-full border border-gray-200 shadow-sm">
                                     {student.gradeLevel}
                                 </span>
+                                {(student.totalDebt ?? 0) > 0 && (
+                                    <Badge className="text-[10px] sm:text-xs font-bold px-2.5 py-0.5 border-0 shadow-sm bg-red-100 text-red-700">
+                                        مديونية: {student.totalDebt} ج
+                                    </Badge>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -220,6 +251,20 @@ export default function StudentProfilePage() {
                             {pdfLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />}
                             طباعة التقرير
                         </Button>
+
+                        {canWrite && (student.totalDebt ?? 0) > 0 && (
+                            <Button
+                                variant="outline"
+                                className="flex-1 sm:flex-none h-9 text-xs gap-1.5 text-red-600 border-red-200 hover:bg-red-50 font-bold shadow-sm"
+                                onClick={() => {
+                                    setPayDebtAmount(String(student?.totalDebt || ''));
+                                    setPayDebtOpen(true);
+                                }}
+                            >
+                                <Receipt className="h-3.5 w-3.5" />
+                                سداد باقي المصاريف
+                            </Button>
+                        )}
 
                         {canWrite && hasActiveSub === false && (
                             <Button
@@ -326,6 +371,47 @@ export default function StudentProfilePage() {
                     setConfirmSubscribeOpen(false);
                 }}
             />
+
+            <Dialog open={payDebtOpen} onOpenChange={(v) => { setPayDebtOpen(v); if(!v) setPayDebtAmount(''); }}>
+                <DialogContent className="sm:max-w-[400px]" dir="rtl">
+                    <DialogHeader>
+                        <DialogTitle>سداد باقي المصاريف</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 pt-4">
+                        <div className="bg-red-50 text-red-700 p-3 rounded-xl text-sm font-semibold flex items-center justify-between">
+                            <span>إجمالي المديونية الحالية:</span>
+                            <span>{student?.totalDebt} ج</span>
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium text-gray-700 mb-1.5 block">المبلغ المراد سداده (ج)</label>
+                            <Input
+                                type="number"
+                                min="1"
+                                max={student?.totalDebt}
+                                placeholder="المبلغ..."
+                                value={payDebtAmount}
+                                onChange={(e) => setPayDebtAmount(e.target.value)}
+                                autoFocus
+                            />
+                        </div>
+                        <div className="flex justify-end gap-2 pt-2">
+                            <Button type="button" variant="outline" onClick={() => setPayDebtOpen(false)} disabled={payDebtMutation.isPending}>
+                                إلغاء
+                            </Button>
+                            <Button 
+                                type="button" 
+                                disabled={!payDebtAmount || payDebtMutation.isPending || parseFloat(payDebtAmount) <= 0 || parseFloat(payDebtAmount) > (student?.totalDebt || 0)}
+                                onClick={() => {
+                                    if (payDebtAmount) payDebtMutation.mutate(parseFloat(payDebtAmount));
+                                }}
+                            >
+                                {payDebtMutation.isPending && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
+                                تأكيد السداد
+                            </Button>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

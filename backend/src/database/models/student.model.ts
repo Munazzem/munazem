@@ -69,6 +69,14 @@ const studentSchema = new Schema<IStudent>({
     remainingSessions: {
         type: Number,
         default: 0  // 0 = no active subscription; set to quota when student pays
+    },
+    totalDebt: {
+        type: Number,
+        default: 0
+    },
+    consecutiveAbsences: {
+        type: Number,
+        default: 0
     }
 }, {
     timestamps: true

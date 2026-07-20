@@ -13,7 +13,8 @@ export interface ITransaction {
     // Amounts
     originalAmount: number;               // from PriceSettings
     discountAmount: number;               // 0 if no discount
-    paidAmount:     number;               // originalAmount - discountAmount
+    paidAmount:     number;               // originalAmount - discountAmount (if fully paid)
+    remainingAmount?: number;             // unpaid amount for this transaction
     // Meta
     description?:   string;
     date:           Date;                 // transaction date (not createdAt)

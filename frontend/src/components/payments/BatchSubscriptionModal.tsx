@@ -1,20 +1,21 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchStudents } from '@/lib/api/students';
+import { fetchGroups } from '@/lib/api/groups';
 import { recordBatchSubscription, type IBatchSubscriptionResult, getPriceSettings } from '@/lib/api/payments';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { getAllowedGrades } from '@/lib/utils/grades';
 import { toast } from 'sonner';
-import { Users, Check, X, Loader2, CheckSquare, Square, ChevronDown, Printer } from 'lucide-react';
+import { Users, Check, X, Loader2, CheckSquare, Square, Printer, CreditCard } from 'lucide-react';
 import { QK } from '@/lib/query-keys';
 import { generateBatchReceiptsHtml } from '@/lib/utils/receiptHtml';
 import { printHtmlContent } from '@/lib/utils/print';
+import { cn } from '@/lib/utils';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import {
     Dialog,
     DialogContent,
@@ -30,16 +31,30 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 
+// Stage → gradeLevel prefix mapping
+const STAGE_OPTIONS = [
+    { value: 'PRIMARY',     label: 'ابتدائي' },
+    { value: 'PREPARATORY', label: 'إعدادي' },
+    { value: 'SECONDARY',   label: 'ثانوي' },
+] as const;
+
+const STAGE_TO_GRADE_PREFIX: Record<string, string> = {
+    PRIMARY:     'ابتدائي',
+    PREPARATORY: 'إعدادي',
+    SECONDARY:   'ثانوي',
+};
+
 interface Student {
     _id: string;
     studentName: string;
     gradeLevel: string;
+    hasActiveSubscription?: boolean;
 }
 
 export function BatchSubscriptionModal() {
     const [open, setOpen] = useState(false);
-    const [search, setSearch] = useState('');
-    const [gradeFilter, setGradeFilter] = useState('');
+    const [stageFilter, setStageFilter] = useState('');
+    const [groupId, setGroupId] = useState('');
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [discount, setDiscount] = useState(0);
     const [results, setResults] = useState<IBatchSubscriptionResult[] | null>(null);
@@ -48,12 +63,58 @@ export function BatchSubscriptionModal() {
     const user = useAuthStore((s) => s.user);
     const allowedGrades = getAllowedGrades(user?.stages);
 
-    const { data: studentsData, isLoading } = useQuery({
-        queryKey: QK.payments.batchStudents(search),
-        queryFn: () => fetchStudents({ limit: 200, search }),
-        enabled: open,
-    });
+    // Derive which stages are available for this teacher
+    const allowedStages = STAGE_OPTIONS.filter(stage =>
+        allowedGrades.some(g => g.includes(STAGE_TO_GRADE_PREFIX[stage.value]!))
+    );
 
+    // Reset when stage changes
+    useEffect(() => {
+        setGroupId('');
+        setSelectedIds(new Set());
+    }, [stageFilter]);
+
+    // Reset students when group changes
+    useEffect(() => {
+        setSelectedIds(new Set());
+    }, [groupId]);
+
+    // Groups list
+    const { data: groupsData, isLoading: groupsLoading } = useQuery({
+        queryKey: [...QK.groups.forBulkSub, stageFilter],
+        queryFn: () => fetchGroups({ limit: 200 }),
+        enabled: open,
+        staleTime: 5 * 60 * 1000,
+    });
+    const allGroups = groupsData?.data ?? [];
+
+    // Filter groups by selected stage
+    const filteredGroups = useMemo(() => {
+        if (!stageFilter) return allGroups;
+        const prefix = STAGE_TO_GRADE_PREFIX[stageFilter];
+        return allGroups.filter(g => g.gradeLevel.includes(prefix!));
+    }, [allGroups, stageFilter]);
+
+    // Students of selected group
+    const { data: studentsData, isLoading: studentsLoading } = useQuery({
+        queryKey: QK.payments.bulkSubStudents(groupId),
+        queryFn: () => fetchStudents({ groupId, limit: 300, isActive: true }),
+        enabled: !!groupId,
+        staleTime: 2 * 60 * 1000,
+    });
+    const students: Student[] = studentsData?.data ?? [];
+
+    // Auto-select students without active subscription when students load
+    useEffect(() => {
+        if (students.length > 0) {
+            const unsubscribed = students
+                .filter(s => !s.hasActiveSubscription)
+                .map(s => s._id);
+            setSelectedIds(new Set(unsubscribed));
+        }
+    }, [students.length, groupId]); // eslint-disable-line
+
+    // Price settings for center discounts
     const { data: settings } = useQuery({
         queryKey: QK.payments.priceSettings,
         queryFn: getPriceSettings,
@@ -61,29 +122,20 @@ export function BatchSubscriptionModal() {
     });
     const centerDiscounts = settings?.centerDiscounts || [];
 
-    const students: Student[] = useMemo(() => {
-        const all = (studentsData as any)?.data ?? (studentsData as any) ?? [];
-        if (!Array.isArray(all)) return [];
-        return gradeFilter
-            ? all.filter((s: Student) => s.gradeLevel === gradeFilter)
-            : all.filter((s: Student) => allowedGrades.includes(s.gradeLevel));
-    }, [studentsData, gradeFilter, allowedGrades]);
-
     const mutation = useMutation({
         mutationFn: recordBatchSubscription,
         onSuccess: (data) => {
             setResults(data.results);
             queryClient.invalidateQueries({ queryKey: QK.payments.dailyLedgerBase });
             queryClient.invalidateQueries({ queryKey: QK.payments.monthlyLedgerBase });
+            queryClient.invalidateQueries({ queryKey: QK.payments.bulkSubStudents(groupId) });
             if (data.failCount === 0) {
                 toast.success(`تم تسجيل ${data.successCount} اشتراك بنجاح — إجمالي: ${data.totalPaid.toLocaleString()} ج`);
             } else {
                 toast.warning(`${data.successCount} نجح — ${data.failCount} فشل`);
             }
         },
-        onError: (err: any) => {
-            
-        },
+        onError: () => {},
     });
 
     const toggleStudent = (id: string) => {
@@ -94,8 +146,9 @@ export function BatchSubscriptionModal() {
         });
     };
 
+    const allSelected = students.length > 0 && selectedIds.size === students.length;
     const toggleAll = () => {
-        if (selectedIds.size === students.length && students.length > 0) {
+        if (allSelected) {
             setSelectedIds(new Set());
         } else {
             setSelectedIds(new Set(students.map((s) => s._id)));
@@ -116,15 +169,16 @@ export function BatchSubscriptionModal() {
     const handleClose = (val: boolean) => {
         setOpen(val);
         if (!val) {
-            setSearch('');
-            setGradeFilter('');
+            setStageFilter('');
+            setGroupId('');
             setSelectedIds(new Set());
             setDiscount(0);
             setResults(null);
         }
     };
 
-    const allSelected = students.length > 0 && selectedIds.size === students.length;
+    const paidCount   = students.filter(s => s.hasActiveSubscription).length;
+    const unpaidCount = students.length - paidCount;
 
     return (
         <Dialog open={open} onOpenChange={handleClose}>
@@ -137,7 +191,8 @@ export function BatchSubscriptionModal() {
 
             <DialogContent className="sm:max-w-[680px] bg-white rounded-2xl" dir="rtl">
                 <DialogHeader>
-                    <DialogTitle className="text-xl font-bold text-gray-900 border-b pb-4">
+                    <DialogTitle className="text-xl font-bold text-gray-900 border-b pb-4 flex items-center gap-2">
+                        <CreditCard className="h-5 w-5 text-emerald-600" />
                         دفع اشتراك لأكثر من طالب
                     </DialogTitle>
                 </DialogHeader>
@@ -183,8 +238,8 @@ export function BatchSubscriptionModal() {
                                 دفع اشتراكات أخرى
                             </Button>
                             {results.some(r => r.status === 'success') && (
-                                <Button 
-                                    className="gap-2 bg-blue-600 hover:bg-blue-700 text-white" 
+                                <Button
+                                    className="gap-2 bg-blue-600 hover:bg-blue-700 text-white"
                                     onClick={() => {
                                         const successfulReceipts = results.filter(r => r.status === 'success').map(r => ({
                                             teacherName: user?.name || 'السنتر',
@@ -206,77 +261,153 @@ export function BatchSubscriptionModal() {
                 ) : (
                     /* ── Selection screen ── */
                     <div className="space-y-4">
-                        {/* Filters row */}
-                        <div className="flex gap-3">
-                            <Input
-                                placeholder="ابحث باسم الطالب..."
-                                value={search}
-                                onChange={(e) => setSearch(e.target.value)}
-                                className="flex-1 bg-gray-50 border-gray-200"
-                            />
+
+                        {/* Step 1: Stage filter */}
+                        <div>
+                            <label className="text-sm font-medium text-gray-700 block mb-1.5">
+                                المرحلة الدراسية
+                            </label>
                             <Select
-                                value={gradeFilter}
-                                onValueChange={(v) => setGradeFilter(v === 'ALL' ? '' : v)}
+                                value={stageFilter}
+                                onValueChange={setStageFilter}
                                 dir="rtl"
                             >
-                                <SelectTrigger className="w-44 bg-gray-50 border-gray-200 text-gray-700">
-                                    <ChevronDown size={14} className="ml-1 text-gray-400" />
-                                    <SelectValue placeholder="كل المراحل" />
+                                <SelectTrigger className="h-10 bg-gray-50 border-gray-200 text-gray-700">
+                                    <SelectValue placeholder="اختر المرحلة أولاً..." />
                                 </SelectTrigger>
                                 <SelectContent dir="rtl">
-                                    <SelectItem value="ALL">كل المراحل</SelectItem>
-                                    {allowedGrades.map((g) => (
-                                        <SelectItem key={g} value={g}>{g}</SelectItem>
+                                    {allowedStages.map(s => (
+                                        <SelectItem key={s.value} value={s.value}>
+                                            {s.label}
+                                        </SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
                         </div>
 
-                        {/* Select all + count */}
-                        <div className="flex items-center justify-between px-1">
-                            <button
-                                type="button"
-                                onClick={toggleAll}
-                                className="flex items-center gap-2 text-sm text-gray-600 hover:text-primary transition-colors"
-                            >
-                                {allSelected
-                                    ? <CheckSquare size={16} className="text-primary" />
-                                    : <Square size={16} />}
-                                {allSelected ? 'إلغاء تحديد الكل' : 'تحديد الكل'}
-                            </button>
-                            <Badge variant="secondary">{selectedIds.size} محدد من {students.length}</Badge>
-                        </div>
+                        {/* Step 2: Group selector (filtered by stage) */}
+                        {stageFilter && (
+                            <div>
+                                <label className="text-sm font-medium text-gray-700 block mb-1.5">
+                                    المجموعة
+                                </label>
+                                {groupsLoading ? (
+                                    <div className="flex items-center gap-2 text-sm text-gray-400">
+                                        <Loader2 className="h-4 w-4 animate-spin" /> جاري تحميل المجموعات...
+                                    </div>
+                                ) : filteredGroups.length === 0 ? (
+                                    <p className="text-sm text-gray-400 py-2">لا توجد مجموعات لهذه المرحلة</p>
+                                ) : (
+                                    <Select
+                                        value={groupId}
+                                        onValueChange={v => setGroupId(v)}
+                                        dir="rtl"
+                                    >
+                                        <SelectTrigger className="h-10 bg-gray-50 border-gray-200 text-gray-700">
+                                            <SelectValue placeholder="اختر مجموعة..." />
+                                        </SelectTrigger>
+                                        <SelectContent dir="rtl">
+                                            {filteredGroups.map(g => (
+                                                <SelectItem key={g._id} value={g._id}>
+                                                    {g.name}
+                                                    <span className="text-gray-400 text-xs mr-2">({g.gradeLevel})</span>
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                )}
+                            </div>
+                        )}
 
-                        {/* Student list */}
-                        <div className="max-h-60 overflow-y-auto border border-gray-100 rounded-xl divide-y divide-gray-50">
-                            {isLoading ? (
-                                <div className="flex justify-center items-center h-32 text-gray-400">
-                                    <Loader2 className="animate-spin h-6 w-6" />
-                                </div>
-                            ) : students.length === 0 ? (
-                                <div className="p-6 text-center text-sm text-gray-400">لا يوجد طلاب</div>
-                            ) : (
-                                students.map((s) => {
-                                    const checked = selectedIds.has(s._id);
-                                    return (
+                        {/* Step 3: Student list */}
+                        {groupId && (
+                            <div>
+                                {/* Header row */}
+                                <div className="flex items-center justify-between mb-2 px-1">
+                                    <span className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                                        <Users size={15} className="text-primary" />
+                                        الطلاب
+                                        {students.length > 0 && (
+                                            <span className="text-gray-400 font-normal text-xs">
+                                                ({students.length} طالب — {paidCount} دافع — {unpaidCount} غير دافع)
+                                            </span>
+                                        )}
+                                    </span>
+                                    {students.length > 0 && (
                                         <button
-                                            key={s._id}
                                             type="button"
-                                            onClick={() => toggleStudent(s._id)}
-                                            className={`w-full flex items-center justify-between px-4 py-2.5 text-sm transition-colors ${checked ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                                            onClick={toggleAll}
+                                            className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-primary transition-colors"
                                         >
-                                            <div className="flex items-center gap-3">
-                                                {checked
-                                                    ? <CheckSquare size={16} className="text-primary shrink-0" />
-                                                    : <Square size={16} className="text-gray-300 shrink-0" />}
-                                                <span className="font-medium text-gray-800">{s.studentName}</span>
-                                            </div>
-                                            <Badge variant="outline" className="text-xs text-gray-500">{s.gradeLevel}</Badge>
+                                            {allSelected
+                                                ? <CheckSquare size={16} className="text-primary" />
+                                                : <Square size={16} />}
+                                            {allSelected ? 'إلغاء تحديد الكل' : 'تحديد الكل'}
                                         </button>
-                                    );
-                                })
-                            )}
-                        </div>
+                                    )}
+                                </div>
+
+                                {/* Student list */}
+                                <div className="max-h-60 overflow-y-auto border border-gray-100 rounded-xl divide-y divide-gray-50">
+                                    {studentsLoading ? (
+                                        <div className="flex justify-center items-center h-32 text-gray-400">
+                                            <Loader2 className="animate-spin h-6 w-6" />
+                                        </div>
+                                    ) : students.length === 0 ? (
+                                        <div className="p-6 text-center text-sm text-gray-400">لا يوجد طلاب نشطين</div>
+                                    ) : (
+                                        students.map((s) => {
+                                            const checked = selectedIds.has(s._id);
+                                            const hasSub  = s.hasActiveSubscription;
+                                            return (
+                                                <label
+                                                    key={s._id}
+                                                    className={cn(
+                                                        'w-full flex items-center justify-between px-4 py-2.5 text-sm transition-colors',
+                                                        hasSub
+                                                            ? 'bg-green-50/60 cursor-default'
+                                                            : cn('cursor-pointer', checked ? 'bg-blue-50' : 'hover:bg-gray-50')
+                                                    )}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={checked}
+                                                            onChange={() => toggleStudent(s._id)}
+                                                            disabled={!!hasSub}
+                                                            className="h-4 w-4 rounded accent-primary shrink-0 disabled:opacity-40"
+                                                        />
+                                                        <span className={cn(
+                                                            'font-medium',
+                                                            hasSub ? 'text-gray-400' : 'text-gray-800'
+                                                        )}>
+                                                            {s.studentName}
+                                                        </span>
+                                                    </div>
+                                                    {hasSub ? (
+                                                        <span className="text-[11px] bg-green-100 text-green-700 px-2.5 py-0.5 rounded-full shrink-0 font-bold flex items-center gap-1">
+                                                            <Check size={10} />
+                                                            دافع ✓
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-[11px] bg-red-50 text-red-500 px-2.5 py-0.5 rounded-full shrink-0 font-medium">
+                                                            لم يدفع
+                                                        </span>
+                                                    )}
+                                                </label>
+                                            );
+                                        })
+                                    )}
+                                </div>
+
+                                {/* Selected count */}
+                                {students.length > 0 && (
+                                    <p className="text-xs text-gray-400 mt-2 text-center">
+                                        {selectedIds.size} طالب محدد للدفع
+                                    </p>
+                                )}
+                            </div>
+                        )}
 
                         {/* Discount field */}
                         <div className="flex flex-col gap-2">
@@ -285,7 +416,7 @@ export function BatchSubscriptionModal() {
                             </label>
                             <div className="flex items-center gap-2">
                                 {centerDiscounts.length > 0 && (
-                                    <Select 
+                                    <Select
                                         onValueChange={(val) => {
                                             const center = centerDiscounts.find(c => c.centerName === val);
                                             if (center) setDiscount(center.discountAmount);

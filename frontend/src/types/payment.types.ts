@@ -13,6 +13,7 @@ export type TransactionCategory =
     | 'NOTEBOOK_RESERVATION'
     | 'NOTEBOOK_DELIVERY'
     | 'OTHER_INCOME'
+    | 'DEBT_PAYMENT'
     | 'SALARY'
     | 'RENT'
     | 'SUPPLIES'
@@ -30,6 +31,7 @@ export interface ITransaction {
     originalAmount: number;
     discountAmount: number;
     paidAmount: number;
+    remainingAmount?: number;
     description?: string;
     date: string;
     createdAt: string;
