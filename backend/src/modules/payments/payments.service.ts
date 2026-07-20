@@ -141,7 +141,7 @@ export class PaymentsService {
     static async recordSubscription(
         teacherId: string,
         createdBy: string,
-        data: { studentId: string; discountAmount?: number; description?: string; date?: string }
+        data: { studentId: string; discountAmount?: number; paidAmount?: number; description?: string; date?: string }
     ) {
         // Get student info
         const student = await StudentModel.findById(data.studentId, {
@@ -161,10 +161,33 @@ export class PaymentsService {
 
         const discountAmount = data.discountAmount ?? 0;
         const originalAmount = priceSetting.amount;
-        const paidAmount     = originalAmount - discountAmount;
+        const expectedAmount = originalAmount - discountAmount;
+        const paidAmount     = data.paidAmount !== undefined ? data.paidAmount : expectedAmount;
+        const remainingAmount = expectedAmount - paidAmount;
         const txDate         = resolveTransactionDate(data.date);
 
-        if (paidAmount < 0) throw BadRequestException({ message: 'الخصم لا يمكن أن يتجاوز السعر الأصلي' });
+        if (paidAmount < 0) throw BadRequestException({ message: 'المدفوع لا يمكن أن يكون سالباً' });
+        if (remainingAmount < 0) throw BadRequestException({ message: 'المدفوع لا يمكن أن يتجاوز المطلوب سداده' });
+
+        // Prevent duplicate subscriptions in the same month
+        const startOfMonth = new Date(txDate);
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0, 0, 0, 0);
+
+        const endOfMonth = new Date(txDate);
+        endOfMonth.setMonth(endOfMonth.getMonth() + 1);
+        endOfMonth.setDate(0);
+        endOfMonth.setHours(23, 59, 59, 999);
+
+        const existingSubscription = await TransactionModel.findOne({
+            studentId: student._id,
+            category: TransactionCategory.SUBSCRIPTION,
+            date: { $gte: startOfMonth, $lte: endOfMonth }
+        }).lean();
+
+        if (existingSubscription) {
+            throw BadRequestException({ message: 'لقد تم تسجيل اشتراك لهذا الطالب في نفس هذا الشهر مسبقاً.' });
+        }
 
         // Get group quota info before transaction (read-only)
         const group = await GroupModel.findById(student.groupId, { schedule: 1 }).lean();
@@ -183,6 +206,7 @@ export class PaymentsService {
                 originalAmount,
                 discountAmount,
                 paidAmount,
+                remainingAmount,
                 date:           txDate,
                 ...(data.description ? { description: data.description } : {}),
             }], { session });
@@ -200,9 +224,22 @@ export class PaymentsService {
                 updateMonthlyLedger(teacherId, txDate, paidAmount, true, session),
             ]);
 
-            await StudentModel.findByIdAndUpdate(data.studentId, {
-                $set: { remainingSessions: quota }
-            }, { session });
+            // Update student remaining sessions AND add debt if any
+            const studentUpdatePayload: any = { remainingSessions: quota };
+            if (remainingAmount > 0) {
+                studentUpdatePayload.$inc = { totalDebt: remainingAmount };
+            }
+
+            if (studentUpdatePayload.$inc) {
+                await StudentModel.findByIdAndUpdate(data.studentId, {
+                    $set: { remainingSessions: studentUpdatePayload.remainingSessions },
+                    $inc: studentUpdatePayload.$inc
+                }, { session });
+            } else {
+                await StudentModel.findByIdAndUpdate(data.studentId, {
+                    $set: { remainingSessions: studentUpdatePayload.remainingSessions }
+                }, { session });
+            }
 
             return tx;
         });
@@ -251,12 +288,34 @@ export class PaymentsService {
         const groupDocs = await GroupModel.find({ _id: { $in: groupIds as string[] } }, { schedule: 1 }).lean();
         const groupMap = new Map(groupDocs.map(g => [g._id.toString(), g]));
 
+        const startOfMonth = new Date(txDate);
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0, 0, 0, 0);
+
+        const endOfMonth = new Date(txDate);
+        endOfMonth.setMonth(endOfMonth.getMonth() + 1);
+        endOfMonth.setDate(0);
+        endOfMonth.setHours(23, 59, 59, 999);
+
+        // Find existing subscriptions for all provided student IDs in the current month
+        const existingTxs = await TransactionModel.find({
+            studentId: { $in: data.studentIds },
+            category: TransactionCategory.SUBSCRIPTION,
+            date: { $gte: startOfMonth, $lte: endOfMonth }
+        }, { studentId: 1 }).lean();
+        const existingStudentIds = new Set(existingTxs.map(tx => tx.studentId?.toString()));
+
         const validStudents: any[] = [];
         
         for (const studentId of data.studentIds) {
             const student = studentMap.get(studentId);
             if (!student) {
                 results.push({ studentId, studentName: '', paidAmount: 0, status: 'error', error: 'الطالب غير موجود أو لا ينتمي إلى هذا المعلم' });
+                continue;
+            }
+
+            if (existingStudentIds.has(studentId)) {
+                results.push({ studentId, studentName: student.studentName, paidAmount: 0, status: 'error', error: 'لقد تم تسجيل اشتراك لهذا الطالب في نفس هذا الشهر مسبقاً.' });
                 continue;
             }
 
@@ -408,7 +467,7 @@ export class PaymentsService {
     static async recordNotebookSale(
         teacherId: string,
         createdBy: string,
-        data: { studentId: string; notebookId: string; quantity?: number; discountAmount?: number; description?: string; date?: string }
+        data: { studentId: string; notebookId: string; quantity?: number; discountAmount?: number; paidAmount?: number; description?: string; date?: string }
     ) {
         const student = await StudentModel.findById(data.studentId, { studentName: 1, teacherId: 1 }).lean();
         if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
@@ -427,10 +486,13 @@ export class PaymentsService {
 
         const originalAmount = notebook.price * quantity;
         const discountAmount = data.discountAmount ?? 0;
-        const paidAmount     = originalAmount - discountAmount;
+        const expectedAmount = originalAmount - discountAmount;
+        const paidAmount     = data.paidAmount !== undefined ? data.paidAmount : expectedAmount;
+        const remainingAmount = expectedAmount - paidAmount;
         const txDate         = resolveTransactionDate(data.date);
 
-        if (paidAmount < 0) throw BadRequestException({ message: 'الخصم لا يمكن أن يتجاوز السعر' });
+        if (paidAmount < 0) throw BadRequestException({ message: 'المدفوع لا يمكن أن يكون سالباً' });
+        if (remainingAmount < 0) throw BadRequestException({ message: 'المدفوع لا يمكن أن يتجاوز المطلوب سداده' });
 
         // ── All mutations wrapped in a transaction (all-or-nothing) ──
         const transaction = await withTransaction(async (session) => {
@@ -444,6 +506,7 @@ export class PaymentsService {
                 originalAmount,
                 discountAmount,
                 paidAmount,
+                remainingAmount,
                 date:           txDate,
                 ...(data.description ? { description: data.description } : {}),
             }], { session });
@@ -461,6 +524,12 @@ export class PaymentsService {
                 }, true, session),
                 updateMonthlyLedger(teacherId, txDate, paidAmount, true, session),
             ]);
+
+            if (remainingAmount > 0) {
+                await StudentModel.findByIdAndUpdate(data.studentId, {
+                    $inc: { totalDebt: remainingAmount }
+                }, { session });
+            }
 
             return tx;
         });
@@ -837,5 +906,163 @@ export class PaymentsService {
             cache.del(CacheKeys.dashboard(teacherId));
             return tx;
         });
+    }
+
+    // ── Record Debt Payment ──────────────────────────────────────────
+    static async payDebt(
+        teacherId: string,
+        createdBy: string,
+        data: { studentId: string; amount: number; description?: string; date?: string }
+    ) {
+        const student = await StudentModel.findById(data.studentId, { studentName: 1, teacherId: 1, totalDebt: 1 }).lean();
+        if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
+        if (student.teacherId.toString() !== teacherId) {
+            throw BadRequestException({ message: 'هذا الطالب لا ينتمي إلى هذا المعلم' });
+        }
+        if ((student.totalDebt || 0) < data.amount) {
+            throw BadRequestException({ message: `المبلغ المدفوع (${data.amount}) أكبر من إجمالي المديونية (${student.totalDebt || 0})` });
+        }
+
+        const txDate = resolveTransactionDate(data.date);
+        
+        const transaction = await withTransaction(async (session) => {
+            const [tx] = await TransactionModel.create([{
+                teacherId,
+                createdBy,
+                type:           TransactionType.INCOME,
+                category:       TransactionCategory.DEBT_PAYMENT,
+                studentId:      student._id,
+                studentName:    student.studentName,
+                originalAmount: data.amount,
+                discountAmount: 0,
+                paidAmount:     data.amount,
+                remainingAmount: 0,
+                date:           txDate,
+                ...(data.description ? { description: data.description } : {}),
+            }], { session });
+
+            await Promise.all([
+                updateDailyLedger(teacherId, txDate, {
+                    transactionId: tx!._id,
+                    type:          TransactionType.INCOME,
+                    category:      TransactionCategory.DEBT_PAYMENT,
+                    paidAmount:    data.amount,
+                    studentName:   student.studentName,
+                    createdBy,
+                    time:          txDate,
+                }, true, session),
+                updateMonthlyLedger(teacherId, txDate, data.amount, true, session),
+            ]);
+
+            await StudentModel.findByIdAndUpdate(data.studentId, {
+                $inc: { totalDebt: -data.amount }
+            }, { session });
+
+            return tx;
+        });
+
+        cache.del(CacheKeys.dashboard(teacherId));
+        return transaction;
+    }
+
+    // ── Delete (Void) Transaction ────────────────────────────────────
+    /**
+     * Permanently deletes a transaction and reverses its effect on
+     * the DailyLedger and MonthlyLedger atomically.
+     * Only the teacher who owns the record may call this.
+     */
+    static async deleteTransaction(teacherId: string, transactionId: string) {
+        const transaction = await TransactionModel.findOne({ _id: transactionId, teacherId }).lean();
+        if (!transaction) throw NotFoundException({ message: 'المعاملة غير موجودة' });
+
+        const isIncome = transaction.type === TransactionType.INCOME;
+        const txDate   = new Date(transaction.date);
+        const day      = startOfDay(txDate);
+        const year     = txDate.getUTCFullYear();
+        const month    = txDate.getUTCMonth() + 1;
+        const amount   = transaction.paidAmount;
+
+        await withTransaction(async (session) => {
+            // 1. Delete the transaction document
+            await TransactionModel.deleteOne({ _id: transaction._id }, { session });
+
+            // 2. Reverse DailyLedger totals + remove embedded entry
+            await DailyLedgerModel.findOneAndUpdate(
+                { teacherId, date: day },
+                {
+                    $pull: { transactions: { transactionId: transaction._id } },
+                    $inc: {
+                        totalIncome:   isIncome ?  -amount : 0,
+                        totalExpenses: isIncome ? 0 : -amount,
+                        netBalance:    isIncome ? -amount : amount,
+                    },
+                },
+                { session }
+            );
+
+            // 3. Reverse MonthlyLedger — try existing daily summary first
+            const updatedMonthly = await MonthlyLedgerModel.findOneAndUpdate(
+                { teacherId, year, month, 'dailySummaries.date': day },
+                {
+                    $inc: {
+                        totalIncome:                        isIncome ?  -amount : 0,
+                        totalExpenses:                      isIncome ? 0 : -amount,
+                        netBalance:                         isIncome ? -amount : amount,
+                        'dailySummaries.$.totalIncome':     isIncome ?  -amount : 0,
+                        'dailySummaries.$.totalExpenses':   isIncome ? 0 : -amount,
+                        'dailySummaries.$.netBalance':      isIncome ? -amount : amount,
+                        'dailySummaries.$.transactionCount': -1,
+                    },
+                },
+                { session }
+            );
+
+            // Fallback: update top-level only if daily summary entry doesn't exist
+            if (!updatedMonthly) {
+                await MonthlyLedgerModel.findOneAndUpdate(
+                    { teacherId, year, month },
+                    {
+                        $inc: {
+                            totalIncome:   isIncome ?  -amount : 0,
+                            totalExpenses: isIncome ? 0 : -amount,
+                            netBalance:    isIncome ? -amount : amount,
+                        },
+                    },
+                    { session }
+                );
+            }
+
+            // 4. If this was a subscription, reset the student's remaining sessions
+            if (transaction.category === TransactionCategory.SUBSCRIPTION && transaction.studentId) {
+                await StudentModel.findByIdAndUpdate(
+                    transaction.studentId,
+                    { $set: { remainingSessions: 0 } },
+                    { session }
+                );
+            }
+
+            // 5. If this transaction had a remaining amount, we must revert it from student's total debt
+            if (transaction.remainingAmount && transaction.remainingAmount > 0 && transaction.studentId) {
+                await StudentModel.findByIdAndUpdate(
+                    transaction.studentId,
+                    { $inc: { totalDebt: -transaction.remainingAmount } },
+                    { session }
+                );
+            }
+
+            // 6. If this transaction was a DEBT_PAYMENT itself, deleting it means the debt comes back
+            if (transaction.category === TransactionCategory.DEBT_PAYMENT && transaction.studentId) {
+                await StudentModel.findByIdAndUpdate(
+                    transaction.studentId,
+                    { $inc: { totalDebt: amount } }, // add the paid amount back to the debt
+                    { session }
+                );
+            }
+        });
+
+        // Invalidate dashboard cache
+        cache.del(CacheKeys.dashboard(teacherId));
+
+        return { deleted: true, transactionId };
     }
 }

@@ -24,6 +24,9 @@ export const fetchStudents = async (params: {
     groupId?: string;
     isActive?: boolean | string;
     search?: string;
+    hasDebt?: boolean;
+    hasNoActiveSubscription?: boolean;
+    isDroppedOut?: boolean;
 }): Promise<PaginatedStudentsResponse> => {
     // Construct query string, ignoring undefined/empty values
     const query = new URLSearchParams();
@@ -35,6 +38,9 @@ export const fetchStudents = async (params: {
         query.append('isActive', params.isActive.toString());
     }
     if (params.search) query.append('search', params.search);
+    if (params.hasDebt) query.append('hasDebt', 'true');
+    if (params.hasNoActiveSubscription) query.append('hasNoActiveSubscription', 'true');
+    if (params.isDroppedOut) query.append('isDroppedOut', 'true');
 
     // apiClient interceptor returns response.data directly → shape: { status, message, data }
     const res = await apiClient.get(`/students?${query.toString()}`);
