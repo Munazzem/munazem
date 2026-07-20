@@ -7,7 +7,7 @@ import { ForbiddenException } from '../../common/utils/response/error.responce.j
 import { authenticate } from '../../middlewares/auth.middleware.js';
 import { authorizeRoles } from '../../middlewares/roles.middleware.js';
 import { validate } from '../../middlewares/validate.middleware.js';
-import { recordSubscriptionSchema, batchSubscriptionSchema, recordExpenseSchema, recordNotebookSaleSchema, upsertPriceSettingsSchema, reserveNotebookSchema, deliverNotebookSchema, updateTransactionSchema } from '../../validation/payment.validation.js';
+import { recordSubscriptionSchema, batchSubscriptionSchema, recordExpenseSchema, recordNotebookSaleSchema, upsertPriceSettingsSchema, reserveNotebookSchema, deliverNotebookSchema, updateTransactionSchema, payDebtSchema } from '../../validation/payment.validation.js';
 
 const paymentsRouter = Router();
 
@@ -107,6 +107,21 @@ paymentsRouter.post(
             const teacherId = resolveTeacherId(user);
             const result = await PaymentsService.reserveNotebook(teacherId, user.userId, req.body);
             return SuccessResponse({ res, data: result, message: 'تم حجز المذكرة بنجاح', status: 201 });
+        } catch (error) { next(error); }
+    }
+);
+
+// POST /payments/pay-debt — Record debt payment (Teacher + Assistant)
+paymentsRouter.post(
+    '/pay-debt',
+    authorizeRoles(UserRole.assistant, UserRole.teacher),
+    validate(payDebtSchema),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const user = (req as any).user;
+            const teacherId = resolveTeacherId(user);
+            const result = await PaymentsService.payDebt(teacherId, user.userId, req.body);
+            return SuccessResponse({ res, data: result, message: 'تم سداد المديونية بنجاح', status: 201 });
         } catch (error) { next(error); }
     }
 );
@@ -228,4 +243,29 @@ paymentsRouter.post(
     }
 );
 
+// ════════════════════════════════════════════════════════════════
+// DELETE /payments/:id — Void (delete) a transaction (Teacher only)
+// يمسح المعاملة المالية ويعكس أثرها على السجلات. متاح للمدرس فقط.
+// ════════════════════════════════════════════════════════════════
+paymentsRouter.delete(
+    '/:id',
+    (req: Request, _res: Response, next: NextFunction) => {
+        try {
+            const user = (req as any).user;
+            if (!user || user.role !== UserRole.teacher) {
+                throw ForbiddenException({ message: 'حذف المعاملات متاح للمدرس فقط' });
+            }
+            next();
+        } catch (error) { next(error); }
+    },
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = (req as any).user.userId;
+            const result = await PaymentsService.deleteTransaction(teacherId, req.params['id'] as string);
+            return SuccessResponse({ res, data: result, message: 'تم مسح المعاملة المالية بنجاح' });
+        } catch (error) { next(error); }
+    }
+);
+
 export default paymentsRouter;
+

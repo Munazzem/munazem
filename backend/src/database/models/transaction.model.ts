@@ -29,6 +29,7 @@ const transactionSchema = new Schema<ITransactionDocument>({
     originalAmount: { type: Number, required: true, min: 0 },
     discountAmount: { type: Number, default: 0,    min: 0 },
     paidAmount:     { type: Number, required: true, min: 0 },
+    remainingAmount:{ type: Number, default: 0,    min: 0 },
     // Meta
     description: { type: String },
     date: {

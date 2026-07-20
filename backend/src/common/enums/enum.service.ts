@@ -112,6 +112,8 @@ export enum TransactionCategory {
     NOTEBOOK_RESERVATION = 'NOTEBOOK_RESERVATION',
     NOTEBOOK_DELIVERY    = 'NOTEBOOK_DELIVERY',
     OTHER_INCOME         = 'OTHER_INCOME',   
+    DEBT_PAYMENT         = 'DEBT_PAYMENT',   
+
     // Expense categories
     SALARY        = 'SALARY',         
     RENT          = 'RENT',           

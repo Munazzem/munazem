@@ -20,6 +20,8 @@ export interface Student {
     excusedSessionsCount?: number; // عدد حصص الاستئذان المتبقية
     remainingSessions?: number;
     usedSessionsThisMonth?: number;
+    totalDebt?: number; // إجمالي المديونية المتبقية
+    consecutiveAbsences?: number; // عدد مرات الغياب المتتالية
     monthlySessions?: {
         sessionId: string;
         date: string;

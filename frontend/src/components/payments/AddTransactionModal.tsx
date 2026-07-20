@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { recordSubscription, recordNotebookSale, recordExpense, updateTransaction, reserveNotebook, getPriceSettings } from '@/lib/api/payments';
+import { recordSubscription, recordNotebookSale, recordExpense, updateTransaction, reserveNotebook, getPriceSettings, payDebt } from '@/lib/api/payments';
 import { fetchStudents } from '@/lib/api/students';
 import { toast } from 'sonner';
 import { Plus, Loader2, User, BookOpen, TrendingDown, Search, Bookmark, Check, Printer } from 'lucide-react';
@@ -31,12 +31,13 @@ import {
 } from '@/components/ui/select';
 import { EXPENSE_CATEGORIES, CATEGORY_LABELS, type TransactionCategory } from '@/types/payment.types';
 
-type TxMode = 'subscription' | 'notebook' | 'notebook_reservation' | 'expense';
+type TxMode = 'subscription' | 'notebook' | 'notebook_reservation' | 'pay_debt' | 'expense';
 
 const MODE_LABELS: Record<TxMode, string> = {
     subscription: 'اشتراك طالب',
     notebook:     'بيع مذكرة',
     notebook_reservation: 'حجز مذكرة',
+    pay_debt:     'سداد باقي مصاريف',
     expense:      'مصروف',
 };
 
@@ -44,6 +45,7 @@ const MODE_ICONS: Record<TxMode, React.ReactNode> = {
     subscription: <User className="h-4 w-4" />,
     notebook:     <BookOpen className="h-4 w-4" />,
     notebook_reservation: <Bookmark className="h-4 w-4" />,
+    pay_debt:     <User className="h-4 w-4" />,
     expense:      <TrendingDown className="h-4 w-4" />,
 };
 
@@ -90,6 +92,7 @@ export function AddTransactionModal({
     const [studentSearch, setStudentSearch] = useState('');
     const [selectedStudentId, setSelectedStudentId] = useState('');
     const [selectedStudentName, setSelectedStudentName] = useState(initialData?.studentName ?? '');
+    const [selectedStudentDebt, setSelectedStudentDebt] = useState(0);
     const [discountAmount, setDiscountAmount] = useState('');
     const [description, setDescription] = useState(initialData?.description ?? '');
     const [date, setDate] = useState(
@@ -97,6 +100,7 @@ export function AddTransactionModal({
             ? initialData.date.split('T')[0]!
             : new Date().toISOString().split('T')[0]!
     );
+    const [paidAmount, setPaidAmount] = useState('');
 
     // Notebook-specific
     const [notebookId, setNotebookId] = useState('');
@@ -129,11 +133,10 @@ export function AddTransactionModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open]);
 
-    // Student search
     const { data: studentsData } = useQuery({
         queryKey: QK.payments.searchForPayment(studentSearch),
         queryFn: () => fetchStudents({ search: studentSearch, limit: 8 }),
-        enabled: open && !isEditMode && studentSearch.length >= 1 && (mode === 'subscription' || mode === 'notebook' || mode === 'notebook_reservation'),
+        enabled: open && !isEditMode && studentSearch.length >= 1 && (mode === 'subscription' || mode === 'notebook' || mode === 'notebook_reservation' || mode === 'pay_debt'),
     });
     const rawStudents = studentsData as any;
     const students = Array.isArray(rawStudents?.data?.data)
@@ -171,7 +174,9 @@ export function AddTransactionModal({
         setStudentSearch('');
         setSelectedStudentId('');
         setSelectedStudentName('');
+        setSelectedStudentDebt(0);
         setDiscountAmount('');
+        setPaidAmount('');
         setDescription('');
         setDate(new Date().toISOString().split('T')[0]!);
         setNotebookId('');
@@ -225,6 +230,16 @@ export function AddTransactionModal({
         onSuccess: () => { toast.success('تم تسجيل المصروف بنجاح'); invalidateAndClose(); },
     });
 
+    const payDebtMutation = useMutation({
+        mutationFn: payDebt,
+        onSuccess: (data) => { 
+            toast.success('تم سداد المديونية بنجاح'); 
+            queryClient.invalidateQueries({ queryKey: QK.payments.dailyLedgerBase });
+            queryClient.invalidateQueries({ queryKey: QK.payments.monthlyLedgerBase });
+            setSuccessTransaction(data);
+        },
+    });
+
     // ── Edit mutation ────────────────────────────────────────────────
     const updateMutation = useMutation({
         mutationFn: ({ id, data }: { id: string; data: Parameters<typeof updateTransaction>[1] }) =>
@@ -237,6 +252,7 @@ export function AddTransactionModal({
         notebookMutation.isPending ||
         reservationMutation.isPending ||
         expenseMutation.isPending ||
+        payDebtMutation.isPending ||
         updateMutation.isPending;
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -259,6 +275,7 @@ export function AddTransactionModal({
             subscriptionMutation.mutate({
                 studentId: selectedStudentId,
                 discountAmount: discountAmount ? parseFloat(discountAmount) : undefined,
+                paidAmount: paidAmount ? parseFloat(paidAmount) : undefined,
                 description: description || undefined,
                 date,
             });
@@ -270,6 +287,7 @@ export function AddTransactionModal({
                 notebookId,
                 quantity: quantity ? parseInt(quantity) : 1,
                 discountAmount: discountAmount ? parseFloat(discountAmount) : undefined,
+                paidAmount: paidAmount ? parseFloat(paidAmount) : undefined,
                 description: description || undefined,
                 date,
             });
@@ -282,6 +300,17 @@ export function AddTransactionModal({
                 quantity: quantity ? parseInt(quantity) : 1,
                 paidAmount: expenseAmount ? parseFloat(expenseAmount) : 0, // Using expenseAmount state for the deposit
                 description: description || undefined,
+            });
+        } else if (mode === 'pay_debt') {
+            if (!selectedStudentId) return toast.error('اختر طالباً');
+            if (!paidAmount || parseFloat(paidAmount) <= 0) return toast.error('أدخل مبلغ السداد بشكل صحيح');
+            if (parseFloat(paidAmount) > selectedStudentDebt) return toast.error('المبلغ المدفوع أكبر من المديونية الحالية');
+            
+            payDebtMutation.mutate({
+                studentId: selectedStudentId,
+                amount: parseFloat(paidAmount),
+                description: description || undefined,
+                date,
             });
         } else {
             if (!expenseAmount) return toast.error('أدخل المبلغ');
@@ -300,6 +329,7 @@ export function AddTransactionModal({
         return (
             <Dialog open={open} onOpenChange={(v) => { if (!v) invalidateAndClose(); }}>
                 <DialogContent className="sm:max-w-[400px]" dir="rtl">
+                    <DialogTitle className="sr-only">تم التسجيل بنجاح</DialogTitle>
                     <div className="flex flex-col items-center justify-center p-6 text-center">
                         <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4">
                             <Check className="h-8 w-8" />
@@ -353,7 +383,7 @@ export function AddTransactionModal({
 
                 {/* Mode Selector — hidden in edit mode */}
                 {!isEditMode && (
-                    <div className="grid grid-cols-4 gap-2 mb-1">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-1">
                         {(Object.keys(MODE_LABELS) as TxMode[]).map((m) => (
                             <button
                                 key={m}
@@ -375,17 +405,24 @@ export function AddTransactionModal({
 
                 <form onSubmit={handleSubmit} className="space-y-3 pt-1">
                     {/* Student (subscription, notebook & reservation) */}
-                    {(mode === 'subscription' || mode === 'notebook' || mode === 'notebook_reservation') && (
+                    {(mode === 'subscription' || mode === 'notebook' || mode === 'notebook_reservation' || mode === 'pay_debt') && (
                         <div>
                             <label className="text-sm font-medium text-gray-700 mb-1.5 block">الطالب</label>
                             {/* In edit mode: always show locked student chip */}
                             {(selectedStudentId || isEditMode) ? (
                                 <div className="flex items-center justify-between bg-primary/5 border border-primary/20 rounded-lg px-3 py-2">
-                                    <span className="text-sm font-medium text-primary">{selectedStudentName}</span>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-sm font-medium text-primary">{selectedStudentName}</span>
+                                        {selectedStudentDebt > 0 && (
+                                            <span className="text-[10px] font-bold bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+                                                مديونية: {selectedStudentDebt} ج
+                                            </span>
+                                        )}
+                                    </div>
                                     {!isEditMode ? (
                                         <button
                                             type="button"
-                                            onClick={() => { setSelectedStudentId(''); setSelectedStudentName(''); }}
+                                            onClick={() => { setSelectedStudentId(''); setSelectedStudentName(''); setSelectedStudentDebt(0); }}
                                             className="text-xs text-gray-400 hover:text-gray-600"
                                         >
                                             تغيير
@@ -413,10 +450,21 @@ export function AddTransactionModal({
                                                     onClick={() => {
                                                         setSelectedStudentId(s._id);
                                                         setSelectedStudentName(s.studentName);
+                                                        setSelectedStudentDebt(s.totalDebt || 0);
+                                                        if (mode === 'pay_debt') {
+                                                            setPaidAmount(String(s.totalDebt || 0));
+                                                        }
                                                         setStudentSearch('');
                                                     }}
                                                 >
-                                                    <span className="font-medium">{s.studentName}</span>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-medium">{s.studentName}</span>
+                                                        {(s.totalDebt || 0) > 0 && (
+                                                            <span className="text-[10px] font-bold bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">
+                                                                عليه {s.totalDebt} ج
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                     <span className="text-xs text-gray-400">{s.gradeLevel}</span>
                                                 </button>
                                             ))}
@@ -488,39 +536,69 @@ export function AddTransactionModal({
 
                     {/* Discount — add mode only, subscription & notebook */}
                     {(mode === 'subscription' || mode === 'notebook') && !isEditMode && (
-                        <div>
-                            <label className="text-sm font-medium text-gray-700 mb-1.5 block">
-                                خصم (ج) <span className="text-gray-400 font-normal">— اختياري</span>
-                            </label>
-                            <div className="flex gap-2">
-                                {centerDiscounts.length > 0 && mode === 'subscription' && (
-                                    <Select 
-                                        onValueChange={(val) => {
-                                            const center = centerDiscounts.find(c => c.centerName === val);
-                                            if (center) setDiscountAmount(center.discountAmount.toString());
-                                        }}
-                                    >
-                                        <SelectTrigger className="w-[140px]">
-                                            <SelectValue placeholder="خصم سنتر..." />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {centerDiscounts.map(c => (
-                                                <SelectItem key={c.centerName} value={c.centerName}>
-                                                    {c.centerName} ({c.discountAmount} ج)
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                )}
+                        <div className="grid grid-cols-2 gap-2">
+                            <div>
+                                <label className="text-sm font-medium text-gray-700 mb-1.5 block">
+                                    خصم (ج) <span className="text-gray-400 font-normal">— اختياري</span>
+                                </label>
+                                <div className="flex gap-2">
+                                    {centerDiscounts.length > 0 && mode === 'subscription' && (
+                                        <Select 
+                                            onValueChange={(val) => {
+                                                const center = centerDiscounts.find(c => c.centerName === val);
+                                                if (center) setDiscountAmount(center.discountAmount.toString());
+                                            }}
+                                        >
+                                            <SelectTrigger className="w-[80px] sm:w-[100px] px-2">
+                                                <SelectValue placeholder="سنتر" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {centerDiscounts.map(c => (
+                                                    <SelectItem key={c.centerName} value={c.centerName}>
+                                                        {c.centerName} ({c.discountAmount})
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    )}
+                                    <Input
+                                        type="number"
+                                        min="0"
+                                        placeholder="0"
+                                        value={discountAmount}
+                                        onChange={(e) => setDiscountAmount(e.target.value)}
+                                        className="flex-1"
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-sm font-medium text-gray-700 mb-1.5 block">
+                                    المدفوع (ج) <span className="text-gray-400 font-normal">— اختياري</span>
+                                </label>
                                 <Input
                                     type="number"
                                     min="0"
-                                    placeholder="0"
-                                    value={discountAmount}
-                                    onChange={(e) => setDiscountAmount(e.target.value)}
-                                    className="flex-1"
+                                    placeholder="المبلغ كاملاً"
+                                    value={paidAmount}
+                                    onChange={(e) => setPaidAmount(e.target.value)}
                                 />
                             </div>
+                        </div>
+                    )}
+
+                    {/* Pay Debt */}
+                    {mode === 'pay_debt' && !isEditMode && (
+                        <div>
+                            <label className="text-sm font-medium text-gray-700 mb-1.5 block">المبلغ المراد سداده (ج)</label>
+                            <Input
+                                type="number"
+                                min="0"
+                                step="0.5"
+                                placeholder={`المديونية الحالية: ${selectedStudentDebt} ج`}
+                                value={paidAmount}
+                                onChange={(e) => setPaidAmount(e.target.value)}
+                                required
+                            />
                         </div>
                     )}
 

@@ -42,6 +42,7 @@ export const getMonthlyLedger = async (year: number, month: number): Promise<IMo
 export const recordSubscription = async (data: {
     studentId: string;
     discountAmount?: number;
+    paidAmount?: number;
     description?: string;
     date?: string;
 }): Promise<ITransaction> => {
@@ -54,6 +55,7 @@ export const recordNotebookSale = async (data: {
     notebookId: string;
     quantity?: number;
     discountAmount?: number;
+    paidAmount?: number;
     description?: string;
     date?: string;
 }): Promise<ITransaction> => {
@@ -122,3 +124,19 @@ export const recordCenterDeduction = async (data: {
     const res = await apiClient.post('/payments/center-deduction', data);
     return (res as any).data;
 };
+
+export const deleteTransaction = async (transactionId: string): Promise<{ deleted: boolean; transactionId: string }> => {
+    const res = await apiClient.delete(`/payments/${transactionId}`);
+    return (res as any).data;
+};
+
+export const payDebt = async (data: {
+    studentId: string;
+    amount: number;
+    description?: string;
+    date?: string;
+}): Promise<ITransaction> => {
+    const res = await apiClient.post('/payments/pay-debt', data);
+    return (res as any).data;
+};
+

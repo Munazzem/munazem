@@ -10,6 +10,7 @@ export const CATEGORY_LABELS: Record<TransactionCategory, string> = {
     NOTEBOOK_RESERVATION: 'عربون حجز مذكرة',
     NOTEBOOK_DELIVERY:    'استكمال ثمن مذكرة',
     OTHER_INCOME:         'دخل آخر',
+    DEBT_PAYMENT:         'سداد باقي مصاريف',
     SALARY:               'رواتب',
     RENT:                 'إيجار',
     SUPPLIES:             'مستلزمات',
@@ -28,5 +29,5 @@ export const EXPENSE_CATEGORIES: TransactionCategory[] = [
  * Categories that represent incoming money (income).
  */
 export const INCOME_CATEGORIES: TransactionCategory[] = [
-    'SUBSCRIPTION', 'NOTEBOOK_SALE', 'NOTEBOOK_RESERVATION', 'NOTEBOOK_DELIVERY', 'OTHER_INCOME',
+    'SUBSCRIPTION', 'NOTEBOOK_SALE', 'NOTEBOOK_RESERVATION', 'NOTEBOOK_DELIVERY', 'OTHER_INCOME', 'DEBT_PAYMENT',
 ];

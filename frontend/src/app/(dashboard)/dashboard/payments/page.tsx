@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { getDailyLedger, getMonthlyLedger } from '@/lib/api/payments';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { getDailyLedger, getMonthlyLedger, deleteTransaction } from '@/lib/api/payments';
 import { fetchMonthlyReportHtml } from '@/lib/api/reports';
 import { printHtmlContent } from '@/lib/utils/print';
 import { toast } from 'sonner';
@@ -13,6 +13,7 @@ import { BatchSubscriptionModal } from '@/components/payments/BatchSubscriptionM
 import { CenterDeductionModal } from '@/components/payments/CenterDeductionModal';
 import { TableSkeleton } from '@/components/layout/skeletons/TableSkeleton';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
     Wallet,
     TrendingUp,
@@ -24,6 +25,7 @@ import {
     Receipt,
     FileDown,
     Pencil,
+    Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,6 +35,7 @@ import { ApexOptions } from 'apexcharts';
 const ReactApexChart = dynamic(() => import('react-apexcharts'), { ssr: false });
 import { cn } from '@/lib/utils';
 import { CATEGORY_LABELS, type TransactionCategory } from '@/types/payment.types';
+import { QK } from '@/lib/query-keys';
 
 type Tab = 'daily' | 'monthly' | 'prices';
 
@@ -90,6 +93,7 @@ function StatCardSkeleton() {
 function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boolean }) {
     const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]!);
     const [filter, setFilter] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
+    const queryClient = useQueryClient();
 
     // Edit modal state
     type EditInitialData = {
@@ -104,9 +108,25 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
     const [editTxId, setEditTxId] = useState<string | null>(null);
     const [editInitialData, setEditInitialData] = useState<EditInitialData | undefined>(undefined);
 
+    // Delete state
+    const [deleteTxId, setDeleteTxId] = useState<string | null>(null);
+    const [deleteTxLabel, setDeleteTxLabel] = useState<string>('');
+
     const { data: ledger, isLoading, refetch } = useQuery({
-        queryKey: ['daily-ledger', date],
+        queryKey: QK.payments.dailyLedger(date),
         queryFn: () => getDailyLedger(date),
+    });
+
+    const deleteMutation = useMutation({
+        mutationFn: (txId: string) => deleteTransaction(txId),
+        onSuccess: () => {
+            toast.success('تم مسح المعاملة بنجاح وعكس أثرها على السجلات');
+            queryClient.invalidateQueries({ queryKey: QK.payments.dailyLedgerBase });
+            queryClient.invalidateQueries({ queryKey: QK.payments.monthlyLedgerBase });
+            queryClient.invalidateQueries({ queryKey: QK.dashboard.summary });
+            setDeleteTxId(null);
+        },
+        onError: () => { setDeleteTxId(null); },
     });
 
     const txs = (ledger?.transactions ?? []).filter(tx => {
@@ -134,6 +154,14 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
             date:        tx.time,
         });
         setEditOpen(true);
+    };
+
+    const openDeleteConfirm = (tx: typeof txs[number]) => {
+        const txId = (tx as any).transactionId;
+        if (!txId) { toast.error('لا يمكن مسح هذه المعاملة'); return; }
+        const label = `${CATEGORY_LABELS[tx.category as TransactionCategory] ?? tx.category}${tx.studentName ? ` — ${tx.studentName}` : ''} (${tx.paidAmount.toLocaleString('ar-EG')} ج)`;
+        setDeleteTxLabel(label);
+        setDeleteTxId(txId);
     };
 
     return (
@@ -275,14 +303,24 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                                         </span>
                                         <div className="flex items-center gap-2">
                                             {isTeacher && (
-                                                <button
-                                                    type="button"
-                                                    title="تعديل المعاملة"
-                                                    onClick={() => openEditModal(tx)}
-                                                    className="p-1 rounded-lg text-gray-400 hover:text-primary hover:bg-primary/5 transition-colors"
-                                                >
-                                                    <Pencil className="h-3.5 w-3.5" />
-                                                </button>
+                                                <div className="flex items-center gap-1">
+                                                    <button
+                                                        type="button"
+                                                        title="تعديل المعاملة"
+                                                        onClick={() => openEditModal(tx)}
+                                                        className="p-1 rounded-lg text-gray-400 hover:text-primary hover:bg-primary/5 transition-colors"
+                                                    >
+                                                        <Pencil className="h-3.5 w-3.5" />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        title="مسح المعاملة"
+                                                        onClick={() => openDeleteConfirm(tx)}
+                                                        className="p-1 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                                                    >
+                                                        <Trash2 className="h-3.5 w-3.5" />
+                                                    </button>
+                                                </div>
                                             )}
                                             <span className="font-black text-gray-900">
                                                 {tx.paidAmount.toLocaleString('ar-EG')} ج
@@ -354,14 +392,24 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                                             <td className="px-6 py-4 text-gray-400 text-xs font-medium">{formatTime(tx.time)}</td>
                                             {isTeacher && (
                                                 <td className="px-6 py-4">
-                                                    <button
-                                                        type="button"
-                                                        title="تعديل المعاملة"
-                                                        onClick={() => openEditModal(tx)}
-                                                        className="p-1.5 rounded-lg text-gray-400 hover:text-primary hover:bg-primary/5 transition-colors"
-                                                    >
-                                                        <Pencil className="h-4 w-4" />
-                                                    </button>
+                                                    <div className="flex items-center gap-1">
+                                                        <button
+                                                            type="button"
+                                                            title="تعديل المعاملة"
+                                                            onClick={() => openEditModal(tx)}
+                                                            className="p-1.5 rounded-lg text-gray-400 hover:text-primary hover:bg-primary/5 transition-colors"
+                                                        >
+                                                            <Pencil className="h-4 w-4" />
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            title="مسح المعاملة"
+                                                            onClick={() => openDeleteConfirm(tx)}
+                                                            className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                                                        >
+                                                            <Trash2 className="h-4 w-4" />
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             )}
                                         </tr>
@@ -372,6 +420,18 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                     </>
                 )}
             </div>
+
+            {/* Delete Confirm Dialog — Teacher only */}
+            <ConfirmDialog
+                open={!!deleteTxId}
+                onOpenChange={(v) => { if (!v) setDeleteTxId(null); }}
+                title="مسح المعاملة المالية"
+                description={`هل أنت متأكد من مسح هذه المعاملة؟\n${deleteTxLabel}\n\nسيتم عكس أثرها على السجلات المالية. لا يمكن التراجع.`}
+                confirmLabel={deleteMutation.isPending ? 'جاري المسح...' : 'نعم، مسح المعاملة'}
+                variant="danger"
+                onConfirm={() => { if (deleteTxId) deleteMutation.mutate(deleteTxId); }}
+            />
+
         </div>
     );
 }

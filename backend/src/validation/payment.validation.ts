@@ -8,6 +8,7 @@ export const recordSubscriptionSchema = z.object({
   body: z.object({
     studentId:      objectId,
     discountAmount: z.number().min(0).optional(),
+    paidAmount:     z.number().min(0).optional(),
     description:    z.string().max(300).optional(),
     date:           z.string().optional(),
   }),
@@ -80,4 +81,13 @@ export const updateTransactionSchema = z.object({
     description: z.string().max(300).optional(),
     date:        z.string().optional(),
   }).refine((b) => Object.keys(b).length > 0, { message: 'يجب تحديد حقل واحد على الأقل للتعديل' }),
+});
+
+export const payDebtSchema = z.object({
+  body: z.object({
+    studentId:   objectId,
+    amount:      z.number().positive('المبلغ يجب أن يكون أكبر من صفر'),
+    description: z.string().max(300).optional(),
+    date:        z.string().optional(),
+  }),
 });

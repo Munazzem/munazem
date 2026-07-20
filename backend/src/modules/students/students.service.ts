@@ -164,6 +164,17 @@ export class StudentService {
         if (queryFilters.groupId) filter.groupId = queryFilters.groupId;
         if (queryFilters.gradeLevel) filter.gradeLevel = queryFilters.gradeLevel;
         if (queryFilters.isActive !== undefined) filter.isActive = queryFilters.isActive === 'true';
+
+        // Student Affairs Filters
+        if (queryFilters.hasDebt === 'true') {
+            filter.totalDebt = { $gt: 0 };
+        }
+        if (queryFilters.hasNoActiveSubscription === 'true') {
+            filter.remainingSessions = { $lte: 0 };
+        }
+        if (queryFilters.isDroppedOut === 'true') {
+            filter.consecutiveAbsences = { $gte: 3 };
+        }
         
         if (queryFilters.search) {
             // Check if search term is possibly a studentCode (e.g., "1A", "12C")

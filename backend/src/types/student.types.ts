@@ -16,6 +16,8 @@ export interface IStudent {
     excusedUntil?: Date; // تاريخ نهاية الإذن (للتوافق القديم)
     excusedSessionsCount?: number; // عدد حصص الاستئذان المتبقية
     remainingSessions: number; // عدد الحصص المتبقية في دورة الاشتراك الحالية
+    totalDebt: number; // إجمالي المبالغ المتبقية غير المسددة
+    consecutiveAbsences?: number; // عدد مرات الغياب المتتالي
     createdAt?: Date;
     updatedAt?: Date;
 }
