@@ -67,7 +67,7 @@ export function createApp() {
     app.use((req: any, res: any, next: any) => {
         const timeout = req.path.includes('/exams/ai/') ? 120_000 : 30_000;
         res.setTimeout(timeout, () => {
-            res.status(503).json({ message: 'Request timeout, please try again' });
+            res.status(503).json({ message: 'انتهت مهلة الطلب، يرجى المحاولة مرة أخرى' });
         });
         next();
     });
@@ -108,7 +108,7 @@ export function createApp() {
     const globalLimiter = rateLimit({
         windowMs: 15 * 60 * 1000,
         limit: 3000,
-        message: { message: 'Too many requests, please try again later' },
+        message: { message: 'كثرة الطلبات، يرجى المحاولة لاحقاً' },
         standardHeaders: true,
         legacyHeaders: false,
     });
@@ -117,7 +117,7 @@ export function createApp() {
     const aiLimiter = rateLimit({
         windowMs: 60 * 1000,
         limit: 3,
-        message: { message: 'AI exam generation rate limit exceeded, please wait a minute' },
+        message: { message: 'تجاوزت حد توليد الامتحانات بالذكاء الاصطناعي، انتظر دقيقة' },
         standardHeaders: true,
         legacyHeaders: false,
     });
@@ -127,7 +127,7 @@ export function createApp() {
     const loginLimiter = rateLimit({
         windowMs: 15 * 60 * 1000,
         limit: 10,
-        message: { message: 'Too many login attempts, please try again after 15 minutes' },
+        message: { message: 'كثرة محاولات تسجيل الدخول، يرجى المحاولة مرة أخرى بعد 15 دقيقة' },
         standardHeaders: true,
         legacyHeaders: false,
     });
