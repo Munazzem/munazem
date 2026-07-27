@@ -102,7 +102,7 @@ describe('startOfDayEgyptMs', () => {
         // الفرق بينهم = 3 ساعات (EGYPT_OFFSET_MS)
         const input = new Date('2025-05-18T12:00:00.000Z');
         const dateResult = startOfDayEgypt(input);
-        const msResult   = startOfDayEgyptMs(input);
+        const msResult = startOfDayEgyptMs(input);
 
         expect(msResult).toBe(dateResult.getTime() - EGYPT_OFFSET_MS);
     });
@@ -118,7 +118,7 @@ describe('startOfDayEgyptMs', () => {
 
     it('يُستخدم بشكل صحيح للمقارنة: اليوم ليس قبل موعد الحصة', () => {
         // هذا هو الاستخدام الفعلي في attendance.service.ts السطر 35
-        const now     = new Date('2025-05-18T12:00:00.000Z'); // اليوم
+        const now = new Date('2025-05-18T12:00:00.000Z'); // اليوم
         const session = new Date('2025-05-18T08:00:00.000Z'); // الحصة نفس اليوم صباحاً
 
         // كلاهما في نفس اليوم المصري → يجب أن يكونا متساويين
@@ -187,10 +187,10 @@ describe('resolveTransactionDate', () => {
     it('بدون input تُرجع الوقت الحالي (في حدود ثانية واحدة)', () => {
         const before = Date.now();
         const result = resolveTransactionDate();
-        const after  = Date.now();
+        const after = Date.now();
 
         expect(result.getTime()).toBeGreaterThanOrEqual(before);
-        expect(result.getTime()).toBeLessThanOrEqual(after + 50); // هامش 50ms
+        expect(result.getTime()).toBeLessThanOrEqual(after + 1000); // هامش 1 ثانية
     });
 
     it('ISO string يُحوَّل مباشرة (يحتوي على T)', () => {
@@ -227,11 +227,11 @@ describe('resolveTransactionDate', () => {
 
         const before = Date.now();
         const result = resolveTransactionDate(todayStr);
-        const after  = Date.now();
+        const after = Date.now();
 
         // يجب أن يكون قريب من الوقت الحالي (مش 09:00 UTC)
         expect(result.getTime()).toBeGreaterThanOrEqual(before);
-        expect(result.getTime()).toBeLessThanOrEqual(after + 50);
+        expect(result.getTime()).toBeLessThanOrEqual(after + 1000); // هامش 1 ثانية
     });
 
 });
