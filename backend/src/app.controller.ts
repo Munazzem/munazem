@@ -31,11 +31,13 @@ import { autoReconnectClients }   from './common/utils/whatsapp.service.js';
 import { startAutomationScheduler } from './infrastructure/schedulers/automation.scheduler.js';
 import { initWhatsAppGateway }    from './infrastructure/socket/whatsapp.gateway.js';
 
-export const bootstrap = async () => {
+// createApp: pure Express factory (no DB, no workers, no listen).
+// Used by supertest in integration tests.
+// bootstrap() calls this after starting DB and background workers.
+export function createApp() {
     const app = express();
-    
+
     // Trust the reverse proxy (e.g. Render, Nginx, Vercel) to get the real user IP
-    // Without this, all requests will look like they come from the load balancer's IP!
     app.set('trust proxy', 1);
 
     app.use(helmet());
@@ -47,15 +49,13 @@ export const bootstrap = async () => {
 
     app.use(cors({
         origin: (origin, callback) => {
-            // Allow requests with no origin (Postman, mobile apps, server-to-server)
             if (!origin) return callback(null, true);
             if (allowedOrigins.includes(origin)) return callback(null, true);
             callback(new Error(`CORS: origin ${origin} not allowed`));
         },
         credentials: true,
     }));
-    // Express 5 makes req.query a read-only getter, so we cannot use mongoSanitize() middleware directly.
-    // Instead we manually sanitize body and params (query strings never carry $ operators from the frontend).
+
     app.use((req: any, _res: any, next: any) => {
         if (req.body)   mongoSanitize.sanitize(req.body);
         if (req.params) mongoSanitize.sanitize(req.params);
@@ -64,7 +64,6 @@ export const bootstrap = async () => {
 
     app.use(compression());
 
-    // Request timeout: 30s for normal requests, 120s for AI generation
     app.use((req: any, res: any, next: any) => {
         const timeout = req.path.includes('/exams/ai/') ? 120_000 : 30_000;
         res.setTimeout(timeout, () => {
@@ -73,21 +72,17 @@ export const bootstrap = async () => {
         next();
     });
 
-    // Attach a unique requestId to every incoming request — used for log correlation
     app.use((req: any, _res: any, next: any) => {
         req.requestId = generateRequestId();
         next();
     });
 
-    // Lightweight request logging — after basic security & timeouts
     app.use((req: any, res: any, next: any) => {
         const start = process.hrtime.bigint();
-
         res.on('finish', () => {
             const end = process.hrtime.bigint();
             const durationMs = Number(end - start) / 1_000_000;
             const user = (req as any).user;
-
             logger.info('request_completed', {
                 requestId:  req.requestId,
                 method:     req.method,
@@ -97,8 +92,6 @@ export const bootstrap = async () => {
                 userId:     user?.userId ?? null,
                 role:       user?.role   ?? null,
             });
-
-            // Slow query warning — helps catch performance regressions early
             if (durationMs > 3000) {
                 logger.warn('slow_request', {
                     requestId:  req.requestId,
@@ -109,23 +102,9 @@ export const bootstrap = async () => {
                 });
             }
         });
-
         next();
     });
 
-    await DBConnection();
-
-    // ── Background workers ────────────────────────────────────────────────────
-    // 1. Re-connect WhatsApp clients for all previously-connected teachers (fire-and-forget)
-    autoReconnectClients();
-    // 2. Start the BullMQ worker that drains the whatsapp queue
-    startWhatsAppWorker();
-    // 3. Start the BullMQ worker for email jobs
-    startEmailWorker();
-    // 4. Register cron-based automation jobs (weekly report + payment reminders + weekly archival)
-    startAutomationScheduler();
-
-    // Global rate limiter: 3000 requests per 15 minutes per IP
     const globalLimiter = rateLimit({
         windowMs: 15 * 60 * 1000,
         limit: 3000,
@@ -135,7 +114,6 @@ export const bootstrap = async () => {
     });
     app.use(globalLimiter);
 
-    // Strict limiter for AI exam generation: 3 requests per minute per IP
     const aiLimiter = rateLimit({
         windowMs: 60 * 1000,
         limit: 3,
@@ -146,7 +124,6 @@ export const bootstrap = async () => {
     app.use('/exams/ai/generate', aiLimiter);
     app.use('/exams/ai-proxy', aiLimiter);
 
-    // Rate limit: max 10 login attempts per 15 minutes per IP
     const loginLimiter = rateLimit({
         windowMs: 15 * 60 * 1000,
         limit: 10,
@@ -156,30 +133,23 @@ export const bootstrap = async () => {
     });
 
     app.use('/auth/login', loginLimiter);
-    app.use('/auth', authRouter)          // Authentication routes
-
-    // Parent portal — public, no authentication required
+    app.use('/auth', authRouter);
     app.use('/parent', parentRouter);
-
-    // Tenant isolation — runs after authenticate inside each router
-    // Resolves req.tenantId for all subsequent protected routes
     app.use(resolveTenant);
+    app.use('/users', userRouter);
+    app.use('/subscriptions', subscriptionsRouter);
+    app.use('/groups', groupsRouter);
+    app.use('/students', studentsRouter);
+    app.use('/sessions', sessionRouter);
+    app.use('/attendance', attendanceRouter);
+    app.use('/payments', paymentsRouter);
+    app.use('/notebooks', notebooksRouter);
+    app.use('/reports', reportsRouter);
+    app.use('/exams', examsRouter);
+    app.use('/exams/ai-proxy', aiProxyRouter);
+    app.use('/whatsapp', whatsappRouter);
+    app.use('/admin', adminRouter);
 
-    app.use('/users', userRouter)          // Users routes
-    app.use('/subscriptions', subscriptionsRouter) // Subscriptions routes
-    app.use('/groups', groupsRouter)
-    app.use('/students', studentsRouter)
-    app.use('/sessions', sessionRouter)      // Session routes
-    app.use('/attendance', attendanceRouter)  // Attendance routes
-    app.use('/payments', paymentsRouter)      // Payments routes
-    app.use('/notebooks', notebooksRouter)    // Notebooks inventory routes
-    app.use('/reports', reportsRouter)         // Reports routes
-    app.use('/exams', examsRouter)              // Exams + AI Generation routes
-    app.use('/exams/ai-proxy', aiProxyRouter)   // AI proxy (lightweight — text only)
-    app.use('/whatsapp', whatsappRouter)          // WhatsApp multi-tenant client mgmt
-    app.use('/admin', adminRouter)              // Super Admin routes
-
-    // Health check — used by Render to verify the server is alive; includes basic process stats for monitoring
     app.get('/health', (_req, res) => {
         const mem = process.memoryUsage();
         res.status(200).json({
@@ -187,13 +157,13 @@ export const bootstrap = async () => {
             uptime: Math.floor(process.uptime()),
             timestamp: new Date().toISOString(),
             memory: {
-                heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),
+                heapUsedMB:  Math.round(mem.heapUsed  / 1024 / 1024),
                 heapTotalMB: Math.round(mem.heapTotal / 1024 / 1024),
-                rssMB: Math.round(mem.rss / 1024 / 1024),
+                rssMB:       Math.round(mem.rss       / 1024 / 1024),
             },
             os: {
-                loadAvg: os.loadavg().map(l => Math.round(l * 100) / 100),
-                freeMemMB: Math.round(os.freemem() / 1024 / 1024),
+                loadAvg:    os.loadavg().map(l => Math.round(l * 100) / 100),
+                freeMemMB:  Math.round(os.freemem()  / 1024 / 1024),
                 totalMemMB: Math.round(os.totalmem() / 1024 / 1024),
             },
         });
@@ -203,19 +173,34 @@ export const bootstrap = async () => {
         res.status(200).json({ status: 'ok', message: 'Monazem API is running' });
     });
 
-    app.use('{*dummy}', (req, res) => {
+    app.use('{*dummy}', (_req, res) => {
         res.status(404).json('Page not found');
-    }); // check if the route is valid or not
+    });
 
-    app.use(globalErrorHandler) // Global error handling middleware
+    app.use(globalErrorHandler);
 
-    // ── Attach Socket.io to the HTTP server ─────────────────────────────────
-    // We use Node's native http.Server so Socket.io can share the same port
-    // as Express — no extra port, no extra process.
+    return app;
+}
+
+// bootstrap: production entry point.
+// Connects DB, starts workers, attaches socket.io, starts listening.
+// Behavior is identical to before the createApp() extraction.
+export const bootstrap = async () => {
+    await DBConnection();
+
+    // Background workers
+    autoReconnectClients();
+    startWhatsAppWorker();
+    startEmailWorker();
+    startAutomationScheduler();
+
+    const app = createApp();
+
+    // Attach Socket.io to the HTTP server
     const server = createServer(app);
     initWhatsAppGateway(server);
 
     server.listen(envVars.port, () => {
         console.log(`Server running on http://localhost:${envVars.port}`);
     });
-}
+};
