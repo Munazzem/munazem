@@ -278,12 +278,9 @@ describe('POST /students/bulk', () => {
     });
 
     it('يُلغي الـ transaction لو فشل أي طالب — لكن في بيئة الـ test لا يوجد rollback فعلي', async () => {
-        // ⚠️ DISABLE_TRANSACTIONS=true في بيئة الـ test (setup.ts)
-        // لأن MongoMemoryServer standalone لا يدعم transactions.
-        // لذلك الطالب الأول يُحفظ حتى لو الثاني فشل.
-        //
-        // هذا الـ test يوثّق السلوك الفعلي في بيئة الـ test,
-        // وليس السلوك في production (حيث الـ transaction تعمل بشكل صحيح).
+        // ✅ الكود الجديد: التحقق يحدث في الـ Memory (Phase 3) قبل أي DB write.
+        // لذلك حتى مع DISABLE_TRANSACTIONS=true لا يحدث أي partial save —
+        // إذا فشل أي طالب في التحقق، يُرفع الخطأ قبل insertMany تماماً.
         await seedTeacher();
         const group = await seedGroup({ capacity: 1 });
         const groupId = group._id.toString();
@@ -302,14 +299,14 @@ describe('POST /students/bulk', () => {
         expect(res.status).toBe(400);
         expect(res.body.message).toContain('السطر 2');
 
-        // في بيئة الـ test (بدون transactions):
-        // الطالب الأول يكون اتحفظ بالفعل قبل ما الثاني يفشل
+        // مع الكود الجديد: لا يوجد أي طالب في الـ DB (الخطأ يحدث قبل insertMany)
         const checkRes = await app
             .get('/students')
             .set('Authorization', bearerHeader(makeTeacherToken()));
 
-        expect(checkRes.body.data.pagination.total).toBe(1); // الأول محفوظ بدون rollback
+        expect(checkRes.body.data.pagination.total).toBe(0);
     });
+
 
     it('يرفض بـ 400 لو الـ students array فاضية', async () => {
         // الـ validate middleware بيرجع 400 وليس 422

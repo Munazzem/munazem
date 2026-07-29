@@ -23,3 +23,16 @@ export async function nextSequence(key: string): Promise<number> {
     ).lean();
     return doc!.count;
 }
+
+// Atomically reserves a range of `count` sequential numbers in one round-trip.
+// Returns the FIRST number in the allocated range.
+// Example: counter was 5, request count=3 → counter becomes 8, returns 6 → codes: 6A, 7A, 8A
+export async function nextSequenceBulk(key: string, count: number): Promise<number> {
+    const doc = await CounterModel.findOneAndUpdate(
+        { key },
+        { $inc: { count } },
+        { new: true, upsert: true }
+    ).lean();
+    return doc!.count - count + 1;
+}
+
