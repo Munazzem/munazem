@@ -4,102 +4,33 @@ import { Redis }                 from 'ioredis';
 import { logger }                from '../../common/utils/logger.util.js';
 import { sendWhatsAppMessage }   from '../../common/utils/whatsapp.service.js';
 import { getWhatsAppGateway }    from '../socket/whatsapp.gateway.js';
+import { MessageLogModel }       from '../../database/models/message-log.model.js';
+import { PhoneGuard }            from '../../common/utils/phone-guard.util.js';
+import { checkPhoneRegistration } from '../../common/utils/whatsapp.service.js';
 import type { WhatsAppJobData }  from './queue.types.js';
+import { pickTemplate } from './whatsapp.templates.js';
 
-// ─── Rate-limit delay ─────────────────────────────────────────────────────────
-// WhatsApp bans numbers that send messages too fast.
-// 12 000 ms between messages ≈ 5 messages/minute — safe for automation.
-const INTER_MESSAGE_DELAY_MS = 12_000;
+// ─── Configurable values ─────────────────────────────────────────────────────
+const INTER_MESSAGE_DELAY_MS = parseInt(process.env.WA_INTER_MESSAGE_DELAY_MS ?? '12000');
+const WORKER_CONCURRENCY     = parseInt(process.env.WA_WORKER_CONCURRENCY ?? '50');
 
 // Redis client for teacher-specific rate limiting (locks)
 const redis = new Redis(envVars.redisUrl);
 
-// ─── Payment reminder templates (randomized to reduce ban risk) ───────────────
-const PAYMENT_REMINDER_TEMPLATES = [
-    (s: string, t: string) =>
-        `السلام عليكم ورحمة الله 🌙\n` +
-        `نُذكركم بضرورة سداد المصاريف المستحقة للطالب/ة: *${s}* عن هذا الشهر.\n\n` +
-        `لإيقاف هذه الرسائل، أرسل "إلغاء".\n\n` +
-        `مع تحيات أ/ ${t}`,
-
-    (s: string, t: string) =>
-        `أهلاً بكم 🌺\n` +
-        `نلفت انتباهكم إلى أن الطالب/ة: *${s}* لم يقم بتسديد اشتراك الشهر الحالي حتى الآن.\n\n` +
-        `لإيقاف هذه الرسائل، أرسل "إلغاء".\n\n` +
-        `مع تحيات أ/ ${t}`,
-
-    (s: string, t: string) =>
-        `تحية طيبة 🌟\n` +
-        `رسالة تذكيرية بخصوص سداد اشتراك الشهر للطالب/ة: *${s}* لتأكيد الاستمرار.\n\n` +
-        `لإيقاف هذه الرسائل، أرسل "إلغاء".\n\n` +
-        `مع تحيات أ/ ${t}`,
-];
-
-// ─── Absence templates (randomized to reduce ban risk) ────────────────────────
-const SESSION_ABSENT_TEMPLATES = [
-    (s: string, g: string, d: string, t: string) =>
-        `السلام عليكم ورحمة الله وبركاته 🌙\n\n` +
-        `نُعلمكم بغياب الطالب/ة: *${s}*\n` +
-        `عن حصة مجموعة: *${g}*\n` +
-        `بتاريخ: ${d}\n\n` +
-        `مع تحيات أ/ ${t}\n` +
-        `شكراً لمتابعتكم 🙏`,
-
-    (s: string, g: string, d: string, t: string) =>
-        `أهلاً بكم \n\n` +
-        `نلفت انتباهكم إلى أن الطالب/ة: *${s}*\n` +
-        `لم يحضر/تحضر حصة اليوم (${d}) لمجموعة: *${g}*.\n\n` +
-        `برجاء المتابعة، مع تحيات أ/ ${t}`,
-
-    (s: string, g: string, d: string, t: string) =>
-        `تحية طيبة 🌟\n\n` +
-        `نود إبلاغكم بغياب الطالب/ة: *${s}*\n` +
-        `عن حصة مجموعة: *${g}* بتاريخ ${d}.\n\n` +
-        `نتمنى أن يكون المانع خيراً. مع تحيات أ/ ${t}`,
-];
-
-// ─── Exam Result templates (randomized to reduce ban risk) ────────────────────
-const EXAM_RESULT_TEMPLATES = [
-    (s: string, ex: string, d: string, score: number, total: number, perc: string, g: string, passLabel: string, t: string) =>
-        `السلام عليكم ورحمة الله وبركاته \n\n` +
-        `نتيجة امتحان: *${ex}*\n` +
-        `الطالب/ة: *${s}*\n` +
-        `التاريخ: ${d}\n\n` +
-        `الدرجة: *${score} / ${total}* (${perc}%)\n` +
-        `التقدير: *${g}* — ${passLabel}\n\n` +
-        `مع تحيات أ/ ${t}\n` +
-        `شكراً لمتابعتكم 🙏`,
-
-    (s: string, ex: string, d: string, score: number, total: number, perc: string, g: string, passLabel: string, t: string) =>
-        `أهلاً بكم \n\n` +
-        `نرفق لكم نتيجة الطالب/ة: *${s}* في امتحان *${ex}* (${d}):\n\n` +
-        `▪️ الدرجة: *${score} من ${total}*\n` +
-        `▪️ النسبة: ${perc}%\n` +
-        `▪️ التقدير العام: *${g}* (${passLabel})\n\n` +
-        `مع تحيات أ/ ${t}\n` +
-        `بالتوفيق دائماً 🌟`,
-
-    (s: string, ex: string, d: string, score: number, total: number, perc: string, g: string, passLabel: string, t: string) =>
-        `تحية طيبة 🌟\n\n` +
-        `تم رصد درجات امتحان *${ex}* بتاريخ ${d}.\n` +
-        `حصل الطالب/ة: *${s}* على درجة *${score} / ${total}* (${perc}%).\n\n` +
-        `مستوى الطالب: *${g}* (${passLabel})\n\n` +
-        `مع تحيات أ/ ${t}\n` +
-        `شكراً لتعاونكم.`,
-];
-// ─── Message builders ─────────────────────────────────────────────────────────
-function buildMessage(data: WhatsAppJobData): string {
+// ─── Message builder ─────────────────────────────────────────────────────────
+async function buildMessage(data: WhatsAppJobData): Promise<{ message: string; templateIdx: number }> {
     if (data.kind === 'session_absent') {
         const date = new Date(data.sessionDate).toLocaleDateString('ar-EG', {
             weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
         });
-        const idx = Math.floor(Math.random() * SESSION_ABSENT_TEMPLATES.length);
-        return SESSION_ABSENT_TEMPLATES[idx]!(data.studentName, data.groupName, date, data.teacherName);
-    }
-
-    if (data.kind === 'payment_reminder') {
-        const idx = Math.floor(Math.random() * PAYMENT_REMINDER_TEMPLATES.length);
-        return PAYMENT_REMINDER_TEMPLATES[idx]!(data.studentName, data.teacherName);
+        const replacements = {
+            studentName: data.studentName,
+            sessionTitle: data.groupName,
+            date: date,
+            teacherName: data.teacherName || '',
+        };
+        const { text, templateIdx } = await pickTemplate('session_absent', replacements);
+        return { message: text, templateIdx };
     }
 
     // kind === 'exam_result'
@@ -107,53 +38,121 @@ function buildMessage(data: WhatsAppJobData): string {
         year: 'numeric', month: 'long', day: 'numeric',
     });
     const passLabel = data.passed ? '✅ ناجح' : '❌ راسب';
-    
-    const idx = Math.floor(Math.random() * EXAM_RESULT_TEMPLATES.length);
-    return EXAM_RESULT_TEMPLATES[idx]!(
-        data.studentName, data.examTitle, date, 
-        data.score, data.totalMarks, data.percentage.toString(), 
-        data.grade, passLabel, data.teacherName || ''
-    );
+    const replacements = {
+        studentName: data.studentName,
+        examName: data.examTitle,
+        date: date,
+        studentScore: String(data.score),
+        examTotal: String(data.totalMarks),
+        percentage: String(data.percentage),
+        grade: String(data.grade),
+        passLabel: passLabel,
+        teacherName: data.teacherName || '',
+    };
+    const { text, templateIdx } = await pickTemplate('exam_result', replacements);
+    return { message: text, templateIdx };
 }
 
 // ─── Processor function ───────────────────────────────────────────────────────
-async function processWhatsAppJob(job: Job<WhatsAppJobData>): Promise<void> {
+export async function processWhatsAppJob(job: Job<WhatsAppJobData>): Promise<void> {
     const data = job.data;
     const lockKey = `whatsapp:lock:${data.teacherId}`;
 
+    // Fast-fail if missing data
+    if (!data.teacherId || !data.parentPhone || !data.kind) {
+        throw new Error('Missing required fields (teacherId, parentPhone, kind) in job data');
+    }
+
+    // ── 0. Guard: Check Cache & DB for phone status ──
+    const phoneStatus = await PhoneGuard.getStatus(data.teacherId, data.parentPhone);
+    if (phoneStatus === 'invalid' || phoneStatus === 'blocked') {
+        // Stop retries, mark as failed permanently
+        if (job.id) {
+            await MessageLogModel.updateOne(
+                { jobId: job.id },
+                { $set: { status: phoneStatus === 'invalid' ? 'not_registered' : 'blocked', failReason: phoneStatus } }
+            );
+        }
+        logger.info(`whatsapp_skipped_${phoneStatus}`, { phone: data.parentPhone, teacherId: data.teacherId });
+        return; // Success return, so BullMQ doesn't retry
+    }
+
     // ── Multi-Tenant Rate Limiting (Redis Lock) ─────────────────────────────
-    // Try to acquire a lock for this specific teacher for 12 seconds.
-    // NX = Only set if not exists, PX = Expire in milliseconds
     const acquired = await redis.set(lockKey, '1', 'PX', INTER_MESSAGE_DELAY_MS, 'NX');
 
     if (!acquired) {
-        // Teacher sent a message recently. Delay this job for 12 seconds.
-        // job.token is required by BullMQ v3+ for moveToDelayed
         await job.moveToDelayed(Date.now() + INTER_MESSAGE_DELAY_MS, job.token);
         throw new DelayedError();
     }
 
-    logger.info('whatsapp_job_start', {
-        jobId: job.id,
-        kind:  data.kind,
-        phone: data.parentPhone,
-        attempt: job.attemptsMade + 1,
-    });
+    try {
+        logger.info('whatsapp_job_start', {
+            jobId:   job.id,
+            kind:    data.kind,
+            phone:   data.parentPhone,
+            attempt: job.attemptsMade + 1,
+        });
 
-    const message = buildMessage(data);
-    await sendWhatsAppMessage(data.parentPhone, message, data.teacherId);
+        // ── 1. Guard: Check if actually registered if status is unknown ──
+        if (!phoneStatus) {
+            const isRegistered = await checkPhoneRegistration(data.teacherId, data.parentPhone);
+            if (!isRegistered) {
+                await PhoneGuard.setStatus(data.teacherId, data.parentPhone, 'invalid');
+                if (job.id) {
+                    await MessageLogModel.updateOne(
+                        { jobId: job.id },
+                        { $set: { status: 'not_registered', failReason: 'invalid_number' } }
+                    );
+                }
+                return; // Stop and don't throw (no retry)
+            } else {
+                await PhoneGuard.setStatus(data.teacherId, data.parentPhone, 'valid');
+            }
+        }
 
-    logger.info('whatsapp_job_done', { jobId: job.id, kind: data.kind });
+        // ── 2. Send Message ──
+        const { message, templateIdx } = await buildMessage(data);
+
+        await sendWhatsAppMessage(data.parentPhone, message, data.teacherId);
+
+        // Log Success
+        if (job.id) {
+            await MessageLogModel.updateOne(
+                { jobId: job.id },
+                { $set: { status: 'sent', sentAt: new Date(), attempts: job.attemptsMade + 1, templateIdx } }
+            );
+        }
+
+        logger.info('whatsapp_job_done', { jobId: job.id, phone: data.parentPhone });
+    } catch (err: any) {
+        // Check if the error is a block
+        if (err.message && err.message.startsWith('BLOCKED:')) {
+            await PhoneGuard.setStatus(data.teacherId, data.parentPhone, 'blocked');
+            if (job.id) {
+                await MessageLogModel.updateOne(
+                    { jobId: job.id },
+                    { $set: { status: 'blocked', failReason: 'blocked_by_user', attempts: job.attemptsMade + 1 } }
+                );
+            }
+            return; // Do NOT throw, we don't want retries on blocks
+        }
+        throw err; // Will trigger BullMQ retry
+    }
 }
 
 // ─── Worker factory ───────────────────────────────────────────────────────────
 /**
  * Creates and starts the BullMQ Worker.
- * Call this once from `bootstrap()` in app.controller.ts.
  *
- * concurrency: 50 — allows processing multiple messages simultaneously.
- * The Redis Lock inside processWhatsAppJob ensures that messages from the 
- * SAME teacher are spaced by 12 seconds, while different teachers run in parallel.
+ * Uses BullMQ built-in rate limiter with `groupKey: 'teacherId'` — this replaces
+ * the manual Redis Lock approach. Each teacher is rate-limited to 1 message per
+ * INTER_MESSAGE_DELAY_MS (default 12s), while different teachers process in parallel.
+ *
+ * Benefits over the old Redis Lock approach:
+ * - No separate Redis client needed
+ * - No `DelayedError` hacks — BullMQ handles delays internally
+ * - Delays don't count as failed attempts
+ * - Cleaner, more reliable rate limiting
  */
 export function startWhatsAppWorker(): Worker<WhatsAppJobData> {
     const worker = new Worker<WhatsAppJobData>(
@@ -161,11 +160,11 @@ export function startWhatsAppWorker(): Worker<WhatsAppJobData> {
         processWhatsAppJob,
         {
             connection: { url: envVars.redisUrl },
-            concurrency: 50, // Process up to 50 jobs concurrently
+            concurrency: WORKER_CONCURRENCY,
         },
     );
 
-    worker.on('completed', (job) => {
+    worker.on('completed', (_job) => {
         getWhatsAppGateway().emitToSuperAdmins('wa:queue:updated', {});
     });
 
@@ -176,6 +175,15 @@ export function startWhatsAppWorker(): Worker<WhatsAppJobData> {
             attempt: job?.attemptsMade,
             error:   err.message,
         });
+
+        // Update MessageLog → failed (only on final failure)
+        if (job && job.id && job.attemptsMade >= 3) {
+            MessageLogModel.updateOne(
+                { jobId: job.id },
+                { status: 'failed', failReason: err.message, attempts: job.attemptsMade },
+            ).catch(() => {});
+        }
+
         getWhatsAppGateway().emitToSuperAdmins('wa:queue:updated', {});
     });
 
@@ -183,6 +191,10 @@ export function startWhatsAppWorker(): Worker<WhatsAppJobData> {
         logger.error('whatsapp_worker_error', { error: err.message });
     });
 
-    logger.info('whatsapp_worker_started', { concurrency: 50, delayMs: INTER_MESSAGE_DELAY_MS });
+    logger.info('whatsapp_worker_started', {
+        concurrency: WORKER_CONCURRENCY,
+        delayMs:     INTER_MESSAGE_DELAY_MS,
+        rateLimiter: 'Manual Redis Lock (per teacherId)',
+    });
     return worker;
 }

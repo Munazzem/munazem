@@ -9,22 +9,9 @@ import { UserRole } from '../../common/enums/enum.service.js';
 import { ErrorLogModel } from '../../database/models/error-log.model.js';
 import { SubscriptionService } from '../subscriptions/subscriptions.service.js';
 
-import { generateWeeklyReports, generatePaymentReminders } from './../automation/automation.service.js';
+import { generateWeeklyReports } from './../automation/automation.service.js';
 
 const adminRouter = Router();
-
-// ── GET /admin/test-automation ───────────────────────────────────────
-// Temporary endpoint to trigger automation locally without waiting for cron.
-adminRouter.post('/test-automation', async (req: Request, res: Response, next: NextFunction) => {
-    try {
-        const { type, teacherId } = req.body;
-        if (type === 'weekly_report') await generateWeeklyReports(teacherId, true);
-        else if (type === 'payment_reminder') await generatePaymentReminders(teacherId);
-        else return next(new Error('Invalid type. Use "weekly_report" or "payment_reminder"'));
-        
-        return SuccessResponse({ res, data: null, message: `Automation ${type} triggered successfully` });
-    } catch (error) { next(error); }
-});
 
 // All admin routes require authentication
 adminRouter.use(authenticate);
@@ -40,6 +27,18 @@ adminRouter.get('/announcements/active', async (req: Request, res: Response, nex
 
 // Everything below requires superAdmin role
 adminRouter.use(authorizeRoles(UserRole.superAdmin));
+
+// ── POST /admin/test-automation ──────────────────────────────────────
+// Trigger automation manually — requires superAdmin authentication.
+adminRouter.post('/test-automation', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { type, teacherId } = req.body;
+        if (type === 'weekly_report') await generateWeeklyReports(teacherId, true);
+        else return next(new Error('Invalid type. Use "weekly_report"'));
+        
+        return SuccessResponse({ res, data: null, message: `Automation ${type} triggered successfully` });
+    } catch (error) { next(error); }
+});
 
 // ── GET /admin/stats ─────────────────────────────────────────────────
 adminRouter.get('/stats', async (_req: Request, res: Response, next: NextFunction) => {
@@ -205,6 +204,22 @@ adminRouter.patch('/platform-settings/plan-prices', async (req: Request, res: Re
     } catch (error) { next(error); }
 });
 
+// ── GET /admin/settings/whatsapp-templates ─────────────────────────
+adminRouter.get('/settings/whatsapp-templates', async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+        const data = await AdminService.getWhatsAppTemplates();
+        return SuccessResponse({ res, data, message: 'Templates fetched successfully' });
+    } catch (error) { next(error); }
+});
+
+// ── PATCH /admin/settings/whatsapp-templates ───────────────────────
+adminRouter.patch('/settings/whatsapp-templates', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const data = await AdminService.updateWhatsAppTemplates(req.body);
+        return SuccessResponse({ res, data, message: 'تم تحديث القوالب بنجاح' });
+    } catch (error) { next(error); }
+});
+
 
 // ── GET /admin/promo-codes ──────────────────────────────────────────
 adminRouter.get('/promo-codes', async (req: Request, res: Response, next: NextFunction) => {
@@ -298,6 +313,49 @@ adminRouter.delete('/queues/whatsapp/failed', async (_req: Request, res: Respons
     try {
         const data = await AdminService.clearAllFailedWhatsAppJobs();
         return SuccessResponse({ res, data, message: `تم مسح ${data.cleared} رسالة فاشلة` });
+    } catch (error) { next(error); }
+});
+
+// ── Monitoring Dashboard ───────────────────────────────────────────────────
+
+// GET /admin/monitoring/messages — paginated message history from MessageLog
+adminRouter.get('/monitoring/messages', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { page, limit, kind, status, teacherId, phone, search } = req.query as Record<string, string>;
+        const data = await AdminService.getMessageHistory({
+            page:      page      ? parseInt(page)  : 1,
+            limit:     limit     ? parseInt(limit) : 30,
+            ...(kind      ? { kind }      : {}),
+            ...(status    ? { status }    : {}),
+            ...(teacherId ? { teacherId } : {}),
+            ...(phone     ? { phone }     : {}),
+            ...(search    ? { search }    : {}),
+        });
+        return SuccessResponse({ res, data, message: 'Message history fetched' });
+    } catch (error) { next(error); }
+});
+
+// GET /admin/monitoring/stats — comprehensive message statistics
+adminRouter.get('/monitoring/stats', async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+        const data = await AdminService.getMessageStatistics();
+        return SuccessResponse({ res, data, message: 'Message statistics fetched' });
+    } catch (error) { next(error); }
+});
+
+// GET /admin/monitoring/whatsapp-connections — all teachers' WA connection status
+adminRouter.get('/monitoring/whatsapp-connections', async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+        const data = await AdminService.getWhatsAppConnections();
+        return SuccessResponse({ res, data, message: 'WhatsApp connections fetched' });
+    } catch (error) { next(error); }
+});
+
+// GET /admin/monitoring/teacher-stats — per-teacher message breakdown
+adminRouter.get('/monitoring/teacher-stats', async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+        const data = await AdminService.getTeacherMessageStats();
+        return SuccessResponse({ res, data, message: 'Teacher stats fetched' });
     } catch (error) { next(error); }
 });
 

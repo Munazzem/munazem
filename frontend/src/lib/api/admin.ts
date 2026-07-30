@@ -180,6 +180,45 @@ export const deleteAnnouncement = async (id: string): Promise<void> => {
 
 // ── QUEUES DIAGNOSIS ────────────────────────────────────
 
+// ── MONITORING & WHATSAPP ────────────────────────────────────
+
+export const fetchMonitoringStats = async (): Promise<any> => {
+    const res = await apiClient.get('/admin/monitoring/stats');
+    return (res as any).data;
+};
+
+export const fetchMonitoringMessages = async (params?: {
+    page?: number; limit?: number; teacherId?: string; status?: string; search?: string;
+}): Promise<any> => {
+    const q = new URLSearchParams();
+    if (params?.page)      q.set('page',      String(params.page));
+    if (params?.limit)     q.set('limit',     String(params.limit));
+    if (params?.teacherId) q.set('teacherId', params.teacherId);
+    if (params?.status)    q.set('status',    params.status);
+    if (params?.search)    q.set('search',    params.search);
+    const qs = q.toString();
+    const res = await apiClient.get(`/admin/monitoring/messages${qs ? `?${qs}` : ''}`);
+    return (res as any).data;
+};
+
+export const fetchMonitoringConnections = async (): Promise<any> => {
+    const res = await apiClient.get('/admin/monitoring/whatsapp-connections');
+    return (res as any).data;
+};
+
+export const fetchMonitoringTeacherStats = async (month?: string): Promise<any> => {
+    const q = new URLSearchParams();
+    if (month) q.set('month', month);
+    const qs = q.toString();
+    const res = await apiClient.get(`/admin/monitoring/teacher-stats${qs ? `?${qs}` : ''}`);
+    return (res as any).data;
+};
+
+export const triggerWeeklyReport = async (teacherId?: string): Promise<any> => {
+    const res = await apiClient.post('/admin/test-automation', { type: 'weekly_report', teacherId });
+    return (res as any).data;
+};
+
 export const fetchWhatsAppQueueStatus = async (filters?: { phone?: string; teacherId?: string }): Promise<any> => {
     const q = new URLSearchParams();
     if (filters?.phone)     q.set('phone',     filters.phone);
@@ -189,6 +228,8 @@ export const fetchWhatsAppQueueStatus = async (filters?: { phone?: string; teach
     return (res as any).data;
 };
 
+
+
 export const retryAllFailedWhatsAppJobs = async (): Promise<{ retried: number }> => {
     const res = await apiClient.post('/admin/queues/whatsapp/retry-all');
     return (res as any).data;
@@ -196,5 +237,17 @@ export const retryAllFailedWhatsAppJobs = async (): Promise<{ retried: number }>
 
 export const clearAllFailedWhatsAppJobs = async (): Promise<{ cleared: number }> => {
     const res = await apiClient.delete('/admin/queues/whatsapp/failed');
+    return (res as any).data;
+};
+
+// ── SETTINGS ──────────────────────────────────────────
+
+export const fetchWhatsAppTemplates = async (): Promise<{ session_absent: string[]; exam_result: string[] }> => {
+    const res = await apiClient.get('/admin/settings/whatsapp-templates');
+    return (res as any).data;
+};
+
+export const updateWhatsAppTemplates = async (templates: { session_absent: string[]; exam_result: string[] }): Promise<any> => {
+    const res = await apiClient.patch('/admin/settings/whatsapp-templates', templates);
     return (res as any).data;
 };

@@ -26,6 +26,15 @@ function getTransporter(): Transporter | null {
         },
     });
 
+    // Verify SMTP connection asynchronously (non-blocking)
+    transporter.verify()
+        .then(() => logger.info('smtp_verified', { host: envVars.smtpHost, user: envVars.smtpUser }))
+        .catch((err) => logger.error('smtp_verification_failed', {
+            host:  envVars.smtpHost,
+            user:  envVars.smtpUser,
+            error: (err as Error).message,
+        }));
+
     return transporter;
 }
 

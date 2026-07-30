@@ -1,7 +1,7 @@
 import { Queue } from 'bullmq';
 import { envVars } from '../../../config/env.service.js';
 import { logger }  from '../../common/utils/logger.util.js';
-import { generateWeeklyReports, generatePaymentReminders }
+import { generateWeeklyReports }
     from '../../modules/automation/automation.service.js';
 import { archiveOldData } from '../../scripts/archive-old-data.js';
 import { Worker } from 'bullmq';
@@ -33,16 +33,12 @@ const automationQueue = new Queue('automation', {
 //  │ │ │ │ ┌──── day of week (0–7, 0=Sun, 4=Thu)
 //  │ │ │ │ │
 //  0 18 * * 4   →  every Thursday at 18:00 UTC = 21:00 (9 PM) Egypt
-//  0 10 * * *   →  every day at 10:00 UTC = 13:00 (1 PM) Egypt
+//  0 0 * * 6    →  every Saturday at 00:00 UTC = 3 AM Egypt
 
 const SCHEDULES = [
     {
         name:    'weekly_teacher_report',
         pattern: '0 18 * * 4',   // Thursday 9 PM Egypt
-    },
-    {
-        name:    'daily_payment_reminder',
-        pattern: '0 10 * * *',   // Daily 1 PM Egypt (check if tomorrow is 2nd session day)
     },
     {
         name:    'weekly_data_archive',
@@ -57,10 +53,6 @@ async function processAutomationJob(job: any): Promise<void> {
     switch (job.name) {
         case 'weekly_teacher_report':
             await generateWeeklyReports();
-            break;
-
-        case 'daily_payment_reminder':
-            await generatePaymentReminders();
             break;
 
         case 'weekly_data_archive':
@@ -83,6 +75,16 @@ async function processAutomationJob(job: any): Promise<void> {
  * restarts.  `upsertJobScheduler` ensures no duplicates.
  */
 export async function startAutomationScheduler(): Promise<void> {
+    // ── Clean up removed schedules from Redis ────────────────────────────
+    // If a schedule was removed from SCHEDULES (like daily_payment_reminder),
+    // we need to remove its repeatable job from Redis too.
+    try {
+        await automationQueue.removeJobScheduler('daily_payment_reminder');
+        logger.info('automation_removed_old_scheduler', { name: 'daily_payment_reminder' });
+    } catch {
+        // Ignore — it may not exist
+    }
+
     // Register repeatable jobs
     for (const schedule of SCHEDULES) {
         await automationQueue.upsertJobScheduler(
@@ -108,7 +110,12 @@ export async function startAutomationScheduler(): Promise<void> {
         logger.error('automation_job_failed', {
             name:  job?.name,
             error: err.message,
+            stack: err.stack,
         });
+    });
+
+    worker.on('stalled', (jobId) => {
+        logger.warn('automation_job_stalled', { jobId });
     });
 
     worker.on('error', (err) => {
