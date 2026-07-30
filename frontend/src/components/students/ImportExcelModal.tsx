@@ -200,6 +200,15 @@ export function ImportExcelModal({ open, onOpenChange }: Props) {
                     return parsed;
                 });
 
+                // ── UX Guard: الحد الأقصى 50 طالب صالح في المرة الواحدة ────────
+                // يتطابق مع قيد الـ Zod على الـ backend (.max(50))
+                // الفحص هنا يمنع الـ request تماماً بدون round-trip للسيرفر
+                const validRowsCount = rows.filter(r => !r.error).length;
+                if (validRowsCount > 50) {
+                    toast.error(`عفواً، الحد الأقصى لرفع الطلاب في المرة الواحدة هو 50 طالب صالح — الملف يحتوي على ${validRowsCount}`);
+                    return;
+                }
+
                 setParsedRows(rows);
                 setStep('preview');
             } catch {
@@ -305,7 +314,7 @@ export function ImportExcelModal({ open, onOpenChange }: Props) {
                                     >
                                         <Upload className="h-8 w-8" />
                                         <span className="text-sm font-medium">اضغط لرفع ملف Excel</span>
-                                        <span className="text-xs">.xlsx أو .xls أو .csv — الحد الأقصى 5 MB</span>
+                                        <span className="text-xs">.xlsx أو .xls أو .csv — الحد الأقصى 5 MB و50 طالب</span>
                                     </button>
                                 )}
                                 <input
