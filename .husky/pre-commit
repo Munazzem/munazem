@@ -1,0 +1,30 @@
+#!/usr/bin/env sh
+# ──────────────────────────────────────────────────────────────────────────────
+# Husky pre-commit hook — runs backend tests before every git commit.
+#
+# Scope: backend/ ONLY (fast, no frontend deps needed).
+# Strategy: run "npm test" (vitest run) in backend/ directory.
+#
+# To skip (emergency only): git commit --no-verify
+# ──────────────────────────────────────────────────────────────────────────────
+
+echo ""
+echo "🧪 [pre-commit] Running backend test suite..."
+echo ""
+
+cd backend && npm test
+
+STATUS=$?
+
+if [ $STATUS -ne 0 ]; then
+  echo ""
+  echo "❌ [pre-commit] Tests FAILED — commit blocked."
+  echo "   Fix the failing tests, then try again."
+  echo "   (Use --no-verify to bypass in emergencies ONLY)"
+  echo ""
+  exit 1
+fi
+
+echo ""
+echo "✅ [pre-commit] All tests passed — proceeding with commit."
+echo ""

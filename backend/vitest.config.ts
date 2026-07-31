@@ -27,5 +27,37 @@ export default defineConfig({
         poolOptions: {
             forks: { singleFork: true },
         },
+
+        // ── Coverage ──────────────────────────────────────────────────────
+        // شغّل: npm run test:coverage
+        // الـ threshold معلّق — هيتفعّل في نهاية Phase 4 لما التغطية تتعدى 80%
+        coverage: {
+            provider: 'v8',
+            reporter: ['text', 'lcov', 'html'],
+            reportsDirectory: './coverage',
+
+            // كل الـ source files اللي محتاجين نقيس تغطيتها
+            include: ['src/**/*.ts'],
+
+            // مستبعد: الـ infra الخارجية + scripts + entry point
+            exclude: [
+                'src/main.ts',
+                'src/infrastructure/**',
+                'src/scripts/**',
+                'src/types/**',
+                'src/**/*.d.ts',
+            ],
+
+            // ─────────────────────────────────────────────────────────────
+            // ⚠️  PHASE 4 NOTE: uncomment the block below once real coverage
+            //     consistently exceeds 80% (after Phase 4 tests are merged).
+            // ─────────────────────────────────────────────────────────────
+            // thresholds: {
+            //     lines:      80,
+            //     statements: 80,
+            //     functions:  75,
+            //     branches:   70,
+            // },
+        },
     },
 });
