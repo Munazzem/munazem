@@ -29,10 +29,10 @@ beforeAll(async () => {
 }, 30_000);
 
 afterEach(async () => {
-    // امسح كل الـ collections بعد كل test لضمان الـ isolation
-    const collections = mongoose.connection.collections;
-    for (const key in collections) {
-        await collections[key]!.deleteMany({});
+    // امسح كل البيانات من كل الـ models المسجلة لضمان الـ isolation
+    const models = mongoose.modelNames();
+    for (const modelName of models) {
+        await mongoose.model(modelName).deleteMany({});
     }
 });
 

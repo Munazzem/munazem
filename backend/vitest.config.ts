@@ -22,11 +22,9 @@ export default defineConfig({
 
         // ── Isolation ─────────────────────────────────────────────────────
         // pool: 'forks' → كل test file في process منفصل
-        // singleFork: true → sequential (مش parallel) لتفادي DB conflicts
+        // fileParallelism: false → sequential (مش parallel) لتفادي DB conflicts في نفس الـ MongoMemoryServer
         pool: 'forks',
-        poolOptions: {
-            forks: { singleFork: true },
-        },
+        fileParallelism: false,
 
         // ── Coverage ──────────────────────────────────────────────────────
         // شغّل: npm run test:coverage
