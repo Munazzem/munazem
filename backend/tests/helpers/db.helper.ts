@@ -98,3 +98,41 @@ export async function seedStudent(
         ...overrides,
     });
 }
+
+// ─── Seed Session ─────────────────────────────────────────────────────────────
+/**
+ * ينشئ حصة مجدولة تابعة للمعلم التجريبي
+ */
+export async function seedSession(overrides: Record<string, unknown> = {}) {
+    const { SessionModel } = await import('../../src/database/models/session.model.js');
+    const { SessionStatus } = await import('../../src/common/enums/enum.service.js');
+    return SessionModel.create({
+        groupId:    new Types.ObjectId(),
+        teacherId:  TEST_IDS.teacher,
+        date:       new Date(),
+        startTime:  '14:00',
+        status:     SessionStatus.SCHEDULED,
+        ...overrides,
+    });
+}
+
+// ─── Seed Attendance ──────────────────────────────────────────────────────────
+/**
+ * ينشئ سجل حضور لطالب في حصة معينة
+ */
+export async function seedAttendance(
+    sessionId: Types.ObjectId,
+    studentId: Types.ObjectId,
+    overrides: Record<string, unknown> = {}
+) {
+    const { AttendanceModel } = await import('../../src/database/models/attendance.model.js');
+    const { AttendanceStatus } = await import('../../src/common/enums/enum.service.js');
+    return AttendanceModel.create({
+        sessionId,
+        studentId,
+        teacherId:   TEST_IDS.teacher,
+        status:      AttendanceStatus.PRESENT,
+        recordedBy:  TEST_IDS.teacher,
+        ...overrides,
+    });
+}
