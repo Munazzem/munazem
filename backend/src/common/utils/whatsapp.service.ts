@@ -22,15 +22,7 @@ interface PoolEntry {
  */
 const clientsPool = new Map<string, PoolEntry>();
 
-// ─── Phone normalizer ─────────────────────────────────────────────────────────
-// Matches our existing format in generateWhatsAppLinks (attendance.service.ts)
-// Egyptian numbers: 010… → 2010…  |  raw 10-digit → 20 + raw
-function normalizePhone(raw: string): string {
-    let clean = raw.replace(/\D/g, '');
-    if (clean.startsWith('01'))  clean = '2'  + clean;
-    else if (!clean.startsWith('20') && clean.length === 10) clean = '20' + clean;
-    return clean;
-}
+import { normalizePhone } from './phone.util.js';
 
 // ─── DB helpers (fire-and-forget) ─────────────────────────────────────────────
 function updateTeacherWA(
@@ -193,9 +185,41 @@ export async function sendWhatsAppMessage(
     const phone  = normalizePhone(rawParentPhone);
     const chatId = `${phone}@c.us`;
 
-    await entry.client.sendMessage(chatId, message);
+    try {
+        await entry.client.sendMessage(chatId, message);
+        logger.info('whatsapp_sent', { phone, teacherId });
+    } catch (err: any) {
+        const errorMsg = err.message || '';
+        // If the error implies block/not allowed (e.g. "Evaluation failed", "Failed to send message")
+        if (errorMsg.includes('Failed to send message') || errorMsg.includes('Protocol error')) {
+            logger.warn('whatsapp_send_blocked', { phone, teacherId, error: errorMsg });
+            throw new Error(`BLOCKED: ${errorMsg}`);
+        }
+        throw err;
+    }
+}
 
-    logger.info('whatsapp_sent', { phone, teacherId });
+// ─── Check Phone Registration ────────────────────────────────────────────────
+/**
+ * Checks if a phone number is registered on WhatsApp using the teacher's client.
+ */
+export async function checkPhoneRegistration(teacherId: string, rawParentPhone: string): Promise<boolean> {
+    const entry = clientsPool.get(teacherId);
+    if (!entry || !entry.ready) {
+        throw new Error(
+            `WhatsApp client for teacher ${teacherId} is not ready — cannot check registration.`,
+        );
+    }
+    const phone = normalizePhone(rawParentPhone);
+    const chatId = `${phone}@c.us`;
+    
+    try {
+        const isRegistered = await entry.client.isRegisteredUser(chatId);
+        return isRegistered;
+    } catch (err) {
+        logger.error('whatsapp_check_registration_failed', { teacherId, phone, error: (err as Error).message });
+        return true; // Fallback to true so we don't accidentally block valid numbers on temporary errors
+    }
 }
 
 // ─── Pool status helper ───────────────────────────────────────────────────────

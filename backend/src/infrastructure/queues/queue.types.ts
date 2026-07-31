@@ -3,7 +3,7 @@
 // processor render the correct Arabic message without re-fetching the DB.
 // `teacherId` identifies which teacher's WhatsApp client should send the message.
 
-export type WhatsAppJobKind = 'session_absent' | 'exam_result' | 'payment_reminder';
+export type WhatsAppJobKind = 'session_absent' | 'exam_result';
 
 /** Payload for a student who was absent from a session */
 export interface SessionAbsentPayload {
@@ -33,17 +33,7 @@ export interface ExamResultPayload {
     teacherName: string;
 }
 
-/** Payload for a payment reminder sent to a parent */
-export interface PaymentReminderPayload {
-    kind:        'payment_reminder';
-    teacherId:   string;
-    parentPhone: string;
-    studentName: string;
-    gradeLevel:  string;
-    teacherName: string;
-}
-
-export type WhatsAppJobData = SessionAbsentPayload | ExamResultPayload | PaymentReminderPayload;
+export type WhatsAppJobData = SessionAbsentPayload | ExamResultPayload;
 
 // ─── Email job types ─────────────────────────────────────────────────────────
 export type EmailJobKind = 'weekly_teacher_report';
