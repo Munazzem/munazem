@@ -54,6 +54,23 @@ export async function seedAssistant(overrides: Record<string, unknown> = {}) {
     });
 }
 
+// ─── Seed SuperAdmin ──────────────────────────────────────────────────────────
+/**
+ * ينشئ أدمن رئيسي في الـ DB
+ */
+export async function seedSuperAdmin(overrides: Record<string, unknown> = {}) {
+    return UserModel.create({
+        _id:       TEST_IDS.superAdmin,
+        name:      'مدير النظام',
+        phone:     '01200000001',
+        password:  '$2b$10$placeholder.hashed.password.not.used.in.tests',
+        role:      UserRole.superAdmin,
+        isActive:  true,
+        ...overrides,
+    });
+}
+
+
 // ─── Seed Group ───────────────────────────────────────────────────────────────
 /**
  * ينشئ مجموعة تابعة للـ teacher التجريبي
@@ -79,17 +96,20 @@ export async function seedGroup(overrides: Record<string, unknown> = {}) {
  * ينشئ طالب في مجموعة معينة
  * @param groupId - الـ _id للمجموعة (من seedGroup())
  */
+let studentCodeCounter = 1;
+
 export async function seedStudent(
     groupId: Types.ObjectId,
     overrides: Record<string, unknown> = {}
 ) {
+    const code = overrides.studentCode || `${studentCodeCounter++}A`;
     return StudentModel.create({
         studentName:  'محمد أحمد علي',
         parentName:   'أحمد علي',
         studentPhone: '01500000001',
         parentPhone:  '01600000001',
         gradeLevel:   GradeLevel.PREP_1,
-        studentCode:  '1A',
+        studentCode:  code,
         barcode:      crypto.randomUUID(),
         groupId,
         teacherId:    TEST_IDS.teacher,
@@ -136,3 +156,20 @@ export async function seedAttendance(
         ...overrides,
     });
 }
+
+// ─── Seed Notebook ────────────────────────────────────────────────────────────
+/**
+ * ينشئ مذكرة تابعة للمعلم التجريبي
+ */
+export async function seedNotebook(overrides: Record<string, unknown> = {}) {
+    const { NotebookModel } = await import('../../src/database/models/notebook.model.js');
+    return NotebookModel.create({
+        name:       'مذكرة تجريبية',
+        gradeLevel: GradeLevel.PREP_1,
+        price:      50,
+        teacherId:  TEST_IDS.teacher,
+        stock:      100,
+        ...overrides,
+    });
+}
+

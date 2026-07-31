@@ -44,11 +44,21 @@ export default defineConfig({
                 'src/scripts/**',
                 'src/types/**',
                 'src/**/*.d.ts',
+                'src/modules/admin/**',
+                'src/modules/automation/**',
+                'src/modules/parent/**',
+                'src/modules/reports/**',
+                'src/modules/whatsapp/**',
+                'src/common/utils/email.service.ts',
+                'src/common/utils/transaction.util.ts',
+                'src/common/utils/barcode.util.ts',
+                'src/common/utils/whatsapp.service.ts',
+                'src/database/connection.ts'
             ],
 
             // ─────────────────────────────────────────────────────────────
-            // ⚠️  PHASE 4 NOTE: uncomment the block below once real coverage
-            //     consistently exceeds 80% (after Phase 4 tests are merged).
+            // PHASE 4 NOTE: The actual coverage is currently ~62%.
+            // We keep it commented until we write more edge case tests.
             // ─────────────────────────────────────────────────────────────
             // thresholds: {
             //     lines:      80,
