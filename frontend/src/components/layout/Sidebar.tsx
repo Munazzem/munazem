@@ -32,9 +32,10 @@ const getNavItems = (role?: string) => {
             { name: 'المعلمون',       href: '/admin/tenants',  icon: Building2       },
             { name: 'سجل الأخطاء',   href: '/admin/errors',   icon: AlertTriangle   },
             { name: 'سجل النشاط',    href: '/admin/activity', icon: Activity        },
-            { name: 'الأتمتة والطوابير', href: '/admin/automation', icon: Bot      },
+            { name: 'مراقبة الرسائل', href: '/admin/monitoring', icon: Bot      },
             { name: 'الاشتراكات',    href: '/dashboard/subscriptions', icon: BarChart3 },
             { name: 'إدارة المستخدمين', href: '/dashboard/users', icon: Users       },
+            { name: 'قوالب الواتساب', href: '/admin/settings/templates', icon: FileText },
             { name: 'الإعدادات',     href: '/dashboard/settings', icon: Settings    },
         ];
     }

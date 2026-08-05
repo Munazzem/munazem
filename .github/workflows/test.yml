@@ -1,0 +1,91 @@
+﻿name: 🧪 Backend Tests
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Triggers
+# • Pull Requests targeting dev or main (runs before merge)
+# • Direct pushes to dev or main (catches direct commits)
+# Only triggers when backend code or this workflow itself changes.
+# ──────────────────────────────────────────────────────────────────────────────
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/test.yml'
+
+  push:
+    branches: [dev, main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/test.yml'
+
+# Cancel in-progress runs for the same branch on new push
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Vitest — Unit & Integration
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Checkout ─────────────────────────────────────────────────────────
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Node.js Setup ─────────────────────────────────────────────────────
+      - name: ⚙️  Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      # ── 3. Install dependencies ─────────────────────────────────────────────
+      - name: 📦 Install dependencies
+        working-directory: backend
+        run: npm ci
+
+      # ── 4. Run all tests ────────────────────────────────────────────────────
+      # MongoMemoryServer downloads its binary on first run;
+      # no external MongoDB service is required.
+      - name: 🧪 Run Vitest (all tests)
+        working-directory: backend
+        run: npm test
+        env:
+          NODE_ENV: test
+          MONGO_URL: mongodb://localhost:27017/ci_placeholder
+          PORT: '0'
+          MOOD: test
+          SALT: '10'
+          JWT_SECRET: ci-jwt-secret-32-chars-minimum-!!
+          JWT_REFRESH_SECRET: ci-refresh-secret-32-chars-min!!
+          FRONTEND_URL: http://localhost:3000
+          REDIS_URL: redis://localhost:9999
+          DISABLE_TRANSACTIONS: 'true'
+
+      # ── 5. Generate coverage report ─────────────────────────────────────────
+      - name: 📊 Generate coverage report
+        working-directory: backend
+        run: npm run test:coverage
+        env:
+          NODE_ENV: test
+          MONGO_URL: mongodb://localhost:27017/ci_placeholder
+          PORT: '0'
+          MOOD: test
+          SALT: '10'
+          JWT_SECRET: ci-jwt-secret-32-chars-minimum-!!
+          JWT_REFRESH_SECRET: ci-refresh-secret-32-chars-min!!
+          FRONTEND_URL: http://localhost:3000
+          REDIS_URL: redis://localhost:9999
+          DISABLE_TRANSACTIONS: 'true'
+
+      # ── 6. Upload coverage report as artifact ───────────────────────────────
+      - name: 📤 Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: backend/coverage/
+          retention-days: 14

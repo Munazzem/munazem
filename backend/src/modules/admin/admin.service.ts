@@ -8,7 +8,8 @@ import { ActivityLogModel }   from '../../database/models/activity-log.model.js'
 import { PlatformSettingsModel } from '../../database/models/platform-settings.model.js';
 import { PromoCodeModel } from '../../database/models/promo-code.model.js';
 import { AnnouncementModel } from '../../database/models/announcement.model.js';
-import { UserRole, SubscriptionStatus, PLAN_PRICES } from '../../common/enums/enum.service.js';
+import { MessageLogModel } from '../../database/models/message-log.model.js';
+import { UserRole, SubscriptionStatus, SubscriptionPlan, PLAN_PRICES } from '../../common/enums/enum.service.js';
 import { NotFoundException, BadRequestException } from '../../common/utils/response/error.responce.js';
 
 export class AdminService {
@@ -459,5 +460,231 @@ export class AdminService {
         return { cleared };
     }
 
+    // ── Monitoring: Message History (paginated from MongoDB) ──────────
+    static async getMessageHistory(params: {
+        page?: number; limit?: number; kind?: string; status?: string;
+        teacherId?: string; phone?: string; search?: string;
+    }) {
+        const page  = Math.max(1, params.page  ?? 1);
+        const limit = Math.min(100, Math.max(1, params.limit ?? 30));
+        const skip  = (page - 1) * limit;
 
+        const filter: any = {};
+        if (params.kind)      filter.kind      = params.kind;
+        if (params.status)    filter.status     = params.status;
+        if (params.teacherId) filter.teacherId  = params.teacherId;
+        if (params.phone)     filter.parentPhone = { $regex: params.phone, $options: 'i' };
+
+        const [data, total] = await Promise.all([
+            MessageLogModel.find(filter)
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit)
+                .populate('teacherId', 'name phone subject')
+                .lean(),
+            MessageLogModel.countDocuments(filter),
+        ]);
+
+        return {
+            data,
+            pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+        };
+    }
+
+    // ── Monitoring: Comprehensive Message Statistics ──────────────────
+    static async getMessageStatistics() {
+        const now        = new Date();
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const weekStart  = new Date(todayStart);
+        weekStart.setDate(weekStart.getDate() - 7);
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+        // Get BullMQ queue counts
+        const { whatsAppQueue } = await import('../../infrastructure/queues/whatsapp.queue.js');
+        const [waiting, active, delayed, failed] = await Promise.all([
+            whatsAppQueue.getWaitingCount(),
+            whatsAppQueue.getActiveCount(),
+            whatsAppQueue.getDelayedCount(),
+            whatsAppQueue.getFailedCount(),
+        ]);
+
+        // MessageLog-based stats
+        const [todayTotal, weekTotal, monthTotal, todaySent, todayFailed, monthSent, monthFailed] = await Promise.all([
+            MessageLogModel.countDocuments({ createdAt: { $gte: todayStart } }),
+            MessageLogModel.countDocuments({ createdAt: { $gte: weekStart } }),
+            MessageLogModel.countDocuments({ createdAt: { $gte: monthStart } }),
+            MessageLogModel.countDocuments({ createdAt: { $gte: todayStart }, status: 'sent' }),
+            MessageLogModel.countDocuments({ createdAt: { $gte: todayStart }, status: 'failed' }),
+            MessageLogModel.countDocuments({ createdAt: { $gte: monthStart }, status: 'sent' }),
+            MessageLogModel.countDocuments({ createdAt: { $gte: monthStart }, status: 'failed' }),
+        ]);
+
+        // Kind breakdown this month
+        const kindBreakdown = await MessageLogModel.aggregate([
+            { $match: { createdAt: { $gte: monthStart } } },
+            { $group: { _id: '$kind', count: { $sum: 1 } } },
+        ]);
+
+        const successRate = monthTotal > 0
+            ? Math.round((monthSent / monthTotal) * 100)
+            : 0;
+
+        // System health
+        const mem    = process.memoryUsage();
+        const uptime = Math.floor(process.uptime());
+
+        return {
+            queue: { waiting, active, delayed, failed },
+            messages: {
+                today:      todayTotal,
+                thisWeek:   weekTotal,
+                thisMonth:  monthTotal,
+                todaySent,
+                todayFailed,
+                monthSent,
+                monthFailed,
+                successRate,
+            },
+            kindBreakdown: Object.fromEntries(kindBreakdown.map(k => [k._id, k.count])),
+            system: {
+                uptime,
+                memoryMB: Math.round(mem.rss / 1024 / 1024),
+                heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),
+                heapTotalMB: Math.round(mem.heapTotal / 1024 / 1024),
+                nodeVersion: process.version,
+            },
+        };
+    }
+
+    // ── Monitoring: WhatsApp Connections ──────────────────────────────
+    static async getWhatsAppConnections() {
+        const teachers = await UserModel.find(
+            { role: UserRole.teacher, isActive: true },
+            { name: 1, phone: 1, whatsappStatus: 1, subject: 1, updatedAt: 1 },
+        ).sort({ whatsappStatus: -1, name: 1 }).lean();
+
+        // Get active subscription info for each teacher
+        const teacherIds = teachers.map(t => t._id);
+        const subs = await SubscriptionModel.find({
+            teacherId: { $in: teacherIds },
+            status: SubscriptionStatus.ACTIVE,
+            endDate: { $gt: new Date() },
+        }, { teacherId: 1, planTier: 1, endDate: 1 }).lean();
+
+        const subMap = new Map(subs.map(s => [s.teacherId.toString(), s]));
+
+        const connected    = teachers.filter(t => t.whatsappStatus === 'connected').length;
+        const disconnected = teachers.filter(t => t.whatsappStatus === 'disconnected').length;
+        const pending      = teachers.filter(t => t.whatsappStatus === 'pending').length;
+
+        return {
+            summary: { connected, disconnected, pending, total: teachers.length },
+            teachers: teachers.map(t => {
+                const sub = subMap.get(t._id.toString());
+                return {
+                    _id:            t._id,
+                    name:           t.name,
+                    phone:          t.phone,
+                    subject:        (t as any).subject,
+                    whatsappStatus: t.whatsappStatus,
+                    planTier:       sub?.planTier ?? null,
+                    isPremium:      sub?.planTier === SubscriptionPlan.PREMIUM,
+                    subExpiresAt:   sub?.endDate ?? null,
+                    lastUpdate:     t.updatedAt,
+                };
+            }),
+        };
+    }
+
+    // ── Monitoring: Per-Teacher Message Stats ─────────────────────────
+    static async getTeacherMessageStats() {
+        const monthStart = new Date();
+        monthStart.setDate(1);
+        monthStart.setHours(0, 0, 0, 0);
+
+        const stats = await MessageLogModel.aggregate([
+            { $match: { createdAt: { $gte: monthStart } } },
+            {
+                $group: {
+                    _id: '$teacherId',
+                    total:  { $sum: 1 },
+                    sent:   { $sum: { $cond: [{ $eq: ['$status', 'sent'] }, 1, 0] } },
+                    failed: { $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] } },
+                    queued: { $sum: { $cond: [{ $eq: ['$status', 'queued'] }, 1, 0] } },
+                    lastMessage: { $max: '$createdAt' },
+                },
+            },
+            { $sort: { total: -1 } },
+        ]);
+
+        // Enrich with teacher info
+        const teacherIds = stats.map(s => s._id);
+        const teachers = await UserModel.find(
+            { _id: { $in: teacherIds } },
+            { name: 1, phone: 1, whatsappStatus: 1, subject: 1 },
+        ).lean();
+        const teacherMap = new Map(teachers.map(t => [t._id.toString(), t]));
+
+        return stats.map(s => {
+            const teacher = teacherMap.get(s._id.toString());
+            return {
+                teacherId: s._id,
+                teacherName: teacher?.name ?? 'Unknown',
+                teacherPhone: teacher?.phone,
+                subject: (teacher as any)?.subject,
+                whatsappStatus: teacher?.whatsappStatus,
+                total:   s.total,
+                sent:    s.sent,
+                failed:  s.failed,
+                queued:  s.queued,
+                successRate: s.total > 0 ? Math.round((s.sent / s.total) * 100) : 0,
+                lastMessage: s.lastMessage,
+            };
+        });
+    }
+
+    // ── WhatsApp Templates Management ────────────────────────────────────────────────────────
+    
+    static async getWhatsAppTemplates(): Promise<any> {
+        const doc = await PlatformSettingsModel.findOne({ key: 'whatsapp_templates' }).lean();
+        if (doc && doc.value) return doc.value;
+        
+        // Return defaults if none exist
+        const { DEFAULT_SESSION_ABSENT_TEMPLATES, DEFAULT_EXAM_RESULT_TEMPLATES } = await import('../../infrastructure/queues/whatsapp.templates.js');
+        return {
+            session_absent: DEFAULT_SESSION_ABSENT_TEMPLATES,
+            exam_result: DEFAULT_EXAM_RESULT_TEMPLATES,
+        };
+    }
+
+    static async updateWhatsAppTemplates(templates: { session_absent: string[]; exam_result: string[] }): Promise<any> {
+        if (!templates.session_absent || templates.session_absent.length < 3) {
+            throw new Error('يجب إدخال 3 صيغ على الأقل لرسائل الغياب لتجنب الحظر');
+        }
+        if (!templates.exam_result || templates.exam_result.length < 3) {
+            throw new Error('يجب إدخال 3 صيغ على الأقل لرسائل الامتحانات لتجنب الحظر');
+        }
+
+        // Clean out empty strings
+        templates.session_absent = templates.session_absent.filter(t => t.trim().length > 0);
+        templates.exam_result = templates.exam_result.filter(t => t.trim().length > 0);
+
+        if (templates.session_absent.length < 3 || templates.exam_result.length < 3) {
+            throw new Error('يجب إدخال 3 صيغ صحيحة على الأقل لكل قالب');
+        }
+
+        await PlatformSettingsModel.updateOne(
+            { key: 'whatsapp_templates' },
+            { $set: { value: templates } },
+            { upsert: true }
+        );
+
+        // Clear cache so changes take effect immediately
+        const { cache } = await import('../../infrastructure/cache/cache.service.js');
+        await cache.del('whatsapp_dynamic_templates');
+
+        return templates;
+    }
 }
+
+

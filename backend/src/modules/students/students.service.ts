@@ -4,9 +4,10 @@ import { TransactionModel } from '../../database/models/transaction.model.js';
 import { NotFoundException, BadRequestException, ConflictException } from '../../common/utils/response/error.responce.js';
 import type { CreateStudentDTO, UpdateStudentDTO } from '../../types/dto.types.js';
 import { GRADE_LETTER, GradeLevel, TransactionType, TransactionCategory } from '../../common/enums/enum.service.js';
-import { nextSequence } from '../../database/models/counter.model.js';
+import { nextSequence, nextSequenceBulk } from '../../database/models/counter.model.js';
 import { trackEvent } from '../../common/utils/activity.service.js';
 import { withTransaction } from '../../common/utils/transaction.util.js';
+import { Types } from 'mongoose';
 import crypto from 'crypto';
 
 export class StudentService {
@@ -86,74 +87,122 @@ export class StudentService {
 
     static async bulkCreateStudents(teacherId: string, students: CreateStudentDTO[]) {
         return await withTransaction(async (dbSession) => {
-            const results: { studentName: string; studentCode: string }[] = [];
 
-            for (let i = 0; i < students.length; i++) {
-                const data = students[i]!;
-                try {
-                    // Verify group belongs to teacher
-                    const group = await GroupModel.findOne({ _id: data.groupId, teacherId }).session(dbSession).lean();
-                    if (!group) {
-                        throw new Error(`المجموعة المحددة غير موجودة أو لا صلاحية لك عليها في السطر ${i + 1}`);
-                    }
+            // ── Phase 1: جلب كل المجموعات الفريدة دفعة واحدة (1 query) ──────────────
+            const uniqueGroupIds = [...new Set(students.map(s => s.groupId))];
+            const groups = await GroupModel.find(
+                { _id: { $in: uniqueGroupIds }, teacherId },
+            ).session(dbSession).lean();
+            const groupMap = new Map(groups.map(g => [g._id.toString(), g]));
 
-                    // Enforce grade-level match
-                    if (group.gradeLevel !== data.gradeLevel) {
-                        throw new Error(`عفواً، المجموعة المحددة للمرحلة الدراسية مختلفة للطالب ${data.fullName} في السطر ${i + 1}`);
-                    }
+            // ── Phase 2: حساب عدد الطلاب الحاليين لكل مجموعة (1 query) ─────────────
+            const existingCounts = await StudentModel.aggregate([
+                { $match: { groupId: { $in: uniqueGroupIds.map(id => new Types.ObjectId(id)) }, teacherId } },
+                { $group: { _id: '$groupId', count: { $sum: 1 } } },
+            ]).session(dbSession);
 
-                    // Enforce capacity limit
-                    const capacity = group.capacity ?? 50;
-                    const currentCount = await StudentModel.countDocuments({ groupId: data.groupId, teacherId }).session(dbSession);
-                    if (currentCount >= capacity) {
-                        throw new Error(`عفواً، وصلت المجموعة إلى أقصى عدد متاح لرفع الطالب ${data.fullName} في السطر ${i + 1}`);
-                    }
-
-                    const { studentName, parentName } = this.parseFullName(data.fullName);
-
-                    const letter = GRADE_LETTER[data.gradeLevel as GradeLevel];
-                    const count  = await nextSequence(`${teacherId}_${data.gradeLevel}`);
-                    const studentCode = `${count}${letter}`;
-
-                    const [created] = await StudentModel.create([{
-                        studentName,
-                        parentName,
-                        studentPhone: data.studentPhone,
-                        parentPhone:  data.parentPhone,
-                        gradeLevel:   data.gradeLevel,
-                        groupId:      data.groupId,
-                        teacherId,
-                        studentCode,
-                        barcode: data.barcode || crypto.randomUUID(),
-                        monthlySessionsQuota: (group.schedule?.length ?? 2) * 4,
-                    }], { session: dbSession });
-
-                    if (!created) {
-                        throw new Error(`فشل إضافة الطالب ${data.fullName} في السطر ${i + 1}`);
-                    }
-
-                    results.push({ studentName: created.studentName, studentCode: created.studentCode });
-                } catch (error: any) {
-                    let message = error.message || 'حدث خطأ أثناء الإضافة';
-                    if (error.code === 11000) {
-                        if (error.keyPattern?.barcode) {
-                            message = `الباركود مستخدم مسبقاً للطالب ${data.fullName} في السطر ${i + 1}`;
-                        } else if (error.keyPattern?.studentCode) {
-                            message = `كود الطالب مستخدم مسبقاً في السطر ${i + 1}`;
-                        } else {
-                            message = `رقم الهاتف مسجل مسبقاً للطالب ${data.fullName} في السطر ${i + 1}`;
-                        }
-                    }
-                    throw BadRequestException({ message });
-                }
+            // بناء tracker للـ capacity — يُحدَّث locally بعد كل طالب مقبول
+            const capacityTracker = new Map<string, { current: number; max: number }>();
+            for (const g of groups) {
+                const existing = existingCounts.find(c => c._id.toString() === g._id.toString());
+                capacityTracker.set(g._id.toString(), {
+                    current: existing?.count ?? 0,
+                    max:     g.capacity ?? 50,
+                });
             }
 
-            return {
-                results: results.map((r, idx) => ({ index: idx, success: true, ...r })),
-                successCount: results.length,
-                failCount: 0,
-                total: students.length,
-            };
+            // ── Phase 3: التحقق من جميع الطلاب في الـ Memory (0 queries) ────────────
+            for (let i = 0; i < students.length; i++) {
+                const data = students[i]!;
+
+                const group = groupMap.get(data.groupId);
+                if (!group) {
+                    throw BadRequestException({
+                        message: `المجموعة المحددة غير موجودة أو لا صلاحية لك عليها في السطر ${i + 1}`,
+                    });
+                }
+
+                if (group.gradeLevel !== data.gradeLevel) {
+                    throw BadRequestException({
+                        message: `عفواً، المجموعة المحددة للمرحلة الدراسية مختلفة للطالب ${data.fullName} في السطر ${i + 1}`,
+                    });
+                }
+
+                const tracker = capacityTracker.get(data.groupId)!;
+                if (tracker.current >= tracker.max) {
+                    throw BadRequestException({
+                        message: `عفواً، وصلت المجموعة إلى أقصى عدد متاح لرفع الطالب ${data.fullName} في السطر ${i + 1}`,
+                    });
+                }
+                tracker.current++; // زيادة المحلية للطلاب التاليين في نفس المجموعة
+            }
+
+            // ── Phase 4: تخصيص نطاقات الـ sequence لكل مرحلة دراسية (N_grades queries) ──
+            const gradeCounts = new Map<GradeLevel, number>();
+            for (const s of students) {
+                gradeCounts.set(
+                    s.gradeLevel as GradeLevel,
+                    (gradeCounts.get(s.gradeLevel as GradeLevel) ?? 0) + 1,
+                );
+            }
+            const gradeStartSeq = new Map<GradeLevel, number>();
+            for (const [grade, needCount] of gradeCounts) {
+                const startSeq = await nextSequenceBulk(`${teacherId}_${grade}`, needCount);
+                gradeStartSeq.set(grade, startSeq);
+            }
+
+            // ── Phase 5: تجهيز الـ documents في الـ Memory ───────────────────────────
+            const preparedDocs = students.map((data) => {
+                const group = groupMap.get(data.groupId)!;
+                const { studentName, parentName } = this.parseFullName(data.fullName);
+
+                const grade = data.gradeLevel as GradeLevel;
+                const currentSeq = gradeStartSeq.get(grade)!;
+                gradeStartSeq.set(grade, currentSeq + 1); // increment locally
+
+                const studentCode = `${currentSeq}${GRADE_LETTER[grade]}`;
+
+                return {
+                    studentName,
+                    parentName,
+                    studentPhone: data.studentPhone,
+                    parentPhone:  data.parentPhone,
+                    gradeLevel:   data.gradeLevel,
+                    groupId:      data.groupId,
+                    teacherId,
+                    studentCode,
+                    barcode:      data.barcode || crypto.randomUUID(),
+                    monthlySessionsQuota: (group.schedule?.length ?? 2) * 4,
+                };
+            });
+
+            // ── Phase 6: الإدخال دفعة واحدة (1 query) ───────────────────────────────
+            try {
+                const created = await StudentModel.insertMany(preparedDocs, { session: dbSession });
+
+                return {
+                    results: created.map((s, idx) => ({ index: idx, success: true, studentName: s.studentName, studentCode: s.studentCode })),
+                    successCount: created.length,
+                    failCount:    0,
+                    total:        students.length,
+                };
+            } catch (error: any) {
+                // استخراج رقم السطر الدقيق من BulkWriteError
+                let message = 'حدث خطأ أثناء الإضافة';
+                if (error.code === 11000) {
+                    const failedIndex: number = error.writeErrors?.[0]?.index ?? 0;
+                    const failedStudent = students[failedIndex]!;
+                    const rowNum = failedIndex + 1;
+                    if (error.writeErrors?.[0]?.err?.keyPattern?.barcode) {
+                        message = `الباركود مستخدم مسبقاً للطالب ${failedStudent.fullName} في السطر ${rowNum}`;
+                    } else if (error.writeErrors?.[0]?.err?.keyPattern?.studentCode) {
+                        message = `كود الطالب مستخدم مسبقاً في السطر ${rowNum}`;
+                    } else {
+                        message = `رقم الهاتف مسجل مسبقاً للطالب ${failedStudent.fullName} في السطر ${rowNum}`;
+                    }
+                }
+                throw BadRequestException({ message });
+            }
         });
     }
 

@@ -129,11 +129,11 @@ export default function AdminOverviewPage() {
                 </div>
                 <div className="flex items-center gap-2">
                     <button
-                        onClick={() => router.push('/admin/automation')}
+                        onClick={() => router.push('/admin/monitoring')}
                         className="flex items-center gap-2 text-sm text-primary hover:text-white hover:bg-primary transition-colors bg-primary/10 border border-primary/20 rounded-xl px-4 py-2 font-medium"
                     >
                         <Play className="h-4 w-4" />
-                        اختبار الأتمتة
+                        مراقبة الرسائل والأتمتة
                     </button>
                     <button
                         onClick={() => refetchStats()}
