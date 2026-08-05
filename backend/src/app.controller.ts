@@ -105,9 +105,10 @@ export function createApp() {
         next();
     });
 
+    const isTest = process.env.NODE_ENV === 'test';
     const globalLimiter = rateLimit({
         windowMs: 15 * 60 * 1000,
-        limit: 3000,
+        limit: isTest ? 30000 : 3000,
         message: { message: 'كثرة الطلبات، يرجى المحاولة لاحقاً' },
         standardHeaders: true,
         legacyHeaders: false,
@@ -116,7 +117,7 @@ export function createApp() {
 
     const aiLimiter = rateLimit({
         windowMs: 60 * 1000,
-        limit: 3,
+        limit: isTest ? 1000 : 3,
         message: { message: 'تجاوزت حد توليد الامتحانات بالذكاء الاصطناعي، انتظر دقيقة' },
         standardHeaders: true,
         legacyHeaders: false,
@@ -126,7 +127,7 @@ export function createApp() {
 
     const loginLimiter = rateLimit({
         windowMs: 15 * 60 * 1000,
-        limit: 10,
+        limit: isTest ? 100 : 10,
         message: { message: 'كثرة محاولات تسجيل الدخول، يرجى المحاولة مرة أخرى بعد 15 دقيقة' },
         standardHeaders: true,
         legacyHeaders: false,

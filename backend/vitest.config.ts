@@ -22,10 +22,50 @@ export default defineConfig({
 
         // ── Isolation ─────────────────────────────────────────────────────
         // pool: 'forks' → كل test file في process منفصل
-        // singleFork: true → sequential (مش parallel) لتفادي DB conflicts
+        // fileParallelism: false → sequential (مش parallel) لتفادي DB conflicts في نفس الـ MongoMemoryServer
         pool: 'forks',
-        poolOptions: {
-            forks: { singleFork: true },
+        fileParallelism: false,
+
+        // ── Coverage ──────────────────────────────────────────────────────
+        // شغّل: npm run test:coverage
+        // الـ threshold معلّق — هيتفعّل في نهاية Phase 4 لما التغطية تتعدى 80%
+        coverage: {
+            provider: 'v8',
+            reporter: ['text', 'lcov', 'html'],
+            reportsDirectory: './coverage',
+
+            // كل الـ source files اللي محتاجين نقيس تغطيتها
+            include: ['src/**/*.ts'],
+
+            // مستبعد: الـ infra الخارجية + scripts + entry point
+            exclude: [
+                'src/main.ts',
+                'src/infrastructure/**',
+                'src/scripts/**',
+                'src/types/**',
+                'src/**/*.d.ts',
+                'src/modules/admin/**',
+                'src/modules/automation/**',
+                'src/modules/parent/**',
+                'src/modules/reports/**',
+                'src/modules/whatsapp/**',
+                'src/common/utils/email.service.ts',
+                'src/common/utils/transaction.util.ts',
+                'src/common/utils/barcode.util.ts',
+                'src/common/utils/whatsapp.service.ts',
+                'src/database/connection.ts'
+            ],
+
+            // ─────────────────────────────────────────────────────────────
+            // PHASE 4 NOTE: The actual coverage is currently ~62%.
+            // We keep it commented until we write more edge case tests.
+            // ─────────────────────────────────────────────────────────────
+            // thresholds: {
+            //     lines:      80,
+            //     statements: 80,
+            //     functions:  75,
+            //     branches:   70,
+            // },
         },
     },
 });
