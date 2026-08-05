@@ -29,6 +29,17 @@ jobs:
     name: Vitest — Unit & Integration
     runs-on: ubuntu-latest
 
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       # ── 1. Checkout ─────────────────────────────────────────────────────────
       - name: 📥 Checkout repository
@@ -62,7 +73,7 @@ jobs:
           JWT_SECRET: ci-jwt-secret-32-chars-minimum-!!
           JWT_REFRESH_SECRET: ci-refresh-secret-32-chars-min!!
           FRONTEND_URL: http://localhost:3000
-          REDIS_URL: redis://localhost:9999
+          REDIS_URL: redis://localhost:6379
           DISABLE_TRANSACTIONS: 'true'
 
       # ── 5. Generate coverage report ─────────────────────────────────────────
@@ -78,7 +89,7 @@ jobs:
           JWT_SECRET: ci-jwt-secret-32-chars-minimum-!!
           JWT_REFRESH_SECRET: ci-refresh-secret-32-chars-min!!
           FRONTEND_URL: http://localhost:3000
-          REDIS_URL: redis://localhost:9999
+          REDIS_URL: redis://localhost:6379
           DISABLE_TRANSACTIONS: 'true'
 
       # ── 6. Upload coverage report as artifact ───────────────────────────────
