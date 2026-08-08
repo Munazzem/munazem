@@ -132,12 +132,18 @@ export const CacheKeys = {
     assistantsAccess: (teacherId: string) => `t:${teacherId}:assistants_access`,
     /** Pattern to invalidate ALL cache for a teacher */
     teacherAll:    (teacherId: string) => `t:${teacherId}:*`,
+    /** Card resolution cache: cardNumber → studentId + status */
+    card:          (cardNumber: string) => `card:${cardNumber}`,
+    /** Card token cache: cardToken → studentId (for parent portal) */
+    cardToken:     (cardToken: string)  => `cardtoken:${cardToken}`,
 };
 
 // ── Cache TTLs (seconds) ─────────────────────────────────────────────────────
 export const CacheTTL = {
-    DASHBOARD:         5 * 60,     // 5 minutes
-    PRICE_SETTINGS:    60 * 60,    // 1 hour
-    GROUPS:            10 * 60,    // 10 minutes
+    DASHBOARD:         5 * 60,       // 5 minutes
+    PRICE_SETTINGS:    60 * 60,      // 1 hour
+    GROUPS:            10 * 60,      // 10 minutes
     ASSISTANTS_ACCESS: 12 * 60 * 60, // 12 hours
+    CARD:              30 * 60,      // 30 minutes — card↔student binding rarely changes
+    CARD_TOKEN:        30 * 60,      // 30 minutes
 };

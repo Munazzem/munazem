@@ -603,15 +603,14 @@ export class ReportsService {
     }
 
     // ══════════════════════════════════════════════════════════════
-    // 7. Unpaid Students — students with no remaining sessions (need to pay)
+    // 7. Unpaid Students — students who haven't paid for their current cycle
     // ══════════════════════════════════════════════════════════════
     static async getUnpaidStudents(teacherId: string, includeList = false) {
-        // Cycle-based: "unpaid" = remainingSessions <= 0
-        const [totalActive, paidCount] = await Promise.all([
-            StudentModel.countDocuments({ teacherId, isActive: true }),
-            StudentModel.countDocuments({ teacherId, isActive: true, remainingSessions: { $gt: 0 } }),
-        ]);
-        const unpaidCount = totalActive - paidCount;
+        const { StudentService } = await import('../students/students.service.js');
+        const unpaidIds = await StudentService.getUnpaidStudentIds(teacherId);
+        const totalActive = await StudentModel.countDocuments({ teacherId, isActive: true });
+        const unpaidCount = unpaidIds.length;
+        const paidCount = totalActive - unpaidCount;
 
         const now = new Date();
         const base = {
@@ -627,8 +626,8 @@ export class ReportsService {
         }
 
         const unpaidStudents = await StudentModel.find(
-            { teacherId, isActive: true, remainingSessions: { $lte: 0 } },
-            { studentName: 1, gradeLevel: 1, groupId: 1, studentCode: 1, remainingSessions: 1 }
+            { _id: { $in: unpaidIds.map((id: string) => new mongoose.Types.ObjectId(id)) } },
+            { studentName: 1, gradeLevel: 1, groupId: 1, studentCode: 1, remainingSessions: 1, cycleStartedAt: 1, cycleCapacity: 1 }
         ).populate('groupId', 'name').sort({ studentName: 1 }).limit(100).lean();
 
         return { ...base, students: unpaidStudents };

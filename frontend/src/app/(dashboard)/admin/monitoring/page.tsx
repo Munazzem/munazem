@@ -16,7 +16,8 @@ import {
     fetchMonitoringConnections, 
     fetchMonitoringTeacherStats,
     triggerWeeklyReport,
-    fetchTenants
+    fetchTenants,
+    retryAllFailedWhatsAppJobs
 } from '@/lib/api/admin';
 import { io, type Socket } from 'socket.io-client';
 import Cookies from 'js-cookie';
@@ -124,6 +125,16 @@ export default function AdminMonitoringPage() {
         setPage(1);
         setAppliedFilters({});
     };
+
+    const retryFailedMutation = useMutation({
+        mutationFn: retryAllFailedWhatsAppJobs,
+        onSuccess: (res) => {
+            toast.success(`تم إعادة إرسال ${res?.retried || 0} رسالة بنجاح`);
+            refetchStats();
+            refetchMessages();
+        },
+        onError: () => toast.error('حدث خطأ أثناء إعادة الإرسال'),
+    });
 
     return (
         <div className="space-y-6 p-4 sm:p-6 max-w-7xl mx-auto" dir="rtl">
@@ -296,6 +307,17 @@ export default function AdminMonitoringPage() {
                             className="bg-white border border-gray-200 text-gray-600 px-4 py-1.5 rounded-lg text-sm hover:bg-gray-50"
                         >
                             إعادة ضبط
+                        </button>
+                        
+                        <div className="flex-1" /> {/* Spacer */}
+                        
+                        <button
+                            onClick={() => retryFailedMutation.mutate()}
+                            disabled={retryFailedMutation.isPending || statsData?.queue?.failed === 0}
+                            className="bg-orange-100 text-orange-700 hover:bg-orange-200 border border-orange-200 px-4 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50 transition-colors"
+                        >
+                            {retryFailedMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                            إعادة إرسال الرسائل الفاشلة ({statsData?.queue?.failed || 0})
                         </button>
                     </div>
 

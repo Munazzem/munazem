@@ -16,6 +16,7 @@ import {
 } from '@/lib/api/attendance';
 import { printHtmlContent } from '@/lib/utils/print';
 import { fetchStudents, updateStudent } from '@/lib/api/students';
+import { resolveCard } from '@/lib/api/cards';
 import { useAuthStore } from '@/lib/store/auth.store';
 import dynamic from 'next/dynamic';
 const QRScannerPanel = dynamic(
@@ -311,13 +312,26 @@ export default function SessionDetailPage() {
         },
     });
 
-    const handleQRScan = useCallback(async (studentId: string) => {
-        if (alreadyRecordedIds.has(studentId)) {
-            toast.warning('تم تسجيل هذا الطالب مسبقاً');
-            return;
+    const handleQRScan = useCallback(async (scanInput: string) => {
+        try {
+            // First, resolve the scan input (could be a token, barcode, or old code)
+            const result = await resolveCard(scanInput);
+            if (!result.student) {
+                toast.error('هذا الكارت جديد وغير مربوط بأي طالب');
+                return;
+            }
+            const studentId = result.student.studentId;
+
+            if (alreadyRecordedIds.has(studentId)) {
+                toast.warning('تم تسجيل هذا الطالب مسبقاً');
+                return;
+            }
+            
+            // Record attendance
+            recordMutation.mutate(studentId);
+        } catch (error: any) {
+            // error toast is handled globally by axios interceptor
         }
-        // Use non-async mutate for instant UI feedback, but match the expected Promise return type
-        recordMutation.mutate(studentId);
     }, [alreadyRecordedIds, recordMutation]);
 
     const groupName =

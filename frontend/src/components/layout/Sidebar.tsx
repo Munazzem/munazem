@@ -21,6 +21,7 @@ import {
     BarChart3,
     Activity,
     Bot,
+    CreditCard,
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { useUIStore } from '@/lib/store/ui.store';
@@ -46,6 +47,7 @@ const getNavItems = (role?: string) => {
         { name: 'إدارة الطلاب',      href: '/students',            icon: Users           },
         { name: 'شئون الطلاب',       href: '/students/affairs', icon: AlertTriangle },
         { name: 'الحصص والغياب',     href: '/sessions',            icon: CalendarCheck   },
+        { name: 'الكارت الذكي',      href: '/smart-card',          icon: CreditCard      },
         { name: 'الامتحانات',        href: '/exams',               icon: ClipboardList   },
         { name: 'الماليات',          href: '/dashboard/payments',  icon: Wallet          },
         { name: 'المتجر والمذكرات',  href: '/dashboard/notebooks', icon: BookOpen        },

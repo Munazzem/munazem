@@ -37,7 +37,9 @@ whatsappRouter.post(
             }
 
             // Kick off the client (non-blocking — Puppeteer starts in bg)
-            await initializeClientForTeacher(teacherId);
+            // force=true ensures a fresh start even if a stale pool entry exists
+            // from a failed auto-reconnect after a deployment.
+            await initializeClientForTeacher(teacherId, true);
 
             return SuccessResponse({
                 res,

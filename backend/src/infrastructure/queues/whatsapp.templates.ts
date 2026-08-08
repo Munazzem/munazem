@@ -4,21 +4,21 @@ import { logger } from '../../common/utils/logger.util.js';
 
 // ── Default Fallback Templates (No Emojis except ⚠️) ──
 export const DEFAULT_SESSION_ABSENT_TEMPLATES = [
-    '⚠️ تنبيه: تم تسجيل غياب الطالب {studentName} عن الحصة ({sessionTitle}). يرجى المتابعة.',
-    '⚠️ إشعار غياب: الطالب {studentName} لم يحضر حصة ({sessionTitle}) اليوم.',
-    '⚠️ نود إعلامكم بغياب الطالب {studentName} عن الدرس ({sessionTitle}).',
-    '⚠️ عذراً، لم يسجل الطالب {studentName} حضوراً في حصة ({sessionTitle}).',
-    '⚠️ نلفت انتباهكم لغياب {studentName} عن حصة ({sessionTitle}).',
-    '⚠️ رسالة تنبيهية: غاب الطالب {studentName} عن الحصة المجدولة ({sessionTitle}).',
+    'أهلاً بحضرتك،\nنحيطكم علمًا بأن الطالب **{studentName}** تم تسجيل غيابه عن حصة اليوم.\n\n📅 تاريخ الحصة: **{date}**\n\nلمتابعة سجل الحضور والغياب:\nhttps://munazem.vercel.app/parent',
+    'السلام عليكم،\nتم تسجيل غياب الطالب **{studentName}** عن حصة **{date}**.\n\nيمكنكم متابعة تفاصيل الحضور والغياب من خلال بوابة ولي الأمر:\nhttps://munazem.vercel.app/parent',
+    'تنبيه حضور 📌\n\nالطالب: **{studentName}**\nالحالة: **غائب**\nتاريخ الحصة: **{date}**\n\nلمتابعة سجل الطالب:\nhttps://munazem.vercel.app/parent',
+    'تم تسجيل غياب **{studentName}** عن حصة اليوم **{date}**.\n\nيمكنكم مراجعة سجل الحضور والغياب الخاص بالطالب من هنا:\nhttps://munazem.vercel.app/parent',
+    'نود إبلاغ حضرتك بأنه تم تسجيل **غياب الطالب {studentName}** عن حصة **{date}**.\n\nلمتابعة الحضور والغياب وباقي بيانات الطالب:\nhttps://munazem.vercel.app/parent',
+    '📌 إشعار غياب\n\nالطالب **{studentName}** لم يحضر حصة **{date}**، وتم تسجيل الغياب على النظام.\n\nللاطلاع على تفاصيل الحضور والغياب:\nhttps://munazem.vercel.app/parent'
 ];
 
 export const DEFAULT_EXAM_RESULT_TEMPLATES = [
-    '⚠️ إشعار نتيجة: حصل الطالب {studentName} على درجة {studentScore}/{examTotal} في امتحان ({examName}).',
-    '⚠️ نتيجة الطالب {studentName} في اختبار ({examName}) هي {studentScore}/{examTotal}.',
-    '⚠️ نعلمكم أن درجة {studentName} في امتحان ({examName}) كانت {studentScore}/{examTotal}.',
-    '⚠️ تقرير درجة: أحرز الطالب {studentName} {studentScore}/{examTotal} في اختبار ({examName}).',
-    '⚠️ تم رصد نتيجة {studentName} في امتحان ({examName}) وهي {studentScore}/{examTotal}.',
-    '⚠️ نلفت انتباهكم إلى أن الطالب {studentName} نال {studentScore}/{examTotal} في ({examName}).',
+    'أهلاً بحضرتك،\nنحيطكم علمًا بظهور نتيجة امتحان **{examName}** للطالب **{studentName}**.\n\n📊 النتيجة: **{studentScore} من {examTotal}**\n\nلمتابعة نتيجة الطالب وباقي بياناته:\nhttps://munazem.vercel.app/parent',
+    'السلام عليكم،\nنتيجة الطالب **{studentName}** في امتحان **{examName}**:\n\n**{studentScore} من {examTotal}** 📈\n\nيمكنكم متابعة تفاصيل الطالب من خلال بوابة ولي الأمر:\nhttps://munazem.vercel.app/parent',
+    'أهلاً بحضرتك،\nتم تسجيل نتيجة **{studentName}** في امتحان **{examName}**.\n\nالدرجة: **{studentScore} / {examTotal}** 📊\n\nللاطلاع على النتيجة ومتابعة مستوى الطالب:\nhttps://munazem.vercel.app/parent',
+    'تنبيه بظهور نتيجة الامتحان 📌\n\nالطالب: **{studentName}**\nالامتحان: **{examName}**\nالنتيجة: **{studentScore} من {examTotal}**\n\nلمتابعة بيانات الطالب ونتائجه:\nhttps://munazem.vercel.app/parent',
+    'تم إعلان نتيجة امتحان **{examName}** للطالب **{studentName}**.\n\n📌 الدرجة: **{studentScore} من {examTotal}**\n\nيمكنكم متابعة النتائج والتفاصيل من بوابة ولي الأمر:\nhttps://munazem.vercel.app/parent',
+    'نتيجة امتحان **{examName}** للطالب **{studentName}**:\n\n📊 **{studentScore} من {examTotal}**\n\nلمتابعة نتيجة الطالب وسجل الاختبارات الخاص به، يمكنكم الدخول من هنا:\nhttps://munazem.vercel.app/parent'
 ];
 
 const CACHE_KEY = 'whatsapp_dynamic_templates';
@@ -84,8 +84,11 @@ export async function pickTemplate(
         text = text.replace(new RegExp(`\\{${key}\\}`, 'g'), value);
     }
 
-    // Append the standard footer with opt-out instruction
-    text += '\n\nللإلغاء أرسل "إلغاء"';
+    // Append the teacher signature
+    if (replacements.teacherName) {
+        const cleanedName = replacements.teacherName.replace(/\s*\(.*?\)\s*/g, '').trim(); // Remove subject inside parentheses if any
+        text += `\n\nمع تحيات أ/ ${cleanedName}`;
+    }
 
     return { text, templateIdx: index };
 }
