@@ -129,7 +129,7 @@ export default function AdminMonitoringPage() {
     const retryFailedMutation = useMutation({
         mutationFn: retryAllFailedWhatsAppJobs,
         onSuccess: (res) => {
-            toast.success(res?.message || 'تم إعادة إرسال الرسائل الفاشلة');
+            toast.success(`تم إعادة إرسال ${res?.retried || 0} رسالة بنجاح`);
             refetchStats();
             refetchMessages();
         },
