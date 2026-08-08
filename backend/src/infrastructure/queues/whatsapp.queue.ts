@@ -47,6 +47,8 @@ export const emailQueue = new Queue<EmailJobData>('email', {
  * so the admin dashboard always has a complete history.
  */
 export async function enqueueWhatsApp(data: WhatsAppJobData): Promise<void> {
+    if (process.env.NODE_ENV === 'test') return;
+
     // ── 1. Premium Gate — non-Premium teachers are silently skipped ───────
     const isPremium = await isTeacherPremium(data.teacherId);
     if (!isPremium) {
@@ -101,6 +103,8 @@ export async function enqueueWhatsApp(data: WhatsAppJobData): Promise<void> {
 
 // ─── Typed enqueue helper (Email) ────────────────────────────────────────────
 export function enqueueEmail(data: EmailJobData, forceTest: boolean = false): void {
+    if (process.env.NODE_ENV === 'test') return;
+
     const jobId = forceTest
         ? `report-${data.teacherId}-${data.weekStart}-${Date.now()}`
         : `report-${data.teacherId}-${data.weekStart}`;

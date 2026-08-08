@@ -41,7 +41,12 @@ export async function setup() {
 
 export async function teardown() {
     if (mongod) {
+        // ⚠️  اطبع الـ log قبل إيقاف الـ server وليس بعده.
+        // الـ console.log في globalSetup/teardown يُرسَل كـ RPC call إلى
+        // Vitest main process عبر onUserConsoleLog. لو طبعناه بعد stop()،
+        // الـ RPC channel يكون بدأ يتغلق فيحصل race condition:
+        //   "Closing rpc while onUserConsoleLog was pending"
+        process.stdout.write('\n🧪 [teardown] MongoMemoryServer stopped\n\n');
         await mongod.stop();
-        console.log('\n🧪 [teardown] MongoMemoryServer stopped\n');
     }
 }
