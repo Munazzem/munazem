@@ -191,17 +191,19 @@ export function createApp() {
 export const bootstrap = async () => {
     await DBConnection();
 
-    // Background workers
+    const app = createApp();
+
+    // Create HTTP server + Socket.io gateway BEFORE starting background workers.
+    // This ensures the gateway's _io singleton is ready to receive QR/connected
+    // events emitted during autoReconnectClients().
+    const server = createServer(app);
+    initWhatsAppGateway(server);
+
+    // Background workers (safe to start now — gateway is ready)
     autoReconnectClients();
     startWhatsAppWorker();
     startEmailWorker();
     startAutomationScheduler();
-
-    const app = createApp();
-
-    // Attach Socket.io to the HTTP server
-    const server = createServer(app);
-    initWhatsAppGateway(server);
 
     server.listen(envVars.port, () => {
         console.log(`Server running on http://localhost:${envVars.port}`);

@@ -237,18 +237,55 @@ export default function SettingsPage() {
     const handleWaConnect = useCallback(async () => {
         setWaConnecting(true);
 
-        // 45-second safety net: if Puppeteer never emits wa:qr, reset the UI
-        // and tell the user to retry instead of leaving them on the spinner forever.
-        const qrTimeoutId = setTimeout(() => {
+        const socket = waSocketRef.current;
+
+        // Shared cleanup: remove event-based timeout cancellers
+        // These must be named functions so we can remove them by reference.
+        let qrTimeoutId: ReturnType<typeof setTimeout>;
+        const clearQrTimeout = () => {
+            clearTimeout(qrTimeoutId);
+            // Remove the other once() listeners that are no longer needed
+            if (socket) {
+                socket.off('wa:qr',          clearQrTimeout);
+                socket.off('wa:connected',    clearQrTimeout);
+                socket.off('wa:disconnected', clearQrTimeout);
+            }
+        };
+
+        // 60-second safety net: if Puppeteer never emits wa:qr, poll the
+        // backend status once before giving up. This handles the case where
+        // QR arrived via a different channel (e.g. DB write succeeded but
+        // Socket.io emit was missed).
+        qrTimeoutId = setTimeout(async () => {
+            // Before giving up, check if the backend actually has a QR or is connected
+            try {
+                const res: any = await apiClient.get('/whatsapp/status');
+                const status = res.data?.status;
+                const qr     = res.data?.qrCode;
+
+                if (status === 'connected') {
+                    setWaStatus('connected');
+                    setWaQrCode(null);
+                    setWaConnecting(false);
+                    toast.success('تم ربط الواتساب بنجاح! ✅');
+                    return;
+                }
+                if (status === 'pending' && qr) {
+                    setWaStatus('pending');
+                    setWaQrCode(qr);
+                    setWaConnecting(false);
+                    return;
+                }
+            } catch { /* ignore poll failure */ }
+
+            // Genuinely timed out — reset UI
             setWaConnecting(false);
             setWaStatus('disconnected');
             toast.error('انتهت مهلة توليد رمز QR. تحقق من اتصال الخادم وحاول مجدداً.');
-        }, 45_000);
+        }, 60_000);
 
         // Cancel the timeout as soon as any terminal event arrives
-        const socket = waSocketRef.current;
         if (socket) {
-            const clearQrTimeout = () => clearTimeout(qrTimeoutId);
             socket.once('wa:qr',           clearQrTimeout);
             socket.once('wa:connected',     clearQrTimeout);
             socket.once('wa:disconnected',  clearQrTimeout);
@@ -260,7 +297,7 @@ export default function SettingsPage() {
             // Keep status as 'pending' visually while Puppeteer starts
             setWaStatus('pending');
         } catch {
-            clearTimeout(qrTimeoutId);
+            clearQrTimeout();
             setWaConnecting(false);
             // Handled globally by axios interceptor
         }

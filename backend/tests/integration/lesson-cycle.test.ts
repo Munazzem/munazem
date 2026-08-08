@@ -16,7 +16,8 @@ describe('Lesson Cycle Redesign - completeSession', () => {
 
     beforeEach(async () => {
         teacher = await seedTeacher();
-        group = await seedGroup(teacher._id, {
+        group = await seedGroup({
+            teacherId: teacher._id,
             schedule: [{ day: 'السبت', time: '10:00' }, { day: 'الثلاثاء', time: '10:00' }]
         });
         // cycleCapacity for this group is 2 * 4 = 8
@@ -144,7 +145,8 @@ describe('Lesson Cycle Redesign - completeSession', () => {
     });
 
     it('guest student is decremented from their own cycle', async () => {
-        const guestGroup = await seedGroup(teacher._id, {
+        const guestGroup = await seedGroup({
+            teacherId: teacher._id,
             name: 'Guest Group',
             schedule: [{ day: 'الأحد', time: '10:00' }] // capacity 4
         });
