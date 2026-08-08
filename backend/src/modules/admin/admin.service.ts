@@ -442,11 +442,20 @@ export class AdminService {
 
     static async retryAllFailedWhatsAppJobs() {
         const { whatsAppQueue } = await import('../../infrastructure/queues/whatsapp.queue.js');
-        const failedJobs = await whatsAppQueue.getFailed(0, 100);
+        
         let retried = 0;
+
+        // 1. Retry failed jobs in BullMQ
+        const failedJobs = await whatsAppQueue.getFailed(0, 500);
         for (const job of failedJobs) {
-            try { await job.retry(); retried++; } catch { /* skip */ }
+            try { 
+                await job.retry(); 
+                retried++; 
+            } catch { /* skip */ }
         }
+
+
+
         return { retried };
     }
 
