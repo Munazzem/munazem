@@ -122,7 +122,7 @@ export class ExamsService {
         // Scope student lookup to this teacher — prevent recording results for another teacher's student
         const student = await StudentModel.findOne(
             { _id: data.studentId, teacherId },
-            { studentName: 1, groupId: 1 }
+            { studentName: 1, groupId: 1, parentPhone: 1 }
         ).lean();
         if (!student) throw NotFoundException({ message: 'الطالب غير موجود أو لا ينتمي لك' });
 
@@ -131,7 +131,7 @@ export class ExamsService {
         const passed     = data.score >= exam.passingMarks;
 
         try {
-            return await ExamResultModel.create({
+            const newResult = await ExamResultModel.create({
                 examId:      exam._id,
                 teacherId,
                 studentId:   student._id,
@@ -146,6 +146,32 @@ export class ExamsService {
                 recordedBy,
                 date:        exam.date,
             });
+
+            // ── WhatsApp: notify parent (fire-and-forget) ───────────────────
+            const parentPhone = (student as any).parentPhone as string | undefined;
+            if (parentPhone) {
+                const teacherDoc = await UserModel.findById(teacherId, { name: 1, subject: 1 }).lean().catch(() => null);
+                const rawTeacherName = (teacherDoc as any)?.name ?? '';
+                const subject = (teacherDoc as any)?.subject;
+                const teacherName = subject ? `${rawTeacherName} (${subject})` : rawTeacherName;
+
+                enqueueWhatsApp({
+                    kind:        'exam_result',
+                    teacherId,
+                    parentPhone,
+                    studentName: student.studentName,
+                    examTitle:   exam.title,
+                    score:       data.score,
+                    totalMarks:  exam.totalMarks,
+                    percentage,
+                    grade,
+                    passed,
+                    examDate:    exam.date.toISOString(),
+                    teacherName,
+                });
+            }
+
+            return newResult;
         } catch (err: any) {
             if (err.code === 11000) throw ConflictException({ message: 'تم تسجيل درجة هذا الطالب بالفعل' });
             throw err;

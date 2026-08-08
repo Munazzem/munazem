@@ -108,10 +108,11 @@ export async function generateWeeklyReports(teacherId?: string, forceTest: boole
             ]);
 
             // ── Students ──────────────────────────────────────────────────
-            const [totalStudents, unpaidStudents] = await Promise.all([
-                StudentModel.countDocuments({ teacherId: teacher._id, isActive: true }),
-                StudentModel.countDocuments({ teacherId: teacher._id, isActive: true, remainingSessions: 0 }),
-            ]);
+            const { StudentService } = await import('../students/students.service.js');
+            const unpaidIds = await StudentService.getUnpaidStudentIds(teacher._id.toString());
+            
+            const totalStudents = await StudentModel.countDocuments({ teacherId: teacher._id, isActive: true });
+            const unpaidStudents = unpaidIds.length;
 
             // ── Enqueue email ─────────────────────────────────────────────
             enqueueEmail({

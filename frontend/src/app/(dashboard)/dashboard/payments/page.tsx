@@ -167,11 +167,9 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
     return (
         <div className="space-y-6">
             {/* Stats Summary Header */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 gap-3">
                 {isLoading ? (
                     <>
-                        <StatCardSkeleton />
-                        <StatCardSkeleton />
                         <StatCardSkeleton />
                         <StatCardSkeleton />
                     </>
@@ -179,8 +177,6 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                     <>
                         <StatCard label="إيرادات اليوم" value={ledger?.totalIncome ?? 0} type="income" />
                         <StatCard label="مصروفات اليوم" value={ledger?.totalExpenses ?? 0} type="expense" />
-                        <StatCard label="إيرادات الشهر" value={ledger?.monthlyIncome ?? 0} type="monthly_income" subValue="إجمالي إيرادات الشهر الحالي" />
-                        <StatCard label="إجمالي المصروفات" value={ledger?.monthlyExpenses ?? 0} type="monthly_expense" subValue="إجمالي مصروفات الشهر الحالي" />
                     </>
                 )}
             </div>
