@@ -68,7 +68,19 @@ const studentSchema = new Schema<IStudent>({
     },
     remainingSessions: {
         type: Number,
-        default: 0  // 0 = no active subscription; set to quota when student pays
+        default: 0  // 0 = no active cycle; set to cycleCapacity when cycle starts
+    },
+    cycleStartedAt: {
+        type: Date,
+        default: null  // null = no active cycle yet
+    },
+    cycleCapacity: {
+        type: Number,
+        default: null  // frozen from group.schedule.length * 4 at cycle start
+    },
+    cycleNumber: {
+        type: Number,
+        default: 0  // incremented each time a cycle completes
     },
     totalDebt: {
         type: Number,

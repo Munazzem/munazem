@@ -15,7 +15,7 @@ export class ParentService {
         const students = await StudentModel.find(
             { parentPhone: phone },
             { studentName: 1, gradeLevel: 1, groupId: 1, teacherId: 1,
-              studentCode: 1, isActive: 1, parentName: 1 }
+              studentCode: 1, isActive: 1, parentName: 1, cycleStartedAt: 1 }
         ).lean();
 
         if (!students.length) {
@@ -85,12 +85,10 @@ export class ParentService {
         const totalPaid     = payments.reduce((sum, p) => sum + p.paidAmount, 0);
         const subscriptions = payments.filter(p => p.category === TransactionCategory.SUBSCRIPTION);
 
-        // Active subscription this month?
-        const now        = new Date();
-        const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-        const monthEnd   = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+        // Active subscription for current cycle?
+        const cycleStartedAt = student.cycleStartedAt ? new Date(student.cycleStartedAt) : new Date('2099-01-01');
         const hasActiveSubscription = subscriptions.some(
-            s => new Date(s.date) >= monthStart && new Date(s.date) < monthEnd
+            s => new Date(s.date) >= cycleStartedAt
         );
 
         // Exam results

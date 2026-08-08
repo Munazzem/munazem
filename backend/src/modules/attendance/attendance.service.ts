@@ -233,9 +233,10 @@ export class AttendanceService {
 
         // Get all students in this group — sorted alphabetically
         // parentPhone is included here so we don't need an extra DB query for WhatsApp jobs
+        // cycle fields included for lesson cycle processing
         const allStudents = await StudentModel.find(
             { groupId: session.groupId, teacherId, isActive: true },
-            { _id: 1, studentName: 1, excusedSessionsCount: 1, excusedUntil: 1, parentPhone: 1 }
+            { _id: 1, studentName: 1, excusedSessionsCount: 1, excusedUntil: 1, parentPhone: 1, remainingSessions: 1, cycleCapacity: 1, cycleNumber: 1, monthlySessionsQuota: 1 }
         ).sort({ studentName: 1 }).lean();
 
         // Get all present/late attendance records
@@ -318,13 +319,14 @@ export class AttendanceService {
 
         // Guest students (isGuest = true) — batch fetch to avoid N+1
         const guestRecords = attendanceRecords.filter(r => r.isGuest);
+        const guestMap = new Map<string, any>();
         if (guestRecords.length > 0) {
             const guestIds = guestRecords.map(r => r.studentId);
             const guestStudentDocs = await StudentModel.find(
                 { _id: { $in: guestIds } },
-                { studentName: 1 }
+                { studentName: 1, remainingSessions: 1, cycleCapacity: 1, cycleNumber: 1, monthlySessionsQuota: 1 }
             ).lean();
-            const guestMap = new Map(guestStudentDocs.map(s => [s._id.toString(), s]));
+            for (const s of guestStudentDocs) guestMap.set(s._id.toString(), s);
             for (const r of guestRecords) {
                 const student = guestMap.get(r.studentId.toString());
                 if (student) {
@@ -381,40 +383,85 @@ export class AttendanceService {
                 ).lean(),
             ]);
 
-            // Decrement remainingSessions for all present students (including guests)
-            const allPresentIds = [
-                ...presentStudents.map(s => s.studentId),
-                ...guestStudents.map(s => s.studentId),
-            ];
-            if (allPresentIds.length > 0) {
-                await StudentModel.updateMany(
-                    { _id: { $in: allPresentIds }, remainingSessions: { $gt: 0 } },
-                    { $inc: { remainingSessions: -1 } },
-                    { session: dbSession }
-                );
+            // ── Cycle Reset & Consecutive Absences Logic ──
+            const studentBulkOps: any[] = [];
+            const allStudentsMap = new Map<string, any>();
+            for (const s of allStudents) allStudentsMap.set(s._id.toString(), s);
+            for (const [id, s] of guestMap.entries()) allStudentsMap.set(id, s);
+
+            const computeCycleUpdate = (student: any) => {
+                let currentRemaining = student.remainingSessions ?? 0;
+                let newRemaining = currentRemaining - 1;
+                
+                if (newRemaining <= 0) {
+                    let capacity = student.cycleCapacity ?? student.monthlySessionsQuota ?? 8;
+                    if (capacity <= 0) capacity = 8;
+                    
+                    if (newRemaining === 0) {
+                        newRemaining = capacity;
+                    } else if (newRemaining < 0) {
+                        newRemaining = capacity + newRemaining;
+                        if (newRemaining <= 0) newRemaining = capacity;
+                    }
+                    
+                    return {
+                        $set: { 
+                            remainingSessions: newRemaining,
+                            cycleStartedAt: new Date(),
+                            cycleCapacity: capacity
+                        },
+                        $inc: { cycleNumber: 1 }
+                    };
+                }
+                return { $set: { remainingSessions: newRemaining } };
+            };
+
+            const excusedIds = new Set(
+                presentStudents
+                    .filter(s => s.status === AttendanceStatus.EXCUSED)
+                    .map(s => s.studentId.toString())
+            );
+
+            for (const s of presentStudents) {
+                const id = s.studentId.toString();
+                const student = allStudentsMap.get(id);
+                if (!student) continue;
+
+                const updatePayload: any = { $set: { consecutiveAbsences: 0 } };
+                if (!excusedIds.has(id)) {
+                    const cycleOp = computeCycleUpdate(student);
+                    Object.assign(updatePayload.$set, cycleOp.$set);
+                    if (cycleOp.$inc) updatePayload.$inc = cycleOp.$inc;
+                }
+                studentBulkOps.push({ updateOne: { filter: { _id: student._id }, update: updatePayload } });
             }
 
-            // Update consecutiveAbsences
-            const absentIdsForConsecutive = absentStudents.map(s => s.studentId);
-            if (absentIdsForConsecutive.length > 0) {
-                await StudentModel.updateMany(
-                    { _id: { $in: absentIdsForConsecutive } },
-                    { $inc: { consecutiveAbsences: 1 } },
-                    { session: dbSession }
-                );
+            for (const s of absentStudents) {
+                const id = s.studentId.toString();
+                const student = allStudentsMap.get(id);
+                if (!student) continue;
+
+                const cycleOp = computeCycleUpdate(student);
+                const updatePayload: any = { 
+                    $set: cycleOp.$set,
+                    $inc: { consecutiveAbsences: 1, ...(cycleOp.$inc || {}) }
+                };
+                studentBulkOps.push({ updateOne: { filter: { _id: student._id }, update: updatePayload } });
             }
-            
-            // Present and Excused students reset their absence streak
-            const presentExcusedIdsForConsecutive = [
-                ...presentStudents.map(s => s.studentId),
-                ...guestStudents.map(s => s.studentId),
-            ];
-            if (presentExcusedIdsForConsecutive.length > 0) {
-                await StudentModel.updateMany(
-                    { _id: { $in: presentExcusedIdsForConsecutive } },
-                    { $set: { consecutiveAbsences: 0 } },
-                    { session: dbSession }
-                );
+
+            for (const s of guestStudents) {
+                const id = s.studentId.toString();
+                const student = allStudentsMap.get(id);
+                if (!student) continue;
+
+                const cycleOp = computeCycleUpdate(student);
+                const updatePayload: any = { $set: { consecutiveAbsences: 0, ...cycleOp.$set } };
+                if (cycleOp.$inc) updatePayload.$inc = cycleOp.$inc;
+                studentBulkOps.push({ updateOne: { filter: { _id: student._id }, update: updatePayload } });
+            }
+
+            if (studentBulkOps.length > 0) {
+                await StudentModel.bulkWrite(studentBulkOps, { session: dbSession });
             }
 
             return { updatedSession, snapshot };
