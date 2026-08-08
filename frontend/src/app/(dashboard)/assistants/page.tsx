@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchUsers, addUser, deleteUser, paySalary } from '@/lib/api/users';
+import { fetchUsers, addUser, deleteUser, paySalary, updateUser } from '@/lib/api/users';
 import { toggleAssistantAccess } from '@/lib/api/auth';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { toast } from 'sonner';
@@ -18,6 +18,7 @@ import {
     Banknote,
     Lock,
     Unlock,
+    Edit2,
 } from 'lucide-react';
 import { TableSkeleton } from '@/components/layout/skeletons/TableSkeleton';
 import { Button } from '@/components/ui/button';
@@ -68,6 +69,7 @@ function AssistantsContent() {
     const [showAdd,       setShowAdd]        = useState(false);
     const [deleteTarget,  setDeleteTarget]   = useState<{ id: string; name: string } | null>(null);
     const [salaryTarget,  setSalaryTarget]   = useState<{ id: string; name: string; salary: number | null } | null>(null);
+    const [editTarget,    setEditTarget]     = useState<{ id: string; name: string; phone: string; salary: number | null } | null>(null);
 
     const [isAccessEnabled, setIsAccessEnabled] = useState(user?.assistantsAccessEnabled ?? true);
 
@@ -227,6 +229,13 @@ function AssistantsContent() {
                                                         <Banknote className="h-4 w-4" />
                                                     </button>
                                                     <button
+                                                        onClick={() => setEditTarget({ id: a._id, name: a.name, phone: a.phone, salary: a.salary ?? null })}
+                                                        title="تعديل"
+                                                        className="inline-flex items-center justify-center h-8 w-8 rounded-lg text-blue-500 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                                                    >
+                                                        <Edit2 className="h-4 w-4" />
+                                                    </button>
+                                                    <button
                                                         onClick={() => setDeleteTarget({ id: a._id, name: a.name })}
                                                         title="حذف"
                                                         className="inline-flex items-center justify-center h-8 w-8 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
@@ -275,6 +284,12 @@ function AssistantsContent() {
                                                 <Banknote className="h-4 w-4" />
                                             </button>
                                             <button
+                                                onClick={() => setEditTarget({ id: a._id, name: a.name, phone: a.phone, salary: a.salary ?? null })}
+                                                className="inline-flex items-center justify-center h-8 w-8 rounded-lg text-blue-500 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                                            >
+                                                <Edit2 className="h-4 w-4" />
+                                            </button>
+                                            <button
                                                 onClick={() => setDeleteTarget({ id: a._id, name: a.name })}
                                                 className="inline-flex items-center justify-center h-8 w-8 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
                                             >
@@ -297,6 +312,19 @@ function AssistantsContent() {
                     setShowAdd(false);
                 }}
             />
+
+            {/* Edit Modal */}
+            {editTarget && (
+                <EditAssistantModal
+                    open={!!editTarget}
+                    assistant={editTarget}
+                    onOpenChange={(v) => !v && setEditTarget(null)}
+                    onSuccess={() => {
+                        queryClient.invalidateQueries({ queryKey: ['assistants'] });
+                        setEditTarget(null);
+                    }}
+                />
+            )}
 
             {/* Pay Salary Modal */}
             {salaryTarget && (
@@ -459,6 +487,135 @@ function AddAssistantModal({
                         <Button type="submit" disabled={mutation.isPending} className="flex-1 gap-2">
                             {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
                             إضافة
+                        </Button>
+                    </div>
+                </form>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+// ── Edit Assistant Modal ───────────────────────────────────────────────────────
+function EditAssistantModal({
+    open, assistant, onOpenChange, onSuccess,
+}: {
+    open: boolean;
+    assistant: { id: string; name: string; phone: string; salary: number | null };
+    onOpenChange: (v: boolean) => void;
+    onSuccess: () => void;
+}) {
+    const [name,     setName]     = useState(assistant.name);
+    const [phone,    setPhone]    = useState(assistant.phone || '');
+    const [password, setPassword] = useState('');
+    const [salary,   setSalary]   = useState(assistant.salary != null ? String(assistant.salary) : '');
+    const [errors,   setErrors]   = useState<Record<string, string>>({});
+
+    const mutation = useMutation({
+        mutationFn: (data: any) => updateUser({ id: assistant.id, data }),
+        onSuccess: () => {
+            toast.success('تم تعديل بيانات المساعد بنجاح');
+            onSuccess();
+        },
+    });
+
+    const validate = () => {
+        const e: Record<string, string> = {};
+        if (name.trim().length < 3)  e.name     = 'الاسم يجب أن يكون 3 أحرف على الأقل';
+        if (phone.trim().length < 10) e.phone    = 'رقم الهاتف غير صحيح';
+        if (password && password.length < 6) e.password = 'كلمة المرور يجب أن تكون 6 أحرف على الأقل';
+        if (salary && isNaN(Number(salary))) e.salary = 'الراتب يجب أن يكون رقماً';
+        setErrors(e);
+        return Object.keys(e).length === 0;
+    };
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!validate()) return;
+        
+        const data: any = {
+            name:     name.trim(),
+            phone:    phone.trim(),
+            salary:   salary ? Number(salary) : null,
+        };
+        if (password) data.password = password;
+
+        mutation.mutate(data);
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="sm:max-w-md bg-white rounded-2xl" dir="rtl">
+                <DialogHeader>
+                    <DialogTitle className="text-lg font-bold border-b pb-3 flex items-center gap-2">
+                        <Edit2 className="h-5 w-5 text-blue-600" />
+                        تعديل بيانات المساعد
+                    </DialogTitle>
+                </DialogHeader>
+
+                <form onSubmit={handleSubmit} className="space-y-4 pt-2">
+                    <div>
+                        <label className="text-sm font-medium text-gray-700 block mb-1">الاسم *</label>
+                        <Input
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            placeholder="اسم المساعد"
+                            autoComplete="off"
+                        />
+                        {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
+                    </div>
+
+                    <div>
+                        <label className="text-sm font-medium text-gray-700 block mb-1">رقم الهاتف *</label>
+                        <Input
+                            value={phone}
+                            onChange={(e) => setPhone(e.target.value)}
+                            placeholder="01xxxxxxxxx"
+                            dir="ltr"
+                            autoComplete="off"
+                        />
+                        {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
+                    </div>
+
+                    <div>
+                        <label className="text-sm font-medium text-gray-700 block mb-1">كلمة المرور الجديدة <span className="text-gray-400 font-normal">(اتركها فارغة إذا لم ترد التغيير)</span></label>
+                        <Input
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            placeholder="6 أحرف على الأقل"
+                            dir="ltr"
+                            autoComplete="new-password"
+                        />
+                        {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
+                    </div>
+
+                    <div>
+                        <label className="text-sm font-medium text-gray-700 block mb-1">
+                            الراتب الشهري الثابت <span className="text-gray-400 font-normal">(اختياري)</span>
+                        </label>
+                        <div className="relative">
+                            <Input
+                                type="number"
+                                min="0"
+                                value={salary}
+                                onChange={(e) => setSalary(e.target.value)}
+                                placeholder="0"
+                                dir="ltr"
+                                className="pl-10"
+                                autoComplete="off"
+                            />
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">ج</span>
+                        </div>
+                        {errors.salary && <p className="text-red-500 text-xs mt-1">{errors.salary}</p>}
+                    </div>
+
+                    <div className="flex gap-2 pt-2">
+                        <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="flex-1">
+                            إلغاء
+                        </Button>
+                        <Button type="submit" disabled={mutation.isPending} className="flex-1 gap-2 bg-blue-600 hover:bg-blue-700">
+                            {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                            حفظ التعديلات
                         </Button>
                     </div>
                 </form>

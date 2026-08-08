@@ -1,6 +1,6 @@
 import { Worker, type Job, DelayedError } from 'bullmq';
-import { envVars }               from '../../../config/env.service.js';
 import { Redis }                 from 'ioredis';
+import { envVars }               from '../../../config/env.service.js';
 import { logger }                from '../../common/utils/logger.util.js';
 import { sendWhatsAppMessage }   from '../../common/utils/whatsapp.service.js';
 import { getWhatsAppGateway }    from '../socket/whatsapp.gateway.js';
@@ -14,8 +14,10 @@ import { pickTemplate } from './whatsapp.templates.js';
 const INTER_MESSAGE_DELAY_MS = parseInt(process.env.WA_INTER_MESSAGE_DELAY_MS ?? '12000');
 const WORKER_CONCURRENCY     = parseInt(process.env.WA_WORKER_CONCURRENCY ?? '50');
 
-// Redis client for teacher-specific rate limiting (locks)
+// Shared Redis client for per-teacher rate limiting
 const redis = new Redis(envVars.redisUrl);
+// Active worker reference
+let _worker: Worker<WhatsAppJobData> | null = null;
 
 // ─── Message builder ─────────────────────────────────────────────────────────
 async function buildMessage(data: WhatsAppJobData): Promise<{ message: string; templateIdx: number }> {
@@ -56,7 +58,6 @@ async function buildMessage(data: WhatsAppJobData): Promise<{ message: string; t
 // ─── Processor function ───────────────────────────────────────────────────────
 export async function processWhatsAppJob(job: Job<WhatsAppJobData>): Promise<void> {
     const data = job.data;
-    const lockKey = `whatsapp:lock:${data.teacherId}`;
 
     // Fast-fail if missing data
     if (!data.teacherId || !data.parentPhone || !data.kind) {
@@ -77,12 +78,12 @@ export async function processWhatsAppJob(job: Job<WhatsAppJobData>): Promise<voi
         return; // Success return, so BullMQ doesn't retry
     }
 
-    // ── Multi-Tenant Rate Limiting (Redis Lock) ─────────────────────────────
+    // ── Per-Teacher Rate Limiting via Redis Lock ────────────────────────────
+    // Delay this specific job if the teacher recently sent a message.
+    const lockKey = `whatsapp:lock:${data.teacherId}`;
     const acquired = await redis.set(lockKey, '1', 'PX', INTER_MESSAGE_DELAY_MS, 'NX');
-
     if (!acquired) {
-        await job.moveToDelayed(Date.now() + INTER_MESSAGE_DELAY_MS, job.token);
-        throw new DelayedError();
+        throw new Error('RATE_LIMIT_WAIT');
     }
 
     try {
@@ -163,6 +164,7 @@ export function startWhatsAppWorker(): Worker<WhatsAppJobData> {
             concurrency: WORKER_CONCURRENCY,
         },
     );
+    _worker = worker; // store reference so processor can call worker.rateLimit()
 
     worker.on('completed', (_job) => {
         getWhatsAppGateway().emitToSuperAdmins('wa:queue:updated', {});
@@ -177,10 +179,11 @@ export function startWhatsAppWorker(): Worker<WhatsAppJobData> {
         });
 
         // Update MessageLog → failed (only on final failure)
-        if (job && job.id && job.attemptsMade >= 3) {
+        if (job && job.id && (job.attemptsMade >= (job.opts.attempts || 50) || err.message.startsWith('BLOCKED:'))) {
+            const isRateLimit = err.message === 'RATE_LIMIT_WAIT';
             MessageLogModel.updateOne(
                 { jobId: job.id },
-                { status: 'failed', failReason: err.message, attempts: job.attemptsMade },
+                { status: isRateLimit ? 'queued' : 'failed', failReason: err.message, attempts: job.attemptsMade },
             ).catch(() => {});
         }
 

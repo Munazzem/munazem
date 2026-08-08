@@ -224,20 +224,15 @@ export class PaymentsService {
                 updateMonthlyLedger(teacherId, txDate, paidAmount, true, session),
             ]);
 
-            // Update student remaining sessions AND add debt if any
-            const studentUpdatePayload: any = { remainingSessions: quota };
+            // Update student debt if any
+            const studentUpdatePayload: any = {};
             if (remainingAmount > 0) {
                 studentUpdatePayload.$inc = { totalDebt: remainingAmount };
             }
 
             if (studentUpdatePayload.$inc) {
                 await StudentModel.findByIdAndUpdate(data.studentId, {
-                    $set: { remainingSessions: studentUpdatePayload.remainingSessions },
                     $inc: studentUpdatePayload.$inc
-                }, { session });
-            } else {
-                await StudentModel.findByIdAndUpdate(data.studentId, {
-                    $set: { remainingSessions: studentUpdatePayload.remainingSessions }
                 }, { session });
             }
 
@@ -328,15 +323,11 @@ export class PaymentsService {
             const originalAmount = priceSetting.amount;
             const paidAmount = Math.max(0, originalAmount - discountAmount);
             
-            const group = student.groupId ? groupMap.get(student.groupId.toString()) : null;
-            const quota = (student as any).monthlySessionsQuota || (group?.schedule?.length ?? 2) * 4;
-
             validStudents.push({
                 student,
                 originalAmount,
                 discountAmount,
-                paidAmount,
-                quota
+                paidAmount
             });
         }
 
@@ -362,14 +353,8 @@ export class PaymentsService {
                     
                     const insertedTxs = await TransactionModel.insertMany(txDocsToInsert, { session });
                     
-                    // 2. Update students quotas in bulk
-                    const studentBulkOps = validStudents.map(vs => ({
-                        updateOne: {
-                            filter: { _id: vs.student._id },
-                            update: { $set: { remainingSessions: vs.quota } }
-                        }
-                    }));
-                    await StudentModel.bulkWrite(studentBulkOps, { session });
+                    // 2. Note: students quotas are no longer updated here in bulk.
+                    // The cycle runs independent of batch payments.
                     
                     // 3. Update ledgers in bulk for the day
                     const totalPaid = validStudents.reduce((sum, vs) => sum + vs.paidAmount, 0);

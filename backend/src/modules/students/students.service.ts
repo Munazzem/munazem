@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { StudentModel } from '../../database/models/student.model.js';
 import { GroupModel } from '../../database/models/group.model.js';
 import { TransactionModel } from '../../database/models/transaction.model.js';
@@ -205,6 +206,35 @@ export class StudentService {
             }
         });
     }
+    static async getUnpaidStudentIds(teacherId: string): Promise<string[]> {
+        const pipeline = [
+            { $match: { teacherId: new mongoose.Types.ObjectId(teacherId), isActive: true } },
+            {
+                $lookup: {
+                    from: 'transactions',
+                    let: { sId: '$_id', cStart: '$cycleStartedAt' },
+                    pipeline: [
+                        { $match: {
+                            $expr: {
+                                $and: [
+                                    { $eq: ['$studentId', '$$sId'] },
+                                    { $eq: ['$category', TransactionCategory.SUBSCRIPTION] },
+                                    { $eq: ['$type', TransactionType.INCOME] },
+                                    { $gte: ['$date', { $ifNull: ['$$cStart', new Date('2099-01-01')] }] }
+                                ]
+                            }
+                        }},
+                        { $limit: 1 }
+                    ],
+                    as: 'paidSub'
+                }
+            },
+            { $match: { paidSub: { $size: 0 } } },
+            { $project: { _id: 1 } }
+        ];
+        const result = await StudentModel.aggregate(pipeline);
+        return result.map(doc => doc._id.toString());
+    }
 
     static async getStudentsByTeacherId(teacherId: string, queryFilters: any) {
         // Build robust filter query dynamically
@@ -219,7 +249,8 @@ export class StudentService {
             filter.totalDebt = { $gt: 0 };
         }
         if (queryFilters.hasNoActiveSubscription === 'true') {
-            filter.remainingSessions = { $lte: 0 };
+            const unpaidIds = await StudentService.getUnpaidStudentIds(teacherId);
+            filter._id = { $in: unpaidIds.map((id: string) => new mongoose.Types.ObjectId(id)) };
         }
         if (queryFilters.isDroppedOut === 'true') {
             filter.consecutiveAbsences = { $gte: 3 };
@@ -258,10 +289,17 @@ export class StudentService {
             StudentModel.countDocuments(filter)
         ]);
 
-        // Determine active subscription via remainingSessions (cycle-based model)
+        // Determine active subscription via cycle rules (dynamically)
+        const studentIds = students.map((s: any) => s._id.toString());
+        let unpaidIdsList: string[] = [];
+        if (studentIds.length > 0) {
+            unpaidIdsList = await StudentService.getUnpaidStudentIds(teacherId);
+        }
+        const unpaidSet = new Set(unpaidIdsList);
+
         const data = students.map((s: any) => ({
             ...s,
-            hasActiveSubscription: (s.remainingSessions ?? 0) > 0,
+            hasActiveSubscription: !unpaidSet.has(s._id.toString()),
         }));
 
         return {

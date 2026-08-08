@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -57,6 +58,10 @@ interface Group {
 }
 
 export function AddStudentModal() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const newCard = searchParams?.get('newCard');
+
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
@@ -71,8 +76,25 @@ export function AddStudentModal() {
       parentPhone: '',
       gradeLevel: '',
       groupId: '',
+      barcode: newCard || '',
     },
   });
+
+  // Automatically open modal and set barcode if newCard is present in URL
+  useEffect(() => {
+    if (newCard) {
+      setOpen(true);
+      form.setValue('barcode', newCard);
+    }
+  }, [newCard, form]);
+
+  const handleOpenChange = (newOpen: boolean) => {
+    setOpen(newOpen);
+    if (!newOpen && newCard) {
+      // Clear the search param when closing the modal so it doesn't reopen on refresh
+      router.replace('/students', { scroll: false });
+    }
+  };
 
   // Fetch Teacher's Groups dynamically
   const { data: groupsData, isLoading: isLoadingGroups } = useQuery({
@@ -105,7 +127,7 @@ export function AddStudentModal() {
       toast.success('تمت إضافة الطالب بنجاح');
       queryClient.invalidateQueries({ queryKey: QK.students.all });
       form.reset();
-      setOpen(false); // Close Modal on success
+      handleOpenChange(false); // Close Modal on success
     },
     onError: (error: { response?: { data?: { message?: string } } } | Error) => {
         const err = error as { response?: { data?: { message?: string } } };
@@ -118,7 +140,7 @@ export function AddStudentModal() {
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button className="font-bold flex items-center gap-2">
             <Plus size={18} />
@@ -131,6 +153,12 @@ export function AddStudentModal() {
           <DialogDescription>
             أدخل بيانات الطالب هنا. تأكد من صحة أرقام الهواتف واختيار المرحلة.
           </DialogDescription>
+          {newCard && (
+              <div className="bg-blue-50 border border-blue-200 text-blue-700 px-3 py-2 rounded-lg text-sm mt-2 flex items-center gap-2">
+                  <span className="font-bold">✨ سيتم ربط الكارت:</span>
+                  <span className="font-mono">{newCard}</span>
+              </div>
+          )}
         </DialogHeader>
 
         <Form {...form}>

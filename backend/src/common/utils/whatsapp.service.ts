@@ -1,5 +1,7 @@
 import WAWebJS from 'whatsapp-web.js';
 const { Client, LocalAuth } = WAWebJS;
+import fs from 'fs';
+import path from 'path';
 import { UserModel } from '../../database/models/user.model.js';
 import { OptOutModel } from '../../database/models/opt-out.model.js';
 import { UserRole }  from '../enums/enum.service.js';
@@ -49,21 +51,47 @@ function updateTeacherWA(
  * background and returns immediately.  BullMQ retries handle jobs that
  * arrive before the client is ready.
  */
-export async function initializeClientForTeacher(teacherId: string): Promise<void> {
+export async function initializeClientForTeacher(teacherId: string, force = false): Promise<void> {
     // Guard: already in pool
     const existing = clientsPool.get(teacherId);
     if (existing) {
         if (existing.ready) {
             logger.info('whatsapp_already_connected', { teacherId });
-        } else {
-            logger.info('whatsapp_already_initializing', { teacherId });
+            return; // genuinely connected — nothing to do
         }
-        return;
+
+        if (!force) {
+            // Auto-reconnect path: already initializing in the background
+            logger.info('whatsapp_already_initializing', { teacherId });
+            return;
+        }
+
+        // force=true means the teacher explicitly clicked "توليد QR" again.
+        // The stale pool entry (ready=false) is likely from a failed auto-reconnect
+        // after a deployment where session files were wiped.  Destroy it and
+        // re-create so Puppeteer actually launches and emits a fresh QR.
+        logger.info('whatsapp_force_reinit', { teacherId });
+        clientsPool.delete(teacherId);
+        try { await existing.client.destroy(); } catch { /* ignore */ }
+        
+        // Critically: Delete the corrupted session folder from disk to get a clean QR
+        try {
+            const sessionPath = path.join(process.cwd(), '.wwebjs_auth', `session-${teacherId}`);
+            if (fs.existsSync(sessionPath)) {
+                fs.rmSync(sessionPath, { recursive: true, force: true });
+                logger.info('whatsapp_cleared_corrupt_session', { teacherId });
+            }
+        } catch (err) {
+            logger.error('whatsapp_clear_session_failed', { teacherId, err });
+        }
     }
 
     const client = new Client({
         authStrategy: new LocalAuth({ clientId: `session-${teacherId}` }),
-        webVersionCache: { type: 'local' },
+        webVersionCache: {
+            type: 'remote',
+            remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
+        },
         puppeteer: {
             headless: true,
             args: [

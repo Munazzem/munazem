@@ -11,11 +11,17 @@ const SLIDING_THRESHOLD_SECONDS = 5 * 60;
 export const authenticate = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      throw UnauthorizedException({ message: 'الرجاء تسجيل الدخول للوصول إلى هذا المسار' });
+    let token = '';
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.split(' ')[1] as string;
+    } else if (req.query.token && typeof req.query.token === 'string') {
+      token = req.query.token;
     }
 
-    const token = authHeader.split(' ')[1] as string;
+    if (!token) {
+      throw UnauthorizedException({ message: 'الرجاء تسجيل الدخول للوصول إلى هذا المسار' });
+    }
 
     // Verify token signature and expiration — no DB call needed
     const payload = TokenUtil.verifyAccessToken(token) as IJwtPayload;

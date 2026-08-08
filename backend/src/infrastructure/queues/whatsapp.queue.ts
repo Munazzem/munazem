@@ -13,10 +13,10 @@ const connection = { url: envVars.redisUrl };
 export const whatsAppQueue = new Queue<WhatsAppJobData>('whatsapp', {
     connection,
     defaultJobOptions: {
-        attempts:    3,
+        attempts:    50,
         backoff: {
-            type:  'exponential',
-            delay: 5_000,
+            type:  'fixed',
+            delay: 12000,
         },
         removeOnComplete: { count: 200 },
         removeOnFail:     { count: 500 },
@@ -118,9 +118,10 @@ export function enqueueEmail(data: EmailJobData, forceTest: boolean = false): vo
 
 // ─── Deduplication key (WhatsApp) ─────────────────────────────────────────────
 function buildWhatsAppJobId(data: WhatsAppJobData): string {
+    const timeWindow = Math.floor(Date.now() / 10000);
     if (data.kind === 'session_absent') {
-        return `absent-${data.teacherId}-${data.studentId}-${data.sessionDate.slice(0, 10)}`;
+        return `absent-${data.teacherId}-${data.studentId}-${data.sessionDate.slice(0, 10)}-${timeWindow}`;
     }
     // kind === 'exam_result'
-    return `exam-${data.teacherId}-${data.parentPhone}-${data.examDate.slice(0, 10)}-${data.examTitle}`;
+    return `exam-${data.teacherId}-${data.parentPhone}-${data.examDate.slice(0, 10)}-${data.examTitle}-${timeWindow}`;
 }

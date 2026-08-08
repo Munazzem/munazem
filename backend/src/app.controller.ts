@@ -25,6 +25,7 @@ import examsRouter, { aiProxyRouter }  from './modules/exams/exams.controller.js
 import parentRouter from './modules/parent/parent.controller.js';
 import adminRouter  from './modules/admin/admin.controller.js';
 import whatsappRouter from './modules/whatsapp/whatsapp.controller.js';
+import cardsRouter  from './modules/cards/cards.controller.js';
 import { startWhatsAppWorker }    from './infrastructure/queues/whatsapp.processor.js';
 import { startEmailWorker }       from './infrastructure/queues/email.processor.js';
 import { autoReconnectClients }   from './common/utils/whatsapp.service.js';
@@ -150,6 +151,7 @@ export function createApp() {
     app.use('/exams/ai-proxy', aiProxyRouter);
     app.use('/whatsapp', whatsappRouter);
     app.use('/admin', adminRouter);
+    app.use('/cards', cardsRouter);
 
     app.get('/health', (_req, res) => {
         const mem = process.memoryUsage();
