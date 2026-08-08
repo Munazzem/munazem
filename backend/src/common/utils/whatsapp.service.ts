@@ -24,7 +24,24 @@ interface PoolEntry {
  */
 const clientsPool = new Map<string, PoolEntry>();
 
+/**
+ * Tracks teachers currently in the process of initializing.
+ * Prevents concurrent initializeClientForTeacher calls for the same teacherId
+ * from creating duplicate Puppeteer processes.
+ */
+const initializingSet = new Set<string>();
+
 import { normalizePhone } from './phone.util.js';
+
+// ─── Session folder path helper ──────────────────────────────────────────────
+/**
+ * Returns the actual filesystem path that LocalAuth uses to store the session.
+ * LocalAuth clientId = `session-<teacherId>`, and it stores under
+ * `.wwebjs_auth/session-<clientId>/` → `.wwebjs_auth/session-session-<teacherId>/`
+ */
+function getSessionFolderPath(teacherId: string): string {
+    return path.join(process.cwd(), '.wwebjs_auth', `session-session-${teacherId}`);
+}
 
 // ─── DB helpers (fire-and-forget) ─────────────────────────────────────────────
 function updateTeacherWA(
@@ -52,17 +69,30 @@ function updateTeacherWA(
  * arrive before the client is ready.
  */
 export async function initializeClientForTeacher(teacherId: string, force = false): Promise<void> {
+    const t0 = Date.now();
+    logger.info('[WA] CONNECT_REQUEST_START', { teacherId, force });
+
+    // ── Concurrency lock: prevent duplicate Puppeteer launches ────────────
+    if (initializingSet.has(teacherId)) {
+        if (!force) {
+            logger.info('[WA] INIT_LOCKED — already initializing', { teacherId });
+            return;
+        }
+        // force=true — allow through but log the override
+        logger.warn('[WA] INIT_LOCK_OVERRIDE — force reinit while locked', { teacherId });
+    }
+
     // Guard: already in pool
     const existing = clientsPool.get(teacherId);
     if (existing) {
         if (existing.ready) {
-            logger.info('whatsapp_already_connected', { teacherId });
+            logger.info('[WA] ALREADY_CONNECTED', { teacherId });
             return; // genuinely connected — nothing to do
         }
 
         if (!force) {
             // Auto-reconnect path: already initializing in the background
-            logger.info('whatsapp_already_initializing', { teacherId });
+            logger.info('[WA] ALREADY_INITIALIZING', { teacherId });
             return;
         }
 
@@ -70,21 +100,24 @@ export async function initializeClientForTeacher(teacherId: string, force = fals
         // The stale pool entry (ready=false) is likely from a failed auto-reconnect
         // after a deployment where session files were wiped.  Destroy it and
         // re-create so Puppeteer actually launches and emits a fresh QR.
-        logger.info('whatsapp_force_reinit', { teacherId });
+        logger.info('[WA] FORCE_REINIT — destroying stale client', { teacherId });
         clientsPool.delete(teacherId);
         try { await existing.client.destroy(); } catch { /* ignore */ }
         
         // Critically: Delete the corrupted session folder from disk to get a clean QR
         try {
-            const sessionPath = path.join(process.cwd(), '.wwebjs_auth', `session-${teacherId}`);
+            const sessionPath = getSessionFolderPath(teacherId);
             if (fs.existsSync(sessionPath)) {
                 fs.rmSync(sessionPath, { recursive: true, force: true });
-                logger.info('whatsapp_cleared_corrupt_session', { teacherId });
+                logger.info('[WA] CLEARED_CORRUPT_SESSION', { teacherId, sessionPath });
             }
         } catch (err) {
-            logger.error('whatsapp_clear_session_failed', { teacherId, err });
+            logger.error('[WA] CLEAR_SESSION_FAILED', { teacherId, err });
         }
     }
+
+    // Acquire lock
+    initializingSet.add(teacherId);
 
     const client = new Client({
         authStrategy: new LocalAuth({ clientId: `session-${teacherId}` }),
@@ -109,10 +142,11 @@ export async function initializeClientForTeacher(teacherId: string, force = fals
 
     // Register in pool immediately (ready = false)
     clientsPool.set(teacherId, { client, ready: false });
+    logger.info('[WA] CLIENT_CREATED', { teacherId, elapsedMs: Date.now() - t0 });
 
     // ── QR: save to DB so frontend can render it ──────────────────────────
     client.on('qr', (qr: string) => {
-        logger.info('whatsapp_qr_received', { teacherId });
+        logger.info('[WA] QR_EVENT_RECEIVED', { teacherId, elapsedMs: Date.now() - t0 });
         // Persist to DB (fire-and-forget — for page refresh recovery)
         updateTeacherWA(teacherId, { whatsappQr: qr, whatsappStatus: 'pending' });
         // Push to teacher's browser in real-time via Socket.io
@@ -123,7 +157,8 @@ export async function initializeClientForTeacher(teacherId: string, force = fals
     client.on('ready', () => {
         const entry = clientsPool.get(teacherId);
         if (entry) entry.ready = true;
-        logger.info('whatsapp_client_ready', { teacherId });
+        initializingSet.delete(teacherId);  // release lock
+        logger.info('[WA] CLIENT_READY', { teacherId, elapsedMs: Date.now() - t0 });
         // Persist to DB (fire-and-forget — clears QR, marks connected)
         updateTeacherWA(teacherId, { whatsappStatus: 'connected', whatsappQr: null });
         // Notify the teacher's browser instantly via Socket.io
@@ -136,7 +171,7 @@ export async function initializeClientForTeacher(teacherId: string, force = fals
     // may not re-fire. Emitting here guarantees the frontend transitions the
     // moment the scan is confirmed — 'ready' emit below is a safe double-send.
     client.on('authenticated', () => {
-        logger.info('whatsapp_authenticated', { teacherId });
+        logger.info('[WA] AUTHENTICATED', { teacherId, elapsedMs: Date.now() - t0 });
         updateTeacherWA(teacherId, { whatsappStatus: 'connected', whatsappQr: null });
         getWhatsAppGateway().emitToTeacher(teacherId, WA_EVENTS.CONNECTED, {});
     });
@@ -165,30 +200,36 @@ export async function initializeClientForTeacher(teacherId: string, force = fals
 
     // ── Auth failure: clean up ────────────────────────────────────────────
     client.on('auth_failure', (msg: string) => {
-        logger.error('whatsapp_auth_failure', { teacherId, error: msg });
+        logger.error('[WA] AUTH_FAILURE', { teacherId, error: msg });
         clientsPool.delete(teacherId);
+        initializingSet.delete(teacherId);  // release lock
         updateTeacherWA(teacherId, { whatsappStatus: 'disconnected', whatsappQr: null });
         getWhatsAppGateway().emitToTeacher(teacherId, WA_EVENTS.DISCONNECTED, { reason: 'auth_failure' });
     });
 
     // ── Disconnected: clean up + destroy browser ──────────────────────────
     client.on('disconnected', (reason: string) => {
-        logger.warn('whatsapp_disconnected', { teacherId, reason });
+        logger.warn('[WA] DISCONNECTED', { teacherId, reason });
         clientsPool.delete(teacherId);
+        initializingSet.delete(teacherId);  // release lock
         updateTeacherWA(teacherId, { whatsappStatus: 'disconnected', whatsappQr: null });
         getWhatsAppGateway().emitToTeacher(teacherId, WA_EVENTS.DISCONNECTED, { reason });
         client.destroy().catch(() => {});
     });
 
     // Fire-and-forget — Puppeteer launches asynchronously
+    logger.info('[WA] INITIALIZE_START', { teacherId, elapsedMs: Date.now() - t0 });
     client.initialize().catch((err: Error) => {
-        logger.error('whatsapp_init_failed', { teacherId, error: err.message });
+        logger.error('[WA] INIT_FAILED', { teacherId, error: err.message, elapsedMs: Date.now() - t0 });
         clientsPool.delete(teacherId);
+        initializingSet.delete(teacherId);  // release lock
         updateTeacherWA(teacherId, { whatsappStatus: 'disconnected', whatsappQr: null });
         // Notify the frontend so the UI snaps back to 'disconnected' instead of
         // staying frozen on the "جاري تجهيز كود الربط..." spinner indefinitely.
         getWhatsAppGateway().emitToTeacher(teacherId, WA_EVENTS.DISCONNECTED, { reason: 'init_failed' });
     });
+
+    logger.info('[WA] RESPONSE_SENT', { teacherId, elapsedMs: Date.now() - t0 });
 }
 
 // ─── Send message via the teacher's client ────────────────────────────────────
@@ -285,18 +326,16 @@ export async function destroyClientForTeacher(teacherId: string): Promise<void> 
     // Delete it so the next connect generates a fresh QR for a new number.
     try {
         const { rm } = await import('fs/promises');
-        const path    = await import('path');
-        const sessionDir = path.join(
-            process.cwd(),
-            '.wwebjs_auth',
-            `session-session-${teacherId}`,   // clientId = 'session-<teacherId>'
-        );
+        const sessionDir = getSessionFolderPath(teacherId);
         await rm(sessionDir, { recursive: true, force: true });
         logger.info('whatsapp_session_deleted', { teacherId, sessionDir });
     } catch (err) {
         // Non-fatal: session folder may not exist yet
         logger.warn('whatsapp_session_delete_failed', { teacherId, error: (err as Error).message });
     }
+
+    // Also release lock if it was held
+    initializingSet.delete(teacherId);
 
     logger.info('whatsapp_client_destroyed', { teacherId });
 }
@@ -331,8 +370,23 @@ export async function autoReconnectClients(): Promise<void> {
         const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
         for (const teacher of teachers) {
+            const teacherId = teacher._id.toString();
+
+            // Check if session folder actually exists — if it doesn't,
+            // there's nothing to reconnect. Mark DB as disconnected
+            // so the teacher knows to scan a fresh QR.
+            const sessionPath = getSessionFolderPath(teacherId);
+            if (!fs.existsSync(sessionPath)) {
+                logger.warn('[WA] AUTO_RECONNECT_NO_SESSION — marking disconnected', {
+                    teacherId,
+                    sessionPath,
+                });
+                updateTeacherWA(teacherId, { whatsappStatus: 'disconnected', whatsappQr: null });
+                continue;
+            }
+
             // Each call is non-blocking — client.initialize() runs in bg
-            await initializeClientForTeacher(teacher._id.toString());
+            await initializeClientForTeacher(teacherId);
             // Stagger launches so Puppeteer processes don't all start at once
             await sleep(2_000);
         }

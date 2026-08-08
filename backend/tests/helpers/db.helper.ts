@@ -100,10 +100,10 @@ let studentCodeCounter = 1;
 
 export async function seedStudent(
     groupId: Types.ObjectId,
-    overrides: Record<string, unknown> = {}
+    overrides: Record<string, any> = {}
 ) {
     const code = overrides.studentCode || `${studentCodeCounter++}A`;
-    return StudentModel.create({
+    return (await StudentModel.create({
         studentName:  'محمد أحمد علي',
         parentName:   'أحمد علي',
         studentPhone: '01500000001',
@@ -116,7 +116,7 @@ export async function seedStudent(
         isActive:     true,
         remainingSessions: 0,
         ...overrides,
-    });
+    })) as any;
 }
 
 // ─── Seed Session ─────────────────────────────────────────────────────────────
@@ -143,18 +143,20 @@ export async function seedSession(overrides: Record<string, unknown> = {}) {
 export async function seedAttendance(
     sessionId: Types.ObjectId,
     studentId: Types.ObjectId,
-    overrides: Record<string, unknown> = {}
+    overrides: Record<string, any> = {}
 ) {
     const { AttendanceModel } = await import('../../src/database/models/attendance.model.js');
     const { AttendanceStatus } = await import('../../src/common/enums/enum.service.js');
-    return AttendanceModel.create({
+    return (await AttendanceModel.create({
         sessionId,
         studentId,
-        teacherId:   TEST_IDS.teacher,
-        status:      AttendanceStatus.PRESENT,
-        recordedBy:  TEST_IDS.teacher,
+        type:      'SESSION',
+        status:    AttendanceStatus.PRESENT,
+        scannedBy: TEST_IDS.teacher,
+        scannedAt: new Date(),
+        isGuest:   false,
         ...overrides,
-    });
+    })) as any;
 }
 
 // ─── Seed Notebook ────────────────────────────────────────────────────────────
