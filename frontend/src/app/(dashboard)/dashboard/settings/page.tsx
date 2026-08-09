@@ -180,9 +180,15 @@ export default function SettingsPage() {
             console.info('[WA] socket connected:', socket.id);
             apiClient.get('/whatsapp/status')
                 .then((res: any) => {
-                    setWaStatus(res.data?.status ?? 'disconnected');
-                    setWaQrCode(res.data?.qrCode   ?? null);
-                    setWaConnecting(false);
+                    const status = res.data?.status ?? 'disconnected';
+                    const qrCode = res.data?.qrCode ?? null;
+                    setWaStatus(status);
+                    setWaQrCode(qrCode);
+                    
+                    // Don't kill the spinner if the backend is currently generating the QR!
+                    if (!(status === 'pending' && !qrCode)) {
+                        setWaConnecting(false);
+                    }
                 })
                 .catch(() => {});
         });
@@ -239,31 +245,40 @@ export default function SettingsPage() {
 
         const socket = waSocketRef.current;
 
-        // Shared cleanup: remove event-based timeout cancellers
+        // Shared cleanup: remove event-based interval cancellers
         // These must be named functions so we can remove them by reference.
-        let qrTimeoutId: ReturnType<typeof setTimeout>;
-        const clearQrTimeout = () => {
-            clearTimeout(qrTimeoutId);
+        let pollCount = 0;
+        let pollIntervalId: ReturnType<typeof setInterval>;
+        const cleanupPolling = () => {
+            clearInterval(pollIntervalId);
             // Remove the other once() listeners that are no longer needed
             if (socket) {
-                socket.off('wa:qr',          clearQrTimeout);
-                socket.off('wa:connected',    clearQrTimeout);
-                socket.off('wa:disconnected', clearQrTimeout);
+                socket.off('wa:qr',          cleanupPolling);
+                socket.off('wa:connected',    cleanupPolling);
+                socket.off('wa:disconnected', cleanupPolling);
             }
         };
 
-        // 60-second safety net: if Puppeteer never emits wa:qr, poll the
-        // backend status once before giving up. This handles the case where
-        // QR arrived via a different channel (e.g. DB write succeeded but
-        // Socket.io emit was missed).
-        qrTimeoutId = setTimeout(async () => {
-            // Before giving up, check if the backend actually has a QR or is connected
+        // 60-second safety net (20 attempts x 3s): 
+        // If Puppeteer never emits wa:qr via socket (or event drops in production),
+        // poll the backend status.
+        pollIntervalId = setInterval(async () => {
+            pollCount++;
+            if (pollCount > 20) {
+                cleanupPolling();
+                setWaConnecting(false);
+                setWaStatus('disconnected');
+                toast.error('انتهت مهلة توليد رمز QR. تحقق من اتصال الخادم وحاول مجدداً.');
+                return;
+            }
+
             try {
                 const res: any = await apiClient.get('/whatsapp/status');
                 const status = res.data?.status;
                 const qr     = res.data?.qrCode;
 
                 if (status === 'connected') {
+                    cleanupPolling();
                     setWaStatus('connected');
                     setWaQrCode(null);
                     setWaConnecting(false);
@@ -271,24 +286,20 @@ export default function SettingsPage() {
                     return;
                 }
                 if (status === 'pending' && qr) {
+                    cleanupPolling();
                     setWaStatus('pending');
                     setWaQrCode(qr);
                     setWaConnecting(false);
                     return;
                 }
             } catch { /* ignore poll failure */ }
+        }, 3000);
 
-            // Genuinely timed out — reset UI
-            setWaConnecting(false);
-            setWaStatus('disconnected');
-            toast.error('انتهت مهلة توليد رمز QR. تحقق من اتصال الخادم وحاول مجدداً.');
-        }, 60_000);
-
-        // Cancel the timeout as soon as any terminal event arrives
+        // Cancel the polling interval as soon as any terminal event arrives
         if (socket) {
-            socket.once('wa:qr',           clearQrTimeout);
-            socket.once('wa:connected',     clearQrTimeout);
-            socket.once('wa:disconnected',  clearQrTimeout);
+            socket.once('wa:qr',           cleanupPolling);
+            socket.once('wa:connected',     cleanupPolling);
+            socket.once('wa:disconnected',  cleanupPolling);
         }
 
         try {
@@ -297,7 +308,7 @@ export default function SettingsPage() {
             // Keep status as 'pending' visually while Puppeteer starts
             setWaStatus('pending');
         } catch {
-            clearQrTimeout();
+            cleanupPolling();
             setWaConnecting(false);
             // Handled globally by axios interceptor
         }

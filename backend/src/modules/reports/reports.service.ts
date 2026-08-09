@@ -28,8 +28,8 @@ export class ReportsService {
         }).lean();
         if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
 
-        // Get group name — scoped to same teacher for safety
-        const group = await GroupModel.findOne({ _id: student.groupId, teacherId }, { name: 1 }).lean();
+        // Get group name and cycle — scoped to same teacher for safety
+        const group = await GroupModel.findOne({ _id: student.groupId, teacherId }, { name: 1, cycle: 1 }).lean();
 
         // Attendance: use aggregation for counts (avoids loading all snapshots into memory)
         const [attendanceCounts] = await AttendanceSnapshotModel.aggregate([
@@ -111,8 +111,14 @@ export class ReportsService {
         const subscriptionsCount = paymentTotals.find((p: any) => p._id === TransactionCategory.SUBSCRIPTION)?.count ?? 0;
         const notebookSalesCount = paymentTotals.find((p: any) => p._id === TransactionCategory.NOTEBOOK_SALE)?.count ?? 0;
 
-        // Active subscription = student still has remaining sessions in their cycle
-        const hasActiveSubscription = ((student as any).remainingSessions ?? 0) > 0;
+        // Active subscription = student paid during the current group cycle
+        const cycleStartedAt = (group as any)?.cycle?.startedAt || new Date('2099-01-01');
+        const hasActiveSubscription = await TransactionModel.exists({
+            studentId: student._id,
+            category: 'SUBSCRIPTION',
+            type: 'INCOME',
+            date: { $gte: cycleStartedAt }
+        });
 
         // Calculate monthly session usage (Attendance records this month)
         const now = new Date();
@@ -154,8 +160,8 @@ export class ReportsService {
 
         const usedSessionsThisMonth = attendedRecords.length + manualRecordsCount;
 
-        // Remaining sessions from cycle-based subscription
-        const remainingSessions = (student as any).remainingSessions ?? 0;
+        // Remaining sessions is deprecated
+        const remainingSessions = 0;
 
         // Generate Barcode Image using the studentCode (or barcode if they have a physical card)
         const codeToEncode = student.barcode || (student as any).studentCode || student._id.toString().substring(0, 10);
@@ -197,7 +203,7 @@ export class ReportsService {
                 ...student,
                 groupName: group?.name ?? '—',
                 barcodeImageBase64,
-                hasActiveSubscription,
+                hasActiveSubscription: !!hasActiveSubscription,
                 monthlySessionsQuota: student.monthlySessionsQuota,
                 remainingSessions,
                 usedSessionsThisMonth,

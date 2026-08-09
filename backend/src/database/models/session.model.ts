@@ -29,6 +29,10 @@ const sessionSchema = new Schema<ISessionDocument>({
         enum: Object.values(SessionStatus),
         default: SessionStatus.SCHEDULED,
     },
+    cycleContext: {
+        cycleNumber: { type: Number },
+        sessionNumber: { type: Number }
+    }
 }, {
     timestamps: true,
 });

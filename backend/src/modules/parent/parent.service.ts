@@ -15,7 +15,7 @@ export class ParentService {
         const students = await StudentModel.find(
             { parentPhone: phone },
             { studentName: 1, gradeLevel: 1, groupId: 1, teacherId: 1,
-              studentCode: 1, isActive: 1, parentName: 1, cycleStartedAt: 1 }
+              studentCode: 1, isActive: 1, parentName: 1 }
         ).lean();
 
         if (!students.length) {
@@ -33,10 +33,10 @@ export class ParentService {
         const teacherId  = student.teacherId;
         const studentId  = student._id;
 
-        // Group name
+        // Group name and cycle
         const group = await GroupModel.findOne(
             { _id: student.groupId, teacherId },
-            { name: 1 }
+            { name: 1, cycle: 1 }
         ).lean();
 
         // Attendance snapshots
@@ -86,7 +86,7 @@ export class ParentService {
         const subscriptions = payments.filter(p => p.category === TransactionCategory.SUBSCRIPTION);
 
         // Active subscription for current cycle?
-        const cycleStartedAt = student.cycleStartedAt ? new Date(student.cycleStartedAt) : new Date('2099-01-01');
+        const cycleStartedAt = (group as any)?.cycle?.startedAt ? new Date((group as any).cycle.startedAt) : new Date('2099-01-01');
         const hasActiveSubscription = subscriptions.some(
             s => new Date(s.date) >= cycleStartedAt
         );

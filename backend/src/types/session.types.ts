@@ -7,6 +7,10 @@ export interface ISession {
     date:       Date;
     startTime:  string;              // "10:00" in 24h format
     status:     SessionStatus;
+    cycleContext?: {
+        cycleNumber: number;
+        sessionNumber: number;
+    };
     createdAt?: Date;
     updatedAt?: Date;
 }
