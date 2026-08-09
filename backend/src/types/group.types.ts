@@ -13,6 +13,12 @@ export interface IGroup {
     capacity?: number;
     teacherId: Types.ObjectId;
     isActive: boolean;
+    cycle?: {
+        capacity: number;
+        currentCycleNumber: number;
+        currentSessionNumber: number;
+        startedAt: Date;
+    };
     createdAt?: Date;
     updatedAt?: Date;
 }

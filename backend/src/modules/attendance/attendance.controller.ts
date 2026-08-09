@@ -155,6 +155,22 @@ attendanceRouter.patch(
     }
 );
 
+// ─── PATCH /attendance/:id/exemption — Resolve absence exemption (teacher only)
+attendanceRouter.patch(
+    '/:id/exemption',
+    authorizeRoles(UserRole.teacher),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const user = (req as any).user;
+            const teacherId = resolveTeacherId(user);
+            const attendanceId = req.params['id'] as string;
+            const { decision } = req.body as { decision: 'CONSUMED' | 'EXEMPTED' };
+            const updated = await AttendanceService.resolveAbsenceExemption(attendanceId, teacherId, decision);
+            return SuccessResponse({ res, data: updated, message: 'تم تسجيل قرار الإعفاء بنجاح' });
+        } catch (error) { next(error); }
+    }
+);
+
 // ─── GET /attendance/history/:groupId — Attendance history for a group
 attendanceRouter.get(
     '/history/:groupId',

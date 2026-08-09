@@ -93,7 +93,7 @@ whatsappRouter.post(
             const teacherId: string = user.userId;
 
             // 1. Kill Puppeteer + delete local session → next connect = fresh QR
-            await destroyClientForTeacher(teacherId);
+            destroyClientForTeacher(teacherId).catch(() => {});
 
             // 2. Update DB
             await UserModel.updateOne(

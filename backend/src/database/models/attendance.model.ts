@@ -42,6 +42,25 @@ const attendanceSchema = new Schema<IAttendanceDocument>({
     notes: {
         type: String,
     },
+    isConsumed: {
+        type: Boolean,
+    },
+    exemptionDecision: {
+        decision: {
+            type: String,
+            enum: ['CONSUMED', 'EXEMPTED', 'PENDING']
+        },
+        decidedBy: {
+            type: Schema.Types.ObjectId,
+            ref: 'User'
+        },
+        decidedAt: {
+            type: Date
+        },
+        consecutiveCountAtTime: {
+            type: Number
+        }
+    }
 }, {
     timestamps: true,
 });

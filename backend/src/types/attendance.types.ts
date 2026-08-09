@@ -10,6 +10,13 @@ export interface IAttendance {
     scannedAt:   Date;
     scannedBy?:  Types.ObjectId;   // المساعد الذي سجّل (optional)
     notes?:      string;
+    isConsumed?: boolean;
+    exemptionDecision?: {
+        decision: 'CONSUMED' | 'EXEMPTED' | 'PENDING';
+        decidedBy: Types.ObjectId;
+        decidedAt: Date;
+        consecutiveCountAtTime: number;
+    } | null;
     createdAt?:  Date;
     updatedAt?:  Date;
 }

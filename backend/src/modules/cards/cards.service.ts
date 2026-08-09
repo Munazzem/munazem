@@ -291,13 +291,13 @@ export class CardsService {
 
         const student = await StudentModel.findOne(filter, {
             studentName: 1, studentCode: 1, gradeLevel: 1, teacherId: 1,
-            groupId: 1, remainingSessions: 1, totalDebt: 1, isActive: 1, cycleStartedAt: 1, cycleCapacity: 1, cycleNumber: 1
+            groupId: 1, totalDebt: 1, isActive: 1
         }).lean();
 
         if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
 
-        // Group name
-        const group = await GroupModel.findById(student.groupId, { name: 1 }).lean();
+        // Group name and cycle
+        const group = await GroupModel.findById(student.groupId, { name: 1, cycle: 1 }).lean();
 
         // Last attendance (from snapshot model — fast read)
         const lastSnapshot = await AttendanceSnapshotModel.findOne({
@@ -324,12 +324,13 @@ export class CardsService {
             { paidAmount: 1, date: 1 }
         ).sort({ date: -1 }).lean();
 
-        // Payment status based on new cycle rules
+        // Payment status based on group cycle
+        const cycleStartedAt = (group as any)?.cycle?.startedAt || new Date('2099-01-01');
         const hasActiveSubscription = await TransactionModel.exists({
             studentId: student._id,
             category: 'SUBSCRIPTION',
             type: 'INCOME',
-            date: { $gte: student.cycleStartedAt || new Date('2099-01-01') }
+            date: { $gte: cycleStartedAt }
         });
 
         return {
@@ -339,9 +340,9 @@ export class CardsService {
             gradeLevel:            student.gradeLevel,
             groupId:               student.groupId?.toString() ?? '',
             groupName:             (group as any)?.name ?? '—',
-            remainingSessions:     student.remainingSessions ?? 0,
-            cycleCapacity:         student.cycleCapacity ?? 8,
-            cycleNumber:           student.cycleNumber ?? 0,
+            remainingSessions:     0, // Deprecated
+            cycleCapacity:         (group as any)?.cycle?.capacity ?? 8,
+            cycleNumber:           (group as any)?.cycle?.currentCycleNumber ?? 0,
             totalDebt:             student.totalDebt ?? 0,
             hasActiveSubscription: !!hasActiveSubscription,
             lastAttendanceDate,

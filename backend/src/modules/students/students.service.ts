@@ -211,8 +211,21 @@ export class StudentService {
             { $match: { teacherId: new mongoose.Types.ObjectId(teacherId), isActive: true } },
             {
                 $lookup: {
+                    from: 'groups',
+                    localField: 'groupId',
+                    foreignField: '_id',
+                    as: 'groupDoc'
+                }
+            },
+            {
+                $addFields: {
+                    groupStartedAt: { $arrayElemAt: ['$groupDoc.cycle.startedAt', 0] }
+                }
+            },
+            {
+                $lookup: {
                     from: 'transactions',
-                    let: { sId: '$_id', cStart: '$cycleStartedAt' },
+                    let: { sId: '$_id', cStart: '$groupStartedAt' },
                     pipeline: [
                         { $match: {
                             $expr: {
