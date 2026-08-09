@@ -782,7 +782,15 @@ export class PaymentsService {
         if (data.amount      !== undefined) { update['originalAmount'] = data.amount; update['paidAmount'] = data.amount; }
         if (data.category    !== undefined)   update['category']        = data.category;
         if (data.description !== undefined)   update['description']     = data.description;
-        if (data.date        !== undefined)   update['date']            = resolveTransactionDate(data.date);
+        if (data.date !== undefined) {
+            const newResolvedDate = resolveTransactionDate(data.date);
+            const oldDay = startOfDay(new Date(transaction.date));
+            const newDay = startOfDay(newResolvedDate);
+            if (oldDay.getTime() !== newDay.getTime()) {
+                throw BadRequestException({ message: 'لا يمكن تغيير تاريخ المعاملة ليوم مختلف. الرجاء مسح المعاملة وإعادة تسجيلها.' });
+            }
+            update['date'] = newResolvedDate;
+        }
 
         // ── All mutations wrapped in a transaction (all-or-nothing) ──
         const updated = await withTransaction(async (session) => {
@@ -957,25 +965,54 @@ export class PaymentsService {
      * Only the teacher who owns the record may call this.
      */
     static async deleteTransaction(teacherId: string, transactionId: string) {
-        const transaction = await TransactionModel.findOne({ _id: transactionId, teacherId }).lean();
-        if (!transaction) throw NotFoundException({ message: 'المعاملة غير موجودة' });
+        let transaction = await TransactionModel.findOne({ _id: transactionId, teacherId }).lean();
+        
+        if (!transaction) {
+            // Transaction is missing from TransactionModel. It might be an orphaned entry in DailyLedger due to past sync issues.
+            // Search for it in DailyLedgerModel so we can still clean it up and reverse totals.
+            const ledgerWithOrphan = await DailyLedgerModel.findOne({
+                teacherId,
+                'transactions.transactionId': transactionId
+            }).lean();
 
-        const isIncome = transaction.type === TransactionType.INCOME;
-        const txDate   = new Date(transaction.date);
+            if (!ledgerWithOrphan) {
+                throw NotFoundException({ message: 'المعاملة غير موجودة' });
+            }
+
+            const orphanTx = ledgerWithOrphan.transactions.find(t => t.transactionId.toString() === transactionId.toString());
+            if (!orphanTx) {
+                throw NotFoundException({ message: 'المعاملة غير موجودة' });
+            }
+
+            // Construct a mock transaction object so the deletion logic works to reverse totals
+            transaction = {
+                _id: transactionId,
+                teacherId,
+                type: orphanTx.type as any,
+                category: orphanTx.category as any,
+                paidAmount: orphanTx.paidAmount,
+                date: orphanTx.time,
+            } as any;
+        }
+
+        const tx = transaction!;
+
+        const isIncome = tx.type === TransactionType.INCOME;
+        const txDate   = new Date(tx.date);
         const day      = startOfDay(txDate);
         const year     = txDate.getUTCFullYear();
         const month    = txDate.getUTCMonth() + 1;
-        const amount   = transaction.paidAmount;
+        const amount   = tx.paidAmount;
 
         await withTransaction(async (session) => {
-            // 1. Delete the transaction document
-            await TransactionModel.deleteOne({ _id: transaction._id }, { session });
+            // 1. Delete the transaction document (won't do anything if it's already deleted)
+            await TransactionModel.deleteOne({ _id: tx._id }, { session });
 
             // 2. Reverse DailyLedger totals + remove embedded entry
             await DailyLedgerModel.findOneAndUpdate(
                 { teacherId, date: day },
                 {
-                    $pull: { transactions: { transactionId: transaction._id } },
+                    $pull: { transactions: { transactionId: tx._id } },
                     $inc: {
                         totalIncome:   isIncome ?  -amount : 0,
                         totalExpenses: isIncome ? 0 : -amount,
@@ -1018,27 +1055,27 @@ export class PaymentsService {
             }
 
             // 4. If this was a subscription, reset the student's remaining sessions
-            if (transaction.category === TransactionCategory.SUBSCRIPTION && transaction.studentId) {
+            if (tx.category === TransactionCategory.SUBSCRIPTION && tx.studentId) {
                 await StudentModel.findByIdAndUpdate(
-                    transaction.studentId,
+                    tx.studentId,
                     { $set: { remainingSessions: 0 } },
                     { session }
                 );
             }
 
             // 5. If this transaction had a remaining amount, we must revert it from student's total debt
-            if (transaction.remainingAmount && transaction.remainingAmount > 0 && transaction.studentId) {
+            if (tx.remainingAmount && tx.remainingAmount > 0 && tx.studentId) {
                 await StudentModel.findByIdAndUpdate(
-                    transaction.studentId,
-                    { $inc: { totalDebt: -transaction.remainingAmount } },
+                    tx.studentId,
+                    { $inc: { totalDebt: -tx.remainingAmount } },
                     { session }
                 );
             }
 
             // 6. If this transaction was a DEBT_PAYMENT itself, deleting it means the debt comes back
-            if (transaction.category === TransactionCategory.DEBT_PAYMENT && transaction.studentId) {
+            if (tx.category === TransactionCategory.DEBT_PAYMENT && tx.studentId) {
                 await StudentModel.findByIdAndUpdate(
-                    transaction.studentId,
+                    tx.studentId,
                     { $inc: { totalDebt: amount } }, // add the paid amount back to the debt
                     { session }
                 );

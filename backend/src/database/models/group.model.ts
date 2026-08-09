@@ -30,6 +30,12 @@ const groupSchema = new Schema<IGroup>({
     isActive: {
         type: Boolean,
         default: true
+    },
+    cycle: {
+        capacity: { type: Number },
+        currentCycleNumber: { type: Number, default: 1 },
+        currentSessionNumber: { type: Number, default: 0 }, // 0 means cycle hasn't started yet
+        startedAt: { type: Date }
     }
 }, {
     timestamps: true

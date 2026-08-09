@@ -82,7 +82,6 @@ export async function initializeClientForTeacher(teacherId: string, force = fals
         logger.warn('[WA] INIT_LOCK_OVERRIDE — force reinit while locked', { teacherId });
     }
 
-    // Guard: already in pool
     const existing = clientsPool.get(teacherId);
     if (existing) {
         if (existing.ready) {
@@ -97,14 +96,16 @@ export async function initializeClientForTeacher(teacherId: string, force = fals
         }
 
         // force=true means the teacher explicitly clicked "توليد QR" again.
-        // The stale pool entry (ready=false) is likely from a failed auto-reconnect
-        // after a deployment where session files were wiped.  Destroy it and
-        // re-create so Puppeteer actually launches and emits a fresh QR.
+        // Destroy the old instance if it exists.
         logger.info('[WA] FORCE_REINIT — destroying stale client', { teacherId });
         clientsPool.delete(teacherId);
         try { await existing.client.destroy(); } catch { /* ignore */ }
-        
-        // Critically: Delete the corrupted session folder from disk to get a clean QR
+    }
+
+    // If force=true, we ALWAYS want a fresh QR code, meaning we must
+    // delete the local session folder even if the client wasn't in the pool.
+    // (e.g. server restarted, or previous init failed and left a corrupt folder).
+    if (force) {
         try {
             const sessionPath = getSessionFolderPath(teacherId);
             if (fs.existsSync(sessionPath)) {
@@ -308,15 +309,12 @@ export function getClientStatus(teacherId: string): 'connected' | 'initializing'
 export async function destroyClientForTeacher(teacherId: string): Promise<void> {
     const entry = clientsPool.get(teacherId);
     clientsPool.delete(teacherId);              // remove from pool first
+    initializingSet.delete(teacherId);
 
     if (entry) {
         try {
-            // logout() tells WhatsApp servers to invalidate the session,
-            // then destroy() closes the Puppeteer browser process.
             await entry.client.logout();         // revoke session on WA servers
-        } catch {
-            // logout can fail if the session is already broken — that's OK
-        }
+        } catch { /* ignore */ }
         try {
             await entry.client.destroy();        // kill the Puppeteer browser
         } catch { /* ignore */ }
@@ -333,9 +331,6 @@ export async function destroyClientForTeacher(teacherId: string): Promise<void> 
         // Non-fatal: session folder may not exist yet
         logger.warn('whatsapp_session_delete_failed', { teacherId, error: (err as Error).message });
     }
-
-    // Also release lock if it was held
-    initializingSet.delete(teacherId);
 
     logger.info('whatsapp_client_destroyed', { teacherId });
 }

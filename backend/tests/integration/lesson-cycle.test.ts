@@ -23,30 +23,17 @@ describe('Lesson Cycle Redesign - completeSession', () => {
         // cycleCapacity for this group is 2 * 4 = 8
     });
 
-    it('decrements remainingSessions for both present and absent students, but NOT excused', async () => {
+    it('advances group cycle and tracks consecutive absences correctly', async () => {
         const studentPresent = await seedStudent(group._id, {
             studentName: 'Present Student',
-            studentPhone: '01000000001',
-            studentCode: '1A',
-            remainingSessions: 5,
-            cycleCapacity: 8,
-            cycleNumber: 1
+            consecutiveAbsences: 2 // Has some prior absences
         });
         const studentAbsent = await seedStudent(group._id, {
             studentName: 'Absent Student',
-            studentPhone: '01000000002',
-            studentCode: '2A',
-            remainingSessions: 5,
-            cycleCapacity: 8,
-            cycleNumber: 1
+            consecutiveAbsences: 2
         });
         const studentExcused = await seedStudent(group._id, {
             studentName: 'Excused Student',
-            studentPhone: '01000000003',
-            studentCode: '3A',
-            remainingSessions: 5,
-            cycleCapacity: 8,
-            cycleNumber: 1,
             excusedSessionsCount: 1 // Pre-excused
         });
 
@@ -59,28 +46,46 @@ describe('Lesson Cycle Redesign - completeSession', () => {
 
         await AttendanceService.completeSession(session._id.toString(), teacher._id.toString());
 
+        const afterGroup = await GroupModel.findById(group._id).lean();
+        // Group cycle should advance by 1
+        expect(afterGroup?.cycle?.currentSessionNumber).toBe(1);
+        expect(afterGroup?.cycle?.currentCycleNumber).toBe(1);
+
         const afterPresent = await StudentModel.findById(studentPresent._id).lean();
         const afterAbsent = await StudentModel.findById(studentAbsent._id).lean();
         const afterExcused = await StudentModel.findById(studentExcused._id).lean();
 
-        // Should be decremented
-        expect(afterPresent?.remainingSessions).toBe(4);
-        expect(afterAbsent?.remainingSessions).toBe(4);
+        // Present student should have absences reset
+        expect(afterPresent?.consecutiveAbsences).toBe(0);
         
-        // Should NOT be decremented
-        expect(afterExcused?.remainingSessions).toBe(5);
-        expect(afterExcused?.excusedSessionsCount).toBe(0); // excuse count used up
+        // Absent student should increment absences to 3
+        expect(afterAbsent?.consecutiveAbsences).toBe(3);
+
+        // Excused student should NOT increment absences, and use their excuse count
+        expect(afterExcused?.consecutiveAbsences).toBe(0);
+        expect(afterExcused?.excusedSessionsCount).toBe(0);
+
+        // Check attendance records
+        const absentRecord = await AttendanceModel.findOne({ studentId: studentAbsent._id, sessionId: session._id }).lean();
+        expect(absentRecord?.isConsumed).toBe(true);
+        expect(absentRecord?.exemptionDecision?.decision).toBe('PENDING'); // Hit 3 absences
+
+        const excusedRecord = await AttendanceModel.findOne({ studentId: studentExcused._id, sessionId: session._id }).lean();
+        expect(excusedRecord?.isConsumed).toBe(false);
     });
 
-    it('auto-resets cycle when remainingSessions reaches 0 after consumption', async () => {
+    it('auto-resets cycle and increments cycleNumber when capacity is exceeded', async () => {
+        // Setup group to be AT capacity (e.g. session 8 of 8)
+        await GroupModel.findByIdAndUpdate(group._id, {
+            $set: {
+                'cycle.capacity': 8,
+                'cycle.currentSessionNumber': 8,
+                'cycle.currentCycleNumber': 1
+            }
+        });
+
         const student = await seedStudent(group._id, {
-            studentName: 'Zero Student',
-            studentPhone: '01000000010',
-            studentCode: '10A',
-            remainingSessions: 1, // exactly 1 left
-            cycleCapacity: 8,
-            cycleNumber: 1,
-            cycleStartedAt: new Date('2025-01-01')
+            studentName: 'Zero Student'
         });
 
         const session = await seedSession(group._id);
@@ -88,76 +93,82 @@ describe('Lesson Cycle Redesign - completeSession', () => {
 
         await AttendanceService.completeSession(session._id.toString(), teacher._id.toString());
 
-        const after = await StudentModel.findById(student._id).lean();
+        const afterGroup = await GroupModel.findById(group._id).lean();
         
-        // Cycle should have reset
-        expect(after?.remainingSessions).toBe(8); // new cycle capacity
-        expect(after?.cycleCapacity).toBe(8);
-        expect(after?.cycleNumber).toBe(2);
-        expect(after?.cycleStartedAt).not.toBeNull();
-        expect(after?.cycleStartedAt?.getTime()).toBeGreaterThan(new Date('2025-01-01').getTime());
+        // Cycle should have reset to 1 because 8 + 1 = 9 > 8
+        expect(afterGroup?.cycle?.currentSessionNumber).toBe(1); 
+        expect(afterGroup?.cycle?.capacity).toBe(8);
+        expect(afterGroup?.cycle?.currentCycleNumber).toBe(2);
+        expect(afterGroup?.cycle?.startedAt).not.toBeNull();
     });
 
-    it('ensures current session belongs to old cycle, new cycle starts AFTER', async () => {
-        const student = await seedStudent(group._id, {
-            studentName: 'Boundary Student',
-            studentPhone: '01000000011',
-            studentCode: '11A',
-            remainingSessions: 1, // 1 left
-            cycleCapacity: 8,
-            cycleNumber: 1
+    it('ensures completed session cycleContext captures the cycle boundaries before rollover', async () => {
+        // Setup group to be at session 7 of 8
+        await GroupModel.findByIdAndUpdate(group._id, {
+            $set: {
+                'cycle.capacity': 8,
+                'cycle.currentSessionNumber': 7,
+                'cycle.currentCycleNumber': 1
+            }
         });
 
+        const student = await seedStudent(group._id, { studentName: 'Boundary Student' });
         const session = await seedSession(group._id);
         await seedAttendance(session._id, student._id, { status: AttendanceStatus.PRESENT });
 
         await AttendanceService.completeSession(session._id.toString(), teacher._id.toString());
 
-        const after = await StudentModel.findById(student._id).lean();
-        // Since it had 1 left, the session consumes it to 0.
-        // Then auto-reset sets it to 8.
-        // It should NOT be 7 (which would mean consumed from new cycle).
-        expect(after?.remainingSessions).toBe(8); 
-        expect(after?.cycleNumber).toBe(2);
+        const afterGroup = await GroupModel.findById(group._id).lean();
+        // Since it was at 7, the session consumes it to 8.
+        expect(afterGroup?.cycle?.currentSessionNumber).toBe(8); 
+        expect(afterGroup?.cycle?.currentCycleNumber).toBe(1);
+
+        const completedSession = await SessionModel.findById(session._id).lean();
+        // Session context should be exactly what it reached
+        expect(completedSession?.cycleContext?.cycleNumber).toBe(1);
+        expect(completedSession?.cycleContext?.sessionNumber).toBe(8);
     });
 
-    it('cycle reset is idempotent (prevents negative or multiple resets)', async () => {
+    it('preserves student consecutive absences tracking independently of cycles', async () => {
+        // Even if cycle resets, student consecutive absences continue to track
+        await GroupModel.findByIdAndUpdate(group._id, {
+            $set: {
+                'cycle.capacity': 8,
+                'cycle.currentSessionNumber': 8,
+                'cycle.currentCycleNumber': 1
+            }
+        });
+
         const student = await seedStudent(group._id, {
             studentName: 'Negative Student',
-            studentPhone: '01000000012',
-            studentCode: '12A',
-            remainingSessions: 0, // already 0! (maybe missed previous reset due to error)
-            cycleCapacity: 8,
-            cycleNumber: 1
+            consecutiveAbsences: 1
         });
 
-        const session = await seedSession(group._id);
-        await seedAttendance(session._id, student._id, { status: AttendanceStatus.PRESENT });
+        const session = await seedSession(group._id); // This will be the 9th session (rolls over to C2 S1)
 
         await AttendanceService.completeSession(session._id.toString(), teacher._id.toString());
 
-        const after = await StudentModel.findById(student._id).lean();
-        // The session consumes it to -1, which triggers reset to (8 - 1) = 7?
-        // Wait, if it was 0, it consumes from the NEW cycle.
-        // So remainingSessions should be 7. 
-        expect(after?.remainingSessions).toBe(7);
-        expect(after?.cycleNumber).toBe(2);
+        const afterGroup = await GroupModel.findById(group._id).lean();
+        expect(afterGroup?.cycle?.currentCycleNumber).toBe(2);
+        expect(afterGroup?.cycle?.currentSessionNumber).toBe(1);
+
+        const afterStudent = await StudentModel.findById(student._id).lean();
+        // The student was absent (no present mark), so it becomes 2
+        expect(afterStudent?.consecutiveAbsences).toBe(2);
     });
 
-    it('guest student is decremented from their own cycle', async () => {
+    it('guest student does not advance their own group cycle but records attendance', async () => {
         const guestGroup = await seedGroup({
             teacherId: teacher._id,
             name: 'Guest Group',
-            schedule: [{ day: 'الأحد', time: '10:00' }] // capacity 4
+            schedule: [{ day: 'الأحد', time: '10:00' }]
+        });
+        await GroupModel.findByIdAndUpdate(guestGroup._id, {
+            $set: { 'cycle.currentSessionNumber': 2, 'cycle.currentCycleNumber': 1 }
         });
 
         const guestStudent = await seedStudent(guestGroup._id, {
-            studentName: 'Guest',
-            studentPhone: '01000000020',
-            studentCode: '20A',
-            remainingSessions: 2,
-            cycleCapacity: 4,
-            cycleNumber: 1
+            studentName: 'Guest'
         });
 
         const session = await seedSession(group._id);
@@ -165,7 +176,18 @@ describe('Lesson Cycle Redesign - completeSession', () => {
 
         await AttendanceService.completeSession(session._id.toString(), teacher._id.toString());
 
-        const after = await StudentModel.findById(guestStudent._id).lean();
-        expect(after?.remainingSessions).toBe(1);
+        // Guest's group cycle should NOT be affected
+        const afterGuestGroup = await GroupModel.findById(guestGroup._id).lean();
+        expect(afterGuestGroup?.cycle?.currentSessionNumber).toBe(2);
+        expect(afterGuestGroup?.cycle?.currentCycleNumber).toBe(1);
+
+        // Host group cycle SHOULD advance
+        const afterHostGroup = await GroupModel.findById(group._id).lean();
+        expect(afterHostGroup?.cycle?.currentSessionNumber).toBe(1);
+
+        // Attendance record should be created
+        const guestRecord = await AttendanceModel.findOne({ studentId: guestStudent._id, sessionId: session._id }).lean();
+        expect(guestRecord).toBeDefined();
+        expect(guestRecord?.isGuest).toBe(true);
     });
 });
