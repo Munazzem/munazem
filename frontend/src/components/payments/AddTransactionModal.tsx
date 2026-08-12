@@ -101,6 +101,8 @@ export function AddTransactionModal({
             : new Date().toISOString().split('T')[0]!
     );
     const [paidAmount, setPaidAmount] = useState('');
+    const [isCustomQuota, setIsCustomQuota] = useState(false);
+    const [customSessionsQuota, setCustomSessionsQuota] = useState('4');
 
     // Notebook-specific
     const [notebookId, setNotebookId] = useState('');
@@ -177,6 +179,8 @@ export function AddTransactionModal({
         setSelectedStudentDebt(0);
         setDiscountAmount('');
         setPaidAmount('');
+        setIsCustomQuota(false);
+        setCustomSessionsQuota('4');
         setDescription('');
         setDate(new Date().toISOString().split('T')[0]!);
         setNotebookId('');
@@ -278,6 +282,7 @@ export function AddTransactionModal({
                 paidAmount: paidAmount ? parseFloat(paidAmount) : undefined,
                 description: description || undefined,
                 date,
+                customSessionsQuota: isCustomQuota && customSessionsQuota ? parseInt(customSessionsQuota) : undefined,
             });
         } else if (mode === 'notebook') {
             if (!selectedStudentId) return toast.error('اختر طالباً');
@@ -328,7 +333,7 @@ export function AddTransactionModal({
     if (successTransaction && !isEditMode) {
         return (
             <Dialog open={open} onOpenChange={(v) => { if (!v) invalidateAndClose(); }}>
-                <DialogContent className="sm:max-w-[400px]" dir="rtl">
+                <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-[400px]" dir="rtl">
                     <DialogTitle className="sr-only">تم التسجيل بنجاح</DialogTitle>
                     <div className="flex flex-col items-center justify-center p-6 text-center">
                         <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4">
@@ -366,7 +371,7 @@ export function AddTransactionModal({
     }
 
     return (
-        <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v && !isEditMode) resetForm(); }}>
+        <Dialog open={open} onOpenChange={(v) => setOpen(v)}>
             {/* Trigger only shown in add mode */}
             {!isEditMode && (
                 <DialogTrigger asChild>
@@ -376,7 +381,7 @@ export function AddTransactionModal({
                     </Button>
                 </DialogTrigger>
             )}
-            <DialogContent className="sm:max-w-[480px]" dir="rtl">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-[480px]" dir="rtl">
                 <DialogHeader>
                     <DialogTitle>{dialogTitle}</DialogTitle>
                 </DialogHeader>
@@ -583,6 +588,36 @@ export function AddTransactionModal({
                                     onChange={(e) => setPaidAmount(e.target.value)}
                                 />
                             </div>
+                        </div>
+                    )}
+
+                    {/* Custom Quota - Add mode only, subscription */}
+                    {mode === 'subscription' && !isEditMode && (
+                        <div className="bg-gray-50 border border-gray-100 rounded-lg p-3">
+                            <div className="flex items-center gap-2 mb-2">
+                                <input
+                                    type="checkbox"
+                                    id="isCustomQuota"
+                                    checked={isCustomQuota}
+                                    onChange={(e) => setIsCustomQuota(e.target.checked)}
+                                    className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4"
+                                />
+                                <label htmlFor="isCustomQuota" className="text-sm font-medium text-gray-700 cursor-pointer">
+                                    تخصيص عدد الحصص (اشتراك نصف شهر مثلاً)
+                                </label>
+                            </div>
+                            {isCustomQuota && (
+                                <div className="pr-6">
+                                    <label className="text-xs font-medium text-gray-600 mb-1.5 block">عدد الحصص المقررة</label>
+                                    <Input
+                                        type="number"
+                                        min="1"
+                                        value={customSessionsQuota}
+                                        onChange={(e) => setCustomSessionsQuota(e.target.value)}
+                                        className="h-8 text-sm w-full"
+                                    />
+                                </div>
+                            )}
                         </div>
                     )}
 

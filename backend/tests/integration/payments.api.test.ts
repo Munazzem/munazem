@@ -86,6 +86,41 @@ describe('Payments API', () => {
             expect(res.body.data.paidAmount).toBe(150);
             expect(res.body.data.category).toBe(TransactionCategory.SUBSCRIPTION);
         });
+
+        it('يسجل اشتراك مع تخصيص عدد الحصص (customSessionsQuota)', async () => {
+            await seedTeacher();
+            const group = await seedGroup();
+            const student = await seedStudent(group._id as any);
+
+            await app
+                .put('/payments/prices')
+                .set('Authorization', bearerHeader(makeTeacherToken()))
+                .send({
+                    prices: [{ gradeLevel: GradeLevel.PREP_1, amount: 150 }],
+                    centerDiscounts: []
+                });
+
+            const res = await app
+                .post('/payments/subscription')
+                .set('Authorization', bearerHeader(makeTeacherToken()))
+                .send({
+                    studentId: student._id.toString(),
+                    paidAmount: 75,
+                    discountAmount: 0,
+                    customSessionsQuota: 4
+                });
+
+            expect(res.status).toBe(201);
+            expect(res.body.data.paidAmount).toBe(75);
+
+            // Fetch student to verify remainingSessions was updated
+            const studentRes = await app
+                .get(`/students/${student._id}`)
+                .set('Authorization', bearerHeader(makeTeacherToken()));
+            
+            expect(studentRes.status).toBe(200);
+            expect(studentRes.body.data.remainingSessions).toBe(4);
+        });
     });
 
     describe('POST /payments/notebook', () => {
