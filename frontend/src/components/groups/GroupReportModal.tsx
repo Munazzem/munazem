@@ -78,7 +78,7 @@ export function GroupReportModal({ groupId, groupName, open, onOpenChange }: Gro
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-w-[560px] rounded-2xl" dir="rtl">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="max-w-[560px] rounded-2xl" dir="rtl">
                 {/* Accent bar */}
                 <div className="absolute top-0 left-0 w-full h-1 bg-linear-to-r from-[#1e3a6e] to-[#3b82f6] rounded-t-2xl" />
 

@@ -492,7 +492,7 @@ export default function SmartCardPage() {
 
             {/* Link Student Modal */}
             <Dialog open={showLinkStudentModal} onOpenChange={setShowLinkStudentModal}>
-                <DialogContent dir="rtl" className="max-w-md">
+                <DialogContent onInteractOutside={(e) => e.preventDefault()} dir="rtl" className="max-w-md">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
                             <Link2 className="h-5 w-5 text-primary" /> ربط الكارت بطالب

@@ -48,7 +48,7 @@ export function NotebookActionModal({ open, onClose, studentId, studentName, mod
 
     return (
         <Dialog open={open} onOpenChange={onClose}>
-            <DialogContent dir="rtl" className="max-w-sm">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} dir="rtl" className="max-w-sm">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <BookOpen className={cn('h-5 w-5', mode === 'sell' ? 'text-blue-600' : 'text-purple-600')} />

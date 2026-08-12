@@ -49,7 +49,7 @@ export function BatchResultsModal({ exam, open, onOpenChange, onSuccess }: Props
     // Fetch students — filter by selected group
     const { data: studentsData, isLoading: studentsLoading } = useQuery({
         queryKey: ['students-for-exam', exam._id, selectedGroupId],
-        queryFn:  () => fetchStudents({ limit: 200, ...(selectedGroupId ? { groupId: selectedGroupId } : {}) }),
+        queryFn:  () => fetchStudents({ limit: 1000, ...(selectedGroupId ? { groupId: selectedGroupId } : {}) }),
         enabled:  open,
     });
 
@@ -123,7 +123,7 @@ export function BatchResultsModal({ exam, open, onOpenChange, onSuccess }: Props
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto bg-white rounded-2xl" dir="rtl">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-xl max-h-[90vh] overflow-y-auto bg-white rounded-2xl" dir="rtl">
                 <DialogHeader>
                     <DialogTitle className="text-lg font-bold border-b pb-3">
                         إدخال نتائج — {exam.title}

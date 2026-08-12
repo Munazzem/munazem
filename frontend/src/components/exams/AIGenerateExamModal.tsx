@@ -282,7 +282,7 @@ export function AIGenerateExamModal({ open, onOpenChange }: Props) {
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto bg-white rounded-2xl" dir="rtl">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-2xl max-h-[90vh] overflow-y-auto bg-white rounded-2xl" dir="rtl">
                 <DialogHeader>
                     <DialogTitle className="text-xl font-bold border-b pb-3 flex items-center gap-2">
                         <Sparkles className="h-5 w-5 text-primary" />

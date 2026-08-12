@@ -78,7 +78,7 @@ export function AddNotebookModal() {
                 </Button>
             </DialogTrigger>
 
-            <DialogContent className="sm:max-w-[500px] bg-white rounded-2xl" dir="rtl">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-[500px] bg-white rounded-2xl" dir="rtl">
                 <DialogHeader>
                     <DialogTitle className="text-xl font-bold text-gray-900 border-b pb-4">إضافة مذكرة جديدة</DialogTitle>
                 </DialogHeader>

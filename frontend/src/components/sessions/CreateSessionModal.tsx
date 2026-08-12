@@ -95,7 +95,7 @@ export function CreateSessionModal({ onSuccess }: CreateSessionModalProps) {
                     إنشاء حصة
                 </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[440px]" dir="rtl">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-[440px]" dir="rtl">
                 <DialogHeader>
                     <DialogTitle>إنشاء حصة جديدة</DialogTitle>
                 </DialogHeader>

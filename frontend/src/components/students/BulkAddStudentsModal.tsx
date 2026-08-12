@@ -283,7 +283,7 @@ export function BulkAddStudentsModal() {
                 </Button>
             </DialogTrigger>
 
-            <DialogContent className="max-w-2xl w-full max-h-[90vh] flex flex-col" dir="rtl">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="max-w-2xl w-full max-h-[90vh] flex flex-col" dir="rtl">
                 <DialogHeader className="shrink-0">
                     <DialogTitle className="flex items-center gap-2 text-lg">
                         <Users className="h-5 w-5 text-primary" />

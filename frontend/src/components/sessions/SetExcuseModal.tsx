@@ -29,7 +29,7 @@ export function SetExcuseModal({
 
     return (
         <Dialog open onOpenChange={onClose}>
-            <DialogContent className="sm:max-w-[360px]" dir="rtl">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-[360px]" dir="rtl">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <CalendarCheck className="h-4 w-4 text-blue-600" />

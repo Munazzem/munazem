@@ -42,7 +42,7 @@ export default function AddSubscriptionModal({ tenantId, disabled }: { tenantId:
                     إضافة اشتراك
                 </Button>
             </DialogTrigger>
-            <DialogContent dir="rtl" className="sm:max-w-[425px]">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} dir="rtl" className="sm:max-w-[425px]">
                 <DialogHeader>
                     <DialogTitle>إضافة اشتراك جديد</DialogTitle>
                 </DialogHeader>
