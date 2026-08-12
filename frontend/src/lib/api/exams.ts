@@ -93,6 +93,11 @@ export const batchRecordResults = async (
     return (res as any).data ?? res;
 };
 
+export const sendExamResultsWhatsApp = async (examId: string): Promise<{ sentCount: number }> => {
+    const res = await apiClient.post(`/exams/${examId}/results/send`);
+    return (res as any).data ?? res;
+};
+
 export const generateExamFromPdf = async (formData: FormData): Promise<{ exam: IExam; message: string }> => {
     const res = await apiClient.post('/exams/ai/generate', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },

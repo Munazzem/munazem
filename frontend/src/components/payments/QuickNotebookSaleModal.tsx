@@ -124,7 +124,7 @@ export function QuickNotebookSaleModal({ open, onOpenChange }: Props) {
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-md bg-white rounded-2xl p-0 overflow-hidden gap-0" dir="rtl">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-md bg-white rounded-2xl p-0 overflow-hidden gap-0" dir="rtl">
                 {/* Accent bar */}
                 <div className="h-1 w-full bg-linear-to-r from-purple-500 to-indigo-400" />
 

@@ -96,7 +96,7 @@ export function PriceSettingsModal() {
                     إعداد الأسعار
                 </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[480px] max-h-[90vh] overflow-y-auto" dir="rtl">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-[480px] max-h-[90vh] overflow-y-auto" dir="rtl">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <Settings className="h-5 w-5 text-primary" />

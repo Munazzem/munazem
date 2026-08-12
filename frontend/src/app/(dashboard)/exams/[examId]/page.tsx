@@ -24,7 +24,7 @@ import { ReportCardSkeleton } from '@/components/layout/skeletons/ReportCardSkel
 import { TableSkeleton } from '@/components/layout/skeletons/TableSkeleton';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { fetchExamById, getExamResults, publishExam, deleteExam, fetchExamPrintHtml } from '@/lib/api/exams';
+import { fetchExamById, getExamResults, publishExam, deleteExam, fetchExamPrintHtml, sendExamResultsWhatsApp } from '@/lib/api/exams';
 import type { IExam, ExamStatus, IQuestion } from '@/lib/api/exams';
 import dynamic from 'next/dynamic';
 const BatchResultsModal = dynamic(
@@ -139,6 +139,13 @@ export default function ExamDetailPage() {
         }
     });
 
+    const sendWhatsAppMutation = useMutation({
+        mutationFn: () => sendExamResultsWhatsApp(examId),
+        onSuccess: (res) => {
+            toast.success(`تم بدء إرسال ${res.sentCount} رسالة واتساب بنجاح`);
+        },
+    });
+
     if (examLoading) {
         return <div className="p-6"><ReportCardSkeleton /></div>;
     }
@@ -233,13 +240,24 @@ export default function ExamDetailPage() {
                         </>
                     )}
                     {examData.status === 'PUBLISHED' && (
-                        <Button
-                            onClick={() => setShowBatchModal(true)}
-                            className="gap-2 w-full sm:w-auto"
-                        >
-                            <ListChecks className="h-4 w-4" />
-                            إدخال النتائج دفعة واحدة
-                        </Button>
+                        <>
+                            <Button
+                                onClick={() => setShowBatchModal(true)}
+                                className="gap-2 w-full sm:w-auto"
+                            >
+                                <ListChecks className="h-4 w-4" />
+                                إدخال النتائج دفعة واحدة
+                            </Button>
+                            <Button
+                                onClick={() => sendWhatsAppMutation.mutate()}
+                                disabled={sendWhatsAppMutation.isPending || results.length === 0}
+                                variant="outline"
+                                className="gap-2 w-full sm:w-auto text-green-600 border-green-200 hover:bg-green-50"
+                            >
+                                {sendWhatsAppMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
+                                إرسال النتائج عبر واتساب
+                            </Button>
+                        </>
                     )}
                 </div>
             )}

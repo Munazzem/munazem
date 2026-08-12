@@ -78,7 +78,7 @@ function RestockDialog({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[360px] bg-white rounded-2xl" dir="rtl">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-[360px] bg-white rounded-2xl" dir="rtl">
                 <DialogHeader>
                     <DialogTitle className="text-lg font-bold border-b pb-3">
                         إضافة مخزون — {notebook?.name}
@@ -147,7 +147,7 @@ function EditNotebookDialog({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[400px] bg-white rounded-2xl" dir="rtl">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-[400px] bg-white rounded-2xl" dir="rtl">
                 <DialogHeader>
                     <DialogTitle className="text-lg font-bold border-b pb-3">تعديل المذكرة</DialogTitle>
                 </DialogHeader>

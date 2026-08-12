@@ -411,7 +411,7 @@ function AddAssistantModal({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-md bg-white rounded-2xl" dir="rtl">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-md bg-white rounded-2xl" dir="rtl">
                 <DialogHeader>
                     <DialogTitle className="text-lg font-bold border-b pb-3 flex items-center gap-2">
                         <UserPlus className="h-5 w-5 text-primary" />
@@ -544,7 +544,7 @@ function EditAssistantModal({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-md bg-white rounded-2xl" dir="rtl">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-md bg-white rounded-2xl" dir="rtl">
                 <DialogHeader>
                     <DialogTitle className="text-lg font-bold border-b pb-3 flex items-center gap-2">
                         <Edit2 className="h-5 w-5 text-blue-600" />
@@ -673,7 +673,7 @@ function PaySalaryModal({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-sm bg-white rounded-2xl" dir="rtl">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-sm bg-white rounded-2xl" dir="rtl">
                 <DialogHeader>
                     <DialogTitle className="text-lg font-bold border-b pb-3 flex items-center gap-2">
                         <Banknote className="h-5 w-5 text-green-600" />

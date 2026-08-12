@@ -141,7 +141,7 @@ export class PaymentsService {
     static async recordSubscription(
         teacherId: string,
         createdBy: string,
-        data: { studentId: string; discountAmount?: number; paidAmount?: number; description?: string; date?: string }
+        data: { studentId: string; discountAmount?: number; paidAmount?: number; description?: string; date?: string; customSessionsQuota?: number }
     ) {
         // Get student info
         const student = await StudentModel.findById(data.studentId, {
@@ -161,9 +161,19 @@ export class PaymentsService {
 
         const discountAmount = data.discountAmount ?? 0;
         const originalAmount = priceSetting.amount;
-        const expectedAmount = originalAmount - discountAmount;
-        const paidAmount     = data.paidAmount !== undefined ? data.paidAmount : expectedAmount;
-        const remainingAmount = expectedAmount - paidAmount;
+        
+        let paidAmount = data.paidAmount;
+        if (paidAmount === undefined) {
+            if (data.customSessionsQuota !== undefined) {
+                // Default to 8 sessions per month for ratio calculation to avoid schedule misconfiguration issues
+                paidAmount = (data.customSessionsQuota / 8) * originalAmount;
+            } else {
+                paidAmount = originalAmount;
+            }
+            paidAmount = Math.max(0, paidAmount - discountAmount);
+        }
+
+        const remainingAmount = Math.max(0, originalAmount - paidAmount - discountAmount);
         const txDate         = resolveTransactionDate(data.date);
 
         if (paidAmount < 0) throw BadRequestException({ message: 'المدفوع لا يمكن أن يكون سالباً' });
@@ -230,10 +240,12 @@ export class PaymentsService {
                 studentUpdatePayload.$inc = { totalDebt: remainingAmount };
             }
 
-            if (studentUpdatePayload.$inc) {
-                await StudentModel.findByIdAndUpdate(data.studentId, {
-                    $inc: studentUpdatePayload.$inc
-                }, { session });
+            if (data.customSessionsQuota !== undefined) {
+                studentUpdatePayload.$set = { ...studentUpdatePayload.$set, remainingSessions: data.customSessionsQuota };
+            }
+
+            if (Object.keys(studentUpdatePayload).length > 0) {
+                await StudentModel.findByIdAndUpdate(data.studentId, studentUpdatePayload, { session });
             }
 
             return tx;
@@ -256,7 +268,7 @@ export class PaymentsService {
     static async recordBatchSubscription(
         teacherId: string,
         createdBy: string,
-        data: { studentIds: string[]; discountAmount?: number; description?: string; date?: string }
+        data: { studentIds: string[]; discountAmount?: number; description?: string; date?: string; customSessionsQuota?: number; customAmount?: number }
     ) {
         if (!data.studentIds || data.studentIds.length === 0) {
             throw BadRequestException({ message: 'يجب اختيار طالب واحد على الأقل' });
@@ -321,12 +333,24 @@ export class PaymentsService {
             }
 
             const originalAmount = priceSetting.amount;
-            const paidAmount = Math.max(0, originalAmount - discountAmount);
+            
+            let paidAmount = originalAmount;
+            if (data.customAmount !== undefined) {
+                paidAmount = data.customAmount;
+            } else if (data.customSessionsQuota !== undefined) {
+                // Default to 8 sessions per month for ratio calculation
+                paidAmount = (data.customSessionsQuota / 8) * originalAmount;
+            }
+            paidAmount = Math.max(0, paidAmount - discountAmount);
+            
+            const actualDiscount = (data.customAmount !== undefined || data.customSessionsQuota !== undefined)
+                ? Math.max(0, originalAmount - paidAmount) 
+                : discountAmount;
             
             validStudents.push({
                 student,
                 originalAmount,
-                discountAmount,
+                discountAmount: actualDiscount,
                 paidAmount
             });
         }
@@ -353,8 +377,15 @@ export class PaymentsService {
                     
                     const insertedTxs = await TransactionModel.insertMany(txDocsToInsert, { session });
                     
-                    // 2. Note: students quotas are no longer updated here in bulk.
-                    // The cycle runs independent of batch payments.
+                    // 2. Update students quota if customSessionsQuota is provided
+                    if (data.customSessionsQuota !== undefined) {
+                        const validStudentIds = validStudents.map(vs => vs.student._id);
+                        await StudentModel.updateMany(
+                            { _id: { $in: validStudentIds } },
+                            { $set: { remainingSessions: data.customSessionsQuota } },
+                            { session }
+                        );
+                    }
                     
                     // 3. Update ledgers in bulk for the day
                     const totalPaid = validStudents.reduce((sum, vs) => sum + vs.paidAmount, 0);

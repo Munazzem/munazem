@@ -78,7 +78,7 @@ export function PendingReservationsModal({ open, onOpenChange }: Props) {
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-2xl bg-white rounded-2xl p-0 overflow-hidden" dir="rtl">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-2xl bg-white rounded-2xl p-0 overflow-hidden" dir="rtl">
                 <div className="h-1.5 w-full bg-purple-600" />
                 
                 <DialogHeader className="px-6 pt-5 pb-4 border-b border-gray-100">

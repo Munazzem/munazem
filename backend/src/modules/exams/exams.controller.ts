@@ -174,6 +174,19 @@ examsRouter.get(
     }
 );
 
+// POST /exams/:id/results/send — Send results via WhatsApp
+examsRouter.post(
+    '/:id/results/send',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = resolveTeacherId(req.user);
+            const result = await ExamsService.sendExamResultsWhatsApp(req.params['id'] as string, teacherId);
+            return SuccessResponse({ res, data: result, message: `تم بدء إرسال ${result.sentCount} رسالة واتساب بنجاح` });
+        } catch (error) { next(error); }
+    }
+);
+
 // ════════ AI EXAM GENERATION ═══════════════════════════════════════
 
 // POST /exams/ai/generate — Upload PDF + generate exam (Teacher + Assistant)

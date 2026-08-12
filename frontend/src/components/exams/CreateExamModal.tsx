@@ -120,7 +120,7 @@ export function CreateExamModal({ open, onOpenChange }: Props) {
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto bg-white rounded-2xl" dir="rtl">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-2xl max-h-[90vh] overflow-y-auto bg-white rounded-2xl" dir="rtl">
                 <DialogHeader>
                     <DialogTitle className="text-xl font-bold border-b pb-3">إنشاء امتحان جديد</DialogTitle>
                 </DialogHeader>

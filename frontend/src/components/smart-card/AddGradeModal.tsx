@@ -43,7 +43,7 @@ export function AddGradeModal({ open, onClose, studentId, studentName }: Props) 
 
     return (
         <Dialog open={open} onOpenChange={onClose}>
-            <DialogContent dir="rtl" className="max-w-sm">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} dir="rtl" className="max-w-sm">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <FileText className="h-5 w-5 text-orange-600" />

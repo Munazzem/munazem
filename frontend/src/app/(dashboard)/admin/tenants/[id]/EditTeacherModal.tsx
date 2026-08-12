@@ -79,7 +79,7 @@ export function EditTeacherModal({ teacher }: { teacher: any }) {
                     تعديل المدرس
                 </Button>
             </DialogTrigger>
-            <DialogContent dir="rtl" className="sm:max-w-[425px]">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} dir="rtl" className="sm:max-w-[425px]">
                 <DialogHeader>
                     <DialogTitle>تعديل بيانات المدرس</DialogTitle>
                 </DialogHeader>

@@ -104,7 +104,7 @@ export function CenterDeductionModal({ onSuccess, trigger }: CenterDeductionModa
                     </Button>
                 )}
             </DialogTrigger>
-            <DialogContent dir="rtl" className="sm:max-w-md">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} dir="rtl" className="sm:max-w-md">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2 text-orange-700">
                         <div className="p-2 bg-orange-100 rounded-lg">

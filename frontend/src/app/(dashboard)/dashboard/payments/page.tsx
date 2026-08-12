@@ -124,6 +124,9 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
             queryClient.invalidateQueries({ queryKey: QK.payments.dailyLedgerBase });
             queryClient.invalidateQueries({ queryKey: QK.payments.monthlyLedgerBase });
             queryClient.invalidateQueries({ queryKey: QK.dashboard.summary });
+            queryClient.invalidateQueries({ queryKey: QK.students.all });
+            queryClient.invalidateQueries({ queryKey: QK.groups.all });
+            queryClient.invalidateQueries({ queryKey: QK.payments.all });
             setDeleteTxId(null);
         },
         onError: () => { setDeleteTxId(null); },

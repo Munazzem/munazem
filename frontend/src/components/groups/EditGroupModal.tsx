@@ -114,7 +114,7 @@ export function EditGroupModal({ group, open, onOpenChange }: EditGroupModalProp
         onOpenChange(val);
         if(!val) form.reset();
     }}>
-      <DialogContent className="sm:max-w-[600px] bg-white rounded-2xl" dir="rtl">
+      <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-[600px] bg-white rounded-2xl" dir="rtl">
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold text-gray-900 border-b pb-4">تعديل بيانات المجموعة</DialogTitle>
         </DialogHeader>

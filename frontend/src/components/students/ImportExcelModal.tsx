@@ -259,7 +259,7 @@ export function ImportExcelModal({ open, onOpenChange }: Props) {
 
     return (
         <Dialog open={open} onOpenChange={(v) => { if (!v) reset(); onOpenChange(v); }}>
-            <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto bg-white rounded-2xl" dir="rtl">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-2xl max-h-[90vh] overflow-y-auto bg-white rounded-2xl" dir="rtl">
                 <DialogHeader>
                     <DialogTitle className="text-xl font-bold border-b pb-3 flex items-center gap-2">
                         <FileSpreadsheet className="h-5 w-5 text-green-600" />

@@ -45,6 +45,7 @@ export const recordSubscription = async (data: {
     paidAmount?: number;
     description?: string;
     date?: string;
+    customSessionsQuota?: number;
 }): Promise<ITransaction> => {
     const res = await apiClient.post('/payments/subscription', data);
     return (res as any).data;
@@ -87,6 +88,8 @@ export const recordBatchSubscription = async (data: {
     discountAmount?: number;
     description?: string;
     date?: string;
+    customSessionsQuota?: number;
+    customAmount?: number;
 }): Promise<IBatchSubscriptionResponse> => {
     const res = await apiClient.post('/payments/subscription/batch', data);
     return (res as any).data;

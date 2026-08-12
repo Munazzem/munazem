@@ -304,6 +304,8 @@ export default function SessionDetailPage() {
             toast.success('تم إنهاء الحصة وحفظ السجل');
             queryClient.invalidateQueries({ queryKey: QK.sessions.detail(sessionId) });
             queryClient.invalidateQueries({ queryKey: QK.sessions.all });
+            queryClient.invalidateQueries({ queryKey: QK.students.all });
+            queryClient.invalidateQueries({ queryKey: QK.dashboard.summary });
             queryClient.setQueryData(QK.attendance.snapshot(sessionId), result.snapshot);
             setShowCompleteConfirm(false);
         },
@@ -695,7 +697,7 @@ export default function SessionDetailPage() {
 
             {/* Complete Session Confirm Dialog */}
             <Dialog open={showCompleteConfirm} onOpenChange={setShowCompleteConfirm}>
-                <DialogContent className="sm:max-w-[400px]" dir="rtl">
+                <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-[400px]" dir="rtl">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
                             <AlertTriangle className="h-5 w-5 text-yellow-500" />

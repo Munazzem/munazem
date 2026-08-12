@@ -147,7 +147,7 @@ export function AddStudentModal() {
             إضافة طالب جديد
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[500px]" dir="rtl">
+      <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-[500px]" dir="rtl">
         <DialogHeader>
           <DialogTitle className="text-xl">طالب جديد</DialogTitle>
           <DialogDescription>

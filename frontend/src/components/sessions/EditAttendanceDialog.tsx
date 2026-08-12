@@ -41,7 +41,7 @@ export function EditAttendanceDialog({
 
     return (
         <Dialog open onOpenChange={onClose}>
-            <DialogContent className="sm:max-w-[360px]" dir="rtl">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-[360px]" dir="rtl">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <Edit2 className="h-4 w-4 text-primary" />
