@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { Loader2, CheckCircle2, XCircle, Search } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,6 +28,7 @@ interface StudentRow {
 
 export function BatchResultsModal({ exam, open, onOpenChange, onSuccess }: Props) {
     const [selectedGroupId, setSelectedGroupId] = useState<string | undefined>(undefined);
+    const [searchQuery, setSearchQuery] = useState('');
 
     // Fetch all groups to get names for filtering
     const { data: groupsData } = useQuery({
@@ -168,6 +169,17 @@ export function BatchResultsModal({ exam, open, onOpenChange, onSuccess }: Props
                             </div>
                         )}
 
+                        {/* Search Input */}
+                        <div className="relative mb-3">
+                            <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                            <Input
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                placeholder="ابحث عن طالب..."
+                                className="pr-9"
+                            />
+                        </div>
+
                         {rows.length === 0 ? (
                             <div className="py-10 text-center text-gray-400 space-y-2">
                                 <XCircle className="h-10 w-10 mx-auto text-gray-200" />
@@ -179,7 +191,11 @@ export function BatchResultsModal({ exam, open, onOpenChange, onSuccess }: Props
                                     <span className="col-span-7">الطالب</span>
                                     <span className="col-span-5 text-center">الدرجة</span>
                                 </div>
-                                {rows.map((row, idx) => (
+                                {rows
+                                    .filter(row => row.studentName.toLowerCase().includes(searchQuery.toLowerCase()))
+                                    .map((row) => {
+                                        const idx = rows.findIndex(r => r.studentId === row.studentId);
+                                        return (
                                     <div
                                         key={row.studentId}
                                         className={`grid grid-cols-12 items-center gap-2 px-3 py-2 rounded-lg ${row.alreadyDone ? 'bg-green-50' : 'hover:bg-gray-50'}`}
@@ -209,7 +225,8 @@ export function BatchResultsModal({ exam, open, onOpenChange, onSuccess }: Props
                                             )}
                                         </div>
                                     </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         )}
 
