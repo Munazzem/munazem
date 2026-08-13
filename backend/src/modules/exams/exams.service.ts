@@ -147,29 +147,6 @@ export class ExamsService {
                 date:        exam.date,
             });
 
-            // ── WhatsApp: notify parent (fire-and-forget) ───────────────────
-            const parentPhone = (student as any).parentPhone as string | undefined;
-            if (parentPhone) {
-                const teacherDoc = await UserModel.findById(teacherId, { name: 1, subject: 1 }).lean().catch(() => null);
-                const rawTeacherName = (teacherDoc as any)?.name ?? '';
-                const subject = (teacherDoc as any)?.subject;
-                const teacherName = subject ? `${rawTeacherName} (${subject})` : rawTeacherName;
-
-                enqueueWhatsApp({
-                    kind:        'exam_result',
-                    teacherId,
-                    parentPhone,
-                    studentName: student.studentName,
-                    examTitle:   exam.title,
-                    score:       data.score,
-                    totalMarks:  exam.totalMarks,
-                    percentage,
-                    grade,
-                    passed,
-                    examDate:    exam.date.toISOString(),
-                    teacherName,
-                });
-            }
 
             return newResult;
         } catch (err: any) {
@@ -220,33 +197,6 @@ export class ExamsService {
 
         const result = await ExamResultModel.insertMany(docs, { ordered: false });
 
-        // ── WhatsApp: notify parents of each recorded result (fire-and-forget) ────
-        const teacherDoc = await UserModel.findById(teacherId, { name: 1, subject: 1 }).lean().catch(() => null);
-        const rawTeacherName = (teacherDoc as any)?.name ?? '';
-        const subject = (teacherDoc as any)?.subject;
-        const teacherName = subject ? `${rawTeacherName} (${subject})` : rawTeacherName;
-
-        for (const doc of docs) {
-            if (!doc) continue;
-            const student = studentMap.get(doc.studentId.toString());
-            const parentPhone = (student as any)?.parentPhone as string | undefined;
-            if (!parentPhone) continue;
-
-            enqueueWhatsApp({
-                kind:        'exam_result',
-                teacherId,
-                parentPhone,
-                studentName: doc.studentName,
-                examTitle:   exam.title,
-                score:       doc.score,
-                totalMarks:  doc.totalMarks,
-                percentage:  doc.percentage,
-                grade:       doc.grade,
-                passed:      doc.passed,
-                examDate:    exam.date.toISOString(),
-                teacherName,
-            });
-        }
 
         return { total: data.results.length, inserted: result.length };
     }
@@ -288,5 +238,50 @@ export class ExamsService {
         return await ExamResultModel.find({ studentId, teacherId })
             .sort({ date: -1 })
             .lean();
+    }
+
+    // ── Send WhatsApp Messages for Exam Results ───────────────────────
+    static async sendExamResultsWhatsApp(examId: string, teacherId: string) {
+        const exam = await ExamModel.findOne({ _id: examId, teacherId }).lean();
+        if (!exam) throw NotFoundException({ message: 'الامتحان غير موجود' });
+
+        const results = await ExamResultModel.find({ examId, teacherId }).lean();
+        if (results.length === 0) return { sentCount: 0 };
+
+        const studentIds = results.map(r => r.studentId);
+        const students = await StudentModel.find(
+            { _id: { $in: studentIds } },
+            { parentPhone: 1, studentName: 1 }
+        ).lean();
+        const studentMap = new Map(students.map(s => [s._id.toString(), s]));
+
+        const teacherDoc = await UserModel.findById(teacherId, { name: 1, subject: 1 }).lean().catch(() => null);
+        const rawTeacherName = (teacherDoc as any)?.name ?? '';
+        const subject = (teacherDoc as any)?.subject;
+        const teacherName = subject ? `${rawTeacherName} (${subject})` : rawTeacherName;
+
+        let sentCount = 0;
+        for (const r of results) {
+            const student = studentMap.get(r.studentId?.toString());
+            const parentPhone = (student as any)?.parentPhone as string | undefined;
+            if (!parentPhone) continue;
+
+            enqueueWhatsApp({
+                kind:        'exam_result',
+                teacherId,
+                parentPhone,
+                studentName: r.studentName,
+                examTitle:   exam.title,
+                score:       r.score,
+                totalMarks:  r.totalMarks,
+                percentage:  r.percentage,
+                grade:       r.grade,
+                passed:      r.passed,
+                examDate:    exam.date.toISOString(),
+                teacherName,
+            });
+            sentCount++;
+        }
+        return { sentCount };
     }
 }

@@ -114,7 +114,7 @@ export function AddSubscriptionModal({ tenantId, disabled }: { tenantId?: string
                 </Button>
             </DialogTrigger>
 
-            <DialogContent className="sm:max-w-[680px] bg-white rounded-2xl p-0 overflow-hidden" dir="rtl">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-[680px] bg-white rounded-2xl p-0 overflow-hidden" dir="rtl">
                 <DialogHeader className="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
                     <DialogTitle className="text-xl font-bold text-gray-900">إضافة اشتراك جديد</DialogTitle>
                 </DialogHeader>

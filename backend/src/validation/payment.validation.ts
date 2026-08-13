@@ -11,6 +11,7 @@ export const recordSubscriptionSchema = z.object({
     paidAmount:     z.number().min(0).optional(),
     description:    z.string().max(300).optional(),
     date:           z.string().optional(),
+    customSessionsQuota: z.number().int().positive().optional(),
   }),
 });
 
@@ -20,6 +21,8 @@ export const batchSubscriptionSchema = z.object({
     discountAmount: z.number().min(0).optional(),
     description:    z.string().max(300).optional(),
     date:           z.string().optional(),
+    customSessionsQuota: z.number().int().positive().optional(),
+    customAmount:   z.number().min(0).optional(),
   }),
 });
 

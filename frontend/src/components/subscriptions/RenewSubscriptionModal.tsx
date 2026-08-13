@@ -127,7 +127,7 @@ export function RenewSubscriptionModal({ open, onOpenChange, subscription }: Pro
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[640px] bg-white rounded-2xl" dir="rtl">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-[640px] bg-white rounded-2xl" dir="rtl">
                 <DialogHeader>
                     <DialogTitle className="text-xl font-bold text-gray-900 border-b pb-3 flex items-center gap-2">
                         <RefreshCw className="h-5 w-5 text-primary" />

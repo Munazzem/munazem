@@ -57,6 +57,9 @@ export function BatchSubscriptionModal() {
     const [groupId, setGroupId] = useState('');
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [discount, setDiscount] = useState(0);
+    const [isCustomQuota, setIsCustomQuota] = useState(false);
+    const [customSessionsQuota, setCustomSessionsQuota] = useState('4');
+    const [customAmount, setCustomAmount] = useState('');
     const [results, setResults] = useState<IBatchSubscriptionResult[] | null>(null);
 
     const queryClient = useQueryClient();
@@ -163,16 +166,23 @@ export function BatchSubscriptionModal() {
         mutation.mutate({
             studentIds: Array.from(selectedIds),
             discountAmount: discount > 0 ? discount : undefined,
+            customSessionsQuota: isCustomQuota && customSessionsQuota ? parseInt(customSessionsQuota) : undefined,
+            customAmount: customAmount ? parseFloat(customAmount) : undefined,
         });
     };
 
     const handleClose = (val: boolean) => {
         setOpen(val);
-        if (!val) {
+        // Only reset the form if it was closed from the success results screen.
+        // If it was closed by mistake while filling data, preserve the state.
+        if (!val && results) {
             setStageFilter('');
             setGroupId('');
             setSelectedIds(new Set());
             setDiscount(0);
+            setIsCustomQuota(false);
+            setCustomSessionsQuota('4');
+            setCustomAmount('');
             setResults(null);
         }
     };
@@ -189,7 +199,7 @@ export function BatchSubscriptionModal() {
                 </Button>
             </DialogTrigger>
 
-            <DialogContent className="sm:max-w-[680px] bg-white rounded-2xl" dir="rtl">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-[680px] bg-white rounded-2xl" dir="rtl">
                 <DialogHeader>
                     <DialogTitle className="text-xl font-bold text-gray-900 border-b pb-4 flex items-center gap-2">
                         <CreditCard className="h-5 w-5 text-emerald-600" />
@@ -443,6 +453,47 @@ export function BatchSubscriptionModal() {
                                     dir="ltr"
                                 />
                             </div>
+                        </div>
+
+                        {/* Custom Quota */}
+                        <div className="bg-gray-50 border border-gray-100 rounded-lg p-3">
+                            <div className="flex items-center gap-2 mb-2">
+                                <input
+                                    type="checkbox"
+                                    id="isCustomQuotaBatch"
+                                    checked={isCustomQuota}
+                                    onChange={(e) => setIsCustomQuota(e.target.checked)}
+                                    className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-600 h-4 w-4 cursor-pointer"
+                                />
+                                <label htmlFor="isCustomQuotaBatch" className="text-sm font-medium text-gray-700 cursor-pointer">
+                                    تخصيص عدد الحصص (اشتراك نصف شهر مثلاً)
+                                </label>
+                            </div>
+                            {isCustomQuota && (
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="text-xs font-medium text-gray-600 mb-1.5 block">عدد الحصص المقررة</label>
+                                        <Input
+                                            type="number"
+                                            min="1"
+                                            value={customSessionsQuota}
+                                            onChange={(e) => setCustomSessionsQuota(e.target.value)}
+                                            className="h-8 text-sm bg-white"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-medium text-gray-600 mb-1.5 block">مبلغ الاشتراك (للكل)</label>
+                                        <Input
+                                            type="number"
+                                            min="0"
+                                            placeholder="السعر المخصص (اختياري)"
+                                            value={customAmount}
+                                            onChange={(e) => setCustomAmount(e.target.value)}
+                                            className="h-8 text-sm bg-white"
+                                        />
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         {/* Footer */}

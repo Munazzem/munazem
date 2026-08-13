@@ -267,7 +267,7 @@ export default function StudentAffairsPage() {
             
             {/* Pay Debt Dialog */}
             <Dialog open={payDebtOpen} onOpenChange={(v) => { setPayDebtOpen(v); if(!v) setPayDebtAmount(''); }}>
-                <DialogContent className="sm:max-w-[400px]" dir="rtl">
+                <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-[400px]" dir="rtl">
                     <DialogHeader>
                         <DialogTitle>سداد باقي المصاريف</DialogTitle>
                     </DialogHeader>

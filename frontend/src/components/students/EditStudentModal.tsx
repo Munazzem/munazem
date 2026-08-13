@@ -144,7 +144,7 @@ export function EditStudentModal({ student, open, onOpenChange }: EditStudentMod
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]" dir="rtl">
+      <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-[500px]" dir="rtl">
         <DialogHeader>
           <DialogTitle className="text-xl">تعديل بيانات الطالب</DialogTitle>
           <DialogDescription>

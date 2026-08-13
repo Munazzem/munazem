@@ -288,7 +288,7 @@ export class StudentService {
 
         // Pagination
         const page  = Math.max(1, parseInt(queryFilters.page)  || 1);
-        const limit = Math.min(100, Math.max(1, parseInt(queryFilters.limit) || 20));
+        const limit = Math.min(1000, Math.max(1, parseInt(queryFilters.limit) || 20));
         const skip  = (page - 1) * limit;
 
         // Run queries in parallel for efficiency

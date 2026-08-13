@@ -22,3 +22,7 @@ backend/docs/PRODUCTION.md
 # WhatsApp Session Cache (Hidden everywhere)
 **/.wwebjs_auth/
 **/.wwebjs_cache/
+
+# Maintenance & Scratch Scripts
+backend/reset_finances*.js
+frontend/replace.js

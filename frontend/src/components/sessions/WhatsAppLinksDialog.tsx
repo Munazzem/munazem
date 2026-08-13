@@ -42,7 +42,7 @@ export function WhatsAppLinksDialog({
 
     return (
         <Dialog open={open} onOpenChange={onClose}>
-            <DialogContent className="sm:max-w-[520px] max-h-[85vh] overflow-hidden flex flex-col" dir="rtl">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-[520px] max-h-[85vh] overflow-hidden flex flex-col" dir="rtl">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <MessageSquare className="h-5 w-5 text-green-600" />
