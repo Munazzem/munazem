@@ -23,7 +23,7 @@ import { cn } from '@/lib/utils';
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface AttendanceEntry { date: string; status: 'PRESENT' | 'ABSENT' | 'GUEST' }
 interface PaymentEntry    { date: string; paidAmount: number; discountAmount: number; category: string }
-interface ExamEntry       { examId: string; score: number; totalMarks: number; passingMarks: number; date: string; isPassed: boolean }
+interface ExamEntry       { examId: string; examName: string; score: number; totalMarks: number; passingMarks: number; date: string; isPassed: boolean }
 
 interface StudentSummary {
     studentId:            string;
@@ -31,6 +31,7 @@ interface StudentSummary {
     studentCode:          string;
     gradeLevel:           string;
     groupName:            string;
+    teacherName?:         string;
     isActive:             boolean;
     hasActiveSubscription: boolean;
     attendance: {
@@ -87,16 +88,18 @@ function StudentCard({ s }: { s: StudentSummary }) {
                         <div>
                             <h2 className="font-bold text-gray-900 text-base">{s.studentName}</h2>
                             <p className="text-xs text-gray-400 mt-0.5">{s.gradeLevel} · {s.groupName}</p>
+                            {s.teacherName && (
+                                <p className="text-xs font-medium text-[#1e3a6e] mt-1">
+                                    أ. {s.teacherName}
+                                </p>
+                            )}
                         </div>
                     </div>
-                    <Badge className={cn(
-                        'text-xs shrink-0',
-                        s.hasActiveSubscription
-                            ? 'bg-green-100 text-green-700 hover:bg-green-100'
-                            : 'bg-red-100 text-red-600 hover:bg-red-100'
-                    )}>
-                        {s.hasActiveSubscription ? 'اشتراك فعّال' : 'لم يُجدَّد'}
-                    </Badge>
+                    {s.hasActiveSubscription && (
+                        <Badge className="text-xs shrink-0 bg-green-100 text-green-700 hover:bg-green-100">
+                            اشتراك فعّال
+                        </Badge>
+                    )}
                 </div>
 
                 {/* Quick stats row */}
@@ -197,14 +200,11 @@ function StudentCard({ s }: { s: StudentSummary }) {
                             <span className="text-sm text-gray-500">
                                 إجمالي الاشتراكات: <strong className="text-gray-800">{s.payments.subscriptionsCount}</strong>
                             </span>
-                            <span className={cn(
-                                'text-xs font-medium px-2.5 py-1 rounded-full',
-                                s.hasActiveSubscription
-                                    ? 'bg-green-50 text-green-700'
-                                    : 'bg-red-50 text-red-600'
-                            )}>
-                                {s.hasActiveSubscription ? 'مشترك هذا الشهر ✓' : 'لم يُجدَّد هذا الشهر'}
-                            </span>
+                            {s.hasActiveSubscription && (
+                                <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-green-50 text-green-700">
+                                    مشترك هذا الشهر ✓
+                                </span>
+                            )}
                         </div>
 
                         {s.payments.lastSubscriptions.length === 0 ? (
@@ -237,26 +237,17 @@ function StudentCard({ s }: { s: StudentSummary }) {
                         ) : (
                             s.exams.map((e, i) => (
                                 <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
-                                    <div className="flex items-center gap-2">
-                                        {e.isPassed
-                                            ? <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
-                                            : <XCircle     className="h-4 w-4 text-red-400  shrink-0" />
-                                        }
-                                        <div>
-                                            <p className="text-sm font-medium text-gray-800">
-                                                {e.score} / {e.totalMarks}
-                                            </p>
-                                            <p className="text-xs text-gray-400">{formatDate(e.date)}</p>
-                                        </div>
+                                    <div>
+                                        <p className="text-sm font-medium text-gray-800">
+                                            {e.examName}
+                                        </p>
+                                        <p className="text-xs text-gray-400 mt-1">{formatDate(e.date)}</p>
                                     </div>
-                                    <Badge className={cn(
-                                        'text-xs',
-                                        e.isPassed
-                                            ? 'bg-green-100 text-green-700 hover:bg-green-100'
-                                            : 'bg-red-100 text-red-600 hover:bg-red-100'
-                                    )}>
-                                        {e.isPassed ? 'ناجح' : 'راسب'}
-                                    </Badge>
+                                    <div className="text-left" dir="ltr">
+                                        <p className="text-sm font-bold text-[#1e3a6e]">
+                                            {e.score} <span className="text-gray-400 text-xs font-normal">/ {e.totalMarks}</span>
+                                        </p>
+                                    </div>
                                 </div>
                             ))
                         )}

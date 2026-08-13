@@ -3,6 +3,7 @@ import { AttendanceSnapshotModel } from '../../database/models/attendance-snapsh
 import { TransactionModel } from '../../database/models/transaction.model.js';
 import { ExamResultModel }  from '../../database/models/exam-result.model.js';
 import { GroupModel }       from '../../database/models/group.model.js';
+import { UserModel }        from '../../database/models/user.model.js';
 import { TransactionType, TransactionCategory } from '../../common/enums/enum.service.js';
 import { NotFoundException, BadRequestException } from '../../common/utils/response/error.responce.js';
 
@@ -38,6 +39,9 @@ export class ParentService {
             { _id: student.groupId, teacherId },
             { name: 1, cycle: 1 }
         ).lean();
+
+        // Teacher name
+        const teacher = await UserModel.findById(teacherId, { name: 1 }).lean();
 
         // Attendance snapshots
         const snapshots = await AttendanceSnapshotModel.find({
@@ -95,7 +99,7 @@ export class ParentService {
         const examResults = await ExamResultModel.find(
             { studentId, teacherId },
             { examId: 1, score: 1, totalMarks: 1, passingMarks: 1, date: 1, isPassed: 1 }
-        ).sort({ date: -1 }).lean();
+        ).populate('examId', 'title').sort({ date: -1 }).lean();
 
         return {
             studentId:   studentId.toString(),
@@ -103,6 +107,7 @@ export class ParentService {
             studentCode: student.studentCode,
             gradeLevel:  student.gradeLevel,
             groupName:   group?.name ?? '—',
+            teacherName: teacher?.name ?? '—',
             isActive:    student.isActive,
             hasActiveSubscription,
             attendance: {
@@ -117,7 +122,15 @@ export class ParentService {
                 subscriptionsCount: subscriptions.length,
                 lastSubscriptions:  subscriptions.slice(0, 5),
             },
-            exams: examResults.slice(0, 10),
+            exams: examResults.slice(0, 10).map((e: any) => ({
+                examId: e.examId?._id?.toString() || e.examId?.toString(),
+                examName: e.examId?.title ?? 'امتحان بدون عنوان',
+                score: e.score,
+                totalMarks: e.totalMarks,
+                passingMarks: e.passingMarks,
+                date: e.date,
+                isPassed: e.isPassed
+            })),
         };
     }
 }
