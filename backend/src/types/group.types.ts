@@ -13,6 +13,7 @@ export interface IGroup {
     capacity?: number;
     teacherId: Types.ObjectId;
     isActive: boolean;
+    customPrice?: number | null;  // Optional override: null or undefined → fallback to grade-level price
     cycle?: {
         capacity: number;
         currentCycleNumber: number;
