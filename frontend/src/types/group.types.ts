@@ -12,6 +12,7 @@ export interface Group {
     capacity: number;
     teacherId: string;
     isActive: boolean;
+    customPrice?: number | null;
     createdAt?: string;
     updatedAt?: string;
     studentsCount?: number; // Fetched from backend optionally
@@ -32,6 +33,7 @@ export interface CreateGroupDTO {
     gradeLevel: string;
     schedule: GroupSchedule[];
     capacity?: number;
+    customPrice?: number | null;
 }
 
 export type UpdateGroupDTO = Partial<CreateGroupDTO> & { isActive?: boolean };
