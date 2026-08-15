@@ -180,24 +180,29 @@ export class PaymentsService {
         createdBy: string,
         data: { studentId: string; discountAmount?: number; paidAmount?: number; description?: string; date?: string; customSessionsQuota?: number }
     ) {
-        // Get student info
+        // Get student info (include groupId for price resolution)
         const student = await StudentModel.findById(data.studentId, {
-            studentName: 1, gradeLevel: 1, teacherId: 1
+            studentName: 1, gradeLevel: 1, teacherId: 1, groupId: 1
         }).lean();
         if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
         if (student.teacherId.toString() !== teacherId) {
             throw BadRequestException({ message: 'هذا الطالب لا ينتمي إلى هذا المعلم' });
         }
 
-        // Get teacher's price for this grade
+        // Get group info (customPrice for pricing hierarchy, schedule for quota)
+        const group = await GroupModel.findById((student as any).groupId, { schedule: 1, customPrice: 1 }).lean();
+
+        // Get teacher's grade-level prices (used as fallback if group has no customPrice)
         const settings = await PriceSettingsModel.findOne({ teacherId }).lean();
-        const priceSetting = settings?.prices.find(p => p.gradeLevel === student.gradeLevel);
-        if (!priceSetting) {
-            throw BadRequestException({ message: `لم يتم تحديد سعر للمرحلة: ${student.gradeLevel}` });
-        }
+
+        // Resolve originalAmount: group.customPrice → grade price → throw
+        const originalAmount = resolveOriginalAmount(
+            (group as any)?.customPrice,
+            student.gradeLevel,
+            settings,
+        );
 
         const discountAmount = data.discountAmount ?? 0;
-        const originalAmount = priceSetting.amount;
         
         let paidAmount = data.paidAmount;
         if (paidAmount === undefined) {
@@ -236,8 +241,7 @@ export class PaymentsService {
             throw BadRequestException({ message: 'لقد تم تسجيل اشتراك لهذا الطالب في نفس هذا الشهر مسبقاً.' });
         }
 
-        // Get group quota info before transaction (read-only)
-        const group = await GroupModel.findById(student.groupId, { schedule: 1 }).lean();
+        // Calculate quota from schedule (group already fetched above)
         const quota = (student as any).monthlySessionsQuota || (group?.schedule?.length ?? 2) * 4;
 
         // ── All mutations wrapped in a transaction (all-or-nothing) ──
@@ -312,9 +316,8 @@ export class PaymentsService {
         }
 
         const settings = await PriceSettingsModel.findOne({ teacherId }).lean();
-        if (!settings) {
-            throw BadRequestException({ message: 'لم يتم تحديد أسعار المراحل بعد — يرجى إعداد الأسعار أولاً' });
-        }
+        // Note: settings may be null if teacher hasn't configured grade-level prices yet.
+        // resolveOriginalAmount will still succeed if the student's group has a customPrice.
 
         const txDate = resolveTransactionDate(data.date);
         const discountAmount = data.discountAmount ?? 0;
@@ -329,7 +332,7 @@ export class PaymentsService {
         const studentMap = new Map(studentDocs.map(s => [s._id.toString(), s]));
 
         const groupIds = [...new Set(studentDocs.map(s => s.groupId?.toString()).filter(Boolean))];
-        const groupDocs = await GroupModel.find({ _id: { $in: groupIds as string[] } }, { schedule: 1 }).lean();
+        const groupDocs = await GroupModel.find({ _id: { $in: groupIds as string[] } }, { schedule: 1, customPrice: 1 }).lean();
         const groupMap = new Map(groupDocs.map(g => [g._id.toString(), g]));
 
         const startOfMonth = new Date(txDate);
@@ -363,13 +366,20 @@ export class PaymentsService {
                 continue;
             }
 
-            const priceSetting = settings.prices.find(p => p.gradeLevel === student.gradeLevel);
-            if (!priceSetting) {
-                results.push({ studentId, studentName: student.studentName, paidAmount: 0, status: 'error', error: `لم يتم تحديد سعر للمرحلة: ${student.gradeLevel}` });
+            const groupForStudent = groupMap.get(student.groupId?.toString());
+
+            // Resolve originalAmount: group.customPrice → grade price → soft-fail this student
+            let originalAmount: number;
+            try {
+                originalAmount = resolveOriginalAmount(
+                    (groupForStudent as any)?.customPrice,
+                    student.gradeLevel,
+                    settings,
+                );
+            } catch {
+                results.push({ studentId, studentName: student.studentName, paidAmount: 0, status: 'error', error: `لم يتم تحديد سعر للمجموعة ولا للمرحلة: ${student.gradeLevel}` });
                 continue;
             }
-
-            const originalAmount = priceSetting.amount;
             
             let paidAmount = originalAmount;
             if (data.customAmount !== undefined) {
