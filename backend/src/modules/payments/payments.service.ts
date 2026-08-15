@@ -22,6 +22,43 @@ import type { IPriceSetting } from '../../types/price-settings.types.js';
 // Alias for backward compatibility within this file
 const startOfDay = startOfDayEgypt;
 
+/**
+ * Resolves the base subscription price (originalAmount) for a student.
+ *
+ * Price Resolution Hierarchy:
+ *   1. group.customPrice  — persistent group-level override (most specific)
+ *   2. priceSettings[gradeLevel].amount — teacher's grade-level default (fallback)
+ *   3. throw BadRequestException — never silently fall back to 0
+ *
+ * @param groupCustomPrice - The group's customPrice field (null | undefined = no override)
+ * @param gradeLevel       - The student's grade level (used for fallback lookup)
+ * @param priceSettings    - The teacher's PriceSettings document (may be null)
+ * @returns The resolved originalAmount (always a positive number)
+ * @throws  BadRequestException if no price is configured at any level
+ */
+function resolveOriginalAmount(
+    groupCustomPrice: number | null | undefined,
+    gradeLevel: string,
+    priceSettings: { prices: { gradeLevel: string; amount: number }[] } | null | undefined,
+): number {
+    // Level 1: Group-level override (most specific)
+    // Note: != null catches both null and undefined intentionally
+    if (groupCustomPrice != null) {
+        return groupCustomPrice;
+    }
+
+    // Level 2: Grade-level default from PriceSettings (fallback)
+    const gradePriceSetting = priceSettings?.prices.find(p => p.gradeLevel === gradeLevel);
+    if (gradePriceSetting) {
+        return gradePriceSetting.amount;
+    }
+
+    // Level 3: Hard failure — no price at any level
+    throw BadRequestException({
+        message: `لم يتم تحديد سعر للمجموعة ولا للمرحلة الدراسية: ${gradeLevel}`
+    });
+}
+
 // Atomically updates (upsert) the DailyLedger when a transaction occurs
 async function updateDailyLedger(
     teacherId: string,
