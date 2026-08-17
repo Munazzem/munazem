@@ -27,6 +27,7 @@ export class GroupService {
             schedule:   data.schedule,
             teacherId,
             ...(data.capacity ? { capacity: data.capacity } : {}),
+            ...(data.customPrice !== undefined ? { customPrice: data.customPrice } : {}),
             cycle: {
                 capacity: data.cycleCapacity || (data.schedule.length * 4),
                 currentCycleNumber: 1,

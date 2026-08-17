@@ -31,6 +31,11 @@ const groupSchema = new Schema<IGroup>({
         type: Boolean,
         default: true
     },
+    customPrice: {
+        type: Number,
+        default: undefined,  // absent by default → grade-level fallback
+        min: [1, 'سعر المجموعة يجب أن يكون أكبر من صفر'],
+    },
     cycle: {
         capacity: { type: Number },
         currentCycleNumber: { type: Number, default: 1 },

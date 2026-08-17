@@ -23,6 +23,43 @@ import type { IPriceSetting } from '../../types/price-settings.types.js';
 // Alias for backward compatibility within this file
 const startOfDay = startOfDayEgypt;
 
+/**
+ * Resolves the base subscription price (originalAmount) for a student.
+ *
+ * Price Resolution Hierarchy:
+ *   1. group.customPrice  — persistent group-level override (most specific)
+ *   2. priceSettings[gradeLevel].amount — teacher's grade-level default (fallback)
+ *   3. throw BadRequestException — never silently fall back to 0
+ *
+ * @param groupCustomPrice - The group's customPrice field (null | undefined = no override)
+ * @param gradeLevel       - The student's grade level (used for fallback lookup)
+ * @param priceSettings    - The teacher's PriceSettings document (may be null)
+ * @returns The resolved originalAmount (always a positive number)
+ * @throws  BadRequestException if no price is configured at any level
+ */
+function resolveOriginalAmount(
+    groupCustomPrice: number | null | undefined,
+    gradeLevel: string,
+    priceSettings: { prices: { gradeLevel: string; amount: number }[] } | null | undefined,
+): number {
+    // Level 1: Group-level override (most specific)
+    // Note: != null catches both null and undefined intentionally
+    if (groupCustomPrice != null) {
+        return groupCustomPrice;
+    }
+
+    // Level 2: Grade-level default from PriceSettings (fallback)
+    const gradePriceSetting = priceSettings?.prices.find(p => p.gradeLevel === gradeLevel);
+    if (gradePriceSetting) {
+        return gradePriceSetting.amount;
+    }
+
+    // Level 3: Hard failure — no price at any level
+    throw BadRequestException({
+        message: `لم يتم تحديد سعر للمجموعة ولا للمرحلة الدراسية: ${gradeLevel}`
+    });
+}
+
 // Atomically updates (upsert) the DailyLedger when a transaction occurs
 async function updateDailyLedger(
     teacherId: string,
@@ -177,9 +214,12 @@ export class PaymentsService {
         let enrollmentCreatedNow = false;
 
         if (!enrollment) {
-            // The price snapshot (or PriceSettings) is fundamentally the FULL CYCLE subscription price
-            let fullMonthPrice = (priceSnapshot instanceof Map ? priceSnapshot.get(student.gradeLevel) : priceSnapshot?.[student.gradeLevel]);
-            if (fullMonthPrice === undefined) {
+            // The price snapshot (or PriceSettings or group.customPrice) is fundamentally the FULL CYCLE subscription price
+            let fullMonthPrice = (group as any)?.customPrice;
+            if (fullMonthPrice === undefined || fullMonthPrice === null) {
+                fullMonthPrice = (priceSnapshot instanceof Map ? priceSnapshot.get(student.gradeLevel) : priceSnapshot?.[student.gradeLevel]);
+            }
+            if (fullMonthPrice === undefined || fullMonthPrice === null) {
                 const settings = await PriceSettingsModel.findOne({ teacherId }).lean();
                 fullMonthPrice = settings?.prices.find(p => p.gradeLevel === student.gradeLevel)?.amount || 0;
             }
@@ -345,7 +385,7 @@ export class PaymentsService {
         const txDate = resolveTransactionDate(data.date);
         const results: { studentId: string; studentName: string; paidAmount: number; status: 'success' | 'error'; error?: string }[] = [];
 
-        // For large batches, process sequentially to prevent lock contention on ledgers
+        // For batches, process sequentially to handle cycle enrollments, pro-rata and prevent lock contention
         for (const studentId of data.studentIds) {
             try {
                 const tx = await PaymentsService.recordSubscription(teacherId, createdBy, {
@@ -359,7 +399,6 @@ export class PaymentsService {
                 });
                 results.push({ studentId, studentName: tx?.studentName ?? '', paidAmount: tx?.paidAmount ?? 0, status: 'success' });
             } catch (err: any) {
-                // Determine if we have a student name
                 let studentName = '';
                 try {
                     const student = await StudentModel.findById(studentId, { studentName: 1 }).lean();

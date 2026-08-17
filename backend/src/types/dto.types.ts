@@ -28,6 +28,7 @@ export interface CreateGroupDTO {
     schedule: ISchedule[];
     capacity?: number;
     cycleCapacity?: number;
+    customPrice?: number | null;
 }
 
 export interface UpdateGroupDTO {
@@ -36,6 +37,7 @@ export interface UpdateGroupDTO {
     schedule?: ISchedule[];
     capacity?: number;
     cycleCapacity?: number;
+    customPrice?: number | null;
     isActive?: boolean;
 }
 

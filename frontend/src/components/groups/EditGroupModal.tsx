@@ -47,6 +47,7 @@ const groupSchema = z.object({
   name: z.string().min(2, 'اسم المجموعة يجب أن يكون حرفين على الأقل'),
   gradeLevel: z.string().min(1, 'المرحلة الدراسية مطلوبة'),
   capacity: z.number().min(1, 'السعة يجب أن تكون رقم صحيح موجب'),
+  customPrice: z.number().positive('السعر يجب أن يكون أكبر من صفر').nullable().optional(),
   isActive: z.boolean().optional(),
   schedule: z.array(z.object({
       day: z.string().min(1, 'اليوم مطلوب'),
@@ -69,6 +70,7 @@ export function EditGroupModal({ group, open, onOpenChange }: EditGroupModalProp
       name: '',
       gradeLevel: '',
       capacity: 50,
+      customPrice: null,
       isActive: true,
       schedule: [{ day: '', time: '' }],
     },
@@ -85,6 +87,7 @@ export function EditGroupModal({ group, open, onOpenChange }: EditGroupModalProp
               name: group.name,
               gradeLevel: group.gradeLevel,
               capacity: group.capacity || 50,
+              customPrice: group.customPrice ?? null,
               isActive: group.isActive ?? true,
               schedule: group.schedule?.length > 0 ? group.schedule : [{ day: '', time: '' }],
           });
@@ -174,9 +177,31 @@ export function EditGroupModal({ group, open, onOpenChange }: EditGroupModalProp
                     </FormControl>
                     <FormMessage />
                     </FormItem>
+
                 )}
                 />
 
+                <FormField
+                control={form.control}
+                name="customPrice"
+                render={({ field }) => (
+                    <FormItem className="col-span-2 sm:col-span-1">
+                    <FormLabel>سعر مخصص (اختياري)</FormLabel>
+                    <FormControl>
+                        <Input 
+                            type="number" 
+                            dir="ltr" 
+                            className="text-right" 
+                            placeholder="اتركه فارغاً للاعتماد على سعر المرحلة الافتراضي"
+                            {...field}
+                            value={field.value ?? ''}
+                            onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : null)} 
+                        />
+                    </FormControl>
+                    <FormMessage />
+                    </FormItem>
+                )}
+                />
                 <FormField
                 control={form.control}
                 name="isActive"
