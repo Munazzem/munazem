@@ -120,6 +120,66 @@ describe('Payments API', () => {
             expect(enrollmentModel.chargeableSessions).toBe(4);
             expect(enrollmentModel.cycleCharge).toBe(75);
         });
+
+        it('يرمي خطأ 400 إذا لم يتم تحديد سعر للمجموعة ولا للمرحلة الدراسية', async () => {
+            await seedTeacher();
+            const group = await seedGroup(); // no customPrice
+            const student = await seedStudent(group._id as any);
+            // No PriceSettings configured
+
+            const res = await app
+                .post('/payments/subscription')
+                .set('Authorization', bearerHeader(makeTeacherToken()))
+                .send({
+                    studentId: student._id.toString(),
+                    paidAmount: 150
+                });
+
+            expect(res.status).toBe(400);
+            expect(res.body.message).toContain('لم يتم تحديد سعر للمجموعة ولا للمرحلة الدراسية');
+        });
+
+        it('يطبق customPrice الخاص بالمجموعة كأولوية قصوى حتى مع وجود priceSnapshot أو PriceSettings', async () => {
+            await seedTeacher();
+            // Set up PriceSettings to 100
+            await app
+                .put('/payments/prices')
+                .set('Authorization', bearerHeader(makeTeacherToken()))
+                .send({
+                    prices: [{ gradeLevel: GradeLevel.PREP_1, amount: 100 }],
+                    centerDiscounts: []
+                });
+
+            // Group has customPrice = 300
+            const group = await seedGroup({ customPrice: 300 });
+            // Add a mock priceSnapshot for PREP_1 = 200
+            await mongoose.model('Group').findByIdAndUpdate(group._id, {
+                cycle: {
+                    startedAt: new Date(),
+                    currentCycleNumber: 1,
+                    currentSessionNumber: 0,
+                    capacity: 8,
+                    priceSnapshot: { PREP_1: 200 }
+                }
+            });
+
+            const student = await seedStudent(group._id as any);
+
+            const res = await app
+                .post('/payments/subscription')
+                .set('Authorization', bearerHeader(makeTeacherToken()))
+                .send({
+                    studentId: student._id.toString(),
+                    paidAmount: 300
+                });
+
+            expect(res.status).toBe(201);
+            expect(res.body.data.originalAmount).toBe(300); // cycleCharge should be based on 300
+            
+            const enrollmentModel = await mongoose.model('CycleEnrollment').findOne({ studentId: student._id });
+            expect(enrollmentModel.fullCyclePrice).toBe(300);
+            expect(enrollmentModel.cycleCharge).toBe(300);
+        });
     });
 
     describe('POST /payments/notebook', () => {
@@ -185,6 +245,109 @@ describe('Payments API', () => {
             expect(res.status).toBe(200);
             // Verify there is an expense transaction in the ledger
             expect(res.body.data.transactions).toBeInstanceOf(Array);
+        });
+    });
+
+    describe('DELETE /payments/:id', () => {
+        it('Scenario A: Deleting a subscription on a newly created cycle enrollment correctly reverts student totalDebt to 0 and removes the enrollment', async () => {
+            await seedTeacher();
+            
+            // Set base price to 100
+            await app
+                .put('/payments/prices')
+                .set('Authorization', bearerHeader(makeTeacherToken()))
+                .send({
+                    prices: [{ gradeLevel: GradeLevel.PREP_1, amount: 100 }],
+                    centerDiscounts: []
+                });
+
+            const group = await seedGroup();
+            const student = await seedStudent(group._id as any);
+
+            // Record a partial payment (e.g. 40 out of 100) -> totalDebt should be 100 - 40 = 60
+            const subRes = await app
+                .post('/payments/subscription')
+                .set('Authorization', bearerHeader(makeTeacherToken()))
+                .send({
+                    studentId: student._id.toString(),
+                    paidAmount: 40
+                });
+
+            expect(subRes.status).toBe(201);
+            const transactionId = subRes.body.data._id;
+
+            let updatedStudent = await mongoose.model('Student').findById(student._id);
+            expect(updatedStudent.totalDebt).toBe(60);
+
+            // Delete the transaction
+            const delRes = await app
+                .delete(`/payments/${transactionId}`)
+                .set('Authorization', bearerHeader(makeTeacherToken()));
+
+            expect(delRes.status).toBe(200);
+
+            // Verify the student debt is back to 0
+            updatedStudent = await mongoose.model('Student').findById(student._id);
+            expect(updatedStudent.totalDebt).toBe(0);
+
+            // Verify the enrollment was completely deleted
+            const enrollmentModel = await mongoose.model('CycleEnrollment').findOne({ studentId: student._id });
+            expect(enrollmentModel).toBeNull();
+        });
+
+        it('Scenario B: Deleting a secondary/partial payment transaction on an existing enrollment correctly restores paidAmount back to student.totalDebt', async () => {
+            await seedTeacher();
+            
+            await app
+                .put('/payments/prices')
+                .set('Authorization', bearerHeader(makeTeacherToken()))
+                .send({
+                    prices: [{ gradeLevel: GradeLevel.PREP_1, amount: 200 }],
+                    centerDiscounts: []
+                });
+
+            const group = await seedGroup();
+            const student = await seedStudent(group._id as any);
+
+            // First payment of 50 -> debt is 200 - 50 = 150
+            await app
+                .post('/payments/subscription')
+                .set('Authorization', bearerHeader(makeTeacherToken()))
+                .send({
+                    studentId: student._id.toString(),
+                    paidAmount: 50
+                });
+
+            // Second payment of 30 -> debt is 150 - 30 = 120
+            const secondSubRes = await app
+                .post('/payments/subscription')
+                .set('Authorization', bearerHeader(makeTeacherToken()))
+                .send({
+                    studentId: student._id.toString(),
+                    paidAmount: 30
+                });
+
+            const transactionId = secondSubRes.body.data._id;
+
+            let updatedStudent = await mongoose.model('Student').findById(student._id);
+            expect(updatedStudent.totalDebt).toBe(120);
+
+            // Delete the second payment only
+            const delRes = await app
+                .delete(`/payments/${transactionId}`)
+                .set('Authorization', bearerHeader(makeTeacherToken()));
+
+            expect(delRes.status).toBe(200);
+
+            // Debt should increase by 30, returning to 150
+            updatedStudent = await mongoose.model('Student').findById(student._id);
+            expect(updatedStudent.totalDebt).toBe(150);
+
+            // Enrollment should NOT be deleted, it should remain partially paid
+            const enrollmentModel = await mongoose.model('CycleEnrollment').findOne({ studentId: student._id });
+            expect(enrollmentModel).not.toBeNull();
+            expect(enrollmentModel.totalPaid).toBe(50);
+            expect(enrollmentModel.remainingAmount).toBe(150);
         });
     });
 
