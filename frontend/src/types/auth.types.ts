@@ -8,6 +8,7 @@ export interface User {
     role: 'superAdmin' | 'teacher' | 'assistant';
     stages?: ('PRIMARY' | 'PREPARATORY' | 'SECONDARY')[];
     teacherId?: string | null;
+    teacherName?: string | null;
     centerName?: string;
     logoUrl?: string;
     assistantsAccessEnabled?: boolean;

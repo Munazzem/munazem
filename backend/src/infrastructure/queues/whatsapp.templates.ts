@@ -14,12 +14,12 @@ export const DEFAULT_SESSION_ABSENT_TEMPLATES = [
 
 // ── Default Exam Result Templates (Rich, Diverse, ending with Call to Action) ──
 export const DEFAULT_EXAM_RESULT_TEMPLATES = [
-    'السلام عليكم ورحمة الله،\nتقرير نتيجة اختبار [**{examName}**] للطالب/ة: **{studentName}**\n📊 الدرجة: **{studentScore} من {examTotal}** ({percentage}%)\n📈 التقدير: **{grade}** ({passLabel})\n\n📌 **الرجاء الرد بـ (تم) لتأكيد الاطلاع على النتيجة.**',
-    'أهلاً بحضرتك يا فندم،\nتم رصد درجات اختبار **{examName}**، وحصل **{studentName}** على: **{studentScore} / {examTotal}** (تقدير: **{grade}**).\nنرجو الاستمرار في التحفيز والمتابعة المستمرة.\n\n📌 **يرجى الرد بكلمة (تم) لتأكيد الاستلام.**',
-    '📈 **إشعار نتيجة اختبار**:\nالطالب: **{studentName}** | الاختبار: **{examName}**\n🎯 النتيجة: **{studentScore} من {examTotal}** ({percentage}%) — {passLabel}\n\n📌 **الرجاء الرد بـ (تم) للتأكيد.**',
-    'تحية طيبة،\nنود إحاطتكم علمًا بنتيجة **{studentName}** في امتحان **{examName}**:\nالدرجة المحققة: **{studentScore} من {examTotal}** ({grade}).\n\n📌 **الرجاء الرد بـ (تم) للاطلاع.**',
-    'أهلاً بحضرتك،\nنتيجة اختبار **{examName}** للطالب/ة **{studentName}**:\n📊 **{studentScore} من {examTotal}** ({percentage}%) — {passLabel}.\nنتمنى له دوام التفوق والنجاح.\n\n📌 **يرجى الرد بـ (تم) لمشاركتنا التشجيع.**',
-    '📌 **تقرير درجات الطالب**:\nتم إعلان نتيجة **{examName}** للطالب **{studentName}** بدرجة **{studentScore} / {examTotal}** ({grade}).\n\n📌 **الرجاء الرد بـ (تم) لتأكيد العلم.**'
+    'السلام عليكم ورحمة الله،\nتقرير نتيجة اختبار [**{examName}**] للطالب/ة: **{studentName}**\n📊 الدرجة: **{studentScore} من {examTotal}** ({percentage}%)\n\n📌 **الرجاء الرد بـ (تم) لتأكيد الاطلاع على النتيجة.**',
+    'أهلاً بحضرتك يا فندم،\nتم رصد درجات اختبار **{examName}**، وحصل **{studentName}** على: **{studentScore} من {examTotal}** ({percentage}%).\nشاكرين لكم حرصكم ومتابعتكم المستمرة لمستوى الطالب.\n\n📌 **يرجى الرد بكلمة (تم) لتأكيد الاستلام.**',
+    '📈 **إشعار نتيجة اختبار**:\nالطالب/ة: **{studentName}** | الاختبار: **{examName}**\n🎯 النتيجة المحققة: **{studentScore} من {examTotal}** ({percentage}%)\n\n📌 **الرجاء الرد بـ (تم) للتأكيد.**',
+    'تحية طيبة،\nنود إحاطتكم علمًا بنتيجة **{studentName}** في اختبار **{examName}**:\n📊 الدرجة: **{studentScore} من {examTotal}** ({percentage}%).\nمع تمنياتنا للطالب بدوام التوفيق والتقدم.\n\n📌 **الرجاء الرد بـ (تم) للاطلاع.**',
+    'أهلاً بحضرتك،\nنتيجة اختبار **{examName}** للطالب/ة **{studentName}**:\n📊 **{studentScore} من {examTotal}** ({percentage}%).\nنقدر دعمكم المتواصل لتطوير أداء الطالب.\n\n📌 **يرجى الرد بـ (تم) لتأكيد المتابعة.**',
+    '📌 **تقرير درجات الاختبار**:\nتم رصد نتيجة **{examName}** للطالب/ة **{studentName}**، وكانت الدرجة: **{studentScore} من {examTotal}** بنسبة ({percentage}%).\n\n📌 **الرجاء الرد بـ (تم) لتأكيد العلم.**'
 ];
 
 const CACHE_KEY = 'whatsapp_dynamic_templates';

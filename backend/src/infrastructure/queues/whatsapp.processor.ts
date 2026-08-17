@@ -39,7 +39,6 @@ async function buildMessage(data: WhatsAppJobData): Promise<{ message: string; t
     const date = new Date(data.examDate).toLocaleDateString('ar-EG', {
         year: 'numeric', month: 'long', day: 'numeric',
     });
-    const passLabel = data.passed ? '✅ ناجح' : '❌ راسب';
     const replacements = {
         studentName: data.studentName,
         examName: data.examTitle,
@@ -47,8 +46,6 @@ async function buildMessage(data: WhatsAppJobData): Promise<{ message: string; t
         studentScore: String(data.score),
         examTotal: String(data.totalMarks),
         percentage: String(data.percentage),
-        grade: String(data.grade),
-        passLabel: passLabel,
         teacherName: data.teacherName || '',
     };
     const { text, templateIdx } = await pickTemplate('exam_result', replacements);

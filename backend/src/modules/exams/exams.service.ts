@@ -206,6 +206,9 @@ export class ExamsService {
         const exam = await ExamModel.findOne({ _id: examId, teacherId }).lean();
         if (!exam) throw NotFoundException({ message: 'الامتحان غير موجود' });
 
+        const teacherDoc = await UserModel.findById(teacherId, { name: 1 }).lean().catch(() => null);
+        const teacherName = (teacherDoc as any)?.name ?? '';
+
         const results = await ExamResultModel.find({ examId, teacherId }).sort({ studentName: 1 }).lean();
 
         // Enrich with parentPhone for WhatsApp links
@@ -225,6 +228,7 @@ export class ExamsService {
 
         return {
             exam:         { title: exam.title, date: exam.date, totalMarks: exam.totalMarks },
+            teacherName,
             totalStudents: results.length,
             passingCount:  passing,
             failingCount:  results.length - passing,
