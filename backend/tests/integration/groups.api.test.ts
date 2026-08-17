@@ -66,6 +66,53 @@ describe('POST /groups', () => {
 
         expect(res.status).toBe(400);
     });
+
+    describe('customPrice validation', () => {
+        it('يُنشئ مجموعة بـ customPrice: 200 بنجاح', async () => {
+            await seedTeacher();
+            const res = await app.post('/groups').set('Authorization', bearerHeader(makeTeacherToken())).send({
+                name: 'VIP Group',
+                gradeLevel: GradeLevel.PREP_1,
+                schedule: [{ day: 'الأحد', time: '14:00' }],
+                customPrice: 200
+            });
+            expect(res.status).toBe(201);
+            expect(res.body.data.customPrice).toBe(200);
+        });
+
+        it('يُنشئ مجموعة بدون customPrice بنجاح', async () => {
+            await seedTeacher();
+            const res = await app.post('/groups').set('Authorization', bearerHeader(makeTeacherToken())).send({
+                name: 'Normal Group',
+                gradeLevel: GradeLevel.PREP_1,
+                schedule: [{ day: 'الأحد', time: '14:00' }]
+            });
+            expect(res.status).toBe(201);
+            expect(res.body.data.customPrice).toBeUndefined();
+        });
+
+        it('يرفض بـ 400 لو customPrice: 0', async () => {
+            await seedTeacher();
+            const res = await app.post('/groups').set('Authorization', bearerHeader(makeTeacherToken())).send({
+                name: 'Free Group',
+                gradeLevel: GradeLevel.PREP_1,
+                schedule: [{ day: 'الأحد', time: '14:00' }],
+                customPrice: 0
+            });
+            expect(res.status).toBe(400);
+        });
+
+        it('يرفض بـ 400 لو customPrice بالسالب', async () => {
+            await seedTeacher();
+            const res = await app.post('/groups').set('Authorization', bearerHeader(makeTeacherToken())).send({
+                name: 'Negative Group',
+                gradeLevel: GradeLevel.PREP_1,
+                schedule: [{ day: 'الأحد', time: '14:00' }],
+                customPrice: -50
+            });
+            expect(res.status).toBe(400);
+        });
+    });
 });
 
 // =============================================================================
@@ -171,6 +218,32 @@ describe('PUT /groups/:id', () => {
             .send({ name: 'مجموعة جديدة' });
 
         expect(res.status).toBe(404);
+    });
+
+    it('يُحدّث customPrice لقيمة صحيحة بنجاح', async () => {
+        await seedTeacher();
+        const group = await seedGroup({ name: 'مجموعة قديمة', customPrice: undefined });
+
+        const res = await app
+            .put(`/groups/${group._id}`)
+            .set('Authorization', bearerHeader(makeTeacherToken()))
+            .send({ customPrice: 300 });
+
+        expect(res.status).toBe(200);
+        expect(res.body.data.customPrice).toBe(300);
+    });
+
+    it('يمسح customPrice بإرسال null (للرجوع لسعر المرحلة)', async () => {
+        await seedTeacher();
+        const group = await seedGroup({ name: 'مجموعة مخصصة', customPrice: 200 });
+
+        const res = await app
+            .put(`/groups/${group._id}`)
+            .set('Authorization', bearerHeader(makeTeacherToken()))
+            .send({ customPrice: null });
+
+        expect(res.status).toBe(200);
+        expect(res.body.data.customPrice).toBeNull();
     });
 });
 
