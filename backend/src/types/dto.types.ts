@@ -27,6 +27,7 @@ export interface CreateGroupDTO {
     gradeLevel: GradeLevel;
     schedule: ISchedule[];
     capacity?: number;
+    cycleCapacity?: number;
     customPrice?: number | null;
 }
 
@@ -35,6 +36,7 @@ export interface UpdateGroupDTO {
     gradeLevel?: GradeLevel;
     schedule?: ISchedule[];
     capacity?: number;
+    cycleCapacity?: number;
     customPrice?: number | null;
     isActive?: boolean;
 }

@@ -69,7 +69,7 @@ export default function DashboardPage() {
         queryKey: ['groups'],
         queryFn: () => fetchGroups({ limit: 200 }),
         enabled: user?.role === 'teacher' || user?.role === 'assistant',
-        staleTime: 10 * 60 * 1000,
+        staleTime: 30 * 1000,
     });
     // Build a fast lookup Map: groupId string → group name
     const groupMap = new Map(
@@ -80,8 +80,7 @@ export default function DashboardPage() {
         queryKey: ['unpaid-count'],
         queryFn: () => fetchUnpaidStudents(false),   // count only — very fast
         enabled: user?.role === 'teacher',
-        refetchInterval: 10 * 60 * 1000,
-        staleTime: 5 * 60 * 1000,
+        refetchInterval: 2 * 60 * 1000,
     });
 
     // Heavy query — only fired when user clicks "عرض القائمة"
@@ -89,7 +88,6 @@ export default function DashboardPage() {
         queryKey: ['unpaid-list'],
         queryFn: () => fetchUnpaidStudents(true),
         enabled: user?.role === 'teacher' && showUnpaidList,
-        staleTime: 5 * 60 * 1000,
     });
 
     if (!isMounted) return <DashboardSkeleton />;

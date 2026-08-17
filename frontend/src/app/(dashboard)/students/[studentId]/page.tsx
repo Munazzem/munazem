@@ -106,7 +106,6 @@ export default function StudentProfilePage() {
         queryKey: QK.students.report(studentId),
         queryFn: () => fetchStudentReport(studentId),
         enabled: !!studentId,
-        staleTime: 2 * 60 * 1000,
     });
 
     const subscribeMutation = useMutation({

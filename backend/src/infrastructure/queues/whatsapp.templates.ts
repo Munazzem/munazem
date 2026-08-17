@@ -2,23 +2,24 @@ import { cache } from '../cache/cache.service.js';
 import { PlatformSettingsModel } from '../../database/models/platform-settings.model.js';
 import { logger } from '../../common/utils/logger.util.js';
 
-// ── Default Fallback Templates (No Emojis except ⚠️) ──
+// ── Default Session Absent Templates (Rich, Diverse, ending with Call to Action) ──
 export const DEFAULT_SESSION_ABSENT_TEMPLATES = [
-    'أهلاً بحضرتك،\nنحيطكم علمًا بأن الطالب **{studentName}** تم تسجيل غيابه عن حصة اليوم.\n\n📅 تاريخ الحصة: **{date}**\n\nلمتابعة سجل الحضور والغياب:\nhttps://munazem.vercel.app/parent',
-    'السلام عليكم،\nتم تسجيل غياب الطالب **{studentName}** عن حصة **{date}**.\n\nيمكنكم متابعة تفاصيل الحضور والغياب من خلال بوابة ولي الأمر:\nhttps://munazem.vercel.app/parent',
-    'تنبيه حضور 📌\n\nالطالب: **{studentName}**\nالحالة: **غائب**\nتاريخ الحصة: **{date}**\n\nلمتابعة سجل الطالب:\nhttps://munazem.vercel.app/parent',
-    'تم تسجيل غياب **{studentName}** عن حصة اليوم **{date}**.\n\nيمكنكم مراجعة سجل الحضور والغياب الخاص بالطالب من هنا:\nhttps://munazem.vercel.app/parent',
-    'نود إبلاغ حضرتك بأنه تم تسجيل **غياب الطالب {studentName}** عن حصة **{date}**.\n\nلمتابعة الحضور والغياب وباقي بيانات الطالب:\nhttps://munazem.vercel.app/parent',
-    '📌 إشعار غياب\n\nالطالب **{studentName}** لم يحضر حصة **{date}**، وتم تسجيل الغياب على النظام.\n\nللاطلاع على تفاصيل الحضور والغياب:\nhttps://munazem.vercel.app/parent'
+    'السلام عليكم ورحمة الله،\nنحيطكم علمًا بأن الطالب/ة **{studentName}** تم تسجيل غيابه عن موعد حصة اليوم ({date}).\n\n📌 **الرجاء الرد بـ (تم) لتأكيد استلام الإشعار.**',
+    'أهلاً بحضرتك يا فندم،\nحرصًا منا على متابعة المستوى الدراسي للطالب/ة **{studentName}**، نود إبلاغكم بعدم حضوره لحصة اليوم ({date}). نرجو الاطمئنان عليه ومتابعة تعويض ما فاته.\n\n📌 **يرجى الرد بكلمة (تم) للتأكيد.**',
+    '⚠️ **تنبيه غياب**:\nتم تسجيل غياب **{studentName}** عن حصة [**{sessionTitle}**] بتاريخ **{date}**.\n\n📌 **الرجاء الرد بـ (تم) لتأكيد العلم.**',
+    'تحية طيبة وبعد،\nنود إحاطتكم علمًا بأن الطالب/ة **{studentName}** لم يسجل حضورًا بحصة اليوم **{date}**.\n\n📌 **الرجاء الرد بـ (تم) للاطلاع.**',
+    'أهلاً بحضرتك،\nنلفت انتباهكم إلى غياب **{studentName}** عن حصة اليوم. برجاء المتابعة مع الطالب لمعرفة سبب الغياب.\n\n📌 **يرجى الرد بـ (تم) لتأكيد المتابعة.**',
+    '📌 **إشعار هام**:\nالطالب/ة **{studentName}** غائب اليوم عن الحصة ({date}).\n\n📌 **الرجاء الرد بـ (تم) لتأكيد الاستلام.**'
 ];
 
+// ── Default Exam Result Templates (Rich, Diverse, ending with Call to Action) ──
 export const DEFAULT_EXAM_RESULT_TEMPLATES = [
-    'أهلاً بحضرتك،\nنحيطكم علمًا بظهور نتيجة امتحان **{examName}** للطالب **{studentName}**.\n\n📊 النتيجة: **{studentScore} من {examTotal}**\n\nلمتابعة نتيجة الطالب وباقي بياناته:\nhttps://munazem.vercel.app/parent',
-    'السلام عليكم،\nنتيجة الطالب **{studentName}** في امتحان **{examName}**:\n\n**{studentScore} من {examTotal}** 📈\n\nيمكنكم متابعة تفاصيل الطالب من خلال بوابة ولي الأمر:\nhttps://munazem.vercel.app/parent',
-    'أهلاً بحضرتك،\nتم تسجيل نتيجة **{studentName}** في امتحان **{examName}**.\n\nالدرجة: **{studentScore} / {examTotal}** 📊\n\nللاطلاع على النتيجة ومتابعة مستوى الطالب:\nhttps://munazem.vercel.app/parent',
-    'تنبيه بظهور نتيجة الامتحان 📌\n\nالطالب: **{studentName}**\nالامتحان: **{examName}**\nالنتيجة: **{studentScore} من {examTotal}**\n\nلمتابعة بيانات الطالب ونتائجه:\nhttps://munazem.vercel.app/parent',
-    'تم إعلان نتيجة امتحان **{examName}** للطالب **{studentName}**.\n\n📌 الدرجة: **{studentScore} من {examTotal}**\n\nيمكنكم متابعة النتائج والتفاصيل من بوابة ولي الأمر:\nhttps://munazem.vercel.app/parent',
-    'نتيجة امتحان **{examName}** للطالب **{studentName}**:\n\n📊 **{studentScore} من {examTotal}**\n\nلمتابعة نتيجة الطالب وسجل الاختبارات الخاص به، يمكنكم الدخول من هنا:\nhttps://munazem.vercel.app/parent'
+    'السلام عليكم ورحمة الله،\nتقرير نتيجة اختبار [**{examName}**] للطالب/ة: **{studentName}**\n📊 الدرجة: **{studentScore} من {examTotal}** ({percentage}%)\n📈 التقدير: **{grade}** ({passLabel})\n\n📌 **الرجاء الرد بـ (تم) لتأكيد الاطلاع على النتيجة.**',
+    'أهلاً بحضرتك يا فندم،\nتم رصد درجات اختبار **{examName}**، وحصل **{studentName}** على: **{studentScore} / {examTotal}** (تقدير: **{grade}**).\nنرجو الاستمرار في التحفيز والمتابعة المستمرة.\n\n📌 **يرجى الرد بكلمة (تم) لتأكيد الاستلام.**',
+    '📈 **إشعار نتيجة اختبار**:\nالطالب: **{studentName}** | الاختبار: **{examName}**\n🎯 النتيجة: **{studentScore} من {examTotal}** ({percentage}%) — {passLabel}\n\n📌 **الرجاء الرد بـ (تم) للتأكيد.**',
+    'تحية طيبة،\nنود إحاطتكم علمًا بنتيجة **{studentName}** في امتحان **{examName}**:\nالدرجة المحققة: **{studentScore} من {examTotal}** ({grade}).\n\n📌 **الرجاء الرد بـ (تم) للاطلاع.**',
+    'أهلاً بحضرتك،\nنتيجة اختبار **{examName}** للطالب/ة **{studentName}**:\n📊 **{studentScore} من {examTotal}** ({percentage}%) — {passLabel}.\nنتمنى له دوام التفوق والنجاح.\n\n📌 **يرجى الرد بـ (تم) لمشاركتنا التشجيع.**',
+    '📌 **تقرير درجات الطالب**:\nتم إعلان نتيجة **{examName}** للطالب **{studentName}** بدرجة **{studentScore} / {examTotal}** ({grade}).\n\n📌 **الرجاء الرد بـ (تم) لتأكيد العلم.**'
 ];
 
 const CACHE_KEY = 'whatsapp_dynamic_templates';
@@ -41,7 +42,6 @@ export async function getWhatsAppTemplates(): Promise<WhatsAppTemplates> {
         const doc = await PlatformSettingsModel.findOne({ key: 'whatsapp_templates' }).lean();
         if (doc && doc.value) {
             const templates = doc.value as WhatsAppTemplates;
-            // Validate structure briefly
             if (Array.isArray(templates.session_absent) && Array.isArray(templates.exam_result)) {
                 await cache.set(CACHE_KEY, templates, CACHE_TTL);
                 return templates;
@@ -56,15 +56,13 @@ export async function getWhatsAppTemplates(): Promise<WhatsAppTemplates> {
         exam_result: DEFAULT_EXAM_RESULT_TEMPLATES,
     };
     
-    // Cache the default fallback as well to prevent spamming DB on error
     await cache.set(CACHE_KEY, defaultTemplates, CACHE_TTL);
-    
     return defaultTemplates;
 }
 
 /**
- * Returns a semi-random template to avoid identical message spam.
- * Replaces placeholders: {studentName}, {sessionTitle}, {examName}, {studentScore}, {examTotal}
+ * Returns a pseudo-random rotating template to avoid identical message spam.
+ * Replaces placeholders: {studentName}, {sessionTitle}, {examName}, {studentScore}, {examTotal}, {date}, etc.
  */
 export async function pickTemplate(
     kind: 'session_absent' | 'exam_result',
@@ -73,21 +71,21 @@ export async function pickTemplate(
     const templatesList = await getWhatsAppTemplates();
     const array = templatesList[kind] || DEFAULT_SESSION_ABSENT_TEMPLATES;
 
-    // Pick a pseudo-random template using the current minute/second and phone length
-    // to cycle through templates naturally without needing to store state per teacher.
-    const randomness = new Date().getMinutes() + new Date().getSeconds();
-    const index = randomness % Math.max(1, array.length);
+    // Use current time and student name hash for organic template rotation
+    const hash = (replacements.studentName || '').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const timeFactor = new Date().getMinutes() + new Date().getSeconds();
+    const index = (hash + timeFactor) % Math.max(1, array.length);
 
-    let text = array[index] || '';
+    let text = array[index] || array[0] || '';
 
     for (const [key, value] of Object.entries(replacements)) {
         text = text.replace(new RegExp(`\\{${key}\\}`, 'g'), value);
     }
 
-    // Append the teacher signature
+    // Append teacher signature cleanly
     if (replacements.teacherName) {
-        const cleanedName = replacements.teacherName.replace(/\s*\(.*?\)\s*/g, '').trim(); // Remove subject inside parentheses if any
-        text += `\n\nمع تحيات أ/ ${cleanedName}`;
+        const cleanedName = replacements.teacherName.replace(/\s*\(.*?\)\s*/g, '').trim();
+        text += `\nمع تحيات: أ/ ${cleanedName}`;
     }
 
     return { text, templateIdx: index };

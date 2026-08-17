@@ -34,6 +34,7 @@ import {
 import { AddGroupModal } from '@/components/groups/AddGroupModal';
 import { EditGroupModal } from '@/components/groups/EditGroupModal';
 import { GroupReportModal } from '@/components/groups/GroupReportModal';
+import { GradeCycleCapacityModal } from '@/components/groups/GradeCycleCapacityModal';
 import { getAllowedGrades } from '@/lib/utils/grades';
 import {
     Select,
@@ -156,7 +157,10 @@ export default function GroupsPage() {
                     <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">إدارة المجموعات</h1>
                     <p className="text-sm text-gray-500 mt-0.5">{pagination?.total || 0} مجموعة مسجلة</p>
                 </div>
-                {canWrite && <AddGroupModal />}
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                    {canWrite && <GradeCycleCapacityModal allowedGrades={allowedGrades} />}
+                    {canWrite && <AddGroupModal />}
+                </div>
             </div>
 
             <div className="bg-white p-3 sm:p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">

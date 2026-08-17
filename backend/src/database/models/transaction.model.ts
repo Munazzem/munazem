@@ -35,6 +35,8 @@ const transactionSchema = new Schema<ITransactionDocument>({
     date: {
         type: Date, required: true, index: true,  // transaction date
     },
+    cycleNumber: { type: Number },
+    idempotencyKey: { type: String, sparse: true },
 }, {
     timestamps: true,
 });
@@ -47,6 +49,9 @@ transactionSchema.index({ teacherId: 1, studentId: 1, date: -1 });
 
 // Fast queries: all transactions by category for reports
 transactionSchema.index({ teacherId: 1, category: 1, date: -1 });
+
+// Idempotency: prevent exact duplicate HTTP requests safely
+transactionSchema.index({ idempotencyKey: 1 }, { unique: true, sparse: true });
 
 export const TransactionModel: Model<ITransactionDocument> =
     mongoose.model<ITransactionDocument>('Transaction', transactionSchema);

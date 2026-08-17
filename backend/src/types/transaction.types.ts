@@ -18,6 +18,8 @@ export interface ITransaction {
     // Meta
     description?:   string;
     date:           Date;                 // transaction date (not createdAt)
+    cycleNumber?:   number;               // cycle identity this payment applies to
+    idempotencyKey?: string;              // unique key to prevent duplicate requests
     createdAt?:     Date;
     updatedAt?:     Date;
 }

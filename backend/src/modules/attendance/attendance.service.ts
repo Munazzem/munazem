@@ -4,12 +4,15 @@ import { SessionModel }             from '../../database/models/session.model.js
 import { StudentModel }             from '../../database/models/student.model.js';
 import { GroupModel }               from '../../database/models/group.model.js';
 import { UserModel }                from '../../database/models/user.model.js';
-import { SessionStatus, AttendanceStatus } from '../../common/enums/enum.service.js';
+import { CycleEnrollmentModel }     from '../../database/models/cycle-enrollment.model.js';
+import { PriceSettingsModel }       from '../../database/models/price-settings.model.js';
+import { SessionStatus, AttendanceStatus, CycleEnrollmentStatus } from '../../common/enums/enum.service.js';
 import { NotFoundException, BadRequestException, ConflictException } from '../../common/utils/response/error.responce.js';
 import { trackEvent } from '../../common/utils/activity.service.js';
 import { withTransaction } from '../../common/utils/transaction.util.js';
 import type { RecordAttendanceDTO, BatchAttendanceDTO } from '../../types/attendance-dto.types.js';
 import { enqueueWhatsApp } from '../../infrastructure/queues/whatsapp.queue.js';
+import { cache, CacheKeys } from '../../infrastructure/cache/cache.service.js';
 import mongoose from 'mongoose';
 import { startOfDayEgyptMs } from '../../common/utils/date.util.js';
 
@@ -83,6 +86,31 @@ export class AttendanceService {
                 type:      'SESSION',
                 ...(data.notes ? { notes: data.notes } : {}),
             });
+
+            // ── Step 3: Retroactive Compensation ──────────────────────────────
+            // If student was marked ABSENT in their own group earlier this week,
+            // convert the previous ABSENT record to EXCUSED (compensated) and decrement consecutive absences.
+            if (isGuest && (data.status === AttendanceStatus.PRESENT || data.status === AttendanceStatus.LATE)) {
+                const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+                const pastAbsentRecord = await AttendanceModel.findOne({
+                    studentId: student._id,
+                    status: AttendanceStatus.ABSENT,
+                    scannedAt: { $gte: oneWeekAgo }
+                }).sort({ scannedAt: -1 });
+
+                if (pastAbsentRecord) {
+                    pastAbsentRecord.status = AttendanceStatus.EXCUSED;
+                    pastAbsentRecord.notes = 'معوّض — حضر كزائر في مجموعة أخرى';
+                    await pastAbsentRecord.save();
+
+                    if ((student.consecutiveAbsences || 0) > 0) {
+                        await StudentModel.findByIdAndUpdate(student._id, {
+                            $inc: { consecutiveAbsences: -1 }
+                        });
+                    }
+                }
+            }
+
             return record;
         } catch (error: any) {
             if (error.code === 11000) {
@@ -121,7 +149,7 @@ export class AttendanceService {
         // Find earliest unattended session
         const nextSession = sessions.find(s => !attendedSessionIds.has(s._id.toString()));
 
-        return await AttendanceModel.create({
+        const record = await AttendanceModel.create({
             studentId: student._id,
             ...(nextSession ? { sessionId: nextSession._id } : {}),
             status:    AttendanceStatus.PRESENT,
@@ -129,6 +157,11 @@ export class AttendanceService {
             scannedAt: new Date(),
             scannedBy,
         });
+
+        // Invalidate teacher cache
+        await cache.invalidate(CacheKeys.teacherAll(teacherId));
+
+        return record;
     }
 
     // ─── Batch record (all students at once — for fast manual entry) ─
@@ -176,6 +209,45 @@ export class AttendanceService {
             // A tiny artificial delay (50ms) to let the database breathe and reset its IOPS counter
             if (i + BATCH_SIZE < docs.length) {
                 await new Promise(resolve => setTimeout(resolve, 50));
+            }
+        }
+
+        // Retroactive compensation for any guest students marked present
+        const guestDocs = docs.filter(d => d.isGuest && (d.status === AttendanceStatus.PRESENT || d.status === AttendanceStatus.LATE));
+        if (guestDocs.length > 0) {
+            const guestStudentIds = guestDocs.map(d => d.studentId);
+            const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+            
+            const absentRecords = await AttendanceModel.find({
+                studentId: { $in: guestStudentIds },
+                status: AttendanceStatus.ABSENT,
+                scannedAt: { $gte: oneWeekAgo }
+            }).sort({ scannedAt: -1 }).lean();
+
+            if (absentRecords.length > 0) {
+                const compensatedStudentIds: any[] = [];
+                const updates = absentRecords.map(r => {
+                    compensatedStudentIds.push(r.studentId);
+                    return {
+                        updateOne: {
+                            filter: { _id: r._id },
+                            update: {
+                                $set: {
+                                    status: AttendanceStatus.EXCUSED,
+                                    notes: 'معوّض — حضر كزائر في مجموعة أخرى'
+                                }
+                            }
+                        }
+                    };
+                });
+
+                await AttendanceModel.bulkWrite(updates);
+                if (compensatedStudentIds.length > 0) {
+                    await StudentModel.updateMany(
+                        { _id: { $in: compensatedStudentIds }, consecutiveAbsences: { $gt: 0 } },
+                        { $inc: { consecutiveAbsences: -1 } }
+                    );
+                }
             }
         }
 
@@ -237,12 +309,37 @@ export class AttendanceService {
         // Get all students in this group — sorted alphabetically
         const allStudents = await StudentModel.find(
             { groupId: session.groupId, teacherId, isActive: true },
-            { _id: 1, studentName: 1, excusedSessionsCount: 1, excusedUntil: 1, parentPhone: 1, consecutiveAbsences: 1 }
+            { _id: 1, studentName: 1, excusedSessionsCount: 1, excusedUntil: 1, parentPhone: 1, consecutiveAbsences: 1, createdAt: 1 }
         ).sort({ studentName: 1 }).lean();
 
-        // Get all present/late/manual attendance records
+        // Get all present/late/manual attendance records for this session
         const attendanceRecords = await AttendanceModel.find({ sessionId }).lean();
         const attendedSet = new Map(attendanceRecords.map(r => [r.studentId.toString(), r]));
+
+        // Check for guest attendances in other groups within the same week window (compensation)
+        const sessionDate = new Date(session.date);
+        const windowStart = new Date(sessionDate);
+        windowStart.setDate(windowStart.getDate() - 7);
+        windowStart.setHours(0, 0, 0, 0);
+
+        const windowEnd = new Date(sessionDate);
+        windowEnd.setDate(windowEnd.getDate() + 7);
+        windowEnd.setHours(23, 59, 59, 999);
+
+        const studentIds = allStudents.map(s => s._id);
+        const guestAttendances = await AttendanceModel.find({
+            studentId: { $in: studentIds },
+            isGuest: true,
+            status: { $in: [AttendanceStatus.PRESENT, AttendanceStatus.LATE] },
+            scannedAt: { $gte: windowStart, $lte: windowEnd }
+        }).sort({ scannedAt: 1 }).lean();
+
+        const compensatedMap = new Map<string, any>();
+        for (const g of guestAttendances) {
+            if (!compensatedMap.has(g.studentId.toString())) {
+                compensatedMap.set(g.studentId.toString(), g);
+            }
+        }
 
         // Build snapshot lists
         const presentStudents: any[] = [];
@@ -266,9 +363,10 @@ export class AttendanceService {
                     status:      record.status,
                 });
             } else {
+                const isCompensated = compensatedMap.has(student._id.toString());
                 const hasSessionExcuse = (student.excusedSessionsCount || 0) > 0;
                 const matchesDateExcuse = student.excusedUntil && new Date(student.excusedUntil) >= session.date;
-                const isExcused = hasSessionExcuse || matchesDateExcuse;
+                const isExcused = isCompensated || hasSessionExcuse || matchesDateExcuse;
                 
                 if (isExcused) {
                     presentStudents.push({
@@ -279,6 +377,12 @@ export class AttendanceService {
                     });
                     
                     if (!record) {
+                        const excuseNote = isCompensated
+                            ? 'معوّض — حضر كزائر في مجموعة أخرى'
+                            : (hasSessionExcuse 
+                                ? `مُستأذن (متبقي ${student.excusedSessionsCount} حصص قبل هذه)` 
+                                : 'مُستأذن تلقائياً بناءً على تاريخ الإذن');
+
                         excusedAttendanceDocsToInsert.push({
                             studentId: student._id,
                             sessionId: session._id,
@@ -286,13 +390,11 @@ export class AttendanceService {
                             type:      'SESSION',
                             scannedBy: completedBy ? new mongoose.Types.ObjectId(completedBy) : undefined,
                             isConsumed: false,
-                            notes:     hasSessionExcuse 
-                                ? `مُستأذن (متبقي ${student.excusedSessionsCount} حصص قبل هذه)` 
-                                : 'مُستأذن تلقائياً بناءً على تاريخ الإذن',
+                            notes:     excuseNote,
                         });
                     }
 
-                    if (hasSessionExcuse) {
+                    if (!isCompensated && hasSessionExcuse) {
                         studentIdsToDecrementExcuse.push(student._id);
                     }
                 } else {
@@ -363,19 +465,86 @@ export class AttendanceService {
         }
 
         // ── Group Cycle Progression ──
-        let { capacity, currentCycleNumber, currentSessionNumber, startedAt } = group.cycle || {
-            capacity: (group.schedule?.length || 2) * 4,
-            currentCycleNumber: 1,
-            currentSessionNumber: 0,
-            startedAt: new Date()
-        };
+        let capacity = group.cycle?.capacity ?? (group.schedule?.length || 2) * 4;
+        let currentCycleNumber = group.cycle?.currentCycleNumber ?? 1;
+        let currentSessionNumber = group.cycle?.currentSessionNumber ?? 0;
+        let startedAt = group.cycle?.startedAt ?? new Date();
+        let priceSnapshot = group.cycle?.priceSnapshot ?? new Map<string, number>();
 
         currentSessionNumber++;
+        let cycleRolledOver = false;
+        
         if (currentSessionNumber > capacity) {
             currentSessionNumber = 1;
             currentCycleNumber++;
             startedAt = new Date();
+            cycleRolledOver = true;
+        } else if (!group.cycle || (currentSessionNumber === 1 && !group.cycle.startedAt)) {
+            startedAt = new Date();
+            cycleRolledOver = true;
         }
+
+        // Get Price Snapshot if rolling over or first cycle (to freeze prices for the cycle)
+        if (cycleRolledOver || !group.cycle?.priceSnapshot) {
+            const priceSettings = await PriceSettingsModel.findOne({ teacherId: session.teacherId }).lean();
+            const newSnapshot = new Map<string, number>();
+            if (priceSettings?.prices) {
+                priceSettings.prices.forEach(p => newSnapshot.set(p.gradeLevel, p.amount));
+            }
+            priceSnapshot = newSnapshot;
+        }
+
+        // ── Cycle Enrollments (Upsert for all active students in group) ──
+        // Charge existing students for the full cycle, and mid-cycle joiners pro-rated
+        const activeStudents = await StudentModel.find(
+            { groupId: group._id, isActive: true },
+            { _id: 1, gradeLevel: 1, createdAt: 1 }
+        ).lean();
+
+        const enrollmentOps = activeStudents.map(student => {
+            // @ts-ignore - priceSnapshot can be Map or plain object depending on Mongoose version/hydration
+            const fullMonthPrice = (priceSnapshot instanceof Map ? priceSnapshot.get(student.gradeLevel) : priceSnapshot?.[student.gradeLevel]) || 0;
+            const pricePerSession = capacity > 0 ? fullMonthPrice / capacity : 0;
+            
+            // If student joined before cycle started, charge full cycle; otherwise pro-rate
+            const studentCreatedAt = (student as any).createdAt;
+            const wasRegisteredBeforeCycle = !group.cycle?.startedAt || 
+                (studentCreatedAt && new Date(studentCreatedAt) <= new Date(startedAt));
+
+            const chargeableSessions = wasRegisteredBeforeCycle 
+                ? capacity 
+                : Math.max(0, capacity - currentSessionNumber + 1);
+
+            const cycleCharge = Math.round(chargeableSessions * pricePerSession);
+
+            return {
+                updateOne: {
+                    filter: {
+                        studentId: student._id,
+                        groupId: group._id,
+                        cycleNumber: currentCycleNumber
+                    },
+                    update: {
+                        $setOnInsert: {
+                            studentId: student._id,
+                            groupId: group._id,
+                            teacherId: session.teacherId,
+                            cycleNumber: currentCycleNumber,
+                            cycleCapacity: capacity,
+                            pricePerSession,
+                            fullCyclePrice: fullMonthPrice,
+                            startSession: wasRegisteredBeforeCycle ? 1 : currentSessionNumber,
+                            chargeableSessions,
+                            cycleCharge,
+                            totalPaid: 0,
+                            remainingAmount: cycleCharge,
+                            status: CycleEnrollmentStatus.UNPAID
+                        }
+                    },
+                    upsert: true
+                }
+            };
+        });
 
         // ── All mutations wrapped in a transaction ──
         const { updatedSession, snapshot } = await withTransaction(async (dbSession) => {
@@ -397,14 +566,42 @@ export class AttendanceService {
                 );
             }
 
+            if (enrollmentOps.length > 0) {
+                const bulkResult = await CycleEnrollmentModel.bulkWrite(enrollmentOps, { session: dbSession });
+                
+                // If any enrollments were created (upserted), increment the student's totalDebt by the cycleCharge
+                if (bulkResult.upsertedCount > 0 && bulkResult.upsertedIds) {
+                    const studentDebtOps: any[] = [];
+                    // upsertedIds is an object { [index]: _id }
+                    for (const [indexStr, _id] of Object.entries(bulkResult.upsertedIds)) {
+                        const index = parseInt(indexStr, 10);
+                        const charge = enrollmentOps[index]?.updateOne?.update?.$setOnInsert?.cycleCharge || 0;
+                        const studentId = enrollmentOps[index]?.updateOne?.update?.$setOnInsert?.studentId;
+                        if (charge > 0 && studentId) {
+                            studentDebtOps.push({
+                                updateOne: {
+                                    filter: { _id: studentId },
+                                    update: { $inc: { totalDebt: charge } }
+                                }
+                            });
+                        }
+                    }
+                    if (studentDebtOps.length > 0) {
+                        await StudentModel.bulkWrite(studentDebtOps, { session: dbSession });
+                    }
+                }
+            }
+
             // Group Cycle Update
             await GroupModel.findByIdAndUpdate(
                 group._id,
                 {
                     $set: {
+                        'cycle.capacity': capacity,
                         'cycle.currentSessionNumber': currentSessionNumber,
                         'cycle.currentCycleNumber': currentCycleNumber,
-                        'cycle.startedAt': startedAt
+                        'cycle.startedAt': startedAt,
+                        'cycle.priceSnapshot': priceSnapshot
                     }
                 },
                 { session: dbSession }
@@ -513,6 +710,9 @@ export class AttendanceService {
             }
         }
 
+        // Invalidate teacher cache (dashboard, groups, etc.)
+        await cache.invalidate(CacheKeys.teacherAll(teacherId));
+
         return { session: updatedSession, snapshot };
     }
 
@@ -588,6 +788,121 @@ export class AttendanceService {
         ).lean();
     }
 
+    // ─── Adjust attendance for a COMPLETED session (safe, idempotent, no billing side-effects) ──
+    static async adjustCompletedSessionAttendance(
+        sessionId: string,
+        studentId: string,
+        newStatus: AttendanceStatus,
+        teacherId: string,
+        updatedBy: string,
+        notes?: string
+    ) {
+        const session = await SessionModel.findOne({ _id: sessionId, teacherId }).lean();
+        if (!session) throw NotFoundException({ message: 'الحصة غير موجودة' });
+        if (session.status !== SessionStatus.COMPLETED) {
+            throw BadRequestException({ message: 'هذه الدالة مخصصة لتصحيح حضور الحصص المكتملة فقط' });
+        }
+
+        if (!Object.values(AttendanceStatus).includes(newStatus)) {
+            throw BadRequestException({ message: 'حالة الحضور غير صحيحة' });
+        }
+
+        const student = await StudentModel.findOne({ _id: studentId, teacherId }).lean();
+        if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
+
+        let record = await AttendanceModel.findOne({ sessionId, studentId });
+        const oldStatus = record ? record.status : AttendanceStatus.ABSENT;
+
+        if (oldStatus === newStatus && record) {
+            return { success: true, message: 'لم يحدث تغيير في حالة الحضور', record };
+        }
+
+        if (!record) {
+            record = new AttendanceModel({
+                studentId: student._id,
+                sessionId: session._id,
+                status: newStatus,
+                type: 'SESSION',
+                scannedBy: new mongoose.Types.ObjectId(updatedBy),
+                scannedAt: session.date,
+                isConsumed: newStatus === AttendanceStatus.ABSENT,
+                ...(notes ? { notes } : {})
+            });
+            await record.save();
+        } else {
+            record.status = newStatus;
+            record.scannedBy = new mongoose.Types.ObjectId(updatedBy);
+            if (notes !== undefined) record.notes = notes;
+            record.isConsumed = newStatus === AttendanceStatus.ABSENT;
+            await record.save();
+        }
+
+        // ── Update AttendanceSnapshotModel atomically ──
+        const snapshot = await AttendanceSnapshotModel.findOne({ sessionId });
+        if (snapshot) {
+            // Remove from all student arrays in snapshot
+            snapshot.presentStudents = snapshot.presentStudents.filter(
+                s => s.studentId.toString() !== student._id.toString()
+            );
+            snapshot.absentStudents = snapshot.absentStudents.filter(
+                s => s.studentId.toString() !== student._id.toString()
+            );
+            if (snapshot.guestStudents) {
+                snapshot.guestStudents = snapshot.guestStudents.filter(
+                    s => s.studentId.toString() !== student._id.toString()
+                );
+            }
+
+            // Insert into the proper array according to newStatus
+            if (newStatus === AttendanceStatus.ABSENT) {
+                snapshot.absentStudents.push({
+                    studentId: student._id,
+                    studentName: student.studentName
+                });
+            } else {
+                snapshot.presentStudents.push({
+                    studentId: student._id,
+                    studentName: student.studentName,
+                    scannedAt: session.date,
+                    status: newStatus
+                });
+            }
+
+            snapshot.presentCount = snapshot.presentStudents.length;
+            snapshot.absentCount = snapshot.absentStudents.length;
+            await snapshot.save();
+        }
+
+        // ── Adjust consecutiveAbsences on StudentModel if transitioning to/from ABSENT ──
+        if (oldStatus === AttendanceStatus.ABSENT && newStatus !== AttendanceStatus.ABSENT) {
+            await StudentModel.findByIdAndUpdate(student._id, {
+                $set: { consecutiveAbsences: Math.max(0, (student.consecutiveAbsences || 0) - 1) }
+            });
+        } else if (oldStatus !== AttendanceStatus.ABSENT && newStatus === AttendanceStatus.ABSENT) {
+            await StudentModel.findByIdAndUpdate(student._id, {
+                $inc: { consecutiveAbsences: 1 }
+            });
+        }
+
+        trackEvent('attendance_adjusted', {
+            tenantId: teacherId,
+            userId: updatedBy,
+            targetId: record._id.toString(),
+            meta: {
+                studentId: student._id.toString(),
+                studentName: student.studentName,
+                sessionId,
+                oldStatus,
+                newStatus
+            }
+        });
+
+        // Invalidate teacher cache
+        await cache.invalidate(CacheKeys.teacherAll(teacherId));
+
+        return { success: true, message: 'تم تصحيح حالة الحضور بنجاح', record };
+    }
+
     // ─── Get all snapshots for a group (attendance history) ──────────
     static async getGroupHistory(groupId: string, teacherId: string, queryFilters: any = {}) {
         const page  = Math.max(1, parseInt(queryFilters.page)  || 1);
@@ -651,18 +966,21 @@ export class AttendanceService {
             let message = '';
             const signature = teacherName ? `\n\nمع تحيات أ/ ${teacherName}` : '';
             if (isPresent) {
-                const timeStr = record.scannedAt.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+                const timeStr = record?.scannedAt ? new Date(record.scannedAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : '';
                 const PRESENT_TEMPLATES = [
-                    `أهلاً بك ولي أمر الطالب/ة: ${student.studentName}.\n\nنعلمكم بحضور الطالب لحصة [${groupName}] بتاريخ ${shortDate}.\nوقت الوصول: ${timeStr}.\n\nشكراً لتعاونكم.${signature}`,
-                    `تحية طيبة،\n\nنود إعلامكم أن الطالب/ة: ${student.studentName} قد حضر/ت حصة [${groupName}] اليوم (${shortDate}) في تمام الساعة ${timeStr}.\n\nنشكركم على المتابعة.${signature}`,
-                    `السلام عليكم،\n\nتم تسجيل حضور الطالب/ة: ${student.studentName} في مجموعة [${groupName}] بتاريخ ${shortDate}.\nوقت الدخول: ${timeStr}.\n\nبالتوفيق دائماً.${signature}`
+                    `السلام عليكم ورحمة الله،\nنحيطكم علمًا بحضور الطالب/ة: **${student.studentName}** لحصة [${groupName}] بتاريخ ${shortDate} (وقت الوصول: ${timeStr}).\n\n📌 **الرجاء الرد بـ (تم) للتأكيد والاستلام.**${signature}`,
+                    `أهلاً بحضرتك،\nتم بنجاح تسجيل حضور **${student.studentName}** لحصة اليوم [${groupName}].\n\n📌 **يرجى الرد بـ (تم) لتأكيد الاطلاع.**${signature}`,
+                    `تحية طيبة،\nنود إعلامكم بتواجد الطالب/ة **${student.studentName}** في مجموعة [${groupName}] بتاريخ ${shortDate}.\n\n📌 **الرجاء الرد بكلمة (تم) للتأكيد.**\nبالتوفيق دائمًا.${signature}`,
+                    `السلام عليكم،\nتم رصد حضور **${student.studentName}** في موعد الحصة اليوم [${groupName}].\n\n📌 **الرجاء الرد بـ (تم) للتأكيد.**${signature}`,
                 ];
                 message = PRESENT_TEMPLATES[Math.floor(Math.random() * PRESENT_TEMPLATES.length)] as string;
             } else {
                 const ABSENT_TEMPLATES = [
-                    `أهلاً بك ولي أمر الطالب/ة: ${student.studentName}.\n\nنعلمكم بغياب الطالب عن حصة [${groupName}] بتاريخ ${shortDate}.\nبرجاء متابعة الأمر، شكراً لتعاونكم.${signature}`,
-                    `تحية طيبة،\n\nنلفت انتباهكم إلى غياب الطالب/ة: ${student.studentName} عن حصة [${groupName}] اليوم (${shortDate}).\n\nبرجاء التأكد من سبب الغياب.${signature}`,
-                    `السلام عليكم،\n\nلم يسجل الطالب/ة: ${student.studentName} حضوراً في حصة [${groupName}] بتاريخ ${shortDate}.\n\nنتمنى أن يكون المانع خيراً.${signature}`
+                    `السلام عليكم ورحمة الله،\nنحيطكم علمًا بعدم حضور الطالب/ة **${student.studentName}** لحصة [${groupName}] بتاريخ ${shortDate}.\n\n📌 **الرجاء الرد بـ (تم) لتأكيد استلام الإشعار.**${signature}`,
+                    `أهلاً بحضرتك يا فندم،\nحرصًا منا على متابعة مستوى **${student.studentName}**، تم تسجيل غيابه عن حصة [${groupName}] اليوم (${shortDate}). نرجو الاطمئنان عليه ومتابعة تعويض ما فاته.\n\n📌 **يرجى الرد بكلمة (تم) للتأكيد.**${signature}`,
+                    `⚠️ **إشعار غياب**:\nتم تسجيل غياب الطالب/ة **${student.studentName}** عن موعد حصة [${groupName}] بتاريخ ${shortDate}.\n\n📌 **الرجاء الرد بـ (تم) لتأكيد العلم.**${signature}`,
+                    `تحية طيبة وبعد،\nنود إبلاغكم بأن الطالب/ة **${student.studentName}** لم يسجل حضورًا بحصة اليوم [${groupName}].\n\n📌 **الرجاء الرد بـ (تم) للاطلاع.**${signature}`,
+                    `أهلاً بحضرتك،\nنلفت انتباهكم إلى غياب **${student.studentName}** عن حصة [${groupName}] بتاريخ ${shortDate}. برجاء التأكد من سبب الغياب.\n\n📌 **يرجى الرد بـ (تم) لتأكيد المتابعة.**${signature}`,
                 ];
                 message = ABSENT_TEMPLATES[Math.floor(Math.random() * ABSENT_TEMPLATES.length)] as string;
             }
