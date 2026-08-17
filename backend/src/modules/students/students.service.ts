@@ -2,12 +2,14 @@ import mongoose from 'mongoose';
 import { StudentModel } from '../../database/models/student.model.js';
 import { GroupModel } from '../../database/models/group.model.js';
 import { TransactionModel } from '../../database/models/transaction.model.js';
+import { CycleEnrollmentModel } from '../../database/models/cycle-enrollment.model.js';
 import { NotFoundException, BadRequestException, ConflictException } from '../../common/utils/response/error.responce.js';
 import type { CreateStudentDTO, UpdateStudentDTO } from '../../types/dto.types.js';
-import { GRADE_LETTER, GradeLevel, TransactionType, TransactionCategory } from '../../common/enums/enum.service.js';
+import { GRADE_LETTER, GradeLevel, TransactionType, TransactionCategory, CycleEnrollmentStatus } from '../../common/enums/enum.service.js';
 import { nextSequence, nextSequenceBulk } from '../../database/models/counter.model.js';
 import { trackEvent } from '../../common/utils/activity.service.js';
 import { withTransaction } from '../../common/utils/transaction.util.js';
+import { cache, CacheKeys } from '../../infrastructure/cache/cache.service.js';
 import { Types } from 'mongoose';
 import crypto from 'crypto';
 
@@ -75,6 +77,9 @@ export class StudentService {
                 meta:     { studentName, studentCode, groupName: group.name },
             });
 
+            // Invalidate teacher cache (dashboard stats, student counts)
+            await cache.invalidate(CacheKeys.teacherAll(teacherId));
+
             return student;
         } catch (error: any) {
             if (error.code === 11000) {
@@ -87,8 +92,7 @@ export class StudentService {
     }
 
     static async bulkCreateStudents(teacherId: string, students: CreateStudentDTO[]) {
-        return await withTransaction(async (dbSession) => {
-
+        const result = await withTransaction(async (dbSession) => {
             // ── Phase 1: جلب كل المجموعات الفريدة دفعة واحدة (1 query) ──────────────
             const uniqueGroupIds = [...new Set(students.map(s => s.groupId))];
             const groups = await GroupModel.find(
@@ -97,72 +101,69 @@ export class StudentService {
             const groupMap = new Map(groups.map(g => [g._id.toString(), g]));
 
             // ── Phase 2: حساب عدد الطلاب الحاليين لكل مجموعة (1 query) ─────────────
-            const existingCounts = await StudentModel.aggregate([
+            const countAgg = await StudentModel.aggregate([
                 { $match: { groupId: { $in: uniqueGroupIds.map(id => new Types.ObjectId(id)) }, teacherId } },
                 { $group: { _id: '$groupId', count: { $sum: 1 } } },
             ]).session(dbSession);
+            const countMap = new Map(countAgg.map(c => [c._id.toString(), c.count]));
 
-            // بناء tracker للـ capacity — يُحدَّث locally بعد كل طالب مقبول
-            const capacityTracker = new Map<string, { current: number; max: number }>();
-            for (const g of groups) {
-                const existing = existingCounts.find(c => c._id.toString() === g._id.toString());
-                capacityTracker.set(g._id.toString(), {
-                    current: existing?.count ?? 0,
-                    max:     g.capacity ?? 50,
+            // ── Phase 3: التحقق من كل طالب على حدة ────────────────────────────────
+            const pendingPerGroup = new Map<string, number>();
+
+            for (let i = 0; i < students.length; i++) {
+                const s = students[i]!;
+                const rowNum = i + 1;
+
+                // التحقق من الاسم
+                this.parseFullName(s.fullName);
+
+                // التحقق من المجموعة
+                const group = groupMap.get(s.groupId);
+                if (!group) {
+                    throw NotFoundException({ message: `المجموعة غير موجودة في السطر ${rowNum}` });
+                }
+
+                // التحقق من مطابقة المرحلة
+                if (group.gradeLevel !== s.gradeLevel) {
+                    throw BadRequestException({ message: `المرحلة غير مطابقة للمجموعة للطالب ${s.fullName} في السطر ${rowNum}` });
+                }
+
+                // التحقق من سعة المجموعة
+                const currentCount = countMap.get(s.groupId) ?? 0;
+                const pendingCount = pendingPerGroup.get(s.groupId) ?? 0;
+                const capacity = group.capacity ?? 50;
+
+                if (currentCount + pendingCount >= capacity) {
+                    throw BadRequestException({
+                        message: `المجموعة "${group.name}" وصلت للحد الأقصى (${capacity} طالب) عند السطر ${rowNum}`
+                    });
+                }
+
+                pendingPerGroup.set(s.groupId, pendingCount + 1);
+            }
+
+            // ── Phase 4: توليد الأكواد التسلسلية دفعة واحدة لكل مرحلة ──────────────
+            const studentsByGrade = new Map<GradeLevel, CreateStudentDTO[]>();
+            for (const s of students) {
+                const list = studentsByGrade.get(s.gradeLevel as GradeLevel) ?? [];
+                list.push(s);
+                studentsByGrade.set(s.gradeLevel as GradeLevel, list);
+            }
+
+            const codeMap = new Map<CreateStudentDTO, string>();
+
+            for (const [grade, gradeStudents] of studentsByGrade.entries()) {
+                const letter = GRADE_LETTER[grade];
+                const startSeq = await nextSequenceBulk(`${teacherId}_${grade}`, gradeStudents.length);
+                gradeStudents.forEach((s, idx) => {
+                    codeMap.set(s, `${startSeq + idx}${letter}`);
                 });
             }
 
-            // ── Phase 3: التحقق من جميع الطلاب في الـ Memory (0 queries) ────────────
-            for (let i = 0; i < students.length; i++) {
-                const data = students[i]!;
-
-                const group = groupMap.get(data.groupId);
-                if (!group) {
-                    throw BadRequestException({
-                        message: `المجموعة المحددة غير موجودة أو لا صلاحية لك عليها في السطر ${i + 1}`,
-                    });
-                }
-
-                if (group.gradeLevel !== data.gradeLevel) {
-                    throw BadRequestException({
-                        message: `عفواً، المجموعة المحددة للمرحلة الدراسية مختلفة للطالب ${data.fullName} في السطر ${i + 1}`,
-                    });
-                }
-
-                const tracker = capacityTracker.get(data.groupId)!;
-                if (tracker.current >= tracker.max) {
-                    throw BadRequestException({
-                        message: `عفواً، وصلت المجموعة إلى أقصى عدد متاح لرفع الطالب ${data.fullName} في السطر ${i + 1}`,
-                    });
-                }
-                tracker.current++; // زيادة المحلية للطلاب التاليين في نفس المجموعة
-            }
-
-            // ── Phase 4: تخصيص نطاقات الـ sequence لكل مرحلة دراسية (N_grades queries) ──
-            const gradeCounts = new Map<GradeLevel, number>();
-            for (const s of students) {
-                gradeCounts.set(
-                    s.gradeLevel as GradeLevel,
-                    (gradeCounts.get(s.gradeLevel as GradeLevel) ?? 0) + 1,
-                );
-            }
-            const gradeStartSeq = new Map<GradeLevel, number>();
-            for (const [grade, needCount] of gradeCounts) {
-                const startSeq = await nextSequenceBulk(`${teacherId}_${grade}`, needCount);
-                gradeStartSeq.set(grade, startSeq);
-            }
-
-            // ── Phase 5: تجهيز الـ documents في الـ Memory ───────────────────────────
-            const preparedDocs = students.map((data) => {
-                const group = groupMap.get(data.groupId)!;
+            // ── Phase 5: تجهيز المستندات للإدخال ────────────────────────────────────
+            const preparedDocs = students.map(data => {
                 const { studentName, parentName } = this.parseFullName(data.fullName);
-
-                const grade = data.gradeLevel as GradeLevel;
-                const currentSeq = gradeStartSeq.get(grade)!;
-                gradeStartSeq.set(grade, currentSeq + 1); // increment locally
-
-                const studentCode = `${currentSeq}${GRADE_LETTER[grade]}`;
-
+                const group = groupMap.get(data.groupId)!;
                 return {
                     studentName,
                     parentName,
@@ -171,7 +172,7 @@ export class StudentService {
                     gradeLevel:   data.gradeLevel,
                     groupId:      data.groupId,
                     teacherId,
-                    studentCode,
+                    studentCode:  codeMap.get(data)!,
                     barcode:      data.barcode || crypto.randomUUID(),
                     monthlySessionsQuota: (group.schedule?.length ?? 2) * 4,
                 };
@@ -205,48 +206,48 @@ export class StudentService {
                 throw BadRequestException({ message });
             }
         });
+
+        // Invalidate teacher cache
+        await cache.invalidate(CacheKeys.teacherAll(teacherId));
+
+        return result;
     }
+
+    static async getPaidStudentIds(teacherId: string): Promise<string[]> {
+        // Fetch all groups to know their current cycle number
+        const groups = await GroupModel.find({ teacherId }, { 'cycle.currentCycleNumber': 1 }).lean();
+        const paidIds = new Set<string>();
+
+        const orConditions = groups.map(g => ({
+            groupId: g._id,
+            cycleNumber: g.cycle?.currentCycleNumber || 1,
+            status: CycleEnrollmentStatus.PAID
+        }));
+
+        if (orConditions.length > 0) {
+            const enrollments = await CycleEnrollmentModel.find({
+                teacherId,
+                $or: orConditions
+            }, { studentId: 1 }).lean();
+
+            for (const e of enrollments) {
+                paidIds.add(e.studentId.toString());
+            }
+        }
+
+        return Array.from(paidIds);
+    }
+
     static async getUnpaidStudentIds(teacherId: string): Promise<string[]> {
-        const pipeline = [
-            { $match: { teacherId: new mongoose.Types.ObjectId(teacherId), isActive: true } },
-            {
-                $lookup: {
-                    from: 'groups',
-                    localField: 'groupId',
-                    foreignField: '_id',
-                    as: 'groupDoc'
-                }
-            },
-            {
-                $addFields: {
-                    groupStartedAt: { $arrayElemAt: ['$groupDoc.cycle.startedAt', 0] }
-                }
-            },
-            {
-                $lookup: {
-                    from: 'transactions',
-                    let: { sId: '$_id', cStart: '$groupStartedAt' },
-                    pipeline: [
-                        { $match: {
-                            $expr: {
-                                $and: [
-                                    { $eq: ['$studentId', '$$sId'] },
-                                    { $eq: ['$category', TransactionCategory.SUBSCRIPTION] },
-                                    { $eq: ['$type', TransactionType.INCOME] },
-                                    { $gte: ['$date', { $ifNull: ['$$cStart', new Date('2099-01-01')] }] }
-                                ]
-                            }
-                        }},
-                        { $limit: 1 }
-                    ],
-                    as: 'paidSub'
-                }
-            },
-            { $match: { paidSub: { $size: 0 } } },
-            { $project: { _id: 1 } }
-        ];
-        const result = await StudentModel.aggregate(pipeline);
-        return result.map(doc => doc._id.toString());
+        const paidIds = await StudentService.getPaidStudentIds(teacherId);
+        const activeStudents = await StudentModel.find({ teacherId, isActive: true }, { _id: 1 }).lean();
+        
+        const paidSet = new Set(paidIds);
+        const unpaidIds = activeStudents
+            .map(s => s._id.toString())
+            .filter(id => !paidSet.has(id));
+            
+        return unpaidIds;
     }
 
     static async getStudentsByTeacherId(teacherId: string, queryFilters: any) {
@@ -262,8 +263,8 @@ export class StudentService {
             filter.totalDebt = { $gt: 0 };
         }
         if (queryFilters.hasNoActiveSubscription === 'true') {
-            const unpaidIds = await StudentService.getUnpaidStudentIds(teacherId);
-            filter._id = { $in: unpaidIds.map((id: string) => new mongoose.Types.ObjectId(id)) };
+            const paidIds = await StudentService.getPaidStudentIds(teacherId);
+            filter._id = { $nin: paidIds.map((id: string) => new mongoose.Types.ObjectId(id)) };
         }
         if (queryFilters.isDroppedOut === 'true') {
             filter.consecutiveAbsences = { $gte: 3 };
@@ -304,15 +305,15 @@ export class StudentService {
 
         // Determine active subscription via cycle rules (dynamically)
         const studentIds = students.map((s: any) => s._id.toString());
-        let unpaidIdsList: string[] = [];
+        let paidIdsList: string[] = [];
         if (studentIds.length > 0) {
-            unpaidIdsList = await StudentService.getUnpaidStudentIds(teacherId);
+            paidIdsList = await StudentService.getPaidStudentIds(teacherId);
         }
-        const unpaidSet = new Set(unpaidIdsList);
+        const paidSet = new Set(paidIdsList);
 
         const data = students.map((s: any) => ({
             ...s,
-            hasActiveSubscription: !unpaidSet.has(s._id.toString()),
+            hasActiveSubscription: paidSet.has(s._id.toString()),
         }));
 
         return {
@@ -365,6 +366,10 @@ export class StudentService {
             ).lean();
 
             if (!updatedStudent) throw NotFoundException({ message: 'الطالب غير موجود' });
+
+            // Invalidate teacher cache
+            await cache.invalidate(CacheKeys.teacherAll(teacherId));
+
             return updatedStudent;
             
         } catch (error: any) {
@@ -385,6 +390,9 @@ export class StudentService {
             targetId: studentId,
             meta:     { studentName: deletedStudent.studentName, studentCode: deletedStudent.studentCode },
         });
+
+        // Invalidate teacher cache
+        await cache.invalidate(CacheKeys.teacherAll(teacherId));
 
         return deletedStudent;
     }

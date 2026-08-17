@@ -121,7 +121,6 @@ export function BulkSubscriptionModal({ open, onOpenChange }: Props) {
         queryKey: QK.payments.bulkSubStudents(groupId),
         queryFn: () => fetchStudents({ groupId, limit: 300, isActive: true }),
         enabled: !!groupId,
-        staleTime: 2 * 60 * 1000,
     });
     const students: StudentWithGroup[] = studentsData?.data ?? [];
 
