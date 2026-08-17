@@ -8,6 +8,7 @@ import {
     recordAttendance,
     getSessionAttendance,
     updateAttendance,
+    adjustCompletedAttendance,
     completeSession,
     getSessionSnapshot,
     getWhatsAppLinks,
@@ -256,17 +257,25 @@ export default function SessionDetailPage() {
         },
     });
 
-    // Update attendance status
+    // Update attendance status (supports live editing and post-completion adjustments)
     const updateMutation = useMutation({
-        mutationFn: ({ id, status }: { id: string; status: AttendanceStatus }) =>
-            updateAttendance(id, status),
+        mutationFn: async ({ id, status, studentId }: { id: string; status: AttendanceStatus; studentId?: string }) => {
+            if (session?.status === 'COMPLETED') {
+                const sId = studentId || (typeof editRecord?.studentId === 'object' ? (editRecord?.studentId as any)._id : editRecord?.studentId) || id;
+                return adjustCompletedAttendance(sessionId, sId, status);
+            }
+            return updateAttendance(id, status);
+        },
         onSuccess: () => {
-            toast.success('تم تحديث الحضور');
+            toast.success('تم تحديث حالة الحضور بنجاح');
             queryClient.invalidateQueries({ queryKey: QK.attendance.bySession(sessionId) });
+            queryClient.invalidateQueries({ queryKey: QK.attendance.snapshot(sessionId) });
+            queryClient.invalidateQueries({ queryKey: ['student-report'] });
+            queryClient.invalidateQueries({ queryKey: QK.students.details });
             setEditRecord(null);
         },
         onError: (err: any) => {
-            
+            // Handled by interceptor
         },
     });
 
@@ -574,11 +583,12 @@ export default function SessionDetailPage() {
                                             )}>
                                                 {ATTENDANCE_LABELS[record.status]}
                                             </span>
-                                            {canWrite && isSessionActive && (
+                                            {canWrite && (
                                                 <Button
                                                     variant="ghost"
                                                     size="icon"
                                                     className="h-7 w-7 text-gray-400 hover:text-gray-600"
+                                                    title="تعديل حالة الحضور"
                                                     onClick={() => setEditRecord(record)}
                                                 >
                                                     <Edit2 className="h-3.5 w-3.5" />

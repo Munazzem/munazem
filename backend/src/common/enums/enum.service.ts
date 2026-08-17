@@ -100,6 +100,12 @@ export enum AttendanceStatus {
     EXCUSED = 'EXCUSED',
 }
 
+export enum CycleEnrollmentStatus {
+    UNPAID = 'UNPAID',
+    PARTIALLY_PAID = 'PARTIALLY_PAID',
+    PAID = 'PAID',
+}
+
 export enum TransactionType {
     INCOME  = 'INCOME',
     EXPENSE = 'EXPENSE',

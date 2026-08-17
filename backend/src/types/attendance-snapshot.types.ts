@@ -1,9 +1,11 @@
 import { Document, Types } from 'mongoose';
+import { AttendanceStatus } from '../common/enums/enum.service.js';
 
 export interface IStudentEntry {
     studentId:   Types.ObjectId;
     studentName: string;            // embedded — no populate needed on read
     scannedAt?:  Date;              // only for present/late
+    status?:     AttendanceStatus;
 }
 
 export interface IAttendanceSnapshot {
