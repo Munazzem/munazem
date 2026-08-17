@@ -8,6 +8,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { getTestApp } from '../helpers/app.helper.js';
 import { makeTeacherToken, makeAssistantToken, bearerHeader } from '../helpers/auth.helper.js';
 import { seedTeacher, seedAssistant, seedGroup, seedStudent, seedNotebook } from '../helpers/db.helper.js';
+import mongoose from 'mongoose';
 import { GradeLevel, TransactionCategory } from '../../src/common/enums/enum.service.js';
 
 let app: ReturnType<typeof getTestApp>;
@@ -111,15 +112,13 @@ describe('Payments API', () => {
                 });
 
             expect(res.status).toBe(201);
-            expect(res.body.data.paidAmount).toBe(75);
+            expect(res.body.data.paidAmount).toBe(75); // custom quota = 4 sessions, full price is 150 for 8 sessions, so 75.
 
-            // Fetch student to verify remainingSessions was updated
-            const studentRes = await app
-                .get(`/students/${student._id}`)
-                .set('Authorization', bearerHeader(makeTeacherToken()));
-            
-            expect(studentRes.status).toBe(200);
-            expect(studentRes.body.data.remainingSessions).toBe(4);
+            // Fetch cycle enrollment to verify chargeableSessions was updated
+            const enrollmentModel = await mongoose.model('CycleEnrollment').findOne({ studentId: student._id });
+            expect(enrollmentModel).not.toBeNull();
+            expect(enrollmentModel.chargeableSessions).toBe(4);
+            expect(enrollmentModel.cycleCharge).toBe(75);
         });
     });
 

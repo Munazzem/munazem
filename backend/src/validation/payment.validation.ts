@@ -12,6 +12,7 @@ export const recordSubscriptionSchema = z.object({
     description:    z.string().max(300).optional(),
     date:           z.string().optional(),
     customSessionsQuota: z.number().int().positive().optional(),
+    idempotencyKey:      z.string().max(100).optional(),
   }),
 });
 
@@ -23,6 +24,7 @@ export const batchSubscriptionSchema = z.object({
     date:           z.string().optional(),
     customSessionsQuota: z.number().int().positive().optional(),
     customAmount:   z.number().min(0).optional(),
+    idempotencyKey: z.string().max(100).optional(),
   }),
 });
 
@@ -92,5 +94,6 @@ export const payDebtSchema = z.object({
     amount:      z.number().positive('المبلغ يجب أن يكون أكبر من صفر'),
     description: z.string().max(300).optional(),
     date:        z.string().optional(),
+    idempotencyKey: z.string().max(100).optional(),
   }),
 });
