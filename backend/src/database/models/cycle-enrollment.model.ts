@@ -31,11 +31,13 @@ const cycleEnrollmentSchema = new Schema<ICycleEnrollmentDocument>({
     },
     pricePerSession: {
         type: Number,
-        required: true
+        required: true,
+        min: [0, 'سعر الحصة لا يمكن أن يكون سالباً'],
     },
     fullCyclePrice: {
         type: Number,
-        required: true
+        required: true,
+        min: [0, 'سعر الدورة الكاملة لا يمكن أن يكون سالباً'],
     },
     startSession: {
         type: Number,
@@ -47,15 +49,18 @@ const cycleEnrollmentSchema = new Schema<ICycleEnrollmentDocument>({
     },
     cycleCharge: {
         type: Number,
-        required: true
+        required: true,
+        min: [0, 'المبلغ المطلوب لا يمكن أن يكون سالباً'],
     },
     totalPaid: {
         type: Number,
-        default: 0
+        default: 0,
+        min: [0, 'إجمالي المدفوع لا يمكن أن يكون سالباً'],
     },
     remainingAmount: {
         type: Number,
-        required: true
+        required: true,
+        min: [0, 'المتبقي لا يمكن أن يكون سالباً'],
     },
     status: {
         type: String,

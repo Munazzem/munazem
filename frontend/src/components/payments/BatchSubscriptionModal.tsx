@@ -131,6 +131,8 @@ export function BatchSubscriptionModal() {
             queryClient.invalidateQueries({ queryKey: QK.payments.dailyLedgerBase });
             queryClient.invalidateQueries({ queryKey: QK.payments.monthlyLedgerBase });
             queryClient.invalidateQueries({ queryKey: QK.payments.bulkSubStudents(groupId) });
+            queryClient.invalidateQueries({ queryKey: QK.students.all });
+            queryClient.invalidateQueries({ queryKey: QK.dashboard.summary });
             if (data.failCount === 0) {
                 toast.success(`تم تسجيل ${data.successCount} اشتراك بنجاح — إجمالي: ${data.totalPaid.toLocaleString()} ج`);
             } else {

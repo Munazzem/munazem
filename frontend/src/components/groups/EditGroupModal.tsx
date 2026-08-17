@@ -7,6 +7,7 @@ import * as z from 'zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { updateGroup } from '@/lib/api/groups';
 import type { Group } from '@/types/group.types';
+import { QK } from '@/lib/query-keys';
 import { toast } from 'sonner';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 
@@ -98,12 +99,13 @@ export function EditGroupModal({ group, open, onOpenChange }: EditGroupModalProp
     mutationFn: (data: z.infer<typeof groupSchema>) => updateGroup(group!._id, data),
     onSuccess: () => {
       toast.success('تم تحديث بيانات المجموعة بنجاح');
-      queryClient.invalidateQueries({ queryKey: ['groups'] });
+      queryClient.invalidateQueries({ queryKey: QK.groups.all });
+      queryClient.invalidateQueries({ queryKey: QK.dashboard.summary });
       onOpenChange(false);
     },
     onError: (error: { response?: { data?: { message?: string } } } | Error) => {
         const err = error as { response?: { data?: { message?: string } } };
-      
+        toast.error(err?.response?.data?.message || 'حدث خطأ أثناء تحديث المجموعة');
     },
   });
 

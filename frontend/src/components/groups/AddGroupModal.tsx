@@ -8,6 +8,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createGroup } from '@/lib/api/groups';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { getAllowedGrades } from '@/lib/utils/grades';
+import { QK } from '@/lib/query-keys';
 import { toast } from 'sonner';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 
@@ -78,13 +79,14 @@ export function AddGroupModal() {
     mutationFn: createGroup,
     onSuccess: () => {
       toast.success('تم إنشاء المجموعة بنجاح');
-      queryClient.invalidateQueries({ queryKey: ['groups'] });
+      queryClient.invalidateQueries({ queryKey: QK.groups.all });
+      queryClient.invalidateQueries({ queryKey: QK.dashboard.summary });
       form.reset();
       setOpen(false);
     },
     onError: (error: { response?: { data?: { message?: string } } } | Error) => {
         const err = error as { response?: { data?: { message?: string } } };
-      
+        toast.error(err?.response?.data?.message || 'حدث خطأ أثناء إنشاء المجموعة');
     },
   });
 
