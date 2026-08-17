@@ -45,6 +45,7 @@ export interface IExamResult {
 
 export interface ExamResultsSummary {
     exam:          Pick<IExam, '_id' | 'title' | 'date' | 'totalMarks'>;
+    teacherName?:  string;
     totalStudents: number;
     passingCount:  number;
     failingCount:  number;
