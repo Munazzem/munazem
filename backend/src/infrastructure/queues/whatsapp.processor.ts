@@ -78,10 +78,11 @@ export async function processWhatsAppJob(job: Job<WhatsAppJobData>): Promise<voi
         return; // Success return, so BullMQ doesn't retry
     }
 
-    // ── Per-Teacher Rate Limiting via Redis Lock ────────────────────────────
-    // Delay this specific job if the teacher recently sent a message.
+    // ── Per-Teacher Rate Limiting via Redis Lock with Dynamic Jitter Delay ────────────
+    // Dynamic interval (e.g. 12s to 20s) to avoid fixed mechanical patterns
+    const dynamicDelayMs = INTER_MESSAGE_DELAY_MS + Math.floor(Math.random() * 8000);
     const lockKey = `whatsapp:lock:${data.teacherId}`;
-    const acquired = await redis.set(lockKey, '1', 'PX', INTER_MESSAGE_DELAY_MS, 'NX');
+    const acquired = await redis.set(lockKey, '1', 'PX', dynamicDelayMs, 'NX');
     if (!acquired) {
         throw new Error('RATE_LIMIT_WAIT');
     }
