@@ -3,17 +3,18 @@ import { GroupModel }              from '../../database/models/group.model.js';
 import { AttendanceModel }         from '../../database/models/attendance.model.js';
 import { AttendanceSnapshotModel } from '../../database/models/attendance-snapshot.model.js';
 import { TransactionModel }        from '../../database/models/transaction.model.js';
+import { CycleEnrollmentModel }    from '../../database/models/cycle-enrollment.model.js';
 import { SessionModel }            from '../../database/models/session.model.js';
 import { DailyLedgerModel, MonthlyLedgerModel } from '../../database/models/ledger.model.js';
 import { ExamResultModel }         from '../../database/models/exam-result.model.js';
 import { ExamModel }               from '../../database/models/exam.model.js';
 import mongoose from 'mongoose';
-import { TransactionType, TransactionCategory, SessionStatus, UserRole, AttendanceStatus } from '../../common/enums/enum.service.js';
+import { TransactionType, TransactionCategory, SessionStatus, UserRole, AttendanceStatus, CycleEnrollmentStatus } from '../../common/enums/enum.service.js';
 import { NotFoundException } from '../../common/utils/response/error.responce.js';
 import { BarcodeUtil } from '../../common/utils/barcode.util.js';
 import { cache, CacheKeys, CacheTTL } from '../../infrastructure/cache/cache.service.js';
 import { logger } from '../../common/utils/logger.util.js';
-import { todayEgypt, egyptDayBounds } from '../../common/utils/date.util.js';
+import { todayEgypt, egyptDayBounds, startOfDayEgypt } from '../../common/utils/date.util.js';
 
 export class ReportsService {
 
@@ -45,7 +46,16 @@ export class ReportsService {
             },
             {
                 $project: {
-                    isPresent: { $cond: [{ $in: [student._id, '$presentStudents.studentId'] }, 1, 0] },
+                    isPresent: { 
+                        $cond: [
+                            { $or: [
+                                { $in: [student._id, '$presentStudents.studentId'] },
+                                { $in: [student._id, '$guestStudents.studentId'] }
+                            ]},
+                            1,
+                            0
+                        ]
+                    },
                     isAbsent:  { $cond: [{ $in: [student._id, '$absentStudents.studentId'] }, 1, 0] },
                 },
             },
@@ -76,7 +86,8 @@ export class ReportsService {
         const attendanceHistory = snapshots.map((snap: any) => {
             const isPresent = snap.presentStudents.some((s: any) => s.studentId.toString() === studentId);
             const isAbsent  = snap.absentStudents.some((s: any)  => s.studentId.toString() === studentId);
-            const status    = isPresent ? 'PRESENT' : isAbsent ? 'ABSENT' : 'GUEST';
+            const isGuest   = snap.guestStudents?.some((s: any)  => s.studentId.toString() === studentId);
+            const status    = isPresent ? 'PRESENT' : isGuest ? 'GUEST' : isAbsent ? 'ABSENT' : 'UNKNOWN';
             return { date: snap.date, status };
         });
 
@@ -111,54 +122,85 @@ export class ReportsService {
         const subscriptionsCount = paymentTotals.find((p: any) => p._id === TransactionCategory.SUBSCRIPTION)?.count ?? 0;
         const notebookSalesCount = paymentTotals.find((p: any) => p._id === TransactionCategory.NOTEBOOK_SALE)?.count ?? 0;
 
-        // Active subscription = student paid during the current group cycle
-        const cycleStartedAt = (group as any)?.cycle?.startedAt || new Date('2099-01-01');
-        const hasActiveSubscription = await TransactionModel.exists({
+        // Active subscription = student is marked PAID in the current group cycle
+        const currentCycleNumber = (group as any)?.cycle?.currentCycleNumber || 1;
+        const hasActiveSubscription = await CycleEnrollmentModel.exists({
             studentId: student._id,
-            category: 'SUBSCRIPTION',
-            type: 'INCOME',
-            date: { $gte: cycleStartedAt }
+            groupId: student.groupId,
+            cycleNumber: currentCycleNumber,
+            status: CycleEnrollmentStatus.PAID
         });
 
-        // Calculate monthly session usage (Attendance records this month)
-        const now = new Date();
-        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-        const monthEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+        // Calculate session usage for the active cycle
+        const rawCycleStartedAt = (group as any)?.cycle?.startedAt 
+            ? new Date((group as any).cycle.startedAt) 
+            : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+        const cycleStartedAt = startOfDayEgypt(rawCycleStartedAt);
 
-        // 1. Get all non-cancelled sessions for the group this month
+        // 1. Get all non-cancelled sessions for the group in the current cycle
         const groupSessions = await SessionModel.find({
             groupId: student.groupId,
             teacherId,
-            date: { $gte: monthStart, $lte: monthEnd },
-            status: { $ne: 'CANCELLED' }
+            date: { $gte: cycleStartedAt },
+            status: { $ne: SessionStatus.CANCELLED }
         }).sort({ date: 1, startTime: 1 }).lean();
 
-        // 2. Get attendance for these sessions
-        const attendedRecords = await AttendanceModel.find({
-            studentId,
-            sessionId: { $in: groupSessions.map(s => s._id) as any },
-            status: { $in: [AttendanceStatus.PRESENT, AttendanceStatus.LATE] }
-        }).lean();
+        const sessionIds = groupSessions.map(s => s._id);
 
-        const attendedSessionIds = new Set(attendedRecords.map(a => a.sessionId?.toString()));
+        // 2. Get attendance records and snapshots for these sessions
+        const [attendedRecords, sessionSnapshots] = await Promise.all([
+            AttendanceModel.find({
+                studentId,
+                sessionId: { $in: sessionIds as any },
+            }).lean(),
+            AttendanceSnapshotModel.find({
+                sessionId: { $in: sessionIds as any },
+            }).lean(),
+        ]);
 
-        // 3. Map them together
-        const monthlySessions = groupSessions.map(s => ({
-            sessionId: s._id,
-            date:      s.date,
-            status:    attendedSessionIds.has(s._id.toString()) ? AttendanceStatus.PRESENT : AttendanceStatus.ABSENT,
-        }));
+        const attendedMap = new Map<string, AttendanceStatus>();
+        attendedRecords.forEach(a => {
+            if (a.sessionId) attendedMap.set(a.sessionId.toString(), a.status as AttendanceStatus);
+        });
 
-        // 4. Manual records this month (not linked to group sessions)
+        // Complement with snapshots (in case snapshot exists but AttendanceModel wasn't persisted individually)
+        sessionSnapshots.forEach(snap => {
+            const sid = snap.sessionId.toString();
+            if (!attendedMap.has(sid)) {
+                if (snap.presentStudents?.some(p => p.studentId.toString() === studentId)) {
+                    attendedMap.set(sid, AttendanceStatus.PRESENT);
+                } else if (snap.guestStudents?.some(g => g.studentId.toString() === studentId)) {
+                    attendedMap.set(sid, AttendanceStatus.PRESENT);
+                } else if (snap.absentStudents?.some(a => a.studentId.toString() === studentId)) {
+                    attendedMap.set(sid, AttendanceStatus.ABSENT);
+                }
+            }
+        });
+
+        // 3. Map sessions with their exact attendance status
+        const monthlySessions = groupSessions.map(s => {
+            const status = attendedMap.get(s._id.toString()) || AttendanceStatus.ABSENT;
+            return {
+                sessionId: s._id,
+                date:      s.date,
+                status,
+            };
+        });
+
+        // 4. Manual records in the cycle (not linked to group sessions)
         const manualRecordsCount = await AttendanceModel.countDocuments({
             studentId,
             sessionId: { $exists: false },
             type:      'MANUAL',
-            scannedAt: { $gte: monthStart, $lte: monthEnd },
+            scannedAt: { $gte: cycleStartedAt },
             status:    { $in: [AttendanceStatus.PRESENT, AttendanceStatus.LATE] }
         });
 
-        const usedSessionsThisMonth = attendedRecords.length + manualRecordsCount;
+        const activeAttendedCount = monthlySessions.filter(
+            s => s.status === AttendanceStatus.PRESENT || s.status === AttendanceStatus.LATE || s.status === AttendanceStatus.EXCUSED
+        ).length;
+
+        const usedSessionsThisMonth = activeAttendedCount + manualRecordsCount;
 
         // Remaining sessions is deprecated
         const remainingSessions = 0;
@@ -223,6 +265,7 @@ export class ReportsService {
                 subscriptionsCount,
                 notebookSalesCount,
                 history: payments,
+                subscriptions: payments.filter((p: any) => p.category === TransactionCategory.SUBSCRIPTION),
             },
             grades: {
                 total: gradesHistory.length,

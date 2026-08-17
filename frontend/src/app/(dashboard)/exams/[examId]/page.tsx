@@ -80,6 +80,30 @@ const formatWhatsAppNumber = (phone: string) => {
     return clean;
 };
 
+const buildExamWhatsAppMessage = (
+    studentName: string,
+    examTitle: string,
+    score: number,
+    totalMarks: number,
+    percentage: number,
+    grade: string,
+    passed: boolean,
+    teacherName: string
+) => {
+    const passedLabel = passed ? 'ناجح ✅' : 'راسب ❌';
+    const signature = teacherName ? `\nمع تحيات: أ/ ${teacherName}` : '';
+    const templates = [
+        `السلام عليكم ورحمة الله،\nتقرير نتيجة اختبار [**${examTitle}**] للطالب/ة: **${studentName}**\n📊 الدرجة: **${score} من ${totalMarks}** (${percentage}%)\n📈 التقدير: **${grade}** (${passedLabel})\n\n📌 **الرجاء الرد بـ (تم) لتأكيد الاطلاع على النتيجة.**${signature}`,
+        `أهلاً بحضرتك يا فندم،\nتم رصد درجات اختبار **${examTitle}**، وحصل **${studentName}** على: **${score} / ${totalMarks}** (تقدير: **${grade}**).\nنرجو الاستمرار في التحفيز والمتابعة المستمرة.\n\n📌 **يرجى الرد بكلمة (تم) لتأكيد الاستلام.**${signature}`,
+        `📈 **إشعار نتيجة اختبار**:\nالطالب: **${studentName}** | الاختبار: **${examTitle}**\n🎯 النتيجة: **${score} من ${totalMarks}** (${percentage}%) — ${passedLabel}\n\n📌 **الرجاء الرد بـ (تم) للتأكيد.**${signature}`,
+        `تحية طيبة،\nنود إحاطتكم علمًا بنتيجة **${studentName}** في امتحان **${examTitle}**:\nالدرجة المحققة: **${score} من أصل ${totalMarks}** (${grade}).\n\n📌 **الرجاء الرد بـ (تم) للاطلاع.**${signature}`,
+    ];
+
+    const hash = studentName.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+    const selected = templates[hash % templates.length] || templates[0];
+    return encodeURIComponent(selected!);
+};
+
 export default function ExamDetailPage() {
     const { examId } = useParams<{ examId: string }>();
     const router     = useRouter();
@@ -414,8 +438,15 @@ export default function ExamDetailPage() {
                                                 <tbody className="divide-y divide-gray-50">
                                                     {results.map((r: any) => {
                                                         const name = r.studentName ?? '—';
-                                                        const waMsg = encodeURIComponent(
-                                                            `السلام عليكم،\nنتيجة ${name} في امتحان "${examData.title}":\nالدرجة: ${r.score} من ${examData.totalMarks}\nالنسبة: ${r.percentage}%\nالتقدير: ${r.grade}\nالحالة: ${r.passed ? 'ناجح ✅' : 'راسب ❌'}`
+                                                        const waMsg = buildExamWhatsAppMessage(
+                                                            name,
+                                                            examData.title,
+                                                            r.score,
+                                                            examData.totalMarks,
+                                                            r.percentage,
+                                                            r.grade,
+                                                            r.passed,
+                                                            user?.name || ''
                                                         );
                                                         return (
                                                             <tr key={r._id} className="hover:bg-gray-50/50">
@@ -462,8 +493,15 @@ export default function ExamDetailPage() {
                                         <div className="sm:hidden divide-y divide-gray-50">
                                             {results.map((r: any) => {
                                                 const name = r.studentName ?? '—';
-                                                const waMsg = encodeURIComponent(
-                                                    `السلام عليكم،\nنتيجة ${name} في امتحان "${examData.title}":\nالدرجة: ${r.score} من ${examData.totalMarks}\nالنسبة: ${r.percentage}%\nالتقدير: ${r.grade}\nالحالة: ${r.passed ? 'ناجح ✅' : 'راسب ❌'}`
+                                                const waMsg = buildExamWhatsAppMessage(
+                                                    name,
+                                                    examData.title,
+                                                    r.score,
+                                                    examData.totalMarks,
+                                                    r.percentage,
+                                                    r.grade,
+                                                    r.passed,
+                                                    user?.name || ''
                                                 );
                                                 return (
                                                     <div key={r._id} className="p-4">

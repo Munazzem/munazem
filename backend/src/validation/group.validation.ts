@@ -10,6 +10,7 @@ export const createGroupSchema = z.object({
     name: z.string().min(2, "اسم المجموعة مطلوب ولابد أن يكون حرفين على الأقل"),
     gradeLevel: gradeLevelEnum,
     capacity: z.number().int().positive("الحد الأقصى يجب أن يكون رقماً صحيحاً وموجباً").optional(),
+    cycleCapacity: z.number().int().min(1, "عدد حصص الدورة يجب أن يكون 1 على الأقل").optional(),
     customPrice: z.number().positive("سعر المجموعة يجب أن يكون أكبر من صفر").nullable().optional(),
     schedule: z.array(z.object({
       day: z.string().min(1, "اليوم مطلوب"),
@@ -23,11 +24,19 @@ export const updateGroupSchema = z.object({
     name: z.string().min(2, "اسم المجموعة مطلوب ولابد أن يكون حرفين على الأقل").optional(),
     gradeLevel: gradeLevelEnum.optional(),
     capacity: z.number().int().positive("الحد الأقصى يجب أن يكون رقماً صحيحاً وموجباً").optional(),
+    cycleCapacity: z.number().int().min(1, "عدد حصص الدورة يجب أن يكون 1 على الأقل").optional(),
     customPrice: z.number().positive("سعر المجموعة يجب أن يكون أكبر من صفر").nullable().optional(),
     schedule: z.array(z.object({
       day: z.string().min(1, "اليوم مطلوب"),
       time: z.string().min(1, "الوقت مطلوب"),
     })).optional(),
     isActive: z.boolean().optional(),
+  })
+});
+
+export const updateGradeCycleSchema = z.object({
+  body: z.object({
+    gradeLevel: gradeLevelEnum,
+    cycleCapacity: z.number().int().min(1, "عدد حصص الدورة يجب أن يكون 1 على الأقل"),
   })
 });

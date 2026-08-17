@@ -25,3 +25,8 @@ export const updateGroup = async (id: string, data: UpdateGroupDTO): Promise<Gro
 export const deleteGroup = async (id: string): Promise<void> => {
     await apiClient.delete(`/groups/${id}`);
 };
+
+export const updateGradeCycleCapacity = async (data: { gradeLevel: string; cycleCapacity: number }): Promise<any> => {
+    const res = await apiClient.put('/groups/grade-cycle-capacity', data);
+    return res;
+};

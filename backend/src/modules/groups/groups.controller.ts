@@ -6,7 +6,7 @@ import { UnauthorizedException } from '../../common/utils/response/error.responc
 import { authenticate } from '../../middlewares/auth.middleware.js';
 import { authorizeRoles } from '../../middlewares/roles.middleware.js';
 import { validate } from '../../middlewares/validate.middleware.js';
-import { createGroupSchema, updateGroupSchema } from '../../validation/group.validation.js';
+import { createGroupSchema, updateGroupSchema, updateGradeCycleSchema } from '../../validation/group.validation.js';
 import { UserRole } from '../../common/enums/enum.service.js';
 
 class GroupController {
@@ -62,6 +62,18 @@ class GroupController {
         }
     }
 
+    static async updateGradeCycleCapacity(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const teacherId = GroupController.extractTeacherId(user);
+            const { gradeLevel, cycleCapacity } = req.body;
+            const result = await GroupService.updateGradeCycleCapacity(teacherId, gradeLevel, cycleCapacity);
+            return SuccessResponse({ res, message: `تم تحديث عدد حصص الدورة للمرحلة بنجاح. تم تعديل ${result.updatedCount} مجموعة.` });
+        } catch (error) {
+            next(error);
+        }
+    }
+
     static async deleteGroup(req: Request, res: Response, next: NextFunction) {
         try {
             const user = (req as any).user;
@@ -84,6 +96,7 @@ router.use(authenticate);
 // ============================================
 
 router.post('/', authorizeRoles(UserRole.assistant, UserRole.teacher), validate(createGroupSchema), GroupController.createGroup);
+router.put('/grade-cycle-capacity', authorizeRoles(UserRole.assistant, UserRole.teacher), validate(updateGradeCycleSchema), GroupController.updateGradeCycleCapacity);
 router.put('/:id', authorizeRoles(UserRole.assistant, UserRole.teacher), validate(updateGroupSchema), GroupController.updateGroup);
 router.delete('/:id', authorizeRoles(UserRole.assistant, UserRole.teacher), GroupController.deleteGroup);
 

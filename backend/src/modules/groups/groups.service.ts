@@ -26,8 +26,13 @@ export class GroupService {
             gradeLevel: data.gradeLevel,
             schedule:   data.schedule,
             teacherId,
-            ...(data.capacity    ? { capacity:    data.capacity    } : {}),
+            ...(data.capacity ? { capacity: data.capacity } : {}),
             ...(data.customPrice !== undefined ? { customPrice: data.customPrice } : {}),
+            cycle: {
+                capacity: data.cycleCapacity || (data.schedule.length * 4),
+                currentCycleNumber: 1,
+                currentSessionNumber: 0
+            }
         });
 
         // Invalidate dashboard and groups cache
@@ -104,9 +109,15 @@ export class GroupService {
 
     // Update group
     static async updateGroup(groupId: string, teacherId: string, data: UpdateGroupDTO) {
+        const updatePayload: any = { ...data };
+        if (data.cycleCapacity !== undefined) {
+            updatePayload['cycle.capacity'] = data.cycleCapacity;
+            delete updatePayload.cycleCapacity;
+        }
+
         const updatedGroup = await GroupModel.findOneAndUpdate(
             { _id: groupId, teacherId },
-            data,
+            { $set: updatePayload },
             { new: true, runValidators: true }
         ).lean();
 
@@ -134,5 +145,22 @@ export class GroupService {
         await cache.invalidate(`t:${teacherId}:*`);
         
         return group;
+    }
+
+    // Update cycle capacity for ALL groups of a specific grade level
+    static async updateGradeCycleCapacity(teacherId: string, gradeLevel: GradeLevel, cycleCapacity: number) {
+        const result = await GroupModel.updateMany(
+            { teacherId, gradeLevel },
+            { $set: { 'cycle.capacity': cycleCapacity } }
+        );
+
+        if (result.matchedCount === 0) {
+            throw NotFoundException({ message: 'لا توجد مجموعات لهذه المرحلة' });
+        }
+
+        // Invalidate cache
+        await cache.invalidate(`t:${teacherId}:*`);
+
+        return { updatedCount: result.modifiedCount };
     }
 }

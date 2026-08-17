@@ -119,9 +119,10 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
     });
 
     const monthlySessionsQuota = report?.student?.monthlySessionsQuota ?? student.monthlySessionsQuota ?? 8;
-    const remainingSessions = report?.student?.remainingSessions ?? student.remainingSessions ?? 0;
-    const usedSessionsThisMonth = Math.max(0, monthlySessionsQuota - remainingSessions);
-    const attendancePercentage = Math.round((usedSessionsThisMonth / monthlySessionsQuota) * 100) || 0;
+    const usedSessionsThisMonth = report?.student?.usedSessionsThisMonth ?? 0;
+    const attendancePercentage = monthlySessionsQuota > 0 
+        ? Math.round((usedSessionsThisMonth / monthlySessionsQuota) * 100) 
+        : 0;
 
     return (
         <>

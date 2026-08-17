@@ -1,10 +1,12 @@
 import mongoose, { Schema, Model } from 'mongoose';
 import type { IAttendanceSnapshotDocument } from '../../types/attendance-snapshot.types.js';
+import { AttendanceStatus } from '../../common/enums/enum.service.js';
 
 const studentEntrySchema = new Schema({
     studentId:   { type: Schema.Types.ObjectId, ref: 'Student', required: true },
     studentName: { type: String, required: true },  // embedded — zero populate needed
     scannedAt:   { type: Date },                    // only for present/late
+    status:      { type: String, enum: Object.values(AttendanceStatus) },
 }, { _id: false });
 
 const attendanceSnapshotSchema = new Schema<IAttendanceSnapshotDocument>({

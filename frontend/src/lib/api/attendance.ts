@@ -32,6 +32,16 @@ export const updateAttendance = async (
     return (res as any).data;
 };
 
+export const adjustCompletedAttendance = async (
+    sessionId: string,
+    studentId: string,
+    status: AttendanceStatus,
+    notes?: string
+): Promise<{ success: boolean; message: string; record?: IAttendanceRecord }> => {
+    const res = await apiClient.patch(`/attendance/session/${sessionId}/adjust`, { studentId, status, notes });
+    return (res as any).data;
+};
+
 export const completeSession = async (sessionId: string): Promise<{
     session: { _id: string; status: string };
     snapshot: IAttendanceSnapshot;

@@ -7,13 +7,14 @@ import { StudentModel }       from '../../database/models/student.model.js';
 import { GroupModel }          from '../../database/models/group.model.js';
 import { NotebookModel }      from '../../database/models/notebook.model.js';
 import { NotebookReservationModel } from '../../database/models/notebook-reservation.model.js';
+import { CycleEnrollmentModel } from '../../database/models/cycle-enrollment.model.js';
 import { ReservationStatus } from '../../types/notebook-reservation.types.js';
-import { TransactionType, TransactionCategory, GradeLevel } from '../../common/enums/enum.service.js';
+import { TransactionType, TransactionCategory, GradeLevel, CycleEnrollmentStatus } from '../../common/enums/enum.service.js';
 import { NotFoundException, BadRequestException } from '../../common/utils/response/error.responce.js';
 import { trackEvent } from '../../common/utils/activity.service.js';
 import { withTransaction } from '../../common/utils/transaction.util.js';
 import { cache, CacheKeys, CacheTTL } from '../../infrastructure/cache/cache.service.js';
-import { startOfDayEgypt, resolveTransactionDate } from '../../common/utils/date.util.js';
+import { startOfDayEgypt, resolveTransactionDate, getEgyptYearMonth } from '../../common/utils/date.util.js';
 import type { IPriceSetting } from '../../types/price-settings.types.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────
@@ -94,8 +95,7 @@ async function updateMonthlyLedger(
     isIncome: boolean,
     session?: mongoose.ClientSession
 ) {
-    const year  = date.getUTCFullYear();
-    const month = date.getUTCMonth() + 1;
+    const { year, month } = getEgyptYearMonth(date);
     const day   = startOfDay(date);
     const net   = isIncome ? paidAmount : -paidAmount;
 
@@ -178,74 +178,135 @@ export class PaymentsService {
     static async recordSubscription(
         teacherId: string,
         createdBy: string,
-        data: { studentId: string; discountAmount?: number; paidAmount?: number; description?: string; date?: string; customSessionsQuota?: number }
+        data: { studentId: string; discountAmount?: number; paidAmount?: number; description?: string; date?: string; customSessionsQuota?: number; idempotencyKey?: string }
     ) {
-        // Get student info (include groupId for price resolution)
+        if (data.idempotencyKey) {
+            const existingTx = await TransactionModel.findOne({ idempotencyKey: data.idempotencyKey }).lean();
+            if (existingTx) return existingTx;
+        }
+
+        // Get student info
         const student = await StudentModel.findById(data.studentId, {
-            studentName: 1, gradeLevel: 1, teacherId: 1, groupId: 1
+            studentName: 1, gradeLevel: 1, teacherId: 1, groupId: 1, createdAt: 1
         }).lean();
         if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
         if (student.teacherId.toString() !== teacherId) {
             throw BadRequestException({ message: 'هذا الطالب لا ينتمي إلى هذا المعلم' });
         }
 
-        // Get group info (customPrice for pricing hierarchy, schedule for quota)
-        const group = await GroupModel.findById((student as any).groupId, { schedule: 1, customPrice: 1 }).lean();
+        // Fetch Group to get cycle details
+        const group = await GroupModel.findById(student.groupId).lean();
+        if (!group) throw NotFoundException({ message: 'المجموعة غير موجودة' });
 
-        // Get teacher's grade-level prices (used as fallback if group has no customPrice)
-        const settings = await PriceSettingsModel.findOne({ teacherId }).lean();
+        let cycleNumber = group.cycle?.currentCycleNumber ?? 1;
+        let capacity = group.cycle?.capacity ?? (group.schedule?.length || 2) * 4;
+        let currentSessionNumber = group.cycle?.currentSessionNumber ?? 0;
+        let priceSnapshot = group.cycle?.priceSnapshot ?? new Map<string, number>();
 
-        // Resolve originalAmount: group.customPrice → grade price → throw
-        const originalAmount = resolveOriginalAmount(
-            (group as any)?.customPrice,
-            student.gradeLevel,
-            settings,
-        );
+        // Find or create CycleEnrollment
+        let enrollment = await CycleEnrollmentModel.findOne({
+            studentId: student._id,
+            groupId: group._id,
+            cycleNumber
+        });
+
+        const txDate = resolveTransactionDate(data.date);
+        let enrollmentCreatedNow = false;
+
+        if (!enrollment) {
+            // The price snapshot (or PriceSettings or group.customPrice) is fundamentally the FULL CYCLE subscription price
+            let fullMonthPrice = (group as any)?.customPrice;
+            if (fullMonthPrice === undefined || fullMonthPrice === null) {
+                fullMonthPrice = (priceSnapshot instanceof Map ? priceSnapshot.get(student.gradeLevel) : priceSnapshot?.[student.gradeLevel]);
+            }
+            if (fullMonthPrice === undefined || fullMonthPrice === null) {
+                const settings = await PriceSettingsModel.findOne({ teacherId }).lean();
+                fullMonthPrice = settings?.prices.find(p => p.gradeLevel === student.gradeLevel)?.amount || 0;
+            }
+            
+            const pricePerSession = capacity > 0 ? fullMonthPrice / capacity : 0;
+            
+            // If student joined before the cycle started, they owe full cycle; otherwise pro-rate from NEXT session
+            const studentCreatedAt = (student as any).createdAt;
+            const wasRegisteredBeforeCycle = !group.cycle?.startedAt || 
+                (studentCreatedAt && new Date(studentCreatedAt) <= new Date(group.cycle.startedAt));
+
+            let defaultStartSession: number;
+            let remainingCapacity: number;
+
+            if (wasRegisteredBeforeCycle || currentSessionNumber === 0) {
+                defaultStartSession = 1;
+                remainingCapacity = capacity;
+            } else if (currentSessionNumber >= capacity) {
+                // Current cycle is fully finished; new student will enter next cycle
+                defaultStartSession = 1;
+                remainingCapacity = capacity;
+            } else {
+                // Mid-cycle joiner: starts from the next session
+                defaultStartSession = currentSessionNumber + 1;
+                remainingCapacity = Math.max(0, capacity - currentSessionNumber);
+            }
+            
+            // Respect custom quota from UI if provided, otherwise charge for remaining capacity
+            const chargeableSessions = data.customSessionsQuota !== undefined 
+                ? data.customSessionsQuota 
+                : remainingCapacity;
+                
+            const cycleCharge = Math.round(chargeableSessions * pricePerSession);
+
+            enrollment = new CycleEnrollmentModel({
+                studentId: student._id,
+                groupId: group._id,
+                teacherId: teacherId,
+                cycleNumber,
+                cycleCapacity: capacity,
+                pricePerSession,
+                fullCyclePrice: fullMonthPrice,
+                startSession: wasRegisteredBeforeCycle ? 1 : defaultStartSession,
+                chargeableSessions,
+                cycleCharge,
+                totalPaid: 0,
+                remainingAmount: cycleCharge,
+                status: CycleEnrollmentStatus.UNPAID
+            });
+            enrollmentCreatedNow = true;
+        }
+
+        if (enrollment.status === CycleEnrollmentStatus.PAID) {
+            throw BadRequestException({ message: 'لقد تم دفع اشتراك هذه الدورة بالكامل مسبقاً.' });
+        }
 
         const discountAmount = data.discountAmount ?? 0;
-        
-        let paidAmount = data.paidAmount;
-        if (paidAmount === undefined) {
-            if (data.customSessionsQuota !== undefined) {
-                // Default to 8 sessions per month for ratio calculation to avoid schedule misconfiguration issues
-                paidAmount = (data.customSessionsQuota / 8) * originalAmount;
-            } else {
-                paidAmount = originalAmount;
-            }
-            paidAmount = Math.max(0, paidAmount - discountAmount);
-        }
-
-        const remainingAmount = Math.max(0, originalAmount - paidAmount - discountAmount);
-        const txDate         = resolveTransactionDate(data.date);
+        const paidAmount = data.paidAmount ?? (enrollment.remainingAmount - discountAmount);
 
         if (paidAmount < 0) throw BadRequestException({ message: 'المدفوع لا يمكن أن يكون سالباً' });
-        if (remainingAmount < 0) throw BadRequestException({ message: 'المدفوع لا يمكن أن يتجاوز المطلوب سداده' });
-
-        // Prevent duplicate subscriptions in the same month
-        const startOfMonth = new Date(txDate);
-        startOfMonth.setDate(1);
-        startOfMonth.setHours(0, 0, 0, 0);
-
-        const endOfMonth = new Date(txDate);
-        endOfMonth.setMonth(endOfMonth.getMonth() + 1);
-        endOfMonth.setDate(0);
-        endOfMonth.setHours(23, 59, 59, 999);
-
-        const existingSubscription = await TransactionModel.findOne({
-            studentId: student._id,
-            category: TransactionCategory.SUBSCRIPTION,
-            date: { $gte: startOfMonth, $lte: endOfMonth }
-        }).lean();
-
-        if (existingSubscription) {
-            throw BadRequestException({ message: 'لقد تم تسجيل اشتراك لهذا الطالب في نفس هذا الشهر مسبقاً.' });
+        if (paidAmount + discountAmount > enrollment.remainingAmount) {
+            throw BadRequestException({ message: 'إجمالي الدفع والخصم لا يمكن أن يتجاوز المطلوب سداده المتبقي للدورة.' });
         }
 
-        // Calculate quota from schedule (group already fetched above)
-        const quota = (student as any).monthlySessionsQuota || (group?.schedule?.length ?? 2) * 4;
+        const newTotalPaid = enrollment.totalPaid + paidAmount + discountAmount;
+        const newRemainingAmount = enrollment.cycleCharge - newTotalPaid;
+        let newStatus = CycleEnrollmentStatus.PARTIALLY_PAID;
+        if (newRemainingAmount === 0) newStatus = CycleEnrollmentStatus.PAID;
+        if (newRemainingAmount === enrollment.cycleCharge) newStatus = CycleEnrollmentStatus.UNPAID;
 
         // ── All mutations wrapped in a transaction (all-or-nothing) ──
         const transaction = await withTransaction(async (session) => {
+            if (enrollmentCreatedNow) {
+                enrollment.totalPaid = newTotalPaid;
+                enrollment.remainingAmount = newRemainingAmount;
+                enrollment.status = newStatus;
+                await enrollment.save({ session });
+            } else {
+                await CycleEnrollmentModel.findByIdAndUpdate(enrollment._id, {
+                    $set: {
+                        totalPaid: newTotalPaid,
+                        remainingAmount: newRemainingAmount,
+                        status: newStatus
+                    }
+                }, { session });
+            }
+
             const [tx] = await TransactionModel.create([{
                 teacherId,
                 createdBy,
@@ -254,11 +315,13 @@ export class PaymentsService {
                 studentId:      student._id,
                 studentName:    student.studentName,
                 gradeLevel:     student.gradeLevel,
-                originalAmount,
+                originalAmount: enrollment.cycleCharge,
                 discountAmount,
                 paidAmount,
-                remainingAmount,
+                remainingAmount: newRemainingAmount,
                 date:           txDate,
+                cycleNumber,
+                ...(data.idempotencyKey ? { idempotencyKey: data.idempotencyKey } : {}),
                 ...(data.description ? { description: data.description } : {}),
             }], { session });
 
@@ -275,18 +338,22 @@ export class PaymentsService {
                 updateMonthlyLedger(teacherId, txDate, paidAmount, true, session),
             ]);
 
-            // Update student debt if any
+            // Update student debt
+            // If enrollment was created now, we ADD the full charge to totalDebt, then SUBTRACT the payment/discount.
+            // If enrollment already existed, we just SUBTRACT the payment/discount from totalDebt.
             const studentUpdatePayload: any = {};
-            if (remainingAmount > 0) {
-                studentUpdatePayload.$inc = { totalDebt: remainingAmount };
+            let debtChange = 0;
+            if (enrollmentCreatedNow) {
+                debtChange += enrollment.cycleCharge;
             }
+            debtChange -= (paidAmount + discountAmount);
 
-            if (data.customSessionsQuota !== undefined) {
-                studentUpdatePayload.$set = { ...studentUpdatePayload.$set, remainingSessions: data.customSessionsQuota };
+            if (debtChange !== 0) {
+                studentUpdatePayload.$inc = { totalDebt: debtChange };
             }
 
             if (Object.keys(studentUpdatePayload).length > 0) {
-                await StudentModel.findByIdAndUpdate(data.studentId, studentUpdatePayload, { session });
+                await StudentModel.findByIdAndUpdate(student._id, studentUpdatePayload, { session });
             }
 
             return tx;
@@ -309,216 +376,48 @@ export class PaymentsService {
     static async recordBatchSubscription(
         teacherId: string,
         createdBy: string,
-        data: { studentIds: string[]; discountAmount?: number; description?: string; date?: string; customSessionsQuota?: number; customAmount?: number }
+        data: { studentIds: string[]; discountAmount?: number; description?: string; date?: string; customSessionsQuota?: number; customAmount?: number; idempotencyKey?: string }
     ) {
         if (!data.studentIds || data.studentIds.length === 0) {
             throw BadRequestException({ message: 'يجب اختيار طالب واحد على الأقل' });
         }
 
-        const settings = await PriceSettingsModel.findOne({ teacherId }).lean();
-        // Note: settings may be null if teacher hasn't configured grade-level prices yet.
-        // resolveOriginalAmount will still succeed if the student's group has a customPrice.
-
         const txDate = resolveTransactionDate(data.date);
-        const discountAmount = data.discountAmount ?? 0;
-
         const results: { studentId: string; studentName: string; paidAmount: number; status: 'success' | 'error'; error?: string }[] = [];
 
-        // Batch fetch all students and their groups to avoid N+1 queries
-        const studentDocs = await StudentModel.find(
-            { _id: { $in: data.studentIds }, teacherId },
-            { studentName: 1, gradeLevel: 1, teacherId: 1, groupId: 1, monthlySessionsQuota: 1 }
-        ).lean();
-        const studentMap = new Map(studentDocs.map(s => [s._id.toString(), s]));
-
-        const groupIds = [...new Set(studentDocs.map(s => s.groupId?.toString()).filter(Boolean))];
-        const groupDocs = await GroupModel.find({ _id: { $in: groupIds as string[] } }, { schedule: 1, customPrice: 1 }).lean();
-        const groupMap = new Map(groupDocs.map(g => [g._id.toString(), g]));
-
-        const startOfMonth = new Date(txDate);
-        startOfMonth.setDate(1);
-        startOfMonth.setHours(0, 0, 0, 0);
-
-        const endOfMonth = new Date(txDate);
-        endOfMonth.setMonth(endOfMonth.getMonth() + 1);
-        endOfMonth.setDate(0);
-        endOfMonth.setHours(23, 59, 59, 999);
-
-        // Find existing subscriptions for all provided student IDs in the current month
-        const existingTxs = await TransactionModel.find({
-            studentId: { $in: data.studentIds },
-            category: TransactionCategory.SUBSCRIPTION,
-            date: { $gte: startOfMonth, $lte: endOfMonth }
-        }, { studentId: 1 }).lean();
-        const existingStudentIds = new Set(existingTxs.map(tx => tx.studentId?.toString()));
-
-        const validStudents: any[] = [];
-        
+        // For batches, process sequentially to handle cycle enrollments, pro-rata and prevent lock contention
         for (const studentId of data.studentIds) {
-            const student = studentMap.get(studentId);
-            if (!student) {
-                results.push({ studentId, studentName: '', paidAmount: 0, status: 'error', error: 'الطالب غير موجود أو لا ينتمي إلى هذا المعلم' });
-                continue;
-            }
-
-            if (existingStudentIds.has(studentId)) {
-                results.push({ studentId, studentName: student.studentName, paidAmount: 0, status: 'error', error: 'لقد تم تسجيل اشتراك لهذا الطالب في نفس هذا الشهر مسبقاً.' });
-                continue;
-            }
-
-            const groupForStudent = groupMap.get(student.groupId?.toString());
-
-            // Resolve originalAmount: group.customPrice → grade price → soft-fail this student
-            let originalAmount: number;
             try {
-                originalAmount = resolveOriginalAmount(
-                    (groupForStudent as any)?.customPrice,
-                    student.gradeLevel,
-                    settings,
-                );
-            } catch {
-                results.push({ studentId, studentName: student.studentName, paidAmount: 0, status: 'error', error: `لم يتم تحديد سعر للمجموعة ولا للمرحلة: ${student.gradeLevel}` });
-                continue;
-            }
-            
-            let paidAmount = originalAmount;
-            if (data.customAmount !== undefined) {
-                paidAmount = data.customAmount;
-            } else if (data.customSessionsQuota !== undefined) {
-                // Default to 8 sessions per month for ratio calculation
-                paidAmount = (data.customSessionsQuota / 8) * originalAmount;
-            }
-            paidAmount = Math.max(0, paidAmount - discountAmount);
-            
-            const actualDiscount = (data.customAmount !== undefined || data.customSessionsQuota !== undefined)
-                ? Math.max(0, originalAmount - paidAmount) 
-                : discountAmount;
-            
-            validStudents.push({
-                student,
-                originalAmount,
-                discountAmount: actualDiscount,
-                paidAmount
-            });
-        }
-
-        if (validStudents.length > 0) {
-            try {
-                // ── All valid students are processed in ONE single atomic transaction ──
-                await withTransaction(async (session) => {
-                    // 1. Create all transactions in bulk
-                    const txDocsToInsert = validStudents.map(vs => ({
-                        teacherId,
-                        createdBy,
-                        type:           TransactionType.INCOME,
-                        category:       TransactionCategory.SUBSCRIPTION,
-                        studentId:      vs.student._id,
-                        studentName:    vs.student.studentName,
-                        gradeLevel:     vs.student.gradeLevel,
-                        originalAmount: vs.originalAmount,
-                        discountAmount: vs.discountAmount,
-                        paidAmount:     vs.paidAmount,
-                        date:           txDate,
-                        ...(data.description ? { description: data.description } : {}),
-                    }));
-                    
-                    const insertedTxs = await TransactionModel.insertMany(txDocsToInsert, { session });
-                    
-                    // 2. Update students quota if customSessionsQuota is provided
-                    if (data.customSessionsQuota !== undefined) {
-                        const validStudentIds = validStudents.map(vs => vs.student._id);
-                        await StudentModel.updateMany(
-                            { _id: { $in: validStudentIds } },
-                            { $set: { remainingSessions: data.customSessionsQuota } },
-                            { session }
-                        );
-                    }
-                    
-                    // 3. Update ledgers in bulk for the day
-                    const totalPaid = validStudents.reduce((sum, vs) => sum + vs.paidAmount, 0);
-                    const dailyTransactions = insertedTxs.map((tx, idx) => ({
-                        transactionId: tx._id,
-                        type:          TransactionType.INCOME,
-                        category:      TransactionCategory.SUBSCRIPTION,
-                        paidAmount:    validStudents[idx]!.paidAmount,
-                        studentName:   validStudents[idx]!.student.studentName,
-                        createdBy,
-                        time:          txDate,
-                    }));
-
-                    const day = startOfDay(txDate);
-                    
-                    // Update Daily Ledger
-                    await DailyLedgerModel.findOneAndUpdate(
-                        { teacherId, date: day },
-                        {
-                            $push:  { transactions: { $each: dailyTransactions } },
-                            $inc:   {
-                                totalIncome:   totalPaid,
-                                netBalance:    totalPaid,
-                            },
-                        },
-                        { upsert: true, session }
-                    );
-
-                    // Update Monthly Ledger
-                    const year  = txDate.getUTCFullYear();
-                    const month = txDate.getUTCMonth() + 1;
-                    
-                    const topLevelInc = {
-                        totalIncome:   totalPaid,
-                        netBalance:    totalPaid,
-                    };
-                    
-                    const updatedMonthly = await MonthlyLedgerModel.findOneAndUpdate(
-                        { teacherId, year, month, 'dailySummaries.date': day },
-                        {
-                            $inc: {
-                                ...topLevelInc,
-                                'dailySummaries.$.totalIncome':      totalPaid,
-                                'dailySummaries.$.netBalance':       totalPaid,
-                                'dailySummaries.$.transactionCount': validStudents.length,
-                            },
-                        },
-                        { session }
-                    );
-                    
-                    if (!updatedMonthly) {
-                        await MonthlyLedgerModel.findOneAndUpdate(
-                            { teacherId, year, month },
-                            {
-                                $inc:  topLevelInc,
-                                $push: {
-                                    dailySummaries: {
-                                        date:             day,
-                                        totalIncome:      totalPaid,
-                                        totalExpenses:    0,
-                                        netBalance:       totalPaid,
-                                        transactionCount: validStudents.length,
-                                    },
-                                },
-                            },
-                            { upsert: true, session }
-                        );
-                    }
+                const tx = await PaymentsService.recordSubscription(teacherId, createdBy, {
+                    studentId,
+                    ...(data.discountAmount !== undefined ? { discountAmount: data.discountAmount } : {}),
+                    ...(data.customAmount !== undefined ? { paidAmount: data.customAmount } : {}),
+                    ...(data.description !== undefined ? { description: data.description } : {}),
+                    date: txDate.toISOString(),
+                    ...(data.customSessionsQuota !== undefined ? { customSessionsQuota: data.customSessionsQuota } : {}),
+                    ...(data.idempotencyKey !== undefined ? { idempotencyKey: `${data.idempotencyKey}_${studentId}` } : {})
                 });
-
-                // Populate success results
-                for (const vs of validStudents) {
-                    results.push({ studentId: vs.student._id.toString(), studentName: vs.student.studentName, paidAmount: vs.paidAmount, status: 'success' });
-                }
+                results.push({ studentId, studentName: tx?.studentName ?? '', paidAmount: tx?.paidAmount ?? 0, status: 'success' });
             } catch (err: any) {
-                // If the entire transaction fails, all valid students are marked as failed
-                for (const vs of validStudents) {
-                    results.push({ studentId: vs.student._id.toString(), studentName: vs.student.studentName, paidAmount: 0, status: 'error', error: err?.message ?? 'فشل في حفظ المعاملة' });
-                }
+                let studentName = '';
+                try {
+                    const student = await StudentModel.findById(studentId, { studentName: 1 }).lean();
+                    if (student) studentName = student.studentName;
+                } catch (e) {}
+
+                results.push({ 
+                    studentId, 
+                    studentName, 
+                    paidAmount: 0, 
+                    status: 'error', 
+                    error: err?.message ?? 'فشل في حفظ المعاملة' 
+                });
             }
         }
 
         const successCount = results.filter(r => r.status === 'success').length;
         const totalPaid    = results.filter(r => r.status === 'success').reduce((sum, r) => sum + r.paidAmount, 0);
 
-        // Invalidate dashboard cache after batch financial mutation
         if (successCount > 0) cache.del(CacheKeys.dashboard(teacherId));
 
         return { results, successCount, failCount: results.length - successCount, totalPaid };
@@ -983,18 +882,71 @@ export class PaymentsService {
     static async payDebt(
         teacherId: string,
         createdBy: string,
-        data: { studentId: string; amount: number; description?: string; date?: string }
+        data: { studentId: string; amount: number; description?: string; date?: string; idempotencyKey?: string }
     ) {
+        if (data.idempotencyKey) {
+            const existingTx = await TransactionModel.findOne({ idempotencyKey: data.idempotencyKey }).lean();
+            if (existingTx) return existingTx;
+        }
+
         const student = await StudentModel.findById(data.studentId, { studentName: 1, teacherId: 1, totalDebt: 1 }).lean();
         if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
         if (student.teacherId.toString() !== teacherId) {
             throw BadRequestException({ message: 'هذا الطالب لا ينتمي إلى هذا المعلم' });
         }
-        if ((student.totalDebt || 0) < data.amount) {
-            throw BadRequestException({ message: `المبلغ المدفوع (${data.amount}) أكبر من إجمالي المديونية (${student.totalDebt || 0})` });
+        const totalStudentDebt = student.totalDebt || 0;
+        if (totalStudentDebt < data.amount) {
+            throw BadRequestException({ message: `المبلغ المدفوع (${data.amount}) أكبر من إجمالي المديونية (${totalStudentDebt})` });
         }
 
         const txDate = resolveTransactionDate(data.date);
+        
+        // ── FIFO Debt Allocation ──
+        // Calculate how much debt belongs to cycles and how much is historical (before CycleEnrollments)
+        const unpaidEnrollments = await CycleEnrollmentModel.find({
+            studentId: student._id,
+            status: { $in: [CycleEnrollmentStatus.UNPAID, CycleEnrollmentStatus.PARTIALLY_PAID] }
+        }).sort({ cycleNumber: 1 }).lean(); // Sort oldest to newest
+
+        const cycleDebt = unpaidEnrollments.reduce((sum, e) => sum + e.remainingAmount, 0);
+        const historicalDebt = Math.max(0, totalStudentDebt - cycleDebt);
+
+        let remainingAmountToPay = data.amount;
+
+        // First, pay off historical debt (which has no enrollment record)
+        if (historicalDebt > 0) {
+            const payHistorical = Math.min(historicalDebt, remainingAmountToPay);
+            remainingAmountToPay -= payHistorical;
+        }
+
+        // Then, pay off cycle debt
+        const enrollmentUpdates: any[] = [];
+        if (remainingAmountToPay > 0) {
+            for (const enrollment of unpaidEnrollments) {
+                if (remainingAmountToPay <= 0) break;
+
+                const payCycle = Math.min(enrollment.remainingAmount, remainingAmountToPay);
+                remainingAmountToPay -= payCycle;
+
+                const newTotalPaid = enrollment.totalPaid + payCycle;
+                const newRemainingAmount = enrollment.remainingAmount - payCycle;
+                let newStatus = CycleEnrollmentStatus.PARTIALLY_PAID;
+                if (newRemainingAmount === 0) newStatus = CycleEnrollmentStatus.PAID;
+
+                enrollmentUpdates.push({
+                    updateOne: {
+                        filter: { _id: enrollment._id },
+                        update: {
+                            $set: {
+                                totalPaid: newTotalPaid,
+                                remainingAmount: newRemainingAmount,
+                                status: newStatus
+                            }
+                        }
+                    }
+                });
+            }
+        }
         
         const transaction = await withTransaction(async (session) => {
             const [tx] = await TransactionModel.create([{
@@ -1009,6 +961,7 @@ export class PaymentsService {
                 paidAmount:     data.amount,
                 remainingAmount: 0,
                 date:           txDate,
+                ...(data.idempotencyKey ? { idempotencyKey: data.idempotencyKey } : {}),
                 ...(data.description ? { description: data.description } : {}),
             }], { session });
 
@@ -1024,6 +977,10 @@ export class PaymentsService {
                 }, true, session),
                 updateMonthlyLedger(teacherId, txDate, data.amount, true, session),
             ]);
+
+            if (enrollmentUpdates.length > 0) {
+                await CycleEnrollmentModel.bulkWrite(enrollmentUpdates, { session });
+            }
 
             await StudentModel.findByIdAndUpdate(data.studentId, {
                 $inc: { totalDebt: -data.amount }
@@ -1078,8 +1035,7 @@ export class PaymentsService {
         const isIncome = tx.type === TransactionType.INCOME;
         const txDate   = new Date(tx.date);
         const day      = startOfDay(txDate);
-        const year     = txDate.getUTCFullYear();
-        const month    = txDate.getUTCMonth() + 1;
+        const { year, month } = getEgyptYearMonth(txDate);
         const amount   = tx.paidAmount;
 
         await withTransaction(async (session) => {
@@ -1132,13 +1088,30 @@ export class PaymentsService {
                 );
             }
 
-            // 4. If this was a subscription, reset the student's remaining sessions
-            if (tx.category === TransactionCategory.SUBSCRIPTION && tx.studentId) {
-                await StudentModel.findByIdAndUpdate(
-                    tx.studentId,
-                    { $set: { remainingSessions: 0 } },
-                    { session }
-                );
+            // 4. If this was a subscription, revert the CycleEnrollment
+            if (tx.category === TransactionCategory.SUBSCRIPTION && tx.studentId && tx.cycleNumber !== undefined) {
+                const enrollment = await CycleEnrollmentModel.findOne({
+                    studentId: tx.studentId,
+                    cycleNumber: tx.cycleNumber
+                }).session(session);
+
+                if (enrollment) {
+                    const amountToRevert = tx.paidAmount + (tx.discountAmount || 0);
+                    enrollment.totalPaid = Math.max(0, enrollment.totalPaid - amountToRevert);
+                    enrollment.remainingAmount += amountToRevert;
+
+                    if (enrollment.remainingAmount >= enrollment.cycleCharge) {
+                        enrollment.remainingAmount = enrollment.cycleCharge;
+                        enrollment.status = CycleEnrollmentStatus.UNPAID;
+                    } else if (enrollment.remainingAmount <= 0) {
+                        enrollment.remainingAmount = 0;
+                        enrollment.status = CycleEnrollmentStatus.PAID;
+                    } else {
+                        enrollment.status = CycleEnrollmentStatus.PARTIALLY_PAID;
+                    }
+                    
+                    await enrollment.save({ session });
+                }
             }
 
             // 5. If this transaction had a remaining amount, we must revert it from student's total debt

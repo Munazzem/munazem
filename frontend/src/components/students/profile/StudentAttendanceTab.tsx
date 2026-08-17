@@ -51,28 +51,37 @@ export function StudentAttendanceTab({ reportLoading, report }: Props) {
                     </div>
                     <div className="flex flex-wrap gap-2 sm:gap-2.5">
                         {report.attendance.history.map((h: any, i: number) => {
-                            const isPresent = h.status === 'PRESENT';
+                            const isPresent = h.status === 'PRESENT' || h.status === 'LATE';
                             const isAbsent = h.status === 'ABSENT';
+                            const isExcused = h.status === 'EXCUSED';
+                            const isGuest = h.status === 'GUEST';
                             return (
                                 <div
                                     key={i}
-                                    title={new Date(h.date).toLocaleDateString('ar-EG', { weekday: 'short', month: 'short', day: 'numeric' })}
+                                    title={`${new Date(h.date).toLocaleDateString('ar-EG', { weekday: 'short', month: 'short', day: 'numeric' })} — ${isPresent ? 'حاضر' : isExcused ? 'بعذر / معوّض' : isGuest ? 'زائر' : isAbsent ? 'غائب' : '—'}`}
                                     className={cn(
                                         'w-8 h-8 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center text-xs sm:text-sm font-bold border-2 transition-all cursor-help',
                                         isPresent ? 'bg-green-50 text-green-600 border-green-200 hover:bg-green-100' :
                                         isAbsent  ? 'bg-red-50 text-red-500 border-red-200 hover:bg-red-100' :
+                                        isExcused ? 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100' :
+                                        isGuest   ? 'bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100' :
                                         'bg-gray-50 text-gray-400 border-gray-200 hover:bg-gray-100'
                                     )}
                                 >
-                                    {isPresent ? <Check className="h-5 w-5" /> : isAbsent ? <AlertCircle className="h-4 w-4" /> : '—'}
+                                    {isPresent ? <Check className="h-5 w-5" /> : 
+                                     isAbsent ? <AlertCircle className="h-4 w-4" /> : 
+                                     isExcused ? <span className="text-[10px] font-bold">عذر</span> :
+                                     isGuest ? <span className="text-[10px] font-bold">زائر</span> : '—'}
                                 </div>
                             )
                         })}
                     </div>
-                    <div className="flex items-center gap-4 mt-4 pt-4 border-t border-gray-50">
+                    <div className="flex items-center gap-4 mt-4 pt-4 border-t border-gray-50 flex-wrap">
                         <span className="flex items-center gap-1.5 text-xs text-gray-500 font-medium"><div className="w-2.5 h-2.5 rounded-full bg-green-400"></div> حاضر</span>
                         <span className="flex items-center gap-1.5 text-xs text-gray-500 font-medium"><div className="w-2.5 h-2.5 rounded-full bg-red-400"></div> غائب</span>
-                        <span className="flex items-center gap-1.5 text-xs text-gray-400 ml-auto mr-auto">(من اليمين: الأحدث)</span>
+                        <span className="flex items-center gap-1.5 text-xs text-gray-500 font-medium"><div className="w-2.5 h-2.5 rounded-full bg-blue-400"></div> بعذر / معوّض</span>
+                        <span className="flex items-center gap-1.5 text-xs text-gray-500 font-medium"><div className="w-2.5 h-2.5 rounded-full bg-amber-400"></div> زائر</span>
+                        <span className="flex items-center gap-1.5 text-xs text-gray-400 ml-auto mr-auto sm:mr-0">(من اليمين: الأحدث)</span>
                     </div>
                 </div>
             )}

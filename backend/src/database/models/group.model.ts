@@ -40,7 +40,8 @@ const groupSchema = new Schema<IGroup>({
         capacity: { type: Number },
         currentCycleNumber: { type: Number, default: 1 },
         currentSessionNumber: { type: Number, default: 0 }, // 0 means cycle hasn't started yet
-        startedAt: { type: Date }
+        startedAt: { type: Date },
+        priceSnapshot: { type: Map, of: Number } // gradeLevel -> full cycle price
     }
 }, {
     timestamps: true

@@ -43,7 +43,6 @@ export function GroupReportModal({ groupId, groupName, open, onOpenChange }: Gro
         queryKey: ['groupReport', groupId],
         queryFn: () => fetchGroupReport(groupId!),
         enabled: !!groupId && open,
-        staleTime: 2 * 60 * 1000,
     });
 
     const handleDownloadPdf = async () => {

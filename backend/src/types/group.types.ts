@@ -19,6 +19,7 @@ export interface IGroup {
         currentCycleNumber: number;
         currentSessionNumber: number;
         startedAt: Date;
+        priceSnapshot?: Map<string, number>;
     };
     createdAt?: Date;
     updatedAt?: Date;

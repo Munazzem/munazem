@@ -7,7 +7,7 @@ import { authenticate } from '../../middlewares/auth.middleware.js';
 import { authorizeRoles } from '../../middlewares/roles.middleware.js';
 import { PdfService } from '../reports/pdf.service.js';
 import { validate } from '../../middlewares/validate.middleware.js';
-import { recordAttendanceSchema, batchRecordAttendanceSchema, updateAttendanceSchema } from '../../validation/attendance.validation.js';
+import { recordAttendanceSchema, batchRecordAttendanceSchema, updateAttendanceSchema, adjustCompletedAttendanceSchema } from '../../validation/attendance.validation.js';
 
 const attendanceRouter = Router();
 
@@ -138,7 +138,7 @@ attendanceRouter.get(
     }
 );
 
-// ─── PATCH /attendance/:id — Manually update attendance status (assistant only)
+// ─── PATCH /attendance/:id — Manually update attendance status (live session only)
 attendanceRouter.patch(
     '/:id',
     authorizeRoles(UserRole.teacher, UserRole.assistant),
@@ -151,6 +151,30 @@ attendanceRouter.patch(
             const { status, notes } = req.body as { status: string; notes?: string };
             const updated = await AttendanceService.updateAttendance(attendanceId, user.userId, status, teacherId, notes);
             return SuccessResponse({ res, data: updated, message: 'تم تحديث حالة الحضور بنجاح' });
+        } catch (error) { next(error); }
+    }
+);
+
+// ─── PATCH /attendance/session/:sessionId/adjust — Safely correct attendance for a COMPLETED session
+attendanceRouter.patch(
+    '/session/:sessionId/adjust',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    validate(adjustCompletedAttendanceSchema),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const user = (req as any).user;
+            const teacherId = resolveTeacherId(user);
+            const sessionId = req.params['sessionId'] as string;
+            const { studentId, status, notes } = req.body as { studentId: string; status: any; notes?: string };
+            const result = await AttendanceService.adjustCompletedSessionAttendance(
+                sessionId,
+                studentId,
+                status,
+                teacherId,
+                user.userId,
+                notes
+            );
+            return SuccessResponse({ res, data: result, message: result.message });
         } catch (error) { next(error); }
     }
 );

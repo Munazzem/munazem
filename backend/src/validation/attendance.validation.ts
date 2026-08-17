@@ -31,3 +31,15 @@ export const updateAttendanceSchema = z.object({
     notes:  z.string().max(300).optional(),
   }),
 });
+
+export const adjustCompletedAttendanceSchema = z.object({
+  params: z.object({
+    sessionId: z.string().min(1, 'معرف الحصة مطلوب'),
+  }),
+  body: z.object({
+    studentId: z.string().min(1, 'معرف الطالب مطلوب'),
+    status:    z.nativeEnum(AttendanceStatus, { error: () => ({ message: 'حالة الحضور غير صحيحة' }) }),
+    notes:     z.string().max(300).optional(),
+  }),
+});
+
