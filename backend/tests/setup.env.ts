@@ -41,4 +41,8 @@ afterAll(async () => {
     if (mongoose.connection.readyState !== 0) {
         await mongoose.connection.close();
     }
+
+    // drain: نخلي أي pending console.log callbacks تتنفذ قبل ما
+    // vitest worker يغلق الـ RPC channel، عشان نتجنب EnvironmentTeardownError
+    await new Promise((resolve) => setTimeout(resolve, 100));
 });

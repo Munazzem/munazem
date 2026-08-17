@@ -26,7 +26,8 @@ export class GroupService {
             gradeLevel: data.gradeLevel,
             schedule:   data.schedule,
             teacherId,
-            ...(data.capacity ? { capacity: data.capacity } : {}),
+            ...(data.capacity    ? { capacity:    data.capacity    } : {}),
+            ...(data.customPrice !== undefined ? { customPrice: data.customPrice } : {}),
         });
 
         // Invalidate dashboard and groups cache

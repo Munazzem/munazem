@@ -45,6 +45,7 @@ const groupSchema = z.object({
   name: z.string().min(2, 'اسم المجموعة يجب أن يكون حرفين على الأقل'),
   gradeLevel: z.string().min(1, 'المرحلة الدراسية مطلوبة'),
   capacity: z.number().min(1, 'السعة يجب أن تكون رقم صحيح موجب'),
+  customPrice: z.number().positive('السعر يجب أن يكون أكبر من صفر').nullable().optional(),
   schedule: z.array(z.object({
       day: z.string().min(1, 'اليوم مطلوب'),
       time: z.string().min(1, 'الوقت مطلوب')
@@ -63,6 +64,7 @@ export function AddGroupModal() {
       name: '',
       gradeLevel: '',
       capacity: 50,
+      customPrice: null,
       schedule: [{ day: '', time: '' }],
     },
   });
@@ -158,6 +160,28 @@ export function AddGroupModal() {
                             className="text-right" 
                             {...field}
                             onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 0)} 
+                        />
+                    </FormControl>
+                    <FormMessage />
+                    </FormItem>
+                )}
+                />
+
+                <FormField
+                control={form.control}
+                name="customPrice"
+                render={({ field }) => (
+                    <FormItem className="col-span-2 sm:col-span-1">
+                    <FormLabel>سعر مخصص (اختياري)</FormLabel>
+                    <FormControl>
+                        <Input 
+                            type="number" 
+                            dir="ltr" 
+                            className="text-right" 
+                            placeholder="اتركه فارغاً للاعتماد على سعر المرحلة الافتراضي"
+                            {...field}
+                            value={field.value ?? ''}
+                            onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : null)} 
                         />
                     </FormControl>
                     <FormMessage />
