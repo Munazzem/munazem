@@ -15,7 +15,12 @@ const INTER_MESSAGE_DELAY_MS = parseInt(process.env.WA_INTER_MESSAGE_DELAY_MS ??
 const WORKER_CONCURRENCY     = parseInt(process.env.WA_WORKER_CONCURRENCY ?? '50');
 
 // Shared Redis client for per-teacher rate limiting
-const redis = new Redis(envVars.redisUrl);
+const redis = new Redis(envVars.redisUrl, {
+    maxRetriesPerRequest: 1,
+    retryStrategy: (times) => (times > 3 ? null : Math.min(times * 200, 2000)),
+    lazyConnect: true,
+});
+redis.on('error', () => {});
 // Active worker reference
 let _worker: Worker<WhatsAppJobData> | null = null;
 
