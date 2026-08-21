@@ -7,7 +7,7 @@ import { ForbiddenException } from '../../common/utils/response/error.responce.j
 import { authenticate } from '../../middlewares/auth.middleware.js';
 import { authorizeRoles } from '../../middlewares/roles.middleware.js';
 import { validate } from '../../middlewares/validate.middleware.js';
-import { recordSubscriptionSchema, batchSubscriptionSchema, recordExpenseSchema, recordNotebookSaleSchema, upsertPriceSettingsSchema, reserveNotebookSchema, deliverNotebookSchema, updateTransactionSchema, payDebtSchema } from '../../validation/payment.validation.js';
+import { recordSubscriptionSchema, batchSubscriptionSchema, recordExpenseSchema, recordNotebookSaleSchema, upsertPriceSettingsSchema, reserveNotebookSchema, deliverNotebookSchema, updateTransactionSchema, payDebtSchema, batchDeleteTransactionsSchema, payCycleDebtSchema, payAllPastCyclesSchema } from '../../validation/payment.validation.js';
 
 const paymentsRouter = Router();
 
@@ -17,7 +17,7 @@ const resolveTeacherId = (user: any): string =>
     user.role === UserRole.assistant ? user.teacherId : user.userId;
 
 // ════════════════════════════════════════════════════════════════
-// PRICE SETTINGS — Teacher only
+// PRICE SETTINGS — Teacher (write) / Assistant + Teacher (read)
 // ════════════════════════════════════════════════════════════════
 
 // PUT /payments/prices — Upsert price settings (Teacher only)
@@ -34,13 +34,13 @@ paymentsRouter.put(
     }
 );
 
-// GET /payments/prices — Get price settings (Teacher only)
+// GET /payments/prices — Get price settings (Teacher + Assistant)
 paymentsRouter.get(
     '/prices',
-    authorizeRoles(UserRole.teacher),
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const teacherId = (req as any).user.userId;
+            const teacherId = resolveTeacherId((req as any).user);
             const result = await PaymentsService.getPriceSettings(teacherId);
             return SuccessResponse({ res, data: result, message: 'تم جلب الأسعار بنجاح' });
         } catch (error) { next(error); }
@@ -122,6 +122,36 @@ paymentsRouter.post(
             const teacherId = resolveTeacherId(user);
             const result = await PaymentsService.payDebt(teacherId, user.userId, req.body);
             return SuccessResponse({ res, data: result, message: 'تم سداد المديونية بنجاح', status: 201 });
+        } catch (error) { next(error); }
+    }
+);
+
+// POST /payments/pay-cycle-debt — Record payment for a specific past cycle (Teacher + Assistant)
+paymentsRouter.post(
+    '/pay-cycle-debt',
+    authorizeRoles(UserRole.assistant, UserRole.teacher),
+    validate(payCycleDebtSchema),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const user = (req as any).user;
+            const teacherId = resolveTeacherId(user);
+            const result = await PaymentsService.payCycleDebt(teacherId, user.userId, req.body);
+            return SuccessResponse({ res, data: result, message: `تم سداد مديونية الدورة (${req.body.cycleNumber}) بنجاح`, status: 201 });
+        } catch (error) { next(error); }
+    }
+);
+
+// POST /payments/pay-all-past-cycles — Record payment for all past unpaid cycles (Teacher + Assistant)
+paymentsRouter.post(
+    '/pay-all-past-cycles',
+    authorizeRoles(UserRole.assistant, UserRole.teacher),
+    validate(payAllPastCyclesSchema),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const user = (req as any).user;
+            const teacherId = resolveTeacherId(user);
+            const result = await PaymentsService.payAllPastCycles(teacherId, user.userId, req.body);
+            return SuccessResponse({ res, data: result, message: result.message, status: 201 });
         } catch (error) { next(error); }
     }
 );
@@ -226,13 +256,14 @@ paymentsRouter.patch(
 // CENTER DEDUCTION — Deduct center share from teacher earnings
 // ════════════════════════════════════════════════════════════════
 
-// POST /payments/center-deduction — Record center fee deduction (Teacher only)
+// POST /payments/center-deduction — Record center fee deduction (Teacher + Assistant)
 paymentsRouter.post(
     '/center-deduction',
-    authorizeRoles(UserRole.teacher),
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const teacherId = (req as any).user.userId;
+            const user = (req as any).user;
+            const teacherId = resolveTeacherId(user);
             const { centerName, amount, date, description } = req.body;
             if (!centerName || !amount || amount <= 0) {
                 throw new Error('اسم السنتر والمبلغ مطلوبان');
@@ -244,7 +275,53 @@ paymentsRouter.post(
 );
 
 // ════════════════════════════════════════════════════════════════
-// DELETE /payments/:id — Void (delete) a transaction (Teacher only)
+// DELETE /payments/batch — Void (delete) multiple transactions (Teacher only)
+// ════════════════════════════════════════════════════════════════
+paymentsRouter.delete(
+    '/batch',
+    (req: Request, _res: Response, next: NextFunction) => {
+        try {
+            const user = (req as any).user;
+            if (!user || user.role !== UserRole.teacher) {
+                throw ForbiddenException({ message: 'حذف المعاملات متاح للمدرس فقط' });
+            }
+            next();
+        } catch (error) { next(error); }
+    },
+    validate(batchDeleteTransactionsSchema),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = (req as any).user.userId;
+            const result = await PaymentsService.deleteBatchTransactions(teacherId, req.body.transactionIds);
+            return SuccessResponse({ res, data: result, message: `تم مسح ${result.deletedCount} معاملة مالية بنجاح` });
+        } catch (error) { next(error); }
+    }
+);
+
+// POST alias for batch deletion (for clients or proxies that strip DELETE body)
+paymentsRouter.post(
+    '/batch-delete',
+    (req: Request, _res: Response, next: NextFunction) => {
+        try {
+            const user = (req as any).user;
+            if (!user || user.role !== UserRole.teacher) {
+                throw ForbiddenException({ message: 'حذف المعاملات متاح للمدرس فقط' });
+            }
+            next();
+        } catch (error) { next(error); }
+    },
+    validate(batchDeleteTransactionsSchema),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = (req as any).user.userId;
+            const result = await PaymentsService.deleteBatchTransactions(teacherId, req.body.transactionIds);
+            return SuccessResponse({ res, data: result, message: `تم مسح ${result.deletedCount} معاملة مالية بنجاح` });
+        } catch (error) { next(error); }
+    }
+);
+
+// ════════════════════════════════════════════════════════════════
+// DELETE /payments/:id — Void (delete) a single transaction (Teacher only)
 // يمسح المعاملة المالية ويعكس أثرها على السجلات. متاح للمدرس فقط.
 // ════════════════════════════════════════════════════════════════
 paymentsRouter.delete(

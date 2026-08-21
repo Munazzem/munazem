@@ -3,6 +3,10 @@ import { StudentModel } from '../../database/models/student.model.js';
 import { GroupModel } from '../../database/models/group.model.js';
 import { TransactionModel } from '../../database/models/transaction.model.js';
 import { CycleEnrollmentModel } from '../../database/models/cycle-enrollment.model.js';
+import { AttendanceModel } from '../../database/models/attendance.model.js';
+import { ExamResultModel } from '../../database/models/exam-result.model.js';
+import { NotebookReservationModel } from '../../database/models/notebook-reservation.model.js';
+import { ParentStudentModel } from '../../database/models/parent-student.model.js';
 import { NotFoundException, BadRequestException, ConflictException } from '../../common/utils/response/error.responce.js';
 import type { CreateStudentDTO, UpdateStudentDTO } from '../../types/dto.types.js';
 import { GRADE_LETTER, GradeLevel, TransactionType, TransactionCategory, CycleEnrollmentStatus } from '../../common/enums/enum.service.js';
@@ -12,6 +16,17 @@ import { withTransaction } from '../../common/utils/transaction.util.js';
 import { cache, CacheKeys } from '../../infrastructure/cache/cache.service.js';
 import { Types } from 'mongoose';
 import crypto from 'crypto';
+
+export function normalizeArabic(text: string): string {
+    if (!text) return '';
+    return text
+        .trim()
+        .replace(/[أإآ]/g, 'ا')
+        .replace(/ى/g, 'ي')
+        .replace(/ة/g, 'ه')
+        .replace(/[\u064B-\u065F]/g, '')
+        .replace(/\s+/g, ' ');
+}
 
 export class StudentService {
     
@@ -28,34 +43,159 @@ export class StudentService {
         return { studentName, parentName };
     }
 
+    static async checkDuplicateStudent(
+        teacherId: string,
+        data: {
+            fullName: string;
+            studentPhone?: string;
+            parentPhone?: string;
+            gradeLevel?: string;
+            excludeStudentId?: string;
+        }
+    ) {
+        if (!data.fullName || data.fullName.trim().length < 2) {
+            return { isDuplicate: false, isSibling: false };
+        }
+
+        const { studentName } = this.parseFullName(data.fullName);
+        const normName = normalizeArabic(studentName);
+        const studentPhone = data.studentPhone?.trim();
+        const parentPhone = data.parentPhone?.trim();
+
+        // 1. Check duplicate studentPhone
+        if (studentPhone) {
+            const query: any = { teacherId, studentPhone };
+            if (data.excludeStudentId) query._id = { $ne: new Types.ObjectId(data.excludeStudentId) };
+            const existingByPhone = await StudentModel.findOne(query).populate('groupId', 'name').lean();
+            if (existingByPhone) {
+                return {
+                    isDuplicate: true,
+                    isSibling: false,
+                    reason: 'STUDENT_PHONE',
+                    message: `رقم هاتف الطالب (${studentPhone}) مسجل بالفعل مسبقاً باسم "${existingByPhone.studentName}" في مجموعة (${(existingByPhone.groupId as any)?.name || 'بدون مجموعة'})`,
+                    existingStudent: {
+                        _id: existingByPhone._id,
+                        studentName: existingByPhone.studentName,
+                        studentCode: existingByPhone.studentCode,
+                        groupName: (existingByPhone.groupId as any)?.name || 'بدون مجموعة',
+                        gradeLevel: existingByPhone.gradeLevel,
+                    }
+                };
+            }
+        }
+
+        // 2. Fetch students for this teacher to check name & parentPhone
+        const query: any = { teacherId };
+        if (data.excludeStudentId) query._id = { $ne: new Types.ObjectId(data.excludeStudentId) };
+        const allStudents = await StudentModel.find(query, {
+            studentName: 1,
+            parentPhone: 1,
+            gradeLevel: 1,
+            groupId: 1,
+            studentCode: 1
+        }).populate('groupId', 'name').lean();
+
+        // Find students with exact/normalized name match
+        const sameNameStudent = allStudents.find(s => normalizeArabic(s.studentName) === normName);
+
+        if (sameNameStudent) {
+            // A. Same name AND same parentPhone -> Duplicate
+            if (parentPhone && sameNameStudent.parentPhone === parentPhone) {
+                return {
+                    isDuplicate: true,
+                    isSibling: false,
+                    reason: 'NAME_AND_PARENT_PHONE',
+                    message: `الطالب "${sameNameStudent.studentName}" مسجل مسبقاً بنفس رقم ولي الأمر في مجموعة (${(sameNameStudent.groupId as any)?.name || 'بدون مجموعة'})`,
+                    existingStudent: {
+                        _id: sameNameStudent._id,
+                        studentName: sameNameStudent.studentName,
+                        studentCode: sameNameStudent.studentCode,
+                        groupName: (sameNameStudent.groupId as any)?.name || 'بدون مجموعة',
+                        gradeLevel: sameNameStudent.gradeLevel,
+                    }
+                };
+            }
+
+            // B. Same name AND same gradeLevel -> Duplicate in same grade
+            if (data.gradeLevel && sameNameStudent.gradeLevel === data.gradeLevel) {
+                return {
+                    isDuplicate: true,
+                    isSibling: false,
+                    reason: 'NAME_AND_GRADE',
+                    message: `يوجد طالب مسجل بالفعل بنفس الاسم "${sameNameStudent.studentName}" في مرحلة (${data.gradeLevel}) بمجموعة (${(sameNameStudent.groupId as any)?.name || 'بدون مجموعة'})`,
+                    existingStudent: {
+                        _id: sameNameStudent._id,
+                        studentName: sameNameStudent.studentName,
+                        studentCode: sameNameStudent.studentCode,
+                        groupName: (sameNameStudent.groupId as any)?.name || 'بدون مجموعة',
+                        gradeLevel: sameNameStudent.gradeLevel,
+                    }
+                };
+            }
+        }
+
+        // 3. Check for Siblings: same parentPhone, but DIFFERENT studentName (Allowed!)
+        if (parentPhone) {
+            const sibling = allStudents.find(s => s.parentPhone === parentPhone && normalizeArabic(s.studentName) !== normName);
+            if (sibling) {
+                return {
+                    isDuplicate: false,
+                    isSibling: true,
+                    message: `رقم ولي الأمر مسجل مسبقاً لأخ/أخت الطالب: "${sibling.studentName}" (${sibling.gradeLevel})`,
+                    siblingStudent: {
+                        _id: sibling._id,
+                        studentName: sibling.studentName,
+                        studentCode: sibling.studentCode,
+                        groupName: (sibling.groupId as any)?.name || 'بدون مجموعة',
+                        gradeLevel: sibling.gradeLevel,
+                    }
+                };
+            }
+        }
+
+        return { isDuplicate: false, isSibling: false };
+    }
+
     static async createStudent(teacherId: string, data: CreateStudentDTO) {
-        // 1. Verify group exists and belongs to this teacher
+        // 1. Check duplicate student
+        const duplicateCheck = await StudentService.checkDuplicateStudent(teacherId, {
+            fullName: data.fullName,
+            studentPhone: data.studentPhone,
+            parentPhone: data.parentPhone,
+            gradeLevel: data.gradeLevel,
+        });
+
+        if (duplicateCheck.isDuplicate) {
+            throw ConflictException({ message: duplicateCheck.message });
+        }
+
+        // 2. Verify group exists and belongs to this teacher
         const group = await GroupModel.findOne({ _id: data.groupId, teacherId }).lean();
         if (!group) {
             throw NotFoundException({ message: 'المجموعة غير موجودة أو لا صلاحية لك عليها' });
         }
 
-        // 2. Enforce grade-level match
+        // 3. Enforce grade-level match
         if (group.gradeLevel !== data.gradeLevel) {
             throw BadRequestException({ message: 'عفواً، هذه المجموعة لمرحلة دراسية مختلفة' });
         }
 
-        // 3. Enforce capacity limit
+        // 4. Enforce capacity limit
         const capacity = group.capacity ?? 50;
         const currentCount = await StudentModel.countDocuments({ groupId: data.groupId, teacherId });
         if (currentCount >= capacity) {
             throw BadRequestException({ message: `عفواً، وصلت المجموعة إلى أقصى عدد متاح (الطاقة: ${capacity} طالب)` });
         }
 
-        // 2. Parse the name
+        // 5. Parse the name
         const { studentName, parentName } = this.parseFullName(data.fullName);
 
-        // 3. Generate sequential code per grade level per teacher
+        // 6. Generate sequential code per grade level per teacher
         const letter = GRADE_LETTER[data.gradeLevel as GradeLevel];
         const count  = await nextSequence(`${teacherId}_${data.gradeLevel}`);
         const studentCode = `${count}${letter}`;  // e.g. 1A, 25C
 
-        // 4. Create — explicit fields only (no spread of DTO to avoid fullName leaking into model)
+        // 7. Create — explicit fields only (no spread of DTO to avoid fullName leaking into model)
         try {
             const student = await StudentModel.create({
                 studentName,
@@ -116,6 +256,20 @@ export class StudentService {
 
                 // التحقق من الاسم
                 this.parseFullName(s.fullName);
+
+                // التحقق من تكرار الطالب
+                const duplicateCheck = await StudentService.checkDuplicateStudent(teacherId, {
+                    fullName: s.fullName,
+                    studentPhone: s.studentPhone,
+                    parentPhone: s.parentPhone,
+                    gradeLevel: s.gradeLevel,
+                });
+
+                if (duplicateCheck.isDuplicate) {
+                    throw ConflictException({
+                        message: `السطر ${rowNum}: ${duplicateCheck.message}`
+                    });
+                }
 
                 // التحقق من المجموعة
                 const group = groupMap.get(s.groupId);
@@ -250,6 +404,32 @@ export class StudentService {
         return unpaidIds;
     }
 
+    static async getStudentsWithPastCycleDebtIds(teacherId: string): Promise<string[]> {
+        const groups = await GroupModel.find({ teacherId }, { 'cycle.currentCycleNumber': 1 }).lean();
+        const studentIds = new Set<string>();
+
+        const orConditions = groups
+            .filter(g => (g.cycle?.currentCycleNumber || 1) > 1)
+            .map(g => ({
+                groupId: g._id,
+                cycleNumber: { $lt: g.cycle?.currentCycleNumber || 1 },
+                status: { $in: [CycleEnrollmentStatus.UNPAID, CycleEnrollmentStatus.PARTIALLY_PAID] }
+            }));
+
+        if (orConditions.length > 0) {
+            const enrollments = await CycleEnrollmentModel.find({
+                teacherId,
+                $or: orConditions
+            }, { studentId: 1 }).lean();
+
+            for (const e of enrollments) {
+                studentIds.add(e.studentId.toString());
+            }
+        }
+
+        return Array.from(studentIds);
+    }
+
     static async getStudentsByTeacherId(teacherId: string, queryFilters: any) {
         // Build robust filter query dynamically
         const filter: any = { teacherId };
@@ -265,6 +445,10 @@ export class StudentService {
         if (queryFilters.hasNoActiveSubscription === 'true') {
             const paidIds = await StudentService.getPaidStudentIds(teacherId);
             filter._id = { $nin: paidIds.map((id: string) => new mongoose.Types.ObjectId(id)) };
+        }
+        if (queryFilters.hasPastCycleDebt === 'true') {
+            const pastDebtIds = await StudentService.getStudentsWithPastCycleDebtIds(teacherId);
+            filter._id = { $in: pastDebtIds.map((id: string) => new mongoose.Types.ObjectId(id)) };
         }
         if (queryFilters.isDroppedOut === 'true') {
             filter.consecutiveAbsences = { $gte: 3 };
@@ -332,6 +516,22 @@ export class StudentService {
                         .populate('groupId', 'name schedule')
                         .lean();
         if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
+
+        // Auto-reconcile totalDebt with true past cycle debts
+        const group = await GroupModel.findById(student.groupId, { 'cycle.currentCycleNumber': 1 }).lean();
+        const currentCycleNumber = group?.cycle?.currentCycleNumber || 1;
+        const pastEnrollments = await CycleEnrollmentModel.find({
+            studentId: student._id,
+            cycleNumber: { $lt: currentCycleNumber },
+            status: { $in: [CycleEnrollmentStatus.UNPAID, CycleEnrollmentStatus.PARTIALLY_PAID] }
+        }).lean();
+        const truePastDebt = pastEnrollments.reduce((sum, e) => sum + e.remainingAmount, 0);
+
+        if (student.totalDebt !== truePastDebt) {
+            await StudentModel.updateOne({ _id: student._id }, { $set: { totalDebt: truePastDebt } });
+            student.totalDebt = truePastDebt;
+        }
+
         return student;
     }
 
@@ -344,12 +544,19 @@ export class StudentService {
         const updatePayload: UpdatePayload = { ...data };
         delete (updatePayload as any).fullName;
 
-        // If groupId is being changed, make sure the new group belongs to this teacher
+        // If groupId is being changed, verify new group exists and sync student gradeLevel with the new group
         if (data.groupId) {
             const group = await GroupModel.findOne({ _id: data.groupId, teacherId }).lean();
             if (!group) {
                 throw NotFoundException({ message: 'المجموعة الجديدة غير موجودة أو لا صلاحية لك عليها' });
             }
+            if (!data.gradeLevel) {
+                updatePayload.gradeLevel = group.gradeLevel;
+            }
+        }
+
+        if (data.monthlySessionsQuota !== undefined && data.monthlySessionsQuota > 0) {
+            (updatePayload as any).cycleCapacity = data.monthlySessionsQuota;
         }
 
         if (data.fullName) {
@@ -367,6 +574,21 @@ export class StudentService {
 
             if (!updatedStudent) throw NotFoundException({ message: 'الطالب غير موجود' });
 
+            // If monthlySessionsQuota was updated, sync active ongoing cycle enrollment
+            if (data.monthlySessionsQuota !== undefined && data.monthlySessionsQuota > 0 && updatedStudent.groupId) {
+                const group = await GroupModel.findById(updatedStudent.groupId).lean();
+                const currentCycleNum = (group as any)?.cycle?.currentCycleNumber || 1;
+                await CycleEnrollmentModel.updateMany(
+                    { studentId, cycleNumber: currentCycleNum },
+                    {
+                        $set: {
+                            cycleCapacity: data.monthlySessionsQuota,
+                            chargeableSessions: data.monthlySessionsQuota,
+                        }
+                    }
+                );
+            }
+
             // Invalidate teacher cache
             await cache.invalidate(CacheKeys.teacherAll(teacherId));
 
@@ -381,8 +603,20 @@ export class StudentService {
     }
 
     static async deleteStudent(studentId: string, teacherId: string) {
-        const deletedStudent = await StudentModel.findOneAndDelete({ _id: studentId, teacherId }).lean();
-        if (!deletedStudent) throw NotFoundException({ message: 'الطالب غير موجود' });
+        const deletedStudent = await withTransaction(async (session) => {
+            const student = await StudentModel.findOneAndDelete({ _id: studentId, teacherId }, { session }).lean();
+            if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
+
+            await Promise.all([
+                AttendanceModel.deleteMany({ studentId, teacherId }, { session }),
+                CycleEnrollmentModel.deleteMany({ studentId, teacherId }, { session }),
+                ExamResultModel.deleteMany({ studentId, teacherId }, { session }),
+                NotebookReservationModel.deleteMany({ studentId, teacherId }, { session }),
+                ParentStudentModel.deleteMany({ studentId }, { session }),
+            ]);
+
+            return student;
+        });
 
         trackEvent('student_deleted', {
             tenantId: teacherId,

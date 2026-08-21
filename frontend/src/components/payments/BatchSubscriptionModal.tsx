@@ -51,8 +51,25 @@ interface Student {
     hasActiveSubscription?: boolean;
 }
 
-export function BatchSubscriptionModal() {
-    const [open, setOpen] = useState(false);
+interface BatchSubscriptionModalProps {
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
+    trigger?: React.ReactNode;
+}
+
+export function BatchSubscriptionModal({
+    open: controlledOpen,
+    onOpenChange: controlledOnOpenChange,
+    trigger,
+}: BatchSubscriptionModalProps = {}) {
+    const [internalOpen, setInternalOpen] = useState(false);
+    const isControlled = controlledOpen !== undefined;
+    const open = isControlled ? controlledOpen : internalOpen;
+    const setOpen = (v: boolean) => {
+        if (controlledOnOpenChange) controlledOnOpenChange(v);
+        else setInternalOpen(v);
+    };
+
     const [stageFilter, setStageFilter] = useState('');
     const [groupId, setGroupId] = useState('');
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -60,6 +77,7 @@ export function BatchSubscriptionModal() {
     const [isCustomQuota, setIsCustomQuota] = useState(false);
     const [customSessionsQuota, setCustomSessionsQuota] = useState('4');
     const [customAmount, setCustomAmount] = useState('');
+    const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]!);
     const [results, setResults] = useState<IBatchSubscriptionResult[] | null>(null);
 
     const queryClient = useQueryClient();
@@ -167,11 +185,11 @@ export function BatchSubscriptionModal() {
             discountAmount: discount > 0 ? discount : undefined,
             customSessionsQuota: isCustomQuota && customSessionsQuota ? parseInt(customSessionsQuota) : undefined,
             customAmount: customAmount ? parseFloat(customAmount) : undefined,
+            date,
         });
     };
 
     const handleClose = (val: boolean) => {
-        setOpen(val);
         // Only reset the form if it was closed from the success results screen.
         // If it was closed by mistake while filling data, preserve the state.
         if (!val && results) {
@@ -182,8 +200,10 @@ export function BatchSubscriptionModal() {
             setIsCustomQuota(false);
             setCustomSessionsQuota('4');
             setCustomAmount('');
+            setDate(new Date().toISOString().split('T')[0]!);
             setResults(null);
         }
+        setOpen(val);
     };
 
     const paidCount   = students.filter(s => s.hasActiveSubscription).length;
@@ -191,323 +211,385 @@ export function BatchSubscriptionModal() {
 
     return (
         <Dialog open={open} onOpenChange={handleClose}>
-            <DialogTrigger asChild>
-                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
-                    <Users size={16} />
-                    دفع اشتراك متعدد
-                </Button>
-            </DialogTrigger>
+            {!isControlled && (
+                <DialogTrigger asChild>
+                    {trigger || (
+                        <Button className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2 shadow-sm rounded-xl h-10 px-4">
+                            <Users size={16} />
+                            <span>دفع اشتراك متعدد</span>
+                        </Button>
+                    )}
+                </DialogTrigger>
+            )}
 
-            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-[680px] bg-white rounded-2xl" dir="rtl">
-                <DialogHeader>
-                    <DialogTitle className="text-xl font-bold text-gray-900 border-b pb-4 flex items-center gap-2">
-                        <CreditCard className="h-5 w-5 text-emerald-600" />
-                        دفع اشتراك لأكثر من طالب
+            <DialogContent
+                onInteractOutside={(e) => e.preventDefault()}
+                className="sm:max-w-[640px] max-h-[92vh] flex flex-col p-0 overflow-hidden bg-white rounded-2xl shadow-xl border border-gray-100"
+                dir="rtl"
+            >
+                {/* Fixed Header */}
+                <DialogHeader className="p-5 pb-4 border-b border-gray-100 shrink-0">
+                    <DialogTitle className="text-lg font-bold text-gray-900 flex items-center gap-2.5">
+                        <div className="h-9 w-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                            <CreditCard className="h-5 w-5" />
+                        </div>
+                        <div>
+                            <span>دفع اشتراك متعدد للطلاب</span>
+                            <p className="text-xs text-gray-400 font-normal mt-0.5">تسجيل اشتراكات الشهر لمجموعة من الطلاب دفعة واحدة</p>
+                        </div>
                     </DialogTitle>
                 </DialogHeader>
 
                 {results ? (
                     /* ── Results screen ── */
-                    <div className="space-y-4">
-                        <div className="grid grid-cols-3 gap-3 text-center">
-                            <div className="bg-green-50 rounded-xl p-3">
-                                <p className="text-2xl font-bold text-green-700">{results.filter(r => r.status === 'success').length}</p>
-                                <p className="text-xs text-green-600 mt-1">نجح</p>
-                            </div>
-                            <div className="bg-red-50 rounded-xl p-3">
-                                <p className="text-2xl font-bold text-red-600">{results.filter(r => r.status === 'error').length}</p>
-                                <p className="text-xs text-red-500 mt-1">فشل</p>
-                            </div>
-                            <div className="bg-blue-50 rounded-xl p-3">
-                                <p className="text-2xl font-bold text-blue-700">
-                                    {results.filter(r => r.status === 'success').reduce((s, r) => s + r.paidAmount, 0).toLocaleString()}
-                                </p>
-                                <p className="text-xs text-blue-600 mt-1">إجمالي (ج)</p>
-                            </div>
-                        </div>
-
-                        <div className="max-h-64 overflow-y-auto space-y-1.5">
-                            {results.map((r) => (
-                                <div key={r.studentId} className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm ${r.status === 'success' ? 'bg-green-50' : 'bg-red-50'}`}>
-                                    <div className="flex items-center gap-2">
-                                        {r.status === 'success'
-                                            ? <Check size={14} className="text-green-600 shrink-0" />
-                                            : <X size={14} className="text-red-500 shrink-0" />}
-                                        <span className="font-medium text-gray-800">{r.studentName || r.studentId}</span>
-                                    </div>
-                                    {r.status === 'success'
-                                        ? <span className="text-green-700 font-bold">{r.paidAmount.toLocaleString()} ج</span>
-                                        : <span className="text-red-500 text-xs">{r.error}</span>}
+                    <div className="flex flex-col flex-1 overflow-hidden">
+                        <div className="p-5 overflow-y-auto space-y-4 flex-1">
+                            <div className="grid grid-cols-3 gap-3 text-center">
+                                <div className="bg-emerald-50/70 border border-emerald-100 rounded-xl p-3">
+                                    <p className="text-2xl font-black text-emerald-700">{results.filter(r => r.status === 'success').length}</p>
+                                    <p className="text-xs text-emerald-600 font-medium mt-0.5">تم بنجاح</p>
                                 </div>
-                            ))}
+                                <div className="bg-red-50/70 border border-red-100 rounded-xl p-3">
+                                    <p className="text-2xl font-black text-red-600">{results.filter(r => r.status === 'error').length}</p>
+                                    <p className="text-xs text-red-500 font-medium mt-0.5">فشل</p>
+                                </div>
+                                <div className="bg-blue-50/70 border border-blue-100 rounded-xl p-3">
+                                    <p className="text-xl font-black text-blue-700">
+                                        {results.filter(r => r.status === 'success').reduce((s, r) => s + r.paidAmount, 0).toLocaleString('ar-EG')}
+                                    </p>
+                                    <p className="text-xs text-blue-600 font-medium mt-0.5">إجمالي المدفوع (ج)</p>
+                                </div>
+                            </div>
+
+                            <div className="max-h-60 overflow-y-auto border border-gray-100 rounded-xl divide-y divide-gray-50 bg-gray-50/30 p-1">
+                                {results.map((r) => (
+                                    <div key={r.studentId} className={cn(
+                                        "flex items-center justify-between px-3.5 py-2.5 rounded-lg text-sm transition-colors",
+                                        r.status === 'success' ? "bg-white" : "bg-red-50/50"
+                                    )}>
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                            <div className={cn(
+                                                "h-6 w-6 rounded-full flex items-center justify-center shrink-0 text-xs font-bold",
+                                                r.status === 'success' ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600"
+                                            )}>
+                                                {r.status === 'success' ? <Check size={13} /> : <X size={13} />}
+                                            </div>
+                                            <span className="font-semibold text-gray-800 truncate">{r.studentName || r.studentId}</span>
+                                        </div>
+                                        {r.status === 'success' ? (
+                                            <span className="text-emerald-700 font-black text-sm shrink-0">{r.paidAmount.toLocaleString('ar-EG')} ج</span>
+                                        ) : (
+                                            <span className="text-red-500 text-xs shrink-0">{r.error}</span>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
                         </div>
 
-                        <div className="flex justify-end gap-3 pt-2 border-t">
-                            <Button variant="outline" onClick={() => { setResults(null); setSelectedIds(new Set()); }}>
-                                دفع اشتراكات أخرى
+                        {/* Results Footer */}
+                        <div className="p-4 border-t border-gray-100 bg-gray-50/60 flex items-center justify-between gap-3 shrink-0">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => { setResults(null); setSelectedIds(new Set()); }}
+                                className="text-xs font-semibold rounded-xl"
+                            >
+                                تسجيل اشتراكات أخرى
                             </Button>
-                            {results.some(r => r.status === 'success') && (
-                                <Button
-                                    className="gap-2 bg-blue-600 hover:bg-blue-700 text-white"
-                                    onClick={() => {
-                                        const successfulReceipts = results.filter(r => r.status === 'success').map(r => ({
-                                            teacherName: user?.name || 'السنتر',
-                                            studentName: r.studentName || r.studentId,
-                                            amount: r.paidAmount,
-                                            description: 'اشتراك شهر',
-                                            date: new Date().toISOString(),
-                                        }));
-                                        printHtmlContent(generateBatchReceiptsHtml(successfulReceipts));
-                                    }}
-                                >
-                                    <Printer size={16} />
-                                    طباعة الوصلات
+                            <div className="flex items-center gap-2">
+                                {results.some(r => r.status === 'success') && (
+                                    <Button
+                                        size="sm"
+                                        className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm"
+                                        onClick={() => {
+                                            const successfulReceipts = results.filter(r => r.status === 'success').map(r => ({
+                                                teacherName: user?.name || 'السنتر',
+                                                studentName: r.studentName || r.studentId,
+                                                amount: r.paidAmount,
+                                                description: 'اشتراك شهر',
+                                                date: new Date().toISOString(),
+                                            }));
+                                            printHtmlContent(generateBatchReceiptsHtml(successfulReceipts));
+                                        }}
+                                    >
+                                        <Printer size={15} />
+                                        طباعة الوصلات
+                                    </Button>
+                                )}
+                                <Button size="sm" onClick={() => handleClose(false)} className="text-xs font-semibold rounded-xl">
+                                    إغلاق
                                 </Button>
-                            )}
-                            <Button onClick={() => handleClose(false)}>إغلاق</Button>
+                            </div>
                         </div>
                     </div>
                 ) : (
                     /* ── Selection screen ── */
-                    <div className="space-y-4">
-
-                        {/* Step 1: Stage filter */}
-                        <div>
-                            <label className="text-sm font-medium text-gray-700 block mb-1.5">
-                                المرحلة الدراسية
-                            </label>
-                            <Select
-                                value={stageFilter}
-                                onValueChange={setStageFilter}
-                                dir="rtl"
-                            >
-                                <SelectTrigger className="h-10 bg-gray-50 border-gray-200 text-gray-700">
-                                    <SelectValue placeholder="اختر المرحلة أولاً..." />
-                                </SelectTrigger>
-                                <SelectContent dir="rtl">
-                                    {allowedStages.map(s => (
-                                        <SelectItem key={s.value} value={s.value}>
-                                            {s.label}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-
-                        {/* Step 2: Group selector (filtered by stage) */}
-                        {stageFilter && (
-                            <div>
-                                <label className="text-sm font-medium text-gray-700 block mb-1.5">
-                                    المجموعة
-                                </label>
-                                {groupsLoading ? (
-                                    <div className="flex items-center gap-2 text-sm text-gray-400">
-                                        <Loader2 className="h-4 w-4 animate-spin" /> جاري تحميل المجموعات...
-                                    </div>
-                                ) : filteredGroups.length === 0 ? (
-                                    <p className="text-sm text-gray-400 py-2">لا توجد مجموعات لهذه المرحلة</p>
-                                ) : (
+                    <div className="flex flex-col flex-1 overflow-hidden">
+                        <div className="p-5 overflow-y-auto space-y-4 flex-1">
+                            
+                            {/* Step 1 & 2: Stage & Group Grid */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-xs font-bold text-gray-700 block mb-1.5">
+                                        المرحلة الدراسية
+                                    </label>
                                     <Select
-                                        value={groupId}
-                                        onValueChange={v => setGroupId(v)}
+                                        value={stageFilter}
+                                        onValueChange={setStageFilter}
                                         dir="rtl"
                                     >
-                                        <SelectTrigger className="h-10 bg-gray-50 border-gray-200 text-gray-700">
-                                            <SelectValue placeholder="اختر مجموعة..." />
+                                        <SelectTrigger className="h-10 bg-gray-50/70 border-gray-200 text-sm rounded-xl">
+                                            <SelectValue placeholder="اختر المرحلة..." />
                                         </SelectTrigger>
                                         <SelectContent dir="rtl">
-                                            {filteredGroups.map(g => (
-                                                <SelectItem key={g._id} value={g._id}>
-                                                    {g.name}
-                                                    <span className="text-gray-400 text-xs mr-2">({g.gradeLevel})</span>
+                                            {allowedStages.map(s => (
+                                                <SelectItem key={s.value} value={s.value}>
+                                                    {s.label}
                                                 </SelectItem>
                                             ))}
                                         </SelectContent>
                                     </Select>
-                                )}
-                            </div>
-                        )}
-
-                        {/* Step 3: Student list */}
-                        {groupId && (
-                            <div>
-                                {/* Header row */}
-                                <div className="flex items-center justify-between mb-2 px-1">
-                                    <span className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                                        <Users size={15} className="text-primary" />
-                                        الطلاب
-                                        {students.length > 0 && (
-                                            <span className="text-gray-400 font-normal text-xs">
-                                                ({students.length} طالب — {paidCount} دافع — {unpaidCount} غير دافع)
-                                            </span>
-                                        )}
-                                    </span>
-                                    {students.length > 0 && (
-                                        <button
-                                            type="button"
-                                            onClick={toggleAll}
-                                            className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-primary transition-colors"
-                                        >
-                                            {allSelected
-                                                ? <CheckSquare size={16} className="text-primary" />
-                                                : <Square size={16} />}
-                                            {allSelected ? 'إلغاء تحديد الكل' : 'تحديد الكل'}
-                                        </button>
-                                    )}
                                 </div>
 
-                                {/* Student list */}
-                                <div className="max-h-60 overflow-y-auto border border-gray-100 rounded-xl divide-y divide-gray-50">
-                                    {studentsLoading ? (
-                                        <div className="flex justify-center items-center h-32 text-gray-400">
-                                            <Loader2 className="animate-spin h-6 w-6" />
+                                <div>
+                                    <label className="text-xs font-bold text-gray-700 block mb-1.5">
+                                        المجموعة
+                                    </label>
+                                    {groupsLoading ? (
+                                        <div className="h-10 flex items-center gap-2 px-3 text-xs text-gray-400 bg-gray-50 border border-gray-200 rounded-xl">
+                                            <Loader2 className="h-3.5 w-3.5 animate-spin" /> جاري تحميل المجموعات...
                                         </div>
-                                    ) : students.length === 0 ? (
-                                        <div className="p-6 text-center text-sm text-gray-400">لا يوجد طلاب نشطين</div>
                                     ) : (
-                                        students.map((s) => {
-                                            const checked = selectedIds.has(s._id);
-                                            const hasSub  = s.hasActiveSubscription;
-                                            return (
-                                                <label
-                                                    key={s._id}
-                                                    className={cn(
-                                                        'w-full flex items-center justify-between px-4 py-2.5 text-sm transition-colors',
-                                                        hasSub
-                                                            ? 'bg-green-50/60 cursor-default'
-                                                            : cn('cursor-pointer', checked ? 'bg-blue-50' : 'hover:bg-gray-50')
-                                                    )}
-                                                >
-                                                    <div className="flex items-center gap-3">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={checked}
-                                                            onChange={() => toggleStudent(s._id)}
-                                                            disabled={!!hasSub}
-                                                            className="h-4 w-4 rounded accent-primary shrink-0 disabled:opacity-40"
-                                                        />
-                                                        <span className={cn(
-                                                            'font-medium',
-                                                            hasSub ? 'text-gray-400' : 'text-gray-800'
-                                                        )}>
-                                                            {s.studentName}
-                                                        </span>
-                                                    </div>
-                                                    {hasSub ? (
-                                                        <span className="text-[11px] bg-green-100 text-green-700 px-2.5 py-0.5 rounded-full shrink-0 font-bold flex items-center gap-1">
-                                                            <Check size={10} />
-                                                            دافع ✓
-                                                        </span>
-                                                    ) : (
-                                                        <span className="text-[11px] bg-red-50 text-red-500 px-2.5 py-0.5 rounded-full shrink-0 font-medium">
-                                                            لم يدفع
-                                                        </span>
-                                                    )}
-                                                </label>
-                                            );
-                                        })
+                                        <Select
+                                            value={groupId}
+                                            onValueChange={v => setGroupId(v)}
+                                            disabled={!stageFilter || filteredGroups.length === 0}
+                                            dir="rtl"
+                                        >
+                                            <SelectTrigger className="h-10 bg-gray-50/70 border-gray-200 text-sm rounded-xl disabled:opacity-50">
+                                                <SelectValue placeholder={!stageFilter ? "اختر المرحلة أولاً" : filteredGroups.length === 0 ? "لا توجد مجموعات" : "اختر المجموعة..."} />
+                                            </SelectTrigger>
+                                            <SelectContent dir="rtl">
+                                                {filteredGroups.map(g => (
+                                                    <SelectItem key={g._id} value={g._id}>
+                                                        {g.name}
+                                                        <span className="text-gray-400 text-xs mr-2">({g.gradeLevel})</span>
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
                                     )}
                                 </div>
-
-                                {/* Selected count */}
-                                {students.length > 0 && (
-                                    <p className="text-xs text-gray-400 mt-2 text-center">
-                                        {selectedIds.size} طالب محدد للدفع
-                                    </p>
-                                )}
                             </div>
-                        )}
 
-                        {/* Discount field */}
-                        <div className="flex flex-col gap-2">
-                            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
-                                خصم (ج) <span className="text-gray-400 font-normal">— ينطبق على جميع الطلاب المحددين</span>
-                            </label>
-                            <div className="flex items-center gap-2">
-                                {centerDiscounts.length > 0 && (
-                                    <Select
-                                        onValueChange={(val) => {
-                                            const center = centerDiscounts.find(c => c.centerName === val);
-                                            if (center) setDiscount(center.discountAmount);
-                                        }}
-                                    >
-                                        <SelectTrigger className="w-[160px] bg-gray-50 border-gray-200">
-                                            <SelectValue placeholder="خصم سنتر..." />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {centerDiscounts.map(c => (
-                                                <SelectItem key={c.centerName} value={c.centerName}>
-                                                    {c.centerName} ({c.discountAmount} ج)
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                )}
-                                <Input
-                                    type="number"
-                                    min={0}
-                                    value={discount}
-                                    onChange={(e) => setDiscount(Number(e.target.value))}
-                                    className="w-32 bg-gray-50 border-gray-200"
-                                    dir="ltr"
-                                />
-                            </div>
-                        </div>
-
-                        {/* Custom Quota */}
-                        <div className="bg-gray-50 border border-gray-100 rounded-lg p-3">
-                            <div className="flex items-center gap-2 mb-2">
-                                <input
-                                    type="checkbox"
-                                    id="isCustomQuotaBatch"
-                                    checked={isCustomQuota}
-                                    onChange={(e) => setIsCustomQuota(e.target.checked)}
-                                    className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-600 h-4 w-4 cursor-pointer"
-                                />
-                                <label htmlFor="isCustomQuotaBatch" className="text-sm font-medium text-gray-700 cursor-pointer">
-                                    تخصيص عدد الحصص (اشتراك نصف شهر مثلاً)
-                                </label>
-                            </div>
-                            {isCustomQuota && (
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="text-xs font-medium text-gray-600 mb-1.5 block">عدد الحصص المقررة</label>
-                                        <Input
-                                            type="number"
-                                            min="1"
-                                            value={customSessionsQuota}
-                                            onChange={(e) => setCustomSessionsQuota(e.target.value)}
-                                            className="h-8 text-sm bg-white"
-                                        />
+                            {/* Step 3: Students list */}
+                            {groupId && (
+                                <div className="bg-gray-50/40 border border-gray-200/80 rounded-2xl p-3.5 space-y-2.5">
+                                    {/* List Header */}
+                                    <div className="flex items-center justify-between px-1">
+                                        <div className="flex items-center gap-2">
+                                            <Users size={15} className="text-emerald-600" />
+                                            <span className="text-xs font-bold text-gray-800">
+                                                الطلاب في المجموعة
+                                            </span>
+                                            {students.length > 0 && (
+                                                <span className="text-[11px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
+                                                    {students.length} طالب ({paidCount} دافع — {unpaidCount} غير دافع)
+                                                </span>
+                                            )}
+                                        </div>
+                                        {students.length > 0 && (
+                                            <button
+                                                type="button"
+                                                onClick={toggleAll}
+                                                className="text-xs font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1.5 transition-colors"
+                                            >
+                                                {allSelected
+                                                    ? <><CheckSquare size={15} className="text-emerald-600" /> إلغاء تحديد الكل</>
+                                                    : <><Square size={15} /> تحديد الكل</>}
+                                            </button>
+                                        )}
                                     </div>
-                                    <div>
-                                        <label className="text-xs font-medium text-gray-600 mb-1.5 block">مبلغ الاشتراك (للكل)</label>
-                                        <Input
-                                            type="number"
-                                            min="0"
-                                            placeholder="السعر المخصص (اختياري)"
-                                            value={customAmount}
-                                            onChange={(e) => setCustomAmount(e.target.value)}
-                                            className="h-8 text-sm bg-white"
-                                        />
+
+                                    {/* Student rows */}
+                                    <div className="max-h-48 overflow-y-auto bg-white border border-gray-200/60 rounded-xl divide-y divide-gray-50 shadow-inner">
+                                        {studentsLoading ? (
+                                            <div className="flex justify-center items-center h-28 text-gray-400">
+                                                <Loader2 className="animate-spin h-5 w-5" />
+                                            </div>
+                                        ) : students.length === 0 ? (
+                                            <div className="p-6 text-center text-xs text-gray-400">لا يوجد طلاب نشطين في هذه المجموعة</div>
+                                        ) : (
+                                            students.map((s) => {
+                                                const checked = selectedIds.has(s._id);
+                                                const hasSub  = s.hasActiveSubscription;
+                                                return (
+                                                    <label
+                                                        key={s._id}
+                                                        className={cn(
+                                                            'w-full flex items-center justify-between px-3.5 py-2 text-xs transition-colors',
+                                                            hasSub
+                                                                ? 'bg-gray-50/50 cursor-default opacity-60'
+                                                                : cn('cursor-pointer', checked ? 'bg-emerald-50/60 font-semibold' : 'hover:bg-gray-50/60')
+                                                        )}
+                                                    >
+                                                        <div className="flex items-center gap-2.5 min-w-0">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={checked}
+                                                                onChange={() => toggleStudent(s._id)}
+                                                                disabled={!!hasSub}
+                                                                className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-600 shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                                                            />
+                                                            <span className={cn(
+                                                                'truncate',
+                                                                hasSub ? 'text-gray-400' : 'text-gray-800'
+                                                            )}>
+                                                                {s.studentName}
+                                                            </span>
+                                                        </div>
+                                                        {hasSub ? (
+                                                            <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold flex items-center gap-1 shrink-0">
+                                                                <Check size={10} />
+                                                                دافع ✓
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-[10px] bg-red-50 text-red-500 border border-red-100 px-2 py-0.5 rounded-full font-medium shrink-0">
+                                                                لم يدفع
+                                                            </span>
+                                                        )}
+                                                    </label>
+                                                );
+                                            })
+                                        )}
                                     </div>
+
+                                    {/* Selection badge info */}
+                                    {students.length > 0 && (
+                                        <div className="flex items-center justify-between text-[11px] text-gray-500 px-1 pt-0.5">
+                                            <span>تم تحديد: <strong className="text-emerald-700">{selectedIds.size}</strong> طالب للدفع</span>
+                                            <span>متبقي بدون دفع: <strong className="text-red-600">{unpaidCount}</strong></span>
+                                        </div>
+                                    )}
                                 </div>
                             )}
+
+                            {/* Row: Date & Discount Grid */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-xs font-bold text-gray-700 block mb-1.5">
+                                        تاريخ تسجيل المعاملة
+                                    </label>
+                                    <Input
+                                        type="date"
+                                        value={date}
+                                        onChange={(e) => setDate(e.target.value)}
+                                        className="h-10 bg-gray-50/70 border-gray-200 text-sm rounded-xl"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="text-xs font-bold text-gray-700 block mb-1.5">
+                                        خصم إضافي (ج) <span className="text-gray-400 font-normal">— اختياري</span>
+                                    </label>
+                                    <div className="flex items-center gap-2">
+                                        {centerDiscounts.length > 0 && (
+                                            <Select
+                                                onValueChange={(val) => {
+                                                    const center = centerDiscounts.find(c => c.centerName === val);
+                                                    if (center) setDiscount(center.discountAmount);
+                                                }}
+                                            >
+                                                <SelectTrigger className="h-10 flex-1 bg-gray-50/70 border-gray-200 text-xs rounded-xl">
+                                                    <SelectValue placeholder="خصم سنتر..." />
+                                                </SelectTrigger>
+                                                <SelectContent dir="rtl">
+                                                    {centerDiscounts.map(c => (
+                                                        <SelectItem key={c.centerName} value={c.centerName}>
+                                                            {c.centerName} ({c.discountAmount} ج)
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        )}
+                                        <Input
+                                            type="number"
+                                            min={0}
+                                            placeholder="0"
+                                            value={discount === 0 ? '' : discount}
+                                            onChange={(e) => setDiscount(Number(e.target.value))}
+                                            className="h-10 w-24 bg-gray-50/70 border-gray-200 text-sm rounded-xl text-center font-bold"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Custom Quota Card */}
+                            <div className="bg-gray-50/60 border border-gray-200/70 rounded-2xl p-3.5 space-y-2.5">
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="checkbox"
+                                        id="isCustomQuotaBatch"
+                                        checked={isCustomQuota}
+                                        onChange={(e) => setIsCustomQuota(e.target.checked)}
+                                        className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-600 h-4 w-4 cursor-pointer"
+                                    />
+                                    <label htmlFor="isCustomQuotaBatch" className="text-xs font-bold text-gray-700 cursor-pointer">
+                                        تخصيص عدد الحصص والمبلغ (اشتراك نصف شهر مثلاً)
+                                    </label>
+                                </div>
+                                {isCustomQuota && (
+                                    <div className="grid grid-cols-2 gap-3 pt-1 animate-in fade-in slide-in-from-top-1">
+                                        <div>
+                                            <label className="text-[11px] font-semibold text-gray-600 mb-1 block">عدد الحصص المقررة</label>
+                                            <Input
+                                                type="number"
+                                                min="1"
+                                                value={customSessionsQuota}
+                                                onChange={(e) => setCustomSessionsQuota(e.target.value)}
+                                                className="h-9 text-xs bg-white rounded-xl"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[11px] font-semibold text-gray-600 mb-1 block">مبلغ الاشتراك (للطالب)</label>
+                                            <Input
+                                                type="number"
+                                                min="0"
+                                                placeholder="السعر المخصص (اختياري)"
+                                                value={customAmount}
+                                                onChange={(e) => setCustomAmount(e.target.value)}
+                                                className="h-9 text-xs bg-white rounded-xl"
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
                         </div>
 
-                        {/* Footer */}
-                        <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
-                            <Button variant="outline" onClick={() => handleClose(false)} disabled={mutation.isPending}>
+                        {/* Fixed Footer */}
+                        <div className="p-4 border-t border-gray-100 bg-gray-50/60 flex items-center justify-end gap-2.5 shrink-0">
+                            <Button
+                                variant="outline"
+                                onClick={() => handleClose(false)}
+                                disabled={mutation.isPending}
+                                className="h-10 text-xs font-semibold rounded-xl"
+                            >
                                 إلغاء
                             </Button>
                             <Button
                                 onClick={handleSubmit}
                                 disabled={mutation.isPending || selectedIds.size === 0}
-                                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                                className="h-10 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl gap-2 shadow-sm"
                             >
-                                {mutation.isPending
-                                    ? <><Loader2 className="ml-2 h-4 w-4 animate-spin" /> جاري الحفظ...</>
-                                    : `تسجيل اشتراك ${selectedIds.size > 0 ? `(${selectedIds.size})` : ''}`}
+                                {mutation.isPending ? (
+                                    <><Loader2 className="h-4 w-4 animate-spin" /> جاري الحفظ...</>
+                                ) : (
+                                    <>
+                                        <Check size={15} />
+                                        تسجيل اشتراك {selectedIds.size > 0 ? `(${selectedIds.size} طالب)` : ''}
+                                    </>
+                                )}
                             </Button>
                         </div>
                     </div>

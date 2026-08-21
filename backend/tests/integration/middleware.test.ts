@@ -124,12 +124,13 @@ describe('authorizeRoles middleware', () => {
         expect(res.status).not.toBe(403);
     });
 
-    it('assistant يُرفض بـ 403 على مسار teacher-only (GET /payments/prices)', async () => {
+    it('assistant يُرفض بـ 403 على مسار teacher-only (PUT /payments/prices)', async () => {
         await seedTeacher();
         await seedAssistant();
         const res = await app
-            .get('/payments/prices')
-            .set('Authorization', bearerHeader(makeAssistantToken()));
+            .put('/payments/prices')
+            .set('Authorization', bearerHeader(makeAssistantToken()))
+            .send({ prices: [] });
         expect(res.status).toBe(403);
     });
 

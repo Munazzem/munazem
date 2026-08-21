@@ -42,6 +42,14 @@ export const adjustCompletedAttendance = async (
     return (res as any).data;
 };
 
+export const deleteStudentSessionAttendance = async (
+    sessionId: string,
+    studentId: string
+): Promise<{ success: boolean; message: string }> => {
+    const res = await apiClient.delete(`/attendance/session/${sessionId}/student/${studentId}`);
+    return (res as any).data;
+};
+
 export const completeSession = async (sessionId: string): Promise<{
     session: { _id: string; status: string };
     snapshot: IAttendanceSnapshot;

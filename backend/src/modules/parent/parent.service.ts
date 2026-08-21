@@ -4,7 +4,7 @@ import { TransactionModel } from '../../database/models/transaction.model.js';
 import { ExamResultModel }  from '../../database/models/exam-result.model.js';
 import { GroupModel }       from '../../database/models/group.model.js';
 import { UserModel }        from '../../database/models/user.model.js';
-import { TransactionType, TransactionCategory } from '../../common/enums/enum.service.js';
+import { TransactionType, TransactionCategory, AttendanceStatus } from '../../common/enums/enum.service.js';
 import { NotFoundException, BadRequestException } from '../../common/utils/response/error.responce.js';
 
 export class ParentService {
@@ -51,29 +51,57 @@ export class ParentService {
                 { 'absentStudents.studentId':  studentId },
                 { 'guestStudents.studentId':   studentId },
             ],
-        }, { date: 1, presentStudents: 1, absentStudents: 1 })
+        }, { date: 1, presentStudents: 1, absentStudents: 1, guestStudents: 1 })
             .sort({ date: -1 })
             .lean();
 
-        let presentCount = 0;
-        let absentCount  = 0;
+        // Map and deduplicate by date (priority: PRESENT/LATE (4) > GUEST (3) > EXCUSED (2) > ABSENT (1))
+        const dayMap = new Map<string, { date: Date; status: string; priority: number }>();
 
-        const attendanceHistory = snapshots.slice(0, 20).map((snap: any) => {
+        for (const snap of snapshots) {
             const sid = studentId.toString();
-            const isPresent = snap.presentStudents.some((s: any) => s.studentId.toString() === sid);
-            const isAbsent  = snap.absentStudents.some((s: any)  => s.studentId.toString() === sid);
-            const status    = isPresent ? 'PRESENT' : isAbsent ? 'ABSENT' : 'GUEST';
-            if (isPresent) presentCount++;
-            else if (isAbsent) absentCount++;
-            return { date: snap.date, status };
-        });
+            const presentStudent = snap.presentStudents?.find((s: any) => s.studentId?.toString() === sid);
+            const isAbsent  = snap.absentStudents?.some((s: any)  => s.studentId?.toString() === sid);
+            const isGuest   = snap.guestStudents?.some((s: any)  => s.studentId?.toString() === sid);
 
-        // Count remaining snapshots beyond the history slice
-        for (const snap of snapshots.slice(20)) {
-            const sid = studentId.toString();
-            if (snap.presentStudents.some((s: any) => s.studentId.toString() === sid)) presentCount++;
-            else if (snap.absentStudents.some((s: any) => s.studentId.toString() === sid)) absentCount++;
+            let status = 'UNKNOWN';
+            let priority = 0;
+
+            if (presentStudent) {
+                const s = presentStudent.status || AttendanceStatus.PRESENT;
+                if (s === AttendanceStatus.EXCUSED) {
+                    status = 'EXCUSED';
+                    priority = 2;
+                } else {
+                    status = s; // PRESENT / LATE
+                    priority = 4;
+                }
+            } else if (isGuest) {
+                status = 'GUEST';
+                priority = 3;
+            } else if (isAbsent) {
+                status = 'ABSENT';
+                priority = 1;
+            }
+
+            if (status !== 'UNKNOWN') {
+                const dayKey = snap.date ? (new Date(snap.date).toISOString().split('T')[0] || 'unknown') : ((snap as any)._id?.toString() || 'unknown');
+                const existing = dayMap.get(dayKey);
+                if (!existing || priority > existing.priority) {
+                    dayMap.set(dayKey, { date: snap.date, status, priority });
+                }
+            }
         }
+
+        const deduplicatedEntries = Array.from(dayMap.values()).sort(
+            (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+        );
+
+        const presentCount = deduplicatedEntries.filter(
+            e => e.status === AttendanceStatus.PRESENT || e.status === AttendanceStatus.LATE || e.status === 'GUEST' || e.status === AttendanceStatus.EXCUSED
+        ).length;
+        const absentCount  = deduplicatedEntries.filter(e => e.status === AttendanceStatus.ABSENT).length;
+        const attendanceHistory = deduplicatedEntries.slice(0, 20).map(e => ({ date: e.date, status: e.status }));
 
         const totalSessions  = presentCount + absentCount;
         const attendanceRate = totalSessions > 0

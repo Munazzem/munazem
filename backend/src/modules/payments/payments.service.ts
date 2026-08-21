@@ -64,7 +64,7 @@ function resolveOriginalAmount(
 async function updateDailyLedger(
     teacherId: string,
     date: Date,
-    transaction: { transactionId: any; type: string; category: string; paidAmount: number; studentName?: string; description?: string; createdBy: any; time: Date },
+    transaction: { transactionId: any; type: string; category: string; paidAmount: number; studentName?: string | undefined; description?: string | undefined; createdBy: any; time: Date },
     isIncome: boolean,
     session?: mongoose.ClientSession
 ) {
@@ -226,33 +226,35 @@ export class PaymentsService {
             
             const pricePerSession = capacity > 0 ? fullMonthPrice / capacity : 0;
             
-            // If student joined before the cycle started, they owe full cycle; otherwise pro-rate from NEXT session
+            // If student joined before the cycle started, they start from session 1; otherwise start from next session
             const studentCreatedAt = (student as any).createdAt;
             const wasRegisteredBeforeCycle = !group.cycle?.startedAt || 
                 (studentCreatedAt && new Date(studentCreatedAt) <= new Date(group.cycle.startedAt));
 
             let defaultStartSession: number;
-            let remainingCapacity: number;
 
             if (wasRegisteredBeforeCycle || currentSessionNumber === 0) {
                 defaultStartSession = 1;
-                remainingCapacity = capacity;
             } else if (currentSessionNumber >= capacity) {
                 // Current cycle is fully finished; new student will enter next cycle
                 defaultStartSession = 1;
-                remainingCapacity = capacity;
             } else {
-                // Mid-cycle joiner: starts from the next session
+                // Mid-cycle joiner: starts and continues from the next session
                 defaultStartSession = currentSessionNumber + 1;
-                remainingCapacity = Math.max(0, capacity - currentSessionNumber);
             }
             
-            // Respect custom quota from UI if provided, otherwise charge for remaining capacity
+            // Respect custom quota from UI if explicitly checked/provided, otherwise calculate pro-rata for mid-cycle joiners
+            const defaultChargeable = (!wasRegisteredBeforeCycle && defaultStartSession > 1)
+                ? Math.max(1, capacity - defaultStartSession + 1)
+                : capacity;
+
             const chargeableSessions = data.customSessionsQuota !== undefined 
                 ? data.customSessionsQuota 
-                : remainingCapacity;
+                : defaultChargeable;
                 
-            const cycleCharge = Math.round(chargeableSessions * pricePerSession);
+            const cycleCharge = data.customSessionsQuota !== undefined && capacity > 0
+                ? Math.round(data.customSessionsQuota * pricePerSession)
+                : ((!wasRegisteredBeforeCycle && defaultStartSession > 1) ? Math.round(chargeableSessions * pricePerSession) : fullMonthPrice);
 
             enrollment = new CycleEnrollmentModel({
                 studentId: student._id,
@@ -332,21 +334,28 @@ export class PaymentsService {
                     category:      TransactionCategory.SUBSCRIPTION,
                     paidAmount,
                     studentName:   student.studentName,
+                    description:   tx!.description,
                     createdBy,
                     time:          txDate,
                 }, true, session),
                 updateMonthlyLedger(teacherId, txDate, paidAmount, true, session),
             ]);
 
-            // Update student debt
-            // If enrollment was created now, we ADD the full charge to totalDebt, then SUBTRACT the payment/discount.
-            // If enrollment already existed, we just SUBTRACT the payment/discount from totalDebt.
+            // Update student debt:
+            // - If the payment is partial (leaving a remaining unpaid amount), record that remaining amount as debt.
+            // - If the student is paying off a previous remaining balance, reduce their debt by the paid amount.
+            // - If full payment is made initially, no debt is added.
             const studentUpdatePayload: any = {};
             let debtChange = 0;
-            if (enrollmentCreatedNow) {
-                debtChange += enrollment.cycleCharge;
+
+            const wasAlreadyPartiallyPaid = enrollment.totalPaid > 0;
+            if (wasAlreadyPartiallyPaid) {
+                // Paying off part or all of previously recorded remaining debt
+                debtChange = - (paidAmount + discountAmount);
+            } else if (newRemainingAmount > 0) {
+                // First payment is partial -> add only the remaining balance to debt
+                debtChange = newRemainingAmount;
             }
-            debtChange -= (paidAmount + discountAmount);
 
             if (debtChange !== 0) {
                 studentUpdatePayload.$inc = { totalDebt: debtChange };
@@ -481,6 +490,7 @@ export class PaymentsService {
                     category:      TransactionCategory.NOTEBOOK_SALE,
                     paidAmount,
                     studentName:   student.studentName,
+                    description:   tx!.description,
                     createdBy,
                     time:          txDate,
                 }, true, session),
@@ -715,32 +725,147 @@ export class PaymentsService {
         return transaction;
     }
 
+    // ── Reconcile Monthly Ledger ────────────────────────────────────
+    static async reconcileMonthlyLedger(teacherId: string, year: number, month: number) {
+        const startDate = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
+        const endDate = new Date(Date.UTC(year, month, 1, 0, 0, 0, 0));
+
+        const dailyLedgers = await DailyLedgerModel.find({
+            teacherId,
+            date: { $gte: startDate, $lt: endDate }
+        }).lean();
+
+        const dailySummaries = dailyLedgers.map(dl => {
+            const income = (dl.transactions || [])
+                .filter((t: any) => t.type === TransactionType.INCOME)
+                .reduce((sum: number, t: any) => sum + (t.paidAmount || 0), 0);
+            const expenses = (dl.transactions || [])
+                .filter((t: any) => t.type === TransactionType.EXPENSE)
+                .reduce((sum: number, t: any) => sum + (t.paidAmount || 0), 0);
+            return {
+                date: dl.date,
+                totalIncome: Math.max(0, income),
+                totalExpenses: Math.max(0, expenses),
+                netBalance: income - expenses,
+                transactionCount: dl.transactions?.length || 0,
+            };
+        });
+
+        const totalIncome = Math.max(0, dailySummaries.reduce((sum, d) => sum + d.totalIncome, 0));
+        const totalExpenses = Math.max(0, dailySummaries.reduce((sum, d) => sum + d.totalExpenses, 0));
+        const netBalance = totalIncome - totalExpenses;
+
+        const updated = await MonthlyLedgerModel.findOneAndUpdate(
+            { teacherId, year, month },
+            {
+                $set: {
+                    dailySummaries,
+                    totalIncome,
+                    totalExpenses,
+                    netBalance,
+                }
+            },
+            { upsert: true, new: true }
+        ).lean();
+
+        return updated;
+    }
+
     // ── Get Daily Ledger ────────────────────────────────────────────
     static async getDailyLedger(teacherId: string, date: string) {
         const dayDate = new Date(date);
         const day = startOfDay(dayDate);
-        const year = dayDate.getUTCFullYear();
-        const month = dayDate.getUTCMonth() + 1;
+        const { year, month } = getEgyptYearMonth(dayDate);
 
-        const [ledger, monthlyLedger] = await Promise.all([
-            DailyLedgerModel.findOne({ teacherId, date: day }).lean(),
+        let [ledger, monthlyLedger] = await Promise.all([
+            DailyLedgerModel.findOne({ teacherId, date: day }),
             MonthlyLedgerModel.findOne({ teacherId, year, month }, { totalIncome: 1, totalExpenses: 1 }).lean(),
         ]);
 
-        const base = ledger || { date: day, transactions: [], totalIncome: 0, totalExpenses: 0, netBalance: 0 };
+        if (ledger) {
+            // Auto-heal / Recalculate true totals from ledger.transactions if corrupted or negative
+            const realIncome = (ledger.transactions || [])
+                .filter((t: any) => t.type === TransactionType.INCOME)
+                .reduce((sum: number, t: any) => sum + (t.paidAmount || 0), 0);
+            const realExpenses = (ledger.transactions || [])
+                .filter((t: any) => t.type === TransactionType.EXPENSE)
+                .reduce((sum: number, t: any) => sum + (t.paidAmount || 0), 0);
+            const realNet = realIncome - realExpenses;
+
+            if (ledger.totalIncome !== realIncome || ledger.totalExpenses !== realExpenses || ledger.netBalance !== realNet || ledger.totalIncome < 0 || ledger.totalExpenses < 0) {
+                ledger.totalIncome = Math.max(0, realIncome);
+                ledger.totalExpenses = Math.max(0, realExpenses);
+                ledger.netBalance = realNet;
+                await DailyLedgerModel.updateOne(
+                    { _id: ledger._id },
+                    { $set: { totalIncome: ledger.totalIncome, totalExpenses: ledger.totalExpenses, netBalance: ledger.netBalance } }
+                );
+
+                // Heal MonthlyLedger
+                await PaymentsService.reconcileMonthlyLedger(teacherId, year, month);
+                monthlyLedger = await MonthlyLedgerModel.findOne({ teacherId, year, month }, { totalIncome: 1, totalExpenses: 1 }).lean();
+            }
+
+            // Auto-enrich any transactions missing description from TransactionModel
+            const missingDescTxIds = (ledger.transactions || [])
+                .filter((t: any) => !t.description && t.transactionId)
+                .map((t: any) => t.transactionId);
+
+            if (missingDescTxIds.length > 0) {
+                const actualTxs = await TransactionModel.find(
+                    { _id: { $in: missingDescTxIds }, teacherId },
+                    { _id: 1, description: 1 }
+                ).lean();
+
+                const descMap = new Map(
+                    actualTxs
+                        .filter(t => t.description && t.description.trim() !== '')
+                        .map(t => [t._id.toString(), t.description])
+                );
+
+                let updatedDesc = false;
+                for (const t of ledger.transactions) {
+                    if (!t.description && t.transactionId) {
+                        const d = descMap.get(t.transactionId.toString());
+                        if (d) {
+                            t.description = d;
+                            updatedDesc = true;
+                        }
+                    }
+                }
+
+                if (updatedDesc) {
+                    await DailyLedgerModel.updateOne(
+                        { _id: ledger._id },
+                        { $set: { transactions: ledger.transactions } }
+                    );
+                }
+            }
+        }
+
+        const base = ledger ? ledger.toObject() : { date: day, transactions: [], totalIncome: 0, totalExpenses: 0, netBalance: 0 };
         
         return {
             ...base,
-            monthlyIncome: monthlyLedger?.totalIncome ?? 0,
-            monthlyExpenses: monthlyLedger?.totalExpenses ?? 0,
+            totalIncome: Math.max(0, base.totalIncome),
+            totalExpenses: Math.max(0, base.totalExpenses),
+            monthlyIncome: Math.max(0, monthlyLedger?.totalIncome ?? 0),
+            monthlyExpenses: Math.max(0, monthlyLedger?.totalExpenses ?? 0),
         };
     }
 
     // ── Get Monthly Ledger ──────────────────────────────────────────
     static async getMonthlyLedger(teacherId: string, year: number, month: number) {
-        const ledger = await MonthlyLedgerModel.findOne({ teacherId, year, month }).lean();
+        let ledger = await MonthlyLedgerModel.findOne({ teacherId, year, month }).lean();
+        if (!ledger || ledger.totalIncome < 0 || ledger.totalExpenses < 0) {
+            ledger = await PaymentsService.reconcileMonthlyLedger(teacherId, year, month);
+        }
         if (!ledger) return { year, month, dailySummaries: [], totalIncome: 0, totalExpenses: 0, netBalance: 0 };
-        return ledger;
+        return {
+            ...ledger,
+            totalIncome: Math.max(0, ledger.totalIncome),
+            totalExpenses: Math.max(0, ledger.totalExpenses),
+        };
     }
 
     // ── Update Transaction (Teacher only) ───────────────────────────
@@ -777,12 +902,27 @@ export class PaymentsService {
                 { new: true, runValidators: true, session }
             ).lean();
 
+            const txDate = transaction.date;
+            const day = startOfDay(new Date(txDate));
+
+            // ── Update embedded transaction fields in DailyLedger ─────────
+            const embeddedUpdates: Record<string, any> = {};
+            if (data.amount !== undefined)      embeddedUpdates['transactions.$.paidAmount'] = data.amount;
+            if (data.category !== undefined)    embeddedUpdates['transactions.$.category']   = data.category;
+            if (data.description !== undefined) embeddedUpdates['transactions.$.description'] = data.description;
+
+            if (Object.keys(embeddedUpdates).length > 0) {
+                await DailyLedgerModel.findOneAndUpdate(
+                    { teacherId, date: day, 'transactions.transactionId': transaction._id },
+                    { $set: embeddedUpdates },
+                    { session }
+                );
+            }
+
             // ── Sync ledgers if amount changed ──────────────────────────────
             if (data.amount !== undefined && data.amount !== transaction.paidAmount) {
                 const delta     = data.amount - transaction.paidAmount;
                 const isIncome  = transaction.type === TransactionType.INCOME;
-                const txDate    = transaction.date;
-                const day       = startOfDay(new Date(txDate));
                 const year      = new Date(txDate).getUTCFullYear();
                 const month     = new Date(txDate).getUTCMonth() + 1;
 
@@ -812,12 +952,6 @@ export class PaymentsService {
                                 'dailySummaries.$.netBalance':     isIncome ? delta : -delta,
                             },
                         },
-                        { session }
-                    ),
-                    // Update the embedded transaction amount in DailyLedger.transactions array
-                    DailyLedgerModel.findOneAndUpdate(
-                        { teacherId, date: day, 'transactions.transactionId': transaction._id },
-                        { $set: { 'transactions.$.paidAmount': data.amount } },
                         { session }
                     ),
                 ]);
@@ -972,6 +1106,7 @@ export class PaymentsService {
                     category:      TransactionCategory.DEBT_PAYMENT,
                     paidAmount:    data.amount,
                     studentName:   student.studentName,
+                    description:   tx!.description,
                     createdBy,
                     time:          txDate,
                 }, true, session),
@@ -993,6 +1128,187 @@ export class PaymentsService {
         return transaction;
     }
 
+    // ── Pay Specific Past Cycle Debt ─────────────────────────────────
+    static async payCycleDebt(
+        teacherId: string,
+        createdBy: string,
+        data: {
+            studentId: string;
+            cycleNumber: number;
+            paidAmount?: number;
+            discountAmount?: number;
+            description?: string;
+            date?: string;
+            idempotencyKey?: string;
+        }
+    ) {
+        if (data.idempotencyKey) {
+            const existingTx = await TransactionModel.findOne({ idempotencyKey: data.idempotencyKey }).lean();
+            if (existingTx) return existingTx;
+        }
+
+        const student = await StudentModel.findById(data.studentId, { studentName: 1, gradeLevel: 1, teacherId: 1, groupId: 1, totalDebt: 1 }).lean();
+        if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
+        if (student.teacherId.toString() !== teacherId) {
+            throw BadRequestException({ message: 'هذا الطالب لا ينتمي إلى هذا المعلم' });
+        }
+
+        const enrollment = await CycleEnrollmentModel.findOne({
+            studentId: student._id,
+            cycleNumber: data.cycleNumber
+        });
+
+        if (!enrollment) {
+            throw NotFoundException({ message: `سجل الدورة رقم (${data.cycleNumber}) غير موجود لهذا الطالب` });
+        }
+
+        if (enrollment.status === CycleEnrollmentStatus.PAID) {
+            throw BadRequestException({ message: `تم سداد اشتراك الدورة رقم (${data.cycleNumber}) بالكامل مسبقاً` });
+        }
+
+        const discountAmount = data.discountAmount ?? 0;
+        const paidAmount = data.paidAmount ?? (enrollment.remainingAmount - discountAmount);
+
+        if (paidAmount < 0) throw BadRequestException({ message: 'المدفوع لا يمكن أن يكون سالباً' });
+        if (paidAmount + discountAmount > enrollment.remainingAmount) {
+            throw BadRequestException({ message: 'إجمالي الدفع والخصم لا يمكن أن يتجاوز المبلغ المتبقي للدورة' });
+        }
+
+        const newTotalPaid = enrollment.totalPaid + paidAmount + discountAmount;
+        const newRemainingAmount = enrollment.cycleCharge - newTotalPaid;
+        let newStatus = CycleEnrollmentStatus.PARTIALLY_PAID;
+        if (newRemainingAmount === 0) newStatus = CycleEnrollmentStatus.PAID;
+        if (newRemainingAmount === enrollment.cycleCharge) newStatus = CycleEnrollmentStatus.UNPAID;
+
+        const txDate = resolveTransactionDate(data.date);
+
+        const transaction = await withTransaction(async (session) => {
+            await CycleEnrollmentModel.findByIdAndUpdate(enrollment._id, {
+                $set: {
+                    totalPaid: newTotalPaid,
+                    remainingAmount: newRemainingAmount,
+                    status: newStatus
+                }
+            }, { session });
+
+            const [tx] = await TransactionModel.create([{
+                teacherId,
+                createdBy,
+                type:           TransactionType.INCOME,
+                category:       TransactionCategory.SUBSCRIPTION,
+                studentId:      student._id,
+                studentName:    student.studentName,
+                gradeLevel:     student.gradeLevel,
+                originalAmount: enrollment.cycleCharge,
+                discountAmount,
+                paidAmount,
+                remainingAmount: newRemainingAmount,
+                date:           txDate,
+                cycleNumber:    data.cycleNumber,
+                ...(data.idempotencyKey ? { idempotencyKey: data.idempotencyKey } : {}),
+                description:    data.description || `سداد مديونية الدورة رقم ${data.cycleNumber}`,
+            }], { session });
+
+            await Promise.all([
+                updateDailyLedger(teacherId, txDate, {
+                    transactionId: tx!._id,
+                    type:          TransactionType.INCOME,
+                    category:      TransactionCategory.SUBSCRIPTION,
+                    paidAmount,
+                    studentName:   student.studentName,
+                    description:   tx!.description,
+                    createdBy,
+                    time:          txDate,
+                }, true, session),
+                updateMonthlyLedger(teacherId, txDate, paidAmount, true, session),
+            ]);
+
+            // If student had debt from this partial cycle or historical debt, reduce it safely
+            if (student.totalDebt && student.totalDebt > 0) {
+                const reduceDebt = Math.min(student.totalDebt, paidAmount + discountAmount);
+                if (reduceDebt > 0) {
+                    await StudentModel.findByIdAndUpdate(student._id, {
+                        $inc: { totalDebt: -reduceDebt }
+                    }, { session });
+                }
+            }
+
+            return tx;
+        });
+
+        cache.del(CacheKeys.dashboard(teacherId));
+        return transaction;
+    }
+
+    // ── Pay All Past Cycles Debt ──────────────────────────────────────
+    static async payAllPastCycles(
+        teacherId: string,
+        createdBy: string,
+        data: {
+            studentId: string;
+            paidAmount?: number;
+            description?: string;
+            date?: string;
+            idempotencyKey?: string;
+        }
+    ) {
+        const student = await StudentModel.findById(data.studentId, { studentName: 1, gradeLevel: 1, teacherId: 1, groupId: 1, totalDebt: 1 }).lean();
+        if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
+        if (student.teacherId.toString() !== teacherId) {
+            throw BadRequestException({ message: 'هذا الطالب لا ينتمي إلى هذا المعلم' });
+        }
+
+        const group = await GroupModel.findById(student.groupId, { 'cycle.currentCycleNumber': 1 }).lean();
+        const currentCycleNumber = group?.cycle?.currentCycleNumber || 1;
+
+        // Find past unpaid or partially paid enrollments
+        const pastEnrollments = await CycleEnrollmentModel.find({
+            studentId: student._id,
+            cycleNumber: { $lt: currentCycleNumber },
+            status: { $in: [CycleEnrollmentStatus.UNPAID, CycleEnrollmentStatus.PARTIALLY_PAID] }
+        }).sort({ cycleNumber: 1 });
+
+        if (pastEnrollments.length === 0) {
+            throw BadRequestException({ message: 'لا توجد دورات سابقة مستحقة على هذا الطالب' });
+        }
+
+        const totalPastDebt = pastEnrollments.reduce((sum, e) => sum + e.remainingAmount, 0);
+        let amountToDistribute = data.paidAmount !== undefined ? data.paidAmount : totalPastDebt;
+
+        if (amountToDistribute <= 0) {
+            throw BadRequestException({ message: 'المبلغ يجب أن يكون أكبر من صفر' });
+        }
+        if (amountToDistribute > totalPastDebt) {
+            throw BadRequestException({ message: `المبلغ المطلوب سداده (${amountToDistribute}) أكبر من إجمالي المديونيات السابقة (${totalPastDebt})` });
+        }
+
+        const results: any[] = [];
+        let remainingToDistribute = amountToDistribute;
+
+        for (const enrollment of pastEnrollments) {
+            if (remainingToDistribute <= 0) break;
+            const payForThisCycle = Math.min(enrollment.remainingAmount, remainingToDistribute);
+            remainingToDistribute -= payForThisCycle;
+
+            const tx = await PaymentsService.payCycleDebt(teacherId, createdBy, {
+                studentId: data.studentId,
+                cycleNumber: enrollment.cycleNumber,
+                paidAmount: payForThisCycle,
+                discountAmount: 0,
+                description: data.description || `سداد مديونية الدورة رقم ${enrollment.cycleNumber} (سداد شامل)`,
+                ...(data.date ? { date: data.date } : {}),
+                ...(data.idempotencyKey ? { idempotencyKey: `${data.idempotencyKey}_cycle_${enrollment.cycleNumber}` } : {}),
+            });
+            results.push(tx);
+        }
+
+        return {
+            message: 'تم سداد المديونيات السابقة بنجاح',
+            totalPaid: amountToDistribute,
+            transactions: results
+        };
+    }
+
     // ── Delete (Void) Transaction ────────────────────────────────────
     /**
      * Permanently deletes a transaction and reverses its effect on
@@ -1003,23 +1319,22 @@ export class PaymentsService {
         let transaction = await TransactionModel.findOne({ _id: transactionId, teacherId }).lean();
         
         if (!transaction) {
-            // Transaction is missing from TransactionModel. It might be an orphaned entry in DailyLedger due to past sync issues.
-            // Search for it in DailyLedgerModel so we can still clean it up and reverse totals.
+            // Check if it exists in DailyLedger as an orphan
             const ledgerWithOrphan = await DailyLedgerModel.findOne({
                 teacherId,
                 'transactions.transactionId': transactionId
             }).lean();
 
             if (!ledgerWithOrphan) {
-                throw NotFoundException({ message: 'المعاملة غير موجودة' });
+                // Already deleted (idempotent)
+                return { deleted: true, transactionId };
             }
 
-            const orphanTx = ledgerWithOrphan.transactions.find(t => t.transactionId.toString() === transactionId.toString());
+            const orphanTx = ledgerWithOrphan.transactions.find((t: any) => t.transactionId.toString() === transactionId.toString());
             if (!orphanTx) {
-                throw NotFoundException({ message: 'المعاملة غير موجودة' });
+                return { deleted: true, transactionId };
             }
 
-            // Construct a mock transaction object so the deletion logic works to reverse totals
             transaction = {
                 _id: transactionId,
                 teacherId,
@@ -1031,61 +1346,65 @@ export class PaymentsService {
         }
 
         const tx = transaction!;
-
-        const isIncome = tx.type === TransactionType.INCOME;
-        const txDate   = new Date(tx.date);
-        const day      = startOfDay(txDate);
+        const txDate = new Date(tx.date);
+        const day = startOfDay(txDate);
         const { year, month } = getEgyptYearMonth(txDate);
-        const amount   = tx.paidAmount;
+        const amount = tx.paidAmount;
 
         await withTransaction(async (session) => {
-            // 1. Delete the transaction document (won't do anything if it's already deleted)
+            // 1. Delete the transaction document
             await TransactionModel.deleteOne({ _id: tx._id }, { session });
 
-            // 2. Reverse DailyLedger totals + remove embedded entry
-            await DailyLedgerModel.findOneAndUpdate(
-                { teacherId, date: day },
-                {
-                    $pull: { transactions: { transactionId: tx._id } },
-                    $inc: {
-                        totalIncome:   isIncome ?  -amount : 0,
-                        totalExpenses: isIncome ? 0 : -amount,
-                        netBalance:    isIncome ? -amount : amount,
-                    },
-                },
-                { session }
-            );
+            // 2. Remove from DailyLedger and recompute exact positive totals
+            const dailyLedger = await DailyLedgerModel.findOne({
+                teacherId,
+                $or: [
+                    { date: day },
+                    { 'transactions.transactionId': tx._id }
+                ]
+            }).session(session);
 
-            // 3. Reverse MonthlyLedger — try existing daily summary first
-            const updatedMonthly = await MonthlyLedgerModel.findOneAndUpdate(
-                { teacherId, year, month, 'dailySummaries.date': day },
-                {
-                    $inc: {
-                        totalIncome:                        isIncome ?  -amount : 0,
-                        totalExpenses:                      isIncome ? 0 : -amount,
-                        netBalance:                         isIncome ? -amount : amount,
-                        'dailySummaries.$.totalIncome':     isIncome ?  -amount : 0,
-                        'dailySummaries.$.totalExpenses':   isIncome ? 0 : -amount,
-                        'dailySummaries.$.netBalance':      isIncome ? -amount : amount,
-                        'dailySummaries.$.transactionCount': -1,
-                    },
-                },
-                { session }
-            );
-
-            // Fallback: update top-level only if daily summary entry doesn't exist
-            if (!updatedMonthly) {
-                await MonthlyLedgerModel.findOneAndUpdate(
-                    { teacherId, year, month },
-                    {
-                        $inc: {
-                            totalIncome:   isIncome ?  -amount : 0,
-                            totalExpenses: isIncome ? 0 : -amount,
-                            netBalance:    isIncome ? -amount : amount,
-                        },
-                    },
-                    { session }
+            if (dailyLedger) {
+                const remainingTxs = (dailyLedger.transactions || []).filter(
+                    (t: any) => t.transactionId.toString() !== tx._id.toString()
                 );
+                const computedIncome = remainingTxs
+                    .filter((t: any) => t.type === TransactionType.INCOME)
+                    .reduce((sum: number, t: any) => sum + (t.paidAmount || 0), 0);
+                const computedExpenses = remainingTxs
+                    .filter((t: any) => t.type === TransactionType.EXPENSE)
+                    .reduce((sum: number, t: any) => sum + (t.paidAmount || 0), 0);
+
+                dailyLedger.transactions = remainingTxs;
+                dailyLedger.totalIncome = Math.max(0, computedIncome);
+                dailyLedger.totalExpenses = Math.max(0, computedExpenses);
+                dailyLedger.netBalance = dailyLedger.totalIncome - dailyLedger.totalExpenses;
+                await dailyLedger.save({ session });
+            }
+
+            // 3. Update MonthlyLedger
+            const monthlyLedger = await MonthlyLedgerModel.findOne({ teacherId, year, month }).session(session);
+            if (monthlyLedger) {
+                if (dailyLedger) {
+                    const summaryIdx = (monthlyLedger.dailySummaries || []).findIndex(
+                        (ds: any) => new Date(ds.date).getTime() === new Date(dailyLedger.date).getTime()
+                    );
+                    if (summaryIdx >= 0) {
+                        monthlyLedger.dailySummaries[summaryIdx] = {
+                            date: dailyLedger.date,
+                            totalIncome: dailyLedger.totalIncome,
+                            totalExpenses: dailyLedger.totalExpenses,
+                            netBalance: dailyLedger.netBalance,
+                            transactionCount: dailyLedger.transactions.length,
+                        } as any;
+                    }
+                }
+                const newTotalIncome = (monthlyLedger.dailySummaries || []).reduce((s: number, d: any) => s + (d.totalIncome || 0), 0);
+                const newTotalExpenses = (monthlyLedger.dailySummaries || []).reduce((s: number, d: any) => s + (d.totalExpenses || 0), 0);
+                monthlyLedger.totalIncome = Math.max(0, newTotalIncome);
+                monthlyLedger.totalExpenses = Math.max(0, newTotalExpenses);
+                monthlyLedger.netBalance = monthlyLedger.totalIncome - monthlyLedger.totalExpenses;
+                await monthlyLedger.save({ session });
             }
 
             // 4. If this was a subscription, revert the CycleEnrollment
@@ -1114,7 +1433,7 @@ export class PaymentsService {
                 }
             }
 
-            // 5. If this transaction had a remaining amount, we must revert it from student's total debt
+            // 5. If this transaction had a remaining amount, revert from student's total debt
             if (tx.remainingAmount && tx.remainingAmount > 0 && tx.studentId) {
                 await StudentModel.findByIdAndUpdate(
                     tx.studentId,
@@ -1127,7 +1446,7 @@ export class PaymentsService {
             if (tx.category === TransactionCategory.DEBT_PAYMENT && tx.studentId) {
                 await StudentModel.findByIdAndUpdate(
                     tx.studentId,
-                    { $inc: { totalDebt: amount } }, // add the paid amount back to the debt
+                    { $inc: { totalDebt: amount } },
                     { session }
                 );
             }
@@ -1135,7 +1454,198 @@ export class PaymentsService {
 
         // Invalidate dashboard cache
         cache.del(CacheKeys.dashboard(teacherId));
-
         return { deleted: true, transactionId };
     }
+
+    // ── Delete (Void) Batch Transactions ────────────────────────────
+    /**
+     * Permanently deletes multiple transactions in bulk and reverses their ledger effects in a single atomic transaction.
+     */
+    static async deleteBatchTransactions(teacherId: string, transactionIds: string[]) {
+        if (!transactionIds || transactionIds.length === 0) {
+            throw BadRequestException({ message: 'يجب تحديد المعاملات المراد مسحها' });
+        }
+
+        const uniqueTxIds = Array.from(new Set(transactionIds.map(id => id.toString())));
+        const txObjectIds = uniqueTxIds.map(id => new mongoose.Types.ObjectId(id));
+
+        // 1. Fetch all matching transactions in one query
+        const transactions = await TransactionModel.find({
+            _id: { $in: txObjectIds },
+            teacherId
+        }).lean();
+
+        const foundTxIdSet = new Set(transactions.map(t => t._id.toString()));
+        const missingTxIds = uniqueTxIds.filter(id => !foundTxIdSet.has(id));
+
+        // 2. For any transactions missing from TransactionModel, check DailyLedger in one query
+        let orphanTxs: any[] = [];
+        if (missingTxIds.length > 0) {
+            const ledgersWithOrphans = await DailyLedgerModel.find({
+                teacherId,
+                'transactions.transactionId': { $in: missingTxIds.map(id => new mongoose.Types.ObjectId(id)) }
+            }).lean();
+
+            for (const ledger of ledgersWithOrphans) {
+                for (const t of (ledger.transactions || [])) {
+                    if (missingTxIds.includes(t.transactionId.toString())) {
+                        orphanTxs.push({
+                            _id: t.transactionId.toString(),
+                            teacherId,
+                            type: t.type,
+                            category: t.category,
+                            paidAmount: t.paidAmount,
+                            date: t.time,
+                        });
+                    }
+                }
+            }
+        }
+
+        const allTxsToDelete = [...transactions, ...orphanTxs];
+        if (allTxsToDelete.length === 0) {
+            return {
+                deletedCount: 0,
+                failedCount: 0,
+                total: uniqueTxIds.length,
+                results: uniqueTxIds.map(id => ({ transactionId: id, success: true }))
+            };
+        }
+
+        const allDeletedIdSet = new Set(allTxsToDelete.map(t => t._id.toString()));
+        const affectedDates = new Set<string>();
+        const affectedYearMonths = new Set<string>();
+
+        for (const tx of allTxsToDelete) {
+            const txDate = new Date(tx.date);
+            affectedDates.add(startOfDay(txDate).toISOString());
+            const { year, month } = getEgyptYearMonth(txDate);
+            affectedYearMonths.add(`${year}-${month}`);
+        }
+
+        // 3. Execute all deletions and ledger updates in ONE database transaction
+        await withTransaction(async (session) => {
+            // A. Bulk delete from TransactionModel
+            await TransactionModel.deleteMany(
+                { _id: { $in: Array.from(allDeletedIdSet).map(id => new mongoose.Types.ObjectId(id)) }, teacherId },
+                { session }
+            );
+
+            // B. Update affected DailyLedgers
+            const dateObjects = Array.from(affectedDates).map(d => new Date(d));
+            const dailyLedgers = await DailyLedgerModel.find({
+                teacherId,
+                $or: [
+                    { date: { $in: dateObjects } },
+                    { 'transactions.transactionId': { $in: Array.from(allDeletedIdSet).map(id => new mongoose.Types.ObjectId(id)) } }
+                ]
+            }).session(session);
+
+            for (const dailyLedger of dailyLedgers) {
+                const remainingTxs = (dailyLedger.transactions || []).filter(
+                    (t: any) => !allDeletedIdSet.has(t.transactionId.toString())
+                );
+                const computedIncome = remainingTxs
+                    .filter((t: any) => t.type === TransactionType.INCOME)
+                    .reduce((sum: number, t: any) => sum + (t.paidAmount || 0), 0);
+                const computedExpenses = remainingTxs
+                    .filter((t: any) => t.type === TransactionType.EXPENSE)
+                    .reduce((sum: number, t: any) => sum + (t.paidAmount || 0), 0);
+
+                dailyLedger.transactions = remainingTxs;
+                dailyLedger.totalIncome = Math.max(0, computedIncome);
+                dailyLedger.totalExpenses = Math.max(0, computedExpenses);
+                dailyLedger.netBalance = dailyLedger.totalIncome - dailyLedger.totalExpenses;
+                await dailyLedger.save({ session });
+            }
+
+            // C. Update affected MonthlyLedgers
+            for (const ym of affectedYearMonths) {
+                const [yStr, mStr] = ym.split('-');
+                const y = parseInt(yStr!, 10);
+                const m = parseInt(mStr!, 10);
+
+                const monthlyLedger = await MonthlyLedgerModel.findOne({ teacherId, year: y, month: m }).session(session);
+                if (monthlyLedger) {
+                    for (const dailyLedger of dailyLedgers) {
+                        const { year: dy, month: dm } = getEgyptYearMonth(new Date(dailyLedger.date));
+                        if (dy === y && dm === m) {
+                            const summaryIdx = (monthlyLedger.dailySummaries || []).findIndex(
+                                (ds: any) => new Date(ds.date).getTime() === new Date(dailyLedger.date).getTime()
+                            );
+                            if (summaryIdx >= 0) {
+                                monthlyLedger.dailySummaries[summaryIdx] = {
+                                    date: dailyLedger.date,
+                                    totalIncome: dailyLedger.totalIncome,
+                                    totalExpenses: dailyLedger.totalExpenses,
+                                    netBalance: dailyLedger.netBalance,
+                                    transactionCount: dailyLedger.transactions.length,
+                                } as any;
+                            }
+                        }
+                    }
+                    const newTotalIncome = (monthlyLedger.dailySummaries || []).reduce((s: number, d: any) => s + (d.totalIncome || 0), 0);
+                    const newTotalExpenses = (monthlyLedger.dailySummaries || []).reduce((s: number, d: any) => s + (d.totalExpenses || 0), 0);
+                    monthlyLedger.totalIncome = Math.max(0, newTotalIncome);
+                    monthlyLedger.totalExpenses = Math.max(0, newTotalExpenses);
+                    monthlyLedger.netBalance = monthlyLedger.totalIncome - monthlyLedger.totalExpenses;
+                    await monthlyLedger.save({ session });
+                }
+            }
+
+            // D. Handle Student & CycleEnrollment reversals
+            for (const tx of allTxsToDelete) {
+                if (tx.category === TransactionCategory.SUBSCRIPTION && tx.studentId && tx.cycleNumber !== undefined) {
+                    const enrollment = await CycleEnrollmentModel.findOne({
+                        studentId: tx.studentId,
+                        cycleNumber: tx.cycleNumber
+                    }).session(session);
+
+                    if (enrollment) {
+                        const amountToRevert = tx.paidAmount + (tx.discountAmount || 0);
+                        enrollment.totalPaid = Math.max(0, enrollment.totalPaid - amountToRevert);
+                        enrollment.remainingAmount += amountToRevert;
+
+                        if (enrollment.remainingAmount >= enrollment.cycleCharge) {
+                            enrollment.remainingAmount = enrollment.cycleCharge;
+                            enrollment.status = CycleEnrollmentStatus.UNPAID;
+                        } else if (enrollment.remainingAmount <= 0) {
+                            enrollment.remainingAmount = 0;
+                            enrollment.status = CycleEnrollmentStatus.PAID;
+                        } else {
+                            enrollment.status = CycleEnrollmentStatus.PARTIALLY_PAID;
+                        }
+                        
+                        await enrollment.save({ session });
+                    }
+                }
+
+                if (tx.remainingAmount && tx.remainingAmount > 0 && tx.studentId) {
+                    await StudentModel.findByIdAndUpdate(
+                        tx.studentId,
+                        { $inc: { totalDebt: -tx.remainingAmount } },
+                        { session }
+                    );
+                }
+
+                if (tx.category === TransactionCategory.DEBT_PAYMENT && tx.studentId) {
+                    await StudentModel.findByIdAndUpdate(
+                        tx.studentId,
+                        { $inc: { totalDebt: tx.paidAmount } },
+                        { session }
+                    );
+                }
+            }
+        });
+
+        cache.del(CacheKeys.dashboard(teacherId));
+
+        return {
+            deletedCount: allTxsToDelete.length,
+            failedCount: uniqueTxIds.length - allTxsToDelete.length,
+            total: uniqueTxIds.length,
+            results: uniqueTxIds.map(id => ({ transactionId: id, success: true })),
+        };
+    }
 }
+

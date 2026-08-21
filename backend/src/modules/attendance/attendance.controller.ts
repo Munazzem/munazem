@@ -179,6 +179,27 @@ attendanceRouter.patch(
     }
 );
 
+// ─── DELETE /attendance/session/:sessionId/student/:studentId — Delete student attendance for a session
+attendanceRouter.delete(
+    '/session/:sessionId/student/:studentId',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const user = (req as any).user;
+            const teacherId = resolveTeacherId(user);
+            const sessionId = req.params['sessionId'] as string;
+            const studentId = req.params['studentId'] as string;
+            const result = await AttendanceService.deleteStudentSessionAttendance(
+                sessionId,
+                studentId,
+                teacherId,
+                user.userId
+            );
+            return SuccessResponse({ res, data: result, message: result.message });
+        } catch (error) { next(error); }
+    }
+);
+
 // ─── PATCH /attendance/:id/exemption — Resolve absence exemption (teacher only)
 attendanceRouter.patch(
     '/:id/exemption',

@@ -1,0 +1,15 @@
+{"_e":"root:init","_t":1787152223180,"format":"v0-jsonl","version":"57.0.16"}
+{"_e":"env:mode","_t":1787152223182,"nodeEnv":"development","babelEnv":"development","mode":"development"}
+{"_e":"env:load","_t":1787152223187,"mode":"development","files":[],"env":{}}
+{"_e":"devserver:start","_t":1787152223995,"mode":"development","web":true,"baseUrl":"","asyncRoutes":false,"routerRoot":"../..\\..\\app","serverComponents":false,"serverActions":false,"serverRendering":false,"apiRoutes":false,"exporting":false}
+{"_e":"metro:config","_t":1787152224788,"serverRoot":"../..\\..","projectRoot":"../..\\..","exporting":false,"flags":{"autolinkingModuleResolution":false,"serverActions":false,"serverComponents":false,"reactCompiler":false,"optimizeGraph":false,"treeshaking":false,"logbox":false}}
+{"_e":"expo:dev-tools-plugin:load","_t":1787152229042,"plugins":[]}
+{"_e":"metro:instantiate","_t":1787152242436,"atlas":false,"workers":6,"host":"::","port":8081}
+{"_e":"metro:client_log","_t":1787152259181,"level":"error","data":["Project is incompatible with this version of Expo Go\n\nThis project requires a newer version of Expo Go.\n\nHow to fix this error:\nDownload the latest version of Expo Go from the Play Store."]}
+{"_e":"metro:client_log","_t":1787152272276,"level":"error","data":["Project is incompatible with this version of Expo Go\n\nThis project requires a newer version of Expo Go.\n\nHow to fix this error:\nDownload the latest version of Expo Go from the Play Store."]}
+{"_e":"metro:client_log","_t":1787152278416,"level":"error","data":["Project is incompatible with this version of Expo Go\n\nThis project requires a newer version of Expo Go.\n\nHow to fix this error:\nDownload the latest version of Expo Go from the Play Store."]}
+{"_e":"metro:server_log","_t":1787152329996,"level":"error","data":["An unknown error occurred while installing React Native DevTools. Details:\n\nspawn EPERM"]}
+{"_e":"metro:client_log","_t":1787152392657,"level":"error","data":["Project is incompatible with this version of Expo Go\n\nThis project requires a newer version of Expo Go.\n\nHow to fix this error:\nDownload the latest version of Expo Go from the Play Store."]}
+{"_e":"root:init","_t":1787152554757,"format":"v0-jsonl","version":"57.0.16"}
+{"_e":"env:mode","_t":1787152554759,"nodeEnv":"development","babelEnv":"development","mode":"development"}
+{"_e":"env:load","_t":1787152554764,"mode":"development","files":[],"env":{}}

@@ -222,9 +222,10 @@ export default function StudentProfilePage() {
                                 <span className="text-[11px] sm:text-xs font-semibold text-gray-500 bg-white px-2 py-0.5 rounded-full border border-gray-200 shadow-sm">
                                     {student.gradeLevel}
                                 </span>
-                                {(student.totalDebt ?? 0) > 0 && (
-                                    <Badge className="text-[10px] sm:text-xs font-bold px-2.5 py-0.5 border-0 shadow-sm bg-red-100 text-red-700">
-                                        مديونية: {student.totalDebt} ج
+                                {(report?.payments?.pastCyclesDebt ?? 0) > 0 && (
+                                    <Badge className="text-[10px] sm:text-xs font-bold px-2.5 py-0.5 border-0 shadow-sm bg-red-100 text-red-700 flex items-center gap-1">
+                                        <AlertCircle className="h-3 w-3 text-red-600" />
+                                        مديونية دورات سابقة: {report?.payments?.pastCyclesDebt} ج
                                     </Badge>
                                 )}
                             </div>
@@ -250,20 +251,6 @@ export default function StudentProfilePage() {
                             {pdfLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />}
                             طباعة التقرير
                         </Button>
-
-                        {canWrite && (student.totalDebt ?? 0) > 0 && (
-                            <Button
-                                variant="outline"
-                                className="flex-1 sm:flex-none h-9 text-xs gap-1.5 text-red-600 border-red-200 hover:bg-red-50 font-bold shadow-sm"
-                                onClick={() => {
-                                    setPayDebtAmount(String(student?.totalDebt || ''));
-                                    setPayDebtOpen(true);
-                                }}
-                            >
-                                <Receipt className="h-3.5 w-3.5" />
-                                سداد باقي المصاريف
-                            </Button>
-                        )}
 
                         {canWrite && hasActiveSub === false && (
                             <Button
@@ -332,14 +319,20 @@ export default function StudentProfilePage() {
                     {/* ── Tab 2: Attendance ── */}
                     {canWrite && (
                         <TabsContent value="attendance" className="m-0 flex-1 p-4 sm:p-6 bg-gray-50/20">
-                            <StudentAttendanceTab reportLoading={reportLoading} report={report} />
+                            <StudentAttendanceTab
+                                reportLoading={reportLoading}
+                                report={report}
+                                studentId={studentId}
+                                studentName={student?.studentName}
+                                canWrite={canWrite}
+                            />
                         </TabsContent>
                     )}
 
                     {/* ── Tab 3: Subscriptions ── */}
                     {canWrite && (
                         <TabsContent value="subscriptions" className="m-0 flex-1 p-4 sm:p-6 bg-gray-50/20">
-                            <StudentSubscriptionsTab reportLoading={reportLoading} report={report} />
+                            <StudentSubscriptionsTab reportLoading={reportLoading} report={report} studentId={studentId} canWrite={canWrite} />
                         </TabsContent>
                     )}
 

@@ -578,7 +578,7 @@ export function AddTransactionModal({
                             </div>
                             <div>
                                 <label className="text-sm font-medium text-gray-700 mb-1.5 block">
-                                    المدفوع (ج) <span className="text-gray-400 font-normal">— اختياري</span>
+                                    دفع جزء من المصاريف (ج) <span className="text-gray-400 font-normal">— اختياري</span>
                                 </label>
                                 <Input
                                     type="number"

@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchSessionById, updateSessionStatus } from '@/lib/api/sessions';
+import { fetchSessionById, updateSessionStatus, deleteSession } from '@/lib/api/sessions';
 import {
     recordAttendance,
     getSessionAttendance,
@@ -50,6 +50,7 @@ import {
     Send,
     Receipt,
     FileDown,
+    Trash2,
 } from 'lucide-react';
 import { ReportCardSkeleton } from '@/components/layout/skeletons/ReportCardSkeleton';
 import { TableSkeleton } from '@/components/layout/skeletons/TableSkeleton';
@@ -111,6 +112,7 @@ export default function SessionDetailPage() {
 
     const [searchQuery, setSearchQuery] = useState('');
     const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [editRecord, setEditRecord] = useState<IAttendanceRecord | null>(null);
     const [showWhatsApp, setShowWhatsApp] = useState(false);
     const [pdfLoading, setPdfLoading] = useState(false);
@@ -323,6 +325,34 @@ export default function SessionDetailPage() {
         },
     });
 
+    // Delete session permanently
+    const deleteMutation = useMutation({
+        mutationFn: () => deleteSession(sessionId),
+        onSuccess: () => {
+            toast.success('تم حذف الحصة وإلغاء جميع سجلاتها بنجاح');
+            // Remove deleted session queries to avoid 404 on unmount refetch
+            queryClient.removeQueries({ queryKey: QK.sessions.detail(sessionId) });
+            queryClient.removeQueries({ queryKey: QK.attendance.bySession(sessionId) });
+            queryClient.removeQueries({ queryKey: QK.attendance.snapshot(sessionId) });
+            
+            // Invalidate all related lists and reports for instant UI sync
+            queryClient.invalidateQueries({ queryKey: ['sessions'] });
+            queryClient.invalidateQueries({ queryKey: ['groups'] });
+            queryClient.invalidateQueries({ queryKey: ['group-report'] });
+            queryClient.invalidateQueries({ queryKey: ['students'] });
+            queryClient.invalidateQueries({ queryKey: ['studentReport'] });
+            queryClient.invalidateQueries({ queryKey: ['student-report'] });
+            queryClient.invalidateQueries({ queryKey: ['student_detail'] });
+            queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
+            queryClient.invalidateQueries({ queryKey: ['dailySummary'] });
+            
+            router.replace('/sessions');
+        },
+        onError: () => {
+            setShowDeleteConfirm(false);
+        },
+    });
+
     const handleQRScan = useCallback(async (scanInput: string) => {
         try {
             // First, resolve the scan input (could be a token, barcode, or old code)
@@ -424,6 +454,17 @@ export default function SessionDetailPage() {
                             >
                                 <CheckCircle2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                                 إنهاء الحصة
+                            </Button>
+                        )}
+                        {canWrite && (
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setShowDeleteConfirm(true)}
+                                className="gap-1.5 text-xs sm:text-sm text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+                            >
+                                <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                                حذف الحصة
                             </Button>
                         )}
                     </div>
@@ -753,6 +794,41 @@ export default function SessionDetailPage() {
                     }
                 />
             )}
+
+            {/* Delete Session Confirm Dialog */}
+            <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+                <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-[400px]" dir="rtl">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-red-600">
+                            <Trash2 className="h-5 w-5" />
+                            حذف الحصة نهائياً
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div className="py-2 text-sm text-gray-600">
+                        <p>هل أنت متأكد من حذف هذه الحصة نهائياً؟</p>
+                        <p className="mt-1 text-gray-500">سيتم إزالة الحصة وجميع سجلات الحضور المرتبطة بها وإعادة ضبط عداد دورة المجموعة بدون تعويض.</p>
+                    </div>
+                    <DialogFooter className="gap-2">
+                        <Button
+                            variant="outline"
+                            onClick={() => setShowDeleteConfirm(false)}
+                            disabled={deleteMutation.isPending}
+                        >
+                            إلغاء
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            onClick={() => deleteMutation.mutate()}
+                            disabled={deleteMutation.isPending}
+                        >
+                            {deleteMutation.isPending && (
+                                <Loader2 className="h-4 w-4 animate-spin ml-2" />
+                            )}
+                            تأكيد الحذف
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             {/* WhatsApp Links Dialog */}
             {showWhatsApp && (

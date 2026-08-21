@@ -39,10 +39,13 @@ export const recordExpenseSchema = z.object({
 
 export const recordNotebookSaleSchema = z.object({
   body: z.object({
-    notebookId: objectId,
-    studentId:  objectId,
-    quantity:   z.number().int().positive('الكمية يجب أن تكون أكبر من صفر').optional(),
-    date:       z.string().optional(),
+    notebookId:     objectId,
+    studentId:      objectId,
+    quantity:       z.number().int().positive('الكمية يجب أن تكون أكبر من صفر').optional(),
+    discountAmount: z.number().min(0).optional(),
+    paidAmount:     z.number().min(0).optional(),
+    description:    z.string().max(300).optional(),
+    date:           z.string().optional(),
   }),
 });
 
@@ -53,6 +56,7 @@ export const reserveNotebookSchema = z.object({
     quantity:    z.number().int().positive('الكمية يجب أن تكون أكبر من صفر').optional(),
     paidAmount:  z.number().min(0).optional(),
     description: z.string().max(300).optional(),
+    date:        z.string().optional(),
   }),
 });
 
@@ -60,6 +64,7 @@ export const deliverNotebookSchema = z.object({
   body: z.object({
     paidAmount:  z.number().min(0).optional(),
     description: z.string().max(300).optional(),
+    date:        z.string().optional(),
   }),
 });
 
@@ -97,3 +102,32 @@ export const payDebtSchema = z.object({
     idempotencyKey: z.string().max(100).optional(),
   }),
 });
+
+export const batchDeleteTransactionsSchema = z.object({
+  body: z.object({
+    transactionIds: z.array(objectId).min(1, 'يجب اختيار معاملة واحدة على الأقل'),
+  }),
+});
+
+export const payCycleDebtSchema = z.object({
+  body: z.object({
+    studentId:      objectId,
+    cycleNumber:    z.number().int().positive('رقم الدورة غير صحيح'),
+    paidAmount:     z.number().min(0, 'المبلغ لا يمكن أن يكون سالباً').optional(),
+    discountAmount: z.number().min(0, 'الخصم لا يمكن أن يكون سالباً').optional(),
+    description:    z.string().max(300).optional(),
+    date:           z.string().optional(),
+    idempotencyKey: z.string().max(100).optional(),
+  }),
+});
+
+export const payAllPastCyclesSchema = z.object({
+  body: z.object({
+    studentId:      objectId,
+    paidAmount:     z.number().min(0, 'المبلغ لا يمكن أن يكون سالباً').optional(),
+    description:    z.string().max(300).optional(),
+    date:           z.string().optional(),
+    idempotencyKey: z.string().max(100).optional(),
+  }),
+});
+

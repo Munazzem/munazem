@@ -27,3 +27,20 @@ export interface IUnpaidStudentsReport {
         groupId?:    { _id: string; name: string } | string;
     }>;
 }
+
+export interface ICycleEnrollmentInfo {
+    _id: string;
+    cycleNumber: number;
+    cycleCapacity: number;
+    pricePerSession: number;
+    fullCyclePrice: number;
+    startSession: number;
+    chargeableSessions: number;
+    cycleCharge: number;
+    totalPaid: number;
+    remainingAmount: number;
+    status: 'PAID' | 'PARTIALLY_PAID' | 'UNPAID';
+    isCurrentCycle: boolean;
+    isPastCycle: boolean;
+    createdAt?: string;
+}
