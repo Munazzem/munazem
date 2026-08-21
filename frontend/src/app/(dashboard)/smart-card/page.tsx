@@ -56,7 +56,7 @@ function StudentSummaryCard({ student }: { student: CardResolveResult['student']
             {/* Stats grid */}
             <div className="grid grid-cols-2 gap-3 p-4">
                 <Stat label="المجموعة"      value={student.groupName}                   />
-                <Stat label="الاشتراك"       value={student.hasActiveSubscription ? '✅ فعال' : '❌ منتهي'} valueClass={subColor} />
+                <Stat label="الاشتراك"       value={student.hasActiveSubscription ? '✅ مشترك' : '❌ غير مشترك'} valueClass={subColor} />
                 <Stat label="رصيد الحصص"    value={`${student.remainingSessions} حصة`}  />
                 <Stat label="المديونية"      value={`${student.totalDebt} ج.م`}          valueClass={debtColor} />
                 {student.lastAttendanceDate && (
