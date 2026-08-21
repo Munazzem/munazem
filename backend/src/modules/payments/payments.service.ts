@@ -373,7 +373,7 @@ export class PaymentsService {
             const studentUpdatePayload: any = {};
             let debtChange = 0;
 
-            const wasAlreadyPartiallyPaid = enrollment.totalPaid > 0;
+            const wasAlreadyPartiallyPaid = !enrollmentCreatedNow && enrollment.totalPaid > 0;
             if (wasAlreadyPartiallyPaid) {
                 // Paying off part or all of previously recorded remaining debt
                 debtChange = - (paidAmount + discountAmount);
