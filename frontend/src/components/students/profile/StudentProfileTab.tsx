@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { QrCode, User, Phone, Hash, TrendingUp, Check, Clock } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { AttendanceAdjustmentModal } from './AttendanceAdjustmentModal';
 import { QK } from '@/lib/query-keys';
 
 interface Props {
@@ -55,6 +56,12 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
     const [newGroupId, setNewGroupId] = useState<string>('');
     // Confirm attendance dialog state
     const [attendanceConfirm, setAttendanceConfirm] = useState<{ label: string } | null>(null);
+    // Attendance adjustment modal state
+    const [selectedSessionForAdjustment, setSelectedSessionForAdjustment] = useState<{
+        sessionId: string;
+        date: string;
+        status: string;
+    } | null>(null);
 
     useEffect(() => {
         setNewGroupId(currentGroupId);
@@ -111,10 +118,11 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
         onSuccess: () => {
             toast.success('تم تحديث عدد الحصص بنجاح');
             queryClient.invalidateQueries({ queryKey: QK.students.detail(studentId) });
+            queryClient.invalidateQueries({ queryKey: ['student-report', studentId] });
             setEditingQuota(false);
         },
         onError: (err: any) => {
-            
+            toast.error(err?.response?.data?.message || 'حدث خطأ أثناء تحديث عدد الحصص');
         },
     });
 
@@ -302,24 +310,39 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
                         ) : (
                             <div className="flex flex-wrap gap-2">
                                 {report.student.monthlySessions.map((s: { sessionId: string; date: string; status: string }, i: number) => {
-                                    const isPresent = s.status === 'PRESENT' || s.status === 'LATE';
+                                    const isPresent = s.status === 'PRESENT' || s.status === 'LATE' || s.status === 'GUEST';
+                                    const isExcused = s.status === 'EXCUSED';
                                     const dateStr = s.date
                                         ? new Date(s.date).toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' })
                                         : '—';
 
+                                    const titleText = isPresent
+                                        ? `${dateStr} — حاضر${s.status === 'GUEST' ? ' (زائر)' : ''}`
+                                        : isExcused
+                                        ? `${dateStr} — معوّض`
+                                        : `${dateStr} — غائب`;
+
                                     return (
                                         <div
                                             key={`session-${s.sessionId}-${i}`}
-                                            title={`${dateStr} — ${isPresent ? 'حاضر' : 'غائب'}`}
+                                            title={`${titleText} (انقر للتعديل أو الحذف)`}
+                                            onClick={() => canWrite && setSelectedSessionForAdjustment({
+                                                sessionId: s.sessionId,
+                                                date: s.date,
+                                                status: s.status
+                                            })}
                                             className={cn(
                                                 'flex flex-col items-center justify-center gap-0.5 px-2.5 py-2 rounded-xl border-2 min-w-[52px] transition-all select-none',
+                                                canWrite && 'cursor-pointer hover:scale-105 hover:shadow-md active:scale-95',
                                                 isPresent
-                                                    ? 'bg-green-50 border-green-400 text-green-700'
-                                                    : 'bg-red-50 border-red-200 text-red-400'
+                                                    ? 'bg-green-50 border-green-400 text-green-700 hover:bg-green-100/80'
+                                                    : isExcused
+                                                    ? 'bg-blue-50 border-blue-400 text-blue-700 hover:bg-blue-100/80'
+                                                    : 'bg-red-50 border-red-200 text-red-400 hover:bg-red-100/80'
                                             )}
                                         >
-                                            {isPresent
-                                                ? <Check className="h-3.5 w-3.5" />
+                                            {isPresent || isExcused
+                                                ? <Check className={cn("h-3.5 w-3.5", isExcused && "text-blue-600")} />
                                                 : <span className="text-[10px] font-bold">غ</span>
                                             }
                                             <span className="text-[10px] font-bold leading-none">{dateStr}</span>
@@ -343,6 +366,18 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
                 recordManualMutation.mutate();
                 setAttendanceConfirm(null);
             }}
+        />
+
+        {/* Modal for adjusting or deleting session attendance */}
+        <AttendanceAdjustmentModal
+            open={selectedSessionForAdjustment !== null}
+            onOpenChange={(open) => { if (!open) setSelectedSessionForAdjustment(null); }}
+            sessionId={selectedSessionForAdjustment?.sessionId}
+            studentId={studentId}
+            studentName={student?.studentName}
+            sessionDate={selectedSessionForAdjustment?.date}
+            currentStatus={selectedSessionForAdjustment?.status}
+            canWrite={canWrite}
         />
         </>
     );

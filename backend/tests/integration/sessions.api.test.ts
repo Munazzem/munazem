@@ -153,7 +153,7 @@ describe('DELETE /sessions/:id', () => {
             .set('Authorization', bearerHeader(makeTeacherToken()));
 
         expect(res.status).toBe(200);
-        expect(res.body.message).toContain('بدون تعويض');
+        expect(res.body.message).toContain('تم حذف الحصة');
     });
 });
 

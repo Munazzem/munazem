@@ -65,6 +65,10 @@ export class GroupCardsPdfService {
                         
                         <div class="details-grid">
                             <div class="detail-item">
+                                <span class="label">كود الطالب</span>
+                                <span class="value" dir="ltr">${stu.studentCode || stu.barcode || '—'}</span>
+                            </div>
+                            <div class="detail-item">
                                 <span class="label">المرحلة</span>
                                 <span class="value">${stu.gradeLevel || ''}</span>
                             </div>
@@ -98,7 +102,7 @@ export class GroupCardsPdfService {
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>طباعة بطاقات المجموعة - ${group.name}</title>
+                <title>${group.name}</title>
                 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
                 <style>
                     @page {

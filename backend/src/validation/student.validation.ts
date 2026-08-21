@@ -31,12 +31,24 @@ export const bulkCreateStudentsSchema = z.object({
 
 export const updateStudentSchema = z.object({
   body: z.object({
-    fullName:     z.string().min(5, "يجب إدخال اسم الطالب واسم ولي الأمر معاً").optional(),
-    studentPhone: z.string().min(10, "رقم هاتف الطالب غير صحيح").optional(),
-    parentPhone:  z.string().min(10, "رقم هاتف ولي الأمر غير صحيح").optional(),
-    gradeLevel:   gradeLevelEnum.optional(),
-    groupId:      z.string().length(24, "معرف المجموعة غير صحيح").optional(),
-    barcode:      z.string().optional(),
-    isActive:     z.boolean().optional()
+    fullName:             z.string().min(5, "يجب إدخال اسم الطالب واسم ولي الأمر معاً").optional(),
+    studentPhone:         z.string().min(10, "رقم هاتف الطالب غير صحيح").optional(),
+    parentPhone:          z.string().min(10, "رقم هاتف ولي الأمر غير صحيح").optional(),
+    gradeLevel:           gradeLevelEnum.optional(),
+    groupId:              z.string().length(24, "معرف المجموعة غير صحيح").optional(),
+    barcode:              z.string().optional(),
+    isActive:             z.boolean().optional(),
+    monthlySessionsQuota: z.number().int().min(1, "عدد الحصص يجب أن يكون 1 على الأقل").optional(),
+    cycleCapacity:        z.number().int().min(1, "سعة الدورة يجب أن تكون 1 على الأقل").optional(),
+  })
+});
+
+export const checkDuplicateStudentSchema = z.object({
+  body: z.object({
+    fullName:         z.string().min(2, "الاسم مطلوب"),
+    studentPhone:     z.string().optional(),
+    parentPhone:      z.string().optional(),
+    gradeLevel:       gradeLevelEnum.optional(),
+    excludeStudentId: z.string().optional(),
   })
 });

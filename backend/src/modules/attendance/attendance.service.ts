@@ -103,6 +103,21 @@ export class AttendanceService {
                     pastAbsentRecord.notes = 'معوّض — حضر كزائر في مجموعة أخرى';
                     await pastAbsentRecord.save();
 
+                    // Synchronize AttendanceSnapshotModel: remove student from absentStudents of the past session
+                    if (pastAbsentRecord.sessionId) {
+                        const pastSnapshot = await AttendanceSnapshotModel.findOne({ sessionId: pastAbsentRecord.sessionId });
+                        if (pastSnapshot) {
+                            const originalLen = pastSnapshot.absentStudents.length;
+                            pastSnapshot.absentStudents = pastSnapshot.absentStudents.filter(
+                                s => s.studentId.toString() !== student._id.toString()
+                            );
+                            if (pastSnapshot.absentStudents.length !== originalLen) {
+                                pastSnapshot.absentCount = pastSnapshot.absentStudents.length;
+                                await pastSnapshot.save();
+                            }
+                        }
+                    }
+
                     if ((student.consecutiveAbsences || 0) > 0) {
                         await StudentModel.findByIdAndUpdate(student._id, {
                             $inc: { consecutiveAbsences: -1 }
@@ -242,6 +257,24 @@ export class AttendanceService {
                 });
 
                 await AttendanceModel.bulkWrite(updates);
+
+                // Synchronize AttendanceSnapshotModel for affected sessions
+                const sessionIdsToSync = Array.from(new Set(absentRecords.filter(r => r.sessionId).map(r => r.sessionId!.toString())));
+                const compensatedStudentIdSet = new Set(compensatedStudentIds.map(id => id.toString()));
+                for (const pastSessionId of sessionIdsToSync) {
+                    const pastSnapshot = await AttendanceSnapshotModel.findOne({ sessionId: pastSessionId });
+                    if (pastSnapshot) {
+                        const originalLen = pastSnapshot.absentStudents.length;
+                        pastSnapshot.absentStudents = pastSnapshot.absentStudents.filter(
+                            s => !compensatedStudentIdSet.has(s.studentId.toString())
+                        );
+                        if (pastSnapshot.absentStudents.length !== originalLen) {
+                            pastSnapshot.absentCount = pastSnapshot.absentStudents.length;
+                            await pastSnapshot.save();
+                        }
+                    }
+                }
+
                 if (compensatedStudentIds.length > 0) {
                     await StudentModel.updateMany(
                         { _id: { $in: compensatedStudentIds }, consecutiveAbsences: { $gt: 0 } },
@@ -392,6 +425,25 @@ export class AttendanceService {
                             isConsumed: false,
                             notes:     excuseNote,
                         });
+                    } else if (record.status === AttendanceStatus.ABSENT) {
+                        const excuseNote = isCompensated
+                            ? 'معوّض — حضر كزائر في مجموعة أخرى'
+                            : (hasSessionExcuse 
+                                ? `مُستأذن (متبقي ${student.excusedSessionsCount} حصص قبل هذه)` 
+                                : 'مُستأذن تلقائياً بناءً على تاريخ الإذن');
+
+                        attendanceRecordsToUpdate.push({
+                            updateOne: {
+                                filter: { _id: record._id },
+                                update: {
+                                    $set: {
+                                        status: AttendanceStatus.EXCUSED,
+                                        notes: excuseNote,
+                                        isConsumed: false
+                                    }
+                                }
+                            }
+                        });
                     }
 
                     if (!isCompensated && hasSessionExcuse) {
@@ -442,8 +494,9 @@ export class AttendanceService {
             }
         }
 
-        // Guest students
-        const guestRecords = attendanceRecords.filter(r => r.isGuest);
+        // Guest students (exclude any student who is already enrolled in this group to avoid intra-snapshot duplication)
+        const allStudentIdSet = new Set(allStudents.map(s => s._id.toString()));
+        const guestRecords = attendanceRecords.filter(r => r.isGuest && !allStudentIdSet.has(r.studentId.toString()));
         const guestMap = new Map<string, any>();
         if (guestRecords.length > 0) {
             const guestIds = guestRecords.map(r => r.studentId);
@@ -506,16 +559,9 @@ export class AttendanceService {
             const fullMonthPrice = (priceSnapshot instanceof Map ? priceSnapshot.get(student.gradeLevel) : priceSnapshot?.[student.gradeLevel]) || 0;
             const pricePerSession = capacity > 0 ? fullMonthPrice / capacity : 0;
             
-            // If student joined before cycle started, charge full cycle; otherwise pro-rate
-            const studentCreatedAt = (student as any).createdAt;
-            const wasRegisteredBeforeCycle = !group.cycle?.startedAt || 
-                (studentCreatedAt && new Date(studentCreatedAt) <= new Date(startedAt));
-
-            const chargeableSessions = wasRegisteredBeforeCycle 
-                ? capacity 
-                : Math.max(0, capacity - currentSessionNumber + 1);
-
-            const cycleCharge = Math.round(chargeableSessions * pricePerSession);
+            // Fixed full cycle price for all students - no automatic prorating
+            const chargeableSessions = capacity;
+            const cycleCharge = fullMonthPrice;
 
             return {
                 updateOne: {
@@ -533,7 +579,7 @@ export class AttendanceService {
                             cycleCapacity: capacity,
                             pricePerSession,
                             fullCyclePrice: fullMonthPrice,
-                            startSession: wasRegisteredBeforeCycle ? 1 : currentSessionNumber,
+                            startSession: 1,
                             chargeableSessions,
                             cycleCharge,
                             totalPaid: 0,
@@ -567,28 +613,22 @@ export class AttendanceService {
             }
 
             if (enrollmentOps.length > 0) {
-                const bulkResult = await CycleEnrollmentModel.bulkWrite(enrollmentOps, { session: dbSession });
-                
-                // If any enrollments were created (upserted), increment the student's totalDebt by the cycleCharge
-                if (bulkResult.upsertedCount > 0 && bulkResult.upsertedIds) {
-                    const studentDebtOps: any[] = [];
-                    // upsertedIds is an object { [index]: _id }
-                    for (const [indexStr, _id] of Object.entries(bulkResult.upsertedIds)) {
-                        const index = parseInt(indexStr, 10);
-                        const charge = enrollmentOps[index]?.updateOne?.update?.$setOnInsert?.cycleCharge || 0;
-                        const studentId = enrollmentOps[index]?.updateOne?.update?.$setOnInsert?.studentId;
-                        if (charge > 0 && studentId) {
-                            studentDebtOps.push({
-                                updateOne: {
-                                    filter: { _id: studentId },
-                                    update: { $inc: { totalDebt: charge } }
-                                }
-                            });
+                await CycleEnrollmentModel.bulkWrite(enrollmentOps, { session: dbSession });
+            }
+
+            if (cycleRolledOver || (!group.cycle?.startedAt && currentSessionNumber === 1)) {
+                const studentDebtUpdates = activeStudents.map(student => {
+                    // @ts-ignore
+                    const fullMonthPrice = (priceSnapshot instanceof Map ? priceSnapshot.get(student.gradeLevel) : priceSnapshot?.[student.gradeLevel]) || 0;
+                    return {
+                        updateOne: {
+                            filter: { _id: student._id },
+                            update: { $inc: { totalDebt: fullMonthPrice } }
                         }
-                    }
-                    if (studentDebtOps.length > 0) {
-                        await StudentModel.bulkWrite(studentDebtOps, { session: dbSession });
-                    }
+                    };
+                });
+                if (studentDebtUpdates.length > 0) {
+                    await StudentModel.bulkWrite(studentDebtUpdates, { session: dbSession });
                 }
             }
 
@@ -901,6 +941,70 @@ export class AttendanceService {
         await cache.invalidate(CacheKeys.teacherAll(teacherId));
 
         return { success: true, message: 'تم تصحيح حالة الحضور بنجاح', record };
+    }
+
+    // ─── Delete attendance for a student from a specific session ───────────────
+    static async deleteStudentSessionAttendance(
+        sessionId: string,
+        studentId: string,
+        teacherId: string,
+        deletedBy: string
+    ) {
+        const session = await SessionModel.findOne({ _id: sessionId, teacherId }).lean();
+        if (!session) throw NotFoundException({ message: 'الحصة غير موجودة' });
+
+        const student = await StudentModel.findOne({ _id: studentId, teacherId }).lean();
+        if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
+
+        const record = await AttendanceModel.findOne({ sessionId, studentId });
+        const oldStatus = record ? record.status : null;
+
+        if (record) {
+            await AttendanceModel.deleteOne({ _id: record._id });
+        }
+
+        // Update AttendanceSnapshotModel atomically
+        const snapshot = await AttendanceSnapshotModel.findOne({ sessionId });
+        if (snapshot) {
+            snapshot.presentStudents = snapshot.presentStudents.filter(
+                s => s.studentId.toString() !== student._id.toString()
+            );
+            snapshot.absentStudents = snapshot.absentStudents.filter(
+                s => s.studentId.toString() !== student._id.toString()
+            );
+            if (snapshot.guestStudents) {
+                snapshot.guestStudents = snapshot.guestStudents.filter(
+                    s => s.studentId.toString() !== student._id.toString()
+                );
+            }
+
+            snapshot.presentCount = snapshot.presentStudents.length;
+            snapshot.absentCount = snapshot.absentStudents.length;
+            await snapshot.save();
+        }
+
+        // Adjust consecutiveAbsences on StudentModel if the deleted record was ABSENT
+        if (oldStatus === AttendanceStatus.ABSENT) {
+            await StudentModel.findByIdAndUpdate(student._id, {
+                $set: { consecutiveAbsences: Math.max(0, (student.consecutiveAbsences || 0) - 1) }
+            });
+        }
+
+        trackEvent('attendance_deleted', {
+            tenantId: teacherId,
+            userId: deletedBy,
+            targetId: sessionId,
+            meta: {
+                studentId: student._id.toString(),
+                studentName: student.studentName,
+                sessionId,
+                oldStatus
+            }
+        });
+
+        await cache.invalidate(CacheKeys.teacherAll(teacherId));
+
+        return { success: true, message: 'تم حذف حضور الطالب من الحصة بنجاح' };
     }
 
     // ─── Get all snapshots for a group (attendance history) ──────────

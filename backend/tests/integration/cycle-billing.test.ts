@@ -2,10 +2,12 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import mongoose from 'mongoose';
 import { PaymentsService } from '../../src/modules/payments/payments.service.js';
 import { AttendanceService } from '../../src/modules/attendance/attendance.service.js';
+import { ReportsService } from '../../src/modules/reports/reports.service.js';
 import { StudentModel } from '../../src/database/models/student.model.js';
 import { GroupModel } from '../../src/database/models/group.model.js';
 import { SessionModel } from '../../src/database/models/session.model.js';
 import { AttendanceModel } from '../../src/database/models/attendance.model.js';
+import { AttendanceSnapshotModel } from '../../src/database/models/attendance-snapshot.model.js';
 import { PriceSettingsModel } from '../../src/database/models/price-settings.model.js';
 import { CycleEnrollmentModel } from '../../src/database/models/cycle-enrollment.model.js';
 import { seedTeacher, seedGroup, seedStudent, seedSession, seedAttendance } from '../helpers/seed.helper.js';
@@ -233,9 +235,23 @@ describe('Cycle-Based Billing Integration', () => {
         expect(primaryAttendance?.status).toBe(AttendanceStatus.EXCUSED);
         expect(primaryAttendance?.notes).toContain('معوّض');
 
-        // 4. Consecutive absences was decremented back to 0
+        // 4. Check that AttendanceSnapshotModel of primary session was synchronized (student removed from absentStudents)
+        const primarySnapshot = await AttendanceSnapshotModel.findOne({ sessionId: primarySession._id }).lean();
+        const isInAbsent = primarySnapshot?.absentStudents?.some(a => a.studentId.toString() === student._id.toString());
+        expect(isInAbsent).toBe(false);
+
+        // 5. Consecutive absences was decremented back to 0
         studentDoc = await StudentModel.findById(student._id).lean();
         expect(studentDoc?.consecutiveAbsences).toBe(0);
+
+        // 6. Complete the other session and verify student report counts exactly 1 session
+        await AttendanceService.completeSession(otherSession._id.toString(), teacher._id.toString());
+        const report = await ReportsService.getStudentReport(student._id.toString(), teacher._id.toString());
+        expect(report.attendance.presentCount).toBe(1);
+        expect(report.attendance.absentCount).toBe(0);
+        expect(report.attendance.totalSessions).toBe(1);
+        expect(report.attendance.history.length).toBe(1);
+        expect(report.attendance.history[0].status).toBe('GUEST');
     });
 
     it('correctly calculates pro-rata for new student joining after lesson 3 (chargeable = 5, starts at 4)', async () => {

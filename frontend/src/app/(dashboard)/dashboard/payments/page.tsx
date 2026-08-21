@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getDailyLedger, getMonthlyLedger, deleteTransaction } from '@/lib/api/payments';
+import { getDailyLedger, getMonthlyLedger, deleteTransaction, deleteBatchTransactions } from '@/lib/api/payments';
 import { fetchMonthlyReportHtml } from '@/lib/api/reports';
 import { printHtmlContent } from '@/lib/utils/print';
 import { toast } from 'sonner';
@@ -95,6 +95,10 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
     const [filter, setFilter] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
     const queryClient = useQueryClient();
 
+    // Batch delete selection state
+    const [selectedTxIds, setSelectedTxIds] = useState<Set<string>>(new Set());
+    const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
+
     // Edit modal state
     type EditInitialData = {
         mode: 'subscription' | 'notebook' | 'expense';
@@ -108,7 +112,7 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
     const [editTxId, setEditTxId] = useState<string | null>(null);
     const [editInitialData, setEditInitialData] = useState<EditInitialData | undefined>(undefined);
 
-    // Delete state
+    // Single delete state
     const [deleteTxId, setDeleteTxId] = useState<string | null>(null);
     const [deleteTxLabel, setDeleteTxLabel] = useState<string>('');
 
@@ -132,10 +136,50 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
         onError: () => { setDeleteTxId(null); },
     });
 
+    const batchDeleteMutation = useMutation({
+        mutationFn: (txIds: string[]) => deleteBatchTransactions(txIds),
+        onSuccess: (data) => {
+            toast.success(`تم مسح ${data.deletedCount} معاملة بنجاح وعكس أثرها على السجلات`);
+            queryClient.invalidateQueries({ queryKey: QK.payments.dailyLedgerBase });
+            queryClient.invalidateQueries({ queryKey: QK.payments.monthlyLedgerBase });
+            queryClient.invalidateQueries({ queryKey: QK.dashboard.summary });
+            queryClient.invalidateQueries({ queryKey: QK.students.all });
+            queryClient.invalidateQueries({ queryKey: QK.groups.all });
+            queryClient.invalidateQueries({ queryKey: QK.payments.all });
+            setSelectedTxIds(new Set());
+            setShowBatchDeleteConfirm(false);
+        },
+        onError: () => {
+            setShowBatchDeleteConfirm(false);
+        },
+    });
+
     const txs = (ledger?.transactions ?? []).filter(tx => {
         if (filter === 'ALL') return true;
         return tx.type === filter;
     });
+
+    const selectableTxs = txs.filter(tx => Boolean((tx as any).transactionId));
+
+    const toggleSelect = (txId: string) => {
+        setSelectedTxIds(prev => {
+            const next = new Set(prev);
+            if (next.has(txId)) next.delete(txId);
+            else next.add(txId);
+            return next;
+        });
+    };
+
+    const allSelectableSelected = selectableTxs.length > 0 && selectedTxIds.size === selectableTxs.length;
+
+    const toggleSelectAll = () => {
+        if (allSelectableSelected) {
+            setSelectedTxIds(new Set());
+        } else {
+            const allIds = selectableTxs.map(t => (t as any).transactionId as string);
+            setSelectedTxIds(new Set(allIds));
+        }
+    };
 
     const formatTime = (timeStr: string) =>
         new Date(timeStr).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
@@ -193,6 +237,7 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                             const d = new Date(date);
                             d.setDate(d.getDate() - 1);
                             setDate(d.toISOString().split('T')[0]!);
+                            setSelectedTxIds(new Set());
                         }}
                     >
                         <ChevronRight className="h-4 w-4" />
@@ -200,7 +245,10 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                     <Input
                         type="date"
                         value={date}
-                        onChange={(e) => setDate(e.target.value)}
+                        onChange={(e) => {
+                            setDate(e.target.value);
+                            setSelectedTxIds(new Set());
+                        }}
                         className="h-10 flex-1 sm:w-44 text-sm rounded-xl bg-white border-gray-100"
                     />
                     <Button
@@ -209,6 +257,7 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                             const d = new Date(date);
                             d.setDate(d.getDate() + 1);
                             setDate(d.toISOString().split('T')[0]!);
+                            setSelectedTxIds(new Set());
                         }}
                     >
                         <ChevronLeft className="h-4 w-4" />
@@ -238,6 +287,36 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                 />
             )}
 
+            {/* Batch Selection Action Bar */}
+            {isTeacher && selectedTxIds.size > 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
+                    <div className="flex items-center gap-2">
+                        <span className="h-2.5 w-2.5 rounded-full bg-red-600 animate-pulse" />
+                        <p className="text-sm font-bold text-red-900">
+                            تم تحديد <span className="underline decoration-2">{selectedTxIds.size}</span> معاملة مالية
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setSelectedTxIds(new Set())}
+                            className="text-xs text-gray-600 hover:text-gray-900"
+                        >
+                            إلغاء التحديد
+                        </Button>
+                        <Button
+                            size="sm"
+                            onClick={() => setShowBatchDeleteConfirm(true)}
+                            className="bg-red-600 hover:bg-red-700 text-white gap-1.5 text-xs font-bold shadow-sm"
+                        >
+                            <Trash2 className="h-4 w-4" />
+                            مسح المعاملات المحددة ({selectedTxIds.size})
+                        </Button>
+                    </div>
+                </div>
+            )}
+
             {/* Transactions Section */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                 <div className="p-4 sm:p-5 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -260,7 +339,10 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                         ].map((t) => (
                             <button
                                 key={t.id}
-                                onClick={() => setFilter(t.id as any)}
+                                onClick={() => {
+                                    setFilter(t.id as any);
+                                    setSelectedTxIds(new Set());
+                                }}
                                 className={cn(
                                     'px-4 py-1.5 text-xs font-bold rounded-lg transition-all flex-1 sm:flex-none whitespace-nowrap',
                                     filter === t.id
@@ -289,57 +371,73 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                     <>
                         {/* Mobile Cards */}
                         <div className="sm:hidden divide-y divide-gray-50">
-                            {txs.map((tx, i) => (
-                                <div key={i} className="px-5 py-4 hover:bg-gray-50/30 transition-colors">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <span className={cn(
-                                            'inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-bold border uppercase tracking-wider',
-                                            tx.type === 'INCOME'
-                                                ? 'bg-green-50 text-green-700 border-green-100'
-                                                : 'bg-red-50 text-red-600 border-red-100'
-                                        )}>
-                                            {tx.type === 'INCOME' ? '↑ دخل' : '↓ مصروف'}
-                                        </span>
-                                        <div className="flex items-center gap-2">
-                                            {isTeacher && (
-                                                <div className="flex items-center gap-1">
-                                                    <button
-                                                        type="button"
-                                                        title="تعديل المعاملة"
-                                                        onClick={() => openEditModal(tx)}
-                                                        className="p-1 rounded-lg text-gray-400 hover:text-primary hover:bg-primary/5 transition-colors"
-                                                    >
-                                                        <Pencil className="h-3.5 w-3.5" />
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        title="مسح المعاملة"
-                                                        onClick={() => openDeleteConfirm(tx)}
-                                                        className="p-1 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                                                    >
-                                                        <Trash2 className="h-3.5 w-3.5" />
-                                                    </button>
-                                                </div>
-                                            )}
-                                            <span className="font-black text-gray-900">
-                                                {tx.paidAmount.toLocaleString('ar-EG')} ج
-                                            </span>
+                            {txs.map((tx, i) => {
+                                const txId = (tx as any).transactionId;
+                                const isSelected = txId && selectedTxIds.has(txId);
+                                return (
+                                    <div key={i} className={cn("px-5 py-4 transition-colors", isSelected ? "bg-red-50/50" : "hover:bg-gray-50/30")}>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div className="flex items-center gap-2">
+                                                {isTeacher && txId && (
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={isSelected}
+                                                        onChange={() => toggleSelect(txId)}
+                                                        className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4"
+                                                    />
+                                                )}
+                                                <span className={cn(
+                                                    'inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-bold border uppercase tracking-wider',
+                                                    tx.type === 'INCOME'
+                                                        ? 'bg-green-50 text-green-700 border-green-100'
+                                                        : 'bg-red-50 text-red-600 border-red-100'
+                                                )}>
+                                                    {tx.type === 'INCOME' ? '↑ دخل' : '↓ مصروف'}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                {isTeacher && (
+                                                    <div className="flex items-center gap-1">
+                                                        <button
+                                                            type="button"
+                                                            title="تعديل المعاملة"
+                                                            onClick={() => openEditModal(tx)}
+                                                            className="p-1 rounded-lg text-gray-400 hover:text-primary hover:bg-primary/5 transition-colors"
+                                                        >
+                                                            <Pencil className="h-3.5 w-3.5" />
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            title="مسح المعاملة"
+                                                            onClick={() => openDeleteConfirm(tx)}
+                                                            className="p-1 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                                                        >
+                                                            <Trash2 className="h-3.5 w-3.5" />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                                <span className="font-black text-gray-900">
+                                                    {tx.paidAmount.toLocaleString('ar-EG')} ج
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div className="flex justify-between items-end">
+                                            <div>
+                                                <p className="text-sm font-semibold text-gray-800">
+                                                    {CATEGORY_LABELS[tx.category as TransactionCategory] ?? tx.category}
+                                                </p>
+                                                {tx.studentName && <p className="text-xs text-primary font-medium mt-0.5">{tx.studentName}</p>}
+                                                {tx.description && (
+                                                    <p className="text-xs text-gray-600 mt-1 font-medium bg-gray-50 px-2 py-0.5 rounded-md border border-gray-200/60 inline-block leading-relaxed">
+                                                        {tx.description}
+                                                    </p>
+                                                )}
+                                            </div>
+                                            <p className="text-[10px] text-gray-400 font-medium">{formatTime(tx.time)}</p>
                                         </div>
                                     </div>
-                                    <div className="flex justify-between items-end">
-                                        <div>
-                                            <p className="text-sm font-semibold text-gray-800">
-                                                {CATEGORY_LABELS[tx.category as TransactionCategory] ?? tx.category}
-                                            </p>
-                                            {tx.studentName && <p className="text-xs text-primary font-medium mt-0.5">{tx.studentName}</p>}
-                                            {tx.description && (
-                                                <p className="text-xs text-gray-400 mt-1 italic leading-relaxed">"{tx.description}"</p>
-                                            )}
-                                        </div>
-                                        <p className="text-[10px] text-gray-400 font-medium">{formatTime(tx.time)}</p>
-                                    </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
 
                         {/* Desktop Table */}
@@ -347,6 +445,17 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                             <table className="w-full">
                                 <thead>
                                     <tr className="border-b border-gray-50 bg-gray-50/30">
+                                        {isTeacher && (
+                                            <th className="px-4 py-4 text-center w-10">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={allSelectableSelected}
+                                                    onChange={toggleSelectAll}
+                                                    title="تحديد الكل"
+                                                    className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4 cursor-pointer"
+                                                />
+                                            </th>
+                                        )}
                                         <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">النوع</th>
                                         <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">الفئة / الملاحظات</th>
                                         <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">الطالب</th>
@@ -358,61 +467,77 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-50">
-                                    {txs.map((tx, i) => (
-                                        <tr key={i} className="group hover:bg-gray-50/50 transition-colors">
-                                            <td className="px-6 py-4">
-                                                <span className={cn(
-                                                    'inline-flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-full font-bold border uppercase',
-                                                    tx.type === 'INCOME'
-                                                        ? 'bg-green-50 text-green-700 border-green-100'
-                                                        : 'bg-red-50 text-red-600 border-red-100'
-                                                )}>
-                                                    {tx.type === 'INCOME' ? '↑ دخل' : '↓ مصروف'}
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                <p className="text-sm font-bold text-gray-800">
-                                                    {CATEGORY_LABELS[tx.category as TransactionCategory] ?? tx.category}
-                                                </p>
-                                                {tx.description && (
-                                                    <p className="text-xs text-gray-400 mt-1 italic line-clamp-1 group-hover:line-clamp-none transition-all">
-                                                        {tx.description}
-                                                    </p>
+                                    {txs.map((tx, i) => {
+                                        const txId = (tx as any).transactionId;
+                                        const isSelected = txId && selectedTxIds.has(txId);
+                                        return (
+                                            <tr key={i} className={cn("group transition-colors", isSelected ? "bg-red-50/40" : "hover:bg-gray-50/50")}>
+                                                {isTeacher && (
+                                                    <td className="px-4 py-4 text-center">
+                                                        {txId ? (
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={isSelected}
+                                                                onChange={() => toggleSelect(txId)}
+                                                                className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4 cursor-pointer"
+                                                            />
+                                                        ) : null}
+                                                    </td>
                                                 )}
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                <span className="text-sm font-medium text-gray-600">{tx.studentName ?? '—'}</span>
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                <span className="text-base font-black text-gray-900">
-                                                    {tx.paidAmount.toLocaleString('ar-EG')} <span className="text-[10px] font-normal text-gray-400">ج</span>
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-4 text-gray-400 text-xs font-medium">{formatTime(tx.time)}</td>
-                                            {isTeacher && (
                                                 <td className="px-6 py-4">
-                                                    <div className="flex items-center gap-1">
-                                                        <button
-                                                            type="button"
-                                                            title="تعديل المعاملة"
-                                                            onClick={() => openEditModal(tx)}
-                                                            className="p-1.5 rounded-lg text-gray-400 hover:text-primary hover:bg-primary/5 transition-colors"
-                                                        >
-                                                            <Pencil className="h-4 w-4" />
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            title="مسح المعاملة"
-                                                            onClick={() => openDeleteConfirm(tx)}
-                                                            className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                                                        >
-                                                            <Trash2 className="h-4 w-4" />
-                                                        </button>
-                                                    </div>
+                                                    <span className={cn(
+                                                        'inline-flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-full font-bold border uppercase',
+                                                        tx.type === 'INCOME'
+                                                            ? 'bg-green-50 text-green-700 border-green-100'
+                                                            : 'bg-red-50 text-red-600 border-red-100'
+                                                    )}>
+                                                        {tx.type === 'INCOME' ? '↑ دخل' : '↓ مصروف'}
+                                                    </span>
                                                 </td>
-                                            )}
-                                        </tr>
-                                    ))}
+                                                <td className="px-6 py-4">
+                                                    <p className="text-sm font-bold text-gray-800">
+                                                        {CATEGORY_LABELS[tx.category as TransactionCategory] ?? tx.category}
+                                                    </p>
+                                                    {tx.description && (
+                                                        <p className="text-xs text-gray-600 mt-1 font-medium bg-gray-50 px-2 py-0.5 rounded-md border border-gray-200/60 inline-block max-w-[280px] truncate group-hover:max-w-none group-hover:whitespace-normal transition-all">
+                                                            {tx.description}
+                                                        </p>
+                                                    )}
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <span className="text-sm font-medium text-gray-600">{tx.studentName ?? '—'}</span>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <span className="text-base font-black text-gray-900">
+                                                        {tx.paidAmount.toLocaleString('ar-EG')} <span className="text-[10px] font-normal text-gray-400">ج</span>
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 text-gray-400 text-xs font-medium">{formatTime(tx.time)}</td>
+                                                {isTeacher && (
+                                                    <td className="px-6 py-4">
+                                                        <div className="flex items-center gap-1">
+                                                            <button
+                                                                type="button"
+                                                                title="تعديل المعاملة"
+                                                                onClick={() => openEditModal(tx)}
+                                                                className="p-1.5 rounded-lg text-gray-400 hover:text-primary hover:bg-primary/5 transition-colors"
+                                                            >
+                                                                <Pencil className="h-4 w-4" />
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                title="مسح المعاملة"
+                                                                onClick={() => openDeleteConfirm(tx)}
+                                                                className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                                                            >
+                                                                <Trash2 className="h-4 w-4" />
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                )}
+                                            </tr>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
@@ -420,15 +545,32 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                 )}
             </div>
 
-            {/* Delete Confirm Dialog — Teacher only */}
+            {/* Single Delete Confirm Dialog — Teacher only */}
             <ConfirmDialog
                 open={!!deleteTxId}
                 onOpenChange={(v) => { if (!v) setDeleteTxId(null); }}
                 title="مسح المعاملة المالية"
                 description={`هل أنت متأكد من مسح هذه المعاملة؟\n${deleteTxLabel}\n\nسيتم عكس أثرها على السجلات المالية. لا يمكن التراجع.`}
-                confirmLabel={deleteMutation.isPending ? 'جاري المسح...' : 'نعم، مسح المعاملة'}
+                confirmLabel="نعم، مسح المعاملة"
                 variant="danger"
+                isLoading={deleteMutation.isPending}
                 onConfirm={() => { if (deleteTxId) deleteMutation.mutate(deleteTxId); }}
+            />
+
+            {/* Batch Delete Confirm Dialog — Teacher only */}
+            <ConfirmDialog
+                open={showBatchDeleteConfirm}
+                onOpenChange={(v) => { if (!v) setShowBatchDeleteConfirm(false); }}
+                title={`مسح ${selectedTxIds.size} معاملة مالية`}
+                description={`هل أنت متأكد من مسح ${selectedTxIds.size} معاملة محددة دفعة واحدة؟\n\nسيتم عكس أثر جميع المعاملات على السجلات المالية وإلغاء القيود المرتبطة بها.`}
+                confirmLabel={`نعم، مسح (${selectedTxIds.size}) معاملة`}
+                variant="danger"
+                isLoading={batchDeleteMutation.isPending}
+                onConfirm={() => {
+                    if (selectedTxIds.size > 0) {
+                        batchDeleteMutation.mutate(Array.from(selectedTxIds));
+                    }
+                }}
             />
 
         </div>

@@ -17,6 +17,10 @@ function safeSerialize(value: unknown): unknown {
 }
 
 function log(level: LogLevel, message: string, meta?: LogMeta) {
+    if (process.env['NODE_ENV'] === 'test' && !process.env['TEST_VERBOSE_LOGS']) {
+        return;
+    }
+
     const payload: Record<string, unknown> = {
         level,
         message,

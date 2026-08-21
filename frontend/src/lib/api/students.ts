@@ -26,6 +26,7 @@ export const fetchStudents = async (params: {
     search?: string;
     hasDebt?: boolean;
     hasNoActiveSubscription?: boolean;
+    hasPastCycleDebt?: boolean;
     isDroppedOut?: boolean;
 }): Promise<PaginatedStudentsResponse> => {
     // Construct query string, ignoring undefined/empty values
@@ -52,6 +53,41 @@ export const fetchStudents = async (params: {
  */
 export const fetchStudentById = async (id: string): Promise<StudentWithGroup> => {
     const res = await apiClient.get(`/students/${id}`);
+    return (res as any).data;
+};
+
+export interface DuplicateCheckResult {
+    isDuplicate: boolean;
+    isSibling?: boolean;
+    reason?: 'STUDENT_PHONE' | 'NAME_AND_PARENT_PHONE' | 'NAME_AND_GRADE';
+    message?: string;
+    existingStudent?: {
+        _id: string;
+        studentName: string;
+        studentCode: string;
+        groupName: string;
+        gradeLevel: string;
+    };
+    siblingStudent?: {
+        _id: string;
+        studentName: string;
+        studentCode: string;
+        groupName: string;
+        gradeLevel: string;
+    };
+}
+
+/**
+ * Check if a student is already registered or has siblings
+ */
+export const checkDuplicateStudent = async (data: {
+    fullName: string;
+    studentPhone?: string;
+    parentPhone?: string;
+    gradeLevel?: string;
+    excludeStudentId?: string;
+}): Promise<DuplicateCheckResult> => {
+    const res = await apiClient.post('/students/check-duplicate', data);
     return (res as any).data;
 };
 
@@ -91,5 +127,5 @@ export const bulkCreateStudents = async (students: BulkStudentInput[]): Promise<
  */
 export const fetchGroupCardsHtml = async (groupId: string): Promise<string> => {
     const res = await apiClient.get(`/students/group/${groupId}/cards`, { responseType: 'text' });
-    return res.data;
+    return res as unknown as string;
 };

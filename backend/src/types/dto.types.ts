@@ -19,6 +19,8 @@ export interface UpdateStudentDTO {
     groupId?: string;
     barcode?: string;
     isActive?: boolean;
+    monthlySessionsQuota?: number;
+    cycleCapacity?: number;
 }
 
 // ─── Group DTOs ────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import { GroupModel } from '../../database/models/group.model.js';
 import { StudentModel } from '../../database/models/student.model.js';
+import { CycleEnrollmentModel } from '../../database/models/cycle-enrollment.model.js';
 import { NotFoundException, BadRequestException } from '../../common/utils/response/error.responce.js';
 import type { CreateGroupDTO, UpdateGroupDTO } from '../../types/dto.types.js';
 import { UserModel } from '../../database/models/user.model.js';
@@ -110,8 +111,10 @@ export class GroupService {
     // Update group
     static async updateGroup(groupId: string, teacherId: string, data: UpdateGroupDTO) {
         const updatePayload: any = { ...data };
-        if (data.cycleCapacity !== undefined) {
-            updatePayload['cycle.capacity'] = data.cycleCapacity;
+        const newCapacity = data.cycleCapacity;
+
+        if (newCapacity !== undefined) {
+            updatePayload['cycle.capacity'] = newCapacity;
             delete updatePayload.cycleCapacity;
         }
 
@@ -122,6 +125,28 @@ export class GroupService {
         ).lean();
 
         if (!updatedGroup) throw NotFoundException({ message: 'المجموعة غير موجودة' });
+
+        // If cycleCapacity was customized, apply it to the ongoing cycle and students in this group
+        if (newCapacity !== undefined && newCapacity > 0) {
+            const currentCycleNum = (updatedGroup as any)?.cycle?.currentCycleNumber || 1;
+
+            // 1. Update students' monthly quota & cycle capacity
+            await StudentModel.updateMany(
+                { groupId: updatedGroup._id, teacherId },
+                { $set: { monthlySessionsQuota: newCapacity, cycleCapacity: newCapacity } }
+            );
+
+            // 2. Update active cycle enrollments in the ongoing cycle
+            await CycleEnrollmentModel.updateMany(
+                { groupId: updatedGroup._id, cycleNumber: currentCycleNum },
+                {
+                    $set: {
+                        cycleCapacity: newCapacity,
+                        chargeableSessions: newCapacity,
+                    }
+                }
+            );
+        }
 
         // Invalidate cache
         await cache.invalidate(`t:${teacherId}:*`);
@@ -149,13 +174,38 @@ export class GroupService {
 
     // Update cycle capacity for ALL groups of a specific grade level
     static async updateGradeCycleCapacity(teacherId: string, gradeLevel: GradeLevel, cycleCapacity: number) {
+        const groups = await GroupModel.find({ teacherId, gradeLevel }).lean();
+
+        if (groups.length === 0) {
+            throw NotFoundException({ message: 'لا توجد مجموعات لهذه المرحلة' });
+        }
+
+        const groupIds = groups.map(g => g._id);
+
+        // 1. Update all groups of this grade level
         const result = await GroupModel.updateMany(
-            { teacherId, gradeLevel },
+            { _id: { $in: groupIds } },
             { $set: { 'cycle.capacity': cycleCapacity } }
         );
 
-        if (result.matchedCount === 0) {
-            throw NotFoundException({ message: 'لا توجد مجموعات لهذه المرحلة' });
+        // 2. Update all active students in these groups
+        await StudentModel.updateMany(
+            { groupId: { $in: groupIds }, teacherId },
+            { $set: { monthlySessionsQuota: cycleCapacity, cycleCapacity: cycleCapacity } }
+        );
+
+        // 3. Update ongoing cycle enrollments for each group
+        for (const group of groups) {
+            const currentCycleNum = (group as any)?.cycle?.currentCycleNumber || 1;
+            await CycleEnrollmentModel.updateMany(
+                { groupId: group._id, cycleNumber: currentCycleNum },
+                {
+                    $set: {
+                        cycleCapacity: cycleCapacity,
+                        chargeableSessions: cycleCapacity,
+                    }
+                }
+            );
         }
 
         // Invalidate cache

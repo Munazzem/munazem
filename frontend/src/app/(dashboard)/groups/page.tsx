@@ -44,6 +44,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { fetchGroupCardsHtml } from '@/lib/api/students';
+import { printHtmlContent } from '@/lib/utils/print';
 import {
     Accordion,
     AccordionContent,
@@ -105,20 +106,17 @@ export default function GroupsPage() {
         }
     });
 
-    const handlePrintCards = async (groupId: string) => {
+    const handlePrintCards = async (groupId: string, groupName?: string) => {
         setIsPrintingCards(groupId);
         try {
             const html = await fetchGroupCardsHtml(groupId);
-            const printWindow = window.open('', '_blank');
-            if (printWindow) {
-                printWindow.document.open();
-                printWindow.document.write(html);
-                printWindow.document.close();
-            } else {
-                toast.error('يرجى السماح بالنوافذ المنبثقة (Pop-ups) للطباعة');
+            if (!html || typeof html !== 'string') {
+                toast.error('لا توجد كروت متاحة للطباعة في هذه المجموعة');
+                return;
             }
-        } catch (error) {
-            toast.error('حدث خطأ أثناء تحميل كروت المجموعة');
+            printHtmlContent(html, groupName);
+        } catch (error: any) {
+            toast.error(error?.response?.data?.message || error?.message || 'حدث خطأ أثناء تحميل كروت المجموعة');
         } finally {
             setIsPrintingCards(null);
         }
@@ -241,7 +239,7 @@ export default function GroupsPage() {
                                                                     <DropdownMenuItem className="cursor-pointer focus:text-primary" onClick={() => handleEditClick(group)}>
                                                                         <Edit className="mr-2 h-4 w-4 ml-2" /> تعديل المجموعة
                                                                     </DropdownMenuItem>
-                                                                    <DropdownMenuItem className="cursor-pointer focus:text-primary" onClick={() => handlePrintCards(group._id)}>
+                                                                    <DropdownMenuItem className="cursor-pointer focus:text-primary" onClick={() => handlePrintCards(group._id, group.name)}>
                                                                         {isPrintingCards === group._id ? (
                                                                             <Loader2 className="mr-2 h-4 w-4 ml-2 animate-spin" />
                                                                         ) : (

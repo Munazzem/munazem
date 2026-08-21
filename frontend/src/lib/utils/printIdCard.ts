@@ -55,6 +55,10 @@ export const generateIdCardsHtml = async (
                     
                     <div class="details-grid">
                         <div class="detail-item">
+                            <span class="label">كود الطالب</span>
+                            <span class="value" dir="ltr">${stu.studentCode || stu.barcode || '—'}</span>
+                        </div>
+                        <div class="detail-item">
                             <span class="label">المرحلة</span>
                             <span class="value">${stu.gradeLevel}</span>
                         </div>

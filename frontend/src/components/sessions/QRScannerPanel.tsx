@@ -47,13 +47,19 @@ export function QRScannerPanel({
                 {
                     fps: 24,
                     qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-                        const side = Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * 0.85);
-                        return { width: side, height: side };
+                        const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+                        const isPortrait = viewfinderHeight >= viewfinderWidth;
+                        const boxWidth = Math.floor(viewfinderWidth * (isPortrait ? 0.92 : 0.88));
+                        const boxHeight = Math.floor(viewfinderHeight * (isPortrait ? 0.65 : 0.80));
+                        return {
+                            width: Math.max(boxWidth, Math.floor(minEdge * 0.90)),
+                            height: Math.max(boxHeight, Math.floor(minEdge * 0.70)),
+                        };
                     },
                     videoConstraints: {
                         facingMode: 'environment',
-                        width: { min: 640, ideal: 1280 },
-                        height: { min: 480, ideal: 720 },
+                        width: { min: 640, ideal: 1920 },
+                        height: { min: 480, ideal: 1080 },
                     },
                 },
                 async (decodedText: string) => {
@@ -142,8 +148,8 @@ export function QRScannerPanel({
             {/* Camera Viewport */}
             <div
                 className={cn(
-                    'relative rounded-xl overflow-hidden bg-gray-900 transition-all',
-                    isCameraActive ? 'aspect-square sm:aspect-video max-h-[60vh]' : 'h-0'
+                    'relative rounded-2xl overflow-hidden bg-gray-950 transition-all shadow-inner',
+                    isCameraActive ? 'w-full aspect-[4/3] sm:aspect-video min-h-[300px] max-h-[75vh]' : 'h-0'
                 )}
             >
                 <div id={SCANNER_ID} ref={containerRef} className="w-full h-full [&>video]:w-full [&>video]:h-full [&>video]:object-cover" />

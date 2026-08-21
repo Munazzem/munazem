@@ -133,6 +133,11 @@ export const deleteTransaction = async (transactionId: string): Promise<{ delete
     return (res as any).data;
 };
 
+export const deleteBatchTransactions = async (transactionIds: string[]): Promise<{ deletedCount: number; failedCount: number; total: number; results: any[] }> => {
+    const res = await apiClient.post('/payments/batch-delete', { transactionIds });
+    return (res as any).data;
+};
+
 export const payDebt = async (data: {
     studentId: string;
     amount: number;
@@ -142,4 +147,27 @@ export const payDebt = async (data: {
     const res = await apiClient.post('/payments/pay-debt', data);
     return (res as any).data;
 };
+
+export const payCycleDebt = async (data: {
+    studentId: string;
+    cycleNumber: number;
+    paidAmount?: number;
+    discountAmount?: number;
+    description?: string;
+    date?: string;
+}): Promise<ITransaction> => {
+    const res = await apiClient.post('/payments/pay-cycle-debt', data);
+    return (res as any).data;
+};
+
+export const payAllPastCycles = async (data: {
+    studentId: string;
+    paidAmount?: number;
+    description?: string;
+    date?: string;
+}): Promise<{ message: string; totalPaid: number; transactions: any[] }> => {
+    const res = await apiClient.post('/payments/pay-all-past-cycles', data);
+    return (res as any).data;
+};
+
 

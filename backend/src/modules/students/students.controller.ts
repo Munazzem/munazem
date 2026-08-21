@@ -7,7 +7,7 @@ import { UnauthorizedException } from '../../common/utils/response/error.responc
 import { authenticate } from '../../middlewares/auth.middleware.js';
 import { authorizeRoles } from '../../middlewares/roles.middleware.js';
 import { validate } from '../../middlewares/validate.middleware.js';
-import { createStudentSchema, updateStudentSchema, bulkCreateStudentsSchema } from '../../validation/student.validation.js';
+import { createStudentSchema, updateStudentSchema, bulkCreateStudentsSchema, checkDuplicateStudentSchema } from '../../validation/student.validation.js';
 import { UserRole } from '../../common/enums/enum.service.js';
 
 class StudentController {
@@ -17,6 +17,17 @@ class StudentController {
         if (user.role === UserRole.teacher) return user.userId;
         if (user.role === UserRole.assistant && user.teacherId) return user.teacherId;
         throw UnauthorizedException({ message: 'طبيعة الحساب غير صالحة للقيام بهذه العملية' });
+    }
+
+    static async checkDuplicate(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const teacherId = StudentController.extractTeacherId(user);
+            const result = await StudentService.checkDuplicateStudent(teacherId, req.body);
+            return SuccessResponse({ res, data: result });
+        } catch (error) {
+            next(error);
+        }
     }
 
     static async createStudent(req: Request, res: Response, next: NextFunction) {
@@ -107,6 +118,7 @@ router.use(authenticate);
 // Teachers and Assistants have Read permissions (GET)
 // ============================================
 
+router.post('/check-duplicate', authorizeRoles(UserRole.assistant, UserRole.teacher), validate(checkDuplicateStudentSchema), StudentController.checkDuplicate);
 router.post('/', authorizeRoles(UserRole.assistant, UserRole.teacher), validate(createStudentSchema), StudentController.createStudent);
 router.post('/bulk', authorizeRoles(UserRole.assistant, UserRole.teacher), validate(bulkCreateStudentsSchema), StudentController.bulkCreateStudents);
 router.put('/:id', authorizeRoles(UserRole.assistant, UserRole.teacher), validate(updateStudentSchema), StudentController.updateStudent);
