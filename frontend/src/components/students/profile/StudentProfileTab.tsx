@@ -319,7 +319,7 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
                                     const titleText = isPresent
                                         ? `${dateStr} — حاضر${s.status === 'GUEST' ? ' (زائر)' : ''}`
                                         : isExcused
-                                        ? `${dateStr} — معوّض`
+                                        ? `${dateStr} — بعذر`
                                         : `${dateStr} — غائب`;
 
                                     return (

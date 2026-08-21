@@ -273,7 +273,8 @@ describe('Cycle-Based Billing Integration', () => {
 
         const tx = await PaymentsService.recordSubscription(teacher._id.toString(), teacher._id.toString(), {
             studentId: newStudent._id.toString(),
-            paidAmount: 500 // 5 sessions * 100 EGP
+            paidAmount: 500, // 5 sessions * 100 EGP
+            customSessionsQuota: 5
         });
 
         const enrollment = await CycleEnrollmentModel.findOne({
@@ -306,7 +307,8 @@ describe('Cycle-Based Billing Integration', () => {
 
         const tx = await PaymentsService.recordSubscription(teacher._id.toString(), teacher._id.toString(), {
             studentId: newStudent._id.toString(),
-            paidAmount: 400 // 4 sessions * 100 EGP
+            paidAmount: 400, // 4 sessions * 100 EGP
+            customSessionsQuota: 4
         });
 
         const enrollment = await CycleEnrollmentModel.findOne({
@@ -339,7 +341,8 @@ describe('Cycle-Based Billing Integration', () => {
 
         const tx = await PaymentsService.recordSubscription(teacher._id.toString(), teacher._id.toString(), {
             studentId: newStudent._id.toString(),
-            paidAmount: 100 // 1 session * 100 EGP
+            paidAmount: 100, // 1 session * 100 EGP
+            customSessionsQuota: 1
         });
 
         const enrollment = await CycleEnrollmentModel.findOne({
