@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '@/lib/store/auth.store';
-import { Users, GraduationCap, Activity, TrendingUp, Receipt, Clock, CalendarDays, UserCheck, CreditCard, Wallet, ArrowLeft, BookOpen, ClipboardList, CheckCircle2, XCircle, CalendarX, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Users, GraduationCap, Activity, TrendingUp, Receipt, Clock, CalendarDays, UserCheck, CreditCard, Wallet, ArrowLeft, BookOpen, ClipboardList, CheckCircle2, XCircle, CalendarX, AlertTriangle, ChevronDown, ChevronUp, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 import { BulkSubscriptionModal } from '@/components/payments/BulkSubscriptionModal';
 import { QuickNotebookSaleModal } from '@/components/payments/QuickNotebookSaleModal';
@@ -23,6 +23,7 @@ import { StudentsDistributionChart } from '@/components/dashboard/charts/Student
 import { ExpensesBreakdownChart } from '@/components/dashboard/charts/ExpensesBreakdownChart';
 import { DailySummary } from '@/components/dashboard/DailySummary';
 import { RecentActivity } from '@/components/dashboard/RecentActivity';
+import { cn } from '@/lib/utils';
 
 
 
@@ -33,8 +34,27 @@ export default function DashboardPage() {
     const [showBulkSub,  setShowBulkSub]  = useState(false);
     const [showNbSale,   setShowNbSale]   = useState(false);
     const [showUnpaidList, setShowUnpaidList] = useState(false);
+    const [isPrivacyMode, setIsPrivacyMode] = useState(false);
 
-    useEffect(() => { setIsMounted(true); }, []);
+    useEffect(() => {
+        setIsMounted(true);
+        try {
+            const saved = localStorage.getItem('monazem_privacy_mode');
+            if (saved === 'true') {
+                setIsPrivacyMode(true);
+            }
+        } catch {}
+    }, []);
+
+    const togglePrivacyMode = () => {
+        setIsPrivacyMode((prev) => {
+            const next = !prev;
+            try {
+                localStorage.setItem('monazem_privacy_mode', String(next));
+            } catch {}
+            return next;
+        });
+    };
 
     const { data: dashboardData, isLoading, isError } = useQuery({
         queryKey: ['dashboardSummary'],
@@ -108,27 +128,88 @@ export default function DashboardPage() {
 
     return (
         <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-500 pb-10" dir="rtl">
-            {/* Onboarding — للمدرس الجديد بدون مجموعات أو طلاب */}
-            {isTeacher && (
-                <OnboardingCard
-                    totalGroups={stats?.totalGroups ?? 0}
-                    totalStudents={stats?.totalStudents ?? 0}
-                />
-            )}
+            {/* Header with Privacy Toggle Button */}
+            <div className="flex items-center justify-between gap-3">
+                <div>
+                    <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">نظرة عامة</h1>
+                    <p className="text-sm text-gray-500 mt-0.5">حالة المنظمة التعليمية لليوم.</p>
+                </div>
 
-            {/* Header */}
-            <div>
-                <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">نظرة عامة</h1>
-                <p className="text-sm text-gray-500 mt-0.5">حالة المنظمة التعليمية لليوم.</p>
+                {/* Privacy Eye Button */}
+                <button
+                    type="button"
+                    onClick={togglePrivacyMode}
+                    title={isPrivacyMode ? "إلغاء وضع الخصوصية وإظهار المحتوى" : "تفعيل وضع الخصوصية وإخفاء المحتوى"}
+                    className={cn(
+                        "flex items-center gap-2 px-3.5 py-2 rounded-2xl text-xs sm:text-sm font-bold transition-all duration-200 cursor-pointer select-none",
+                        isPrivacyMode
+                            ? "bg-primary text-white shadow-md shadow-primary/25 hover:bg-primary/90 hover:scale-105 active:scale-95"
+                            : "bg-white border border-gray-200 text-gray-700 hover:text-gray-900 hover:bg-gray-50 shadow-2xs hover:shadow-xs hover:scale-105 active:scale-95"
+                    )}
+                >
+                    {isPrivacyMode ? (
+                        <>
+                            <EyeOff className="h-4 w-4 shrink-0" />
+                            <span>إظهار المحتوى</span>
+                        </>
+                    ) : (
+                        <>
+                            <Eye className="h-4 w-4 shrink-0 text-gray-500" />
+                            <span>وضع الخصوصية</span>
+                        </>
+                    )}
+                </button>
             </div>
 
-            {/* Assistant welcome banner */}
-            {!isTeacher && stats?.message && (
-                <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl text-primary font-medium flex items-center gap-3">
-                    <Activity size={20} className="shrink-0" />
-                    {stats.message}
-                </div>
-            )}
+            {/* Main Content Area (With Privacy Blur Support) */}
+            <div className="relative">
+                {/* Floating Privacy Unlock Shield */}
+                {isPrivacyMode && (
+                    <div className="absolute inset-0 z-20 flex flex-col items-center justify-start pt-12 sm:pt-20 pointer-events-auto">
+                        <div className="bg-white/95 backdrop-blur-xl border border-gray-200/90 p-6 sm:p-8 rounded-3xl shadow-2xl max-w-sm w-full text-center flex flex-col items-center gap-4 animate-in fade-in zoom-in-95 duration-200 mx-4">
+                            <div className="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shadow-inner">
+                                <EyeOff className="h-8 w-8" />
+                            </div>
+                            <div>
+                                <h3 className="text-base sm:text-lg font-bold text-gray-900">وضع الخصوصية مفعّل</h3>
+                                <p className="text-xs sm:text-sm text-gray-500 mt-1">
+                                    تم إخفاء أرقام وبيانات لوحة التحكم لحماية الخصوصية أمام الآخرين.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={togglePrivacyMode}
+                                className="w-full py-2.5 px-4 bg-primary hover:bg-primary/90 text-white text-xs sm:text-sm font-bold rounded-xl shadow-md shadow-primary/20 transition-all flex items-center justify-center gap-2 cursor-pointer hover:scale-[1.02] active:scale-98"
+                            >
+                                <Eye className="h-4 w-4" />
+                                <span>إظهار البيانات</span>
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Inner Content Wrapper */}
+                <div
+                    className={cn(
+                        'space-y-4 sm:space-y-6 transition-all duration-300',
+                        isPrivacyMode && 'filter blur-xl opacity-20 select-none pointer-events-none scale-[0.99]'
+                    )}
+                >
+                    {/* Onboarding — للمدرس الجديد بدون مجموعات أو طلاب */}
+                    {isTeacher && (
+                        <OnboardingCard
+                            totalGroups={stats?.totalGroups ?? 0}
+                            totalStudents={stats?.totalStudents ?? 0}
+                        />
+                    )}
+
+                    {/* Assistant welcome banner */}
+                    {!isTeacher && stats?.message && (
+                        <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl text-primary font-medium flex items-center gap-3">
+                            <Activity size={20} className="shrink-0" />
+                            {stats.message}
+                        </div>
+                    )}
 
             {/* Stat Cards — Teacher only */}
             {isTeacher && (
@@ -393,6 +474,8 @@ export default function DashboardPage() {
             {stats?.recentActivities && stats.recentActivities.length > 0 && (
                 <RecentActivity activities={stats.recentActivities} />
             )}
+                </div>
+            </div>
 
             {/* Modals */}
             <BulkSubscriptionModal open={showBulkSub} onOpenChange={setShowBulkSub} />
