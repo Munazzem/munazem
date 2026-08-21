@@ -135,9 +135,17 @@ export default function SessionsPage() {
     const deleteMutation = useMutation({
         mutationFn: (sessionId: string) => deleteSession(sessionId),
         onSuccess: () => {
-            toast.success('تم حذف الحصة بدون تعويض');
+            toast.success('تم حذف الحصة بنجاح');
             setDeleteSessionId(null);
             queryClient.invalidateQueries({ queryKey: ['sessions'] });
+            queryClient.invalidateQueries({ queryKey: ['groups'] });
+            queryClient.invalidateQueries({ queryKey: ['group-report'] });
+            queryClient.invalidateQueries({ queryKey: ['students'] });
+            queryClient.invalidateQueries({ queryKey: ['studentReport'] });
+            queryClient.invalidateQueries({ queryKey: ['student-report'] });
+            queryClient.invalidateQueries({ queryKey: ['student_detail'] });
+            queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
+            queryClient.invalidateQueries({ queryKey: ['dailySummary'] });
         },
         onError: () => {
             setDeleteSessionId(null);
@@ -393,19 +401,21 @@ export default function SessionsPage() {
                                                     </div>
                                                 </div>
                                             </button>
-                                            {/* Cancel button — only for SCHEDULED sessions */}
-                                            {canWrite && session.status === 'SCHEDULED' && (
+                                            {/* Action buttons */}
+                                            {canWrite && (
                                                 <div className="absolute top-2 left-2 flex items-center gap-1">
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); setCancelSessionId(session._id); }}
-                                                        className="flex items-center gap-1 text-[11px] text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-100 rounded-full px-2 py-0.5 transition-colors"
-                                                    >
-                                                        <CalendarX className="h-3 w-3" />
-                                                        إلغاء
-                                                    </button>
+                                                    {session.status === 'SCHEDULED' && (
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); setCancelSessionId(session._id); }}
+                                                            className="flex items-center gap-1 text-[11px] text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-100 rounded-full px-2 py-0.5 transition-colors"
+                                                        >
+                                                            <CalendarX className="h-3 w-3" />
+                                                            إلغاء
+                                                        </button>
+                                                    )}
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); setDeleteSessionId(session._id); }}
-                                                        className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-700 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-full px-2 py-0.5 transition-colors"
+                                                        className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-red-600 bg-gray-50 hover:bg-red-50 border border-gray-200 rounded-full px-2 py-0.5 transition-colors"
                                                     >
                                                         <Trash2 className="h-3 w-3" />
                                                         حذف
@@ -454,26 +464,28 @@ export default function SessionsPage() {
                                                         </td>
                                                         <td className="px-4 py-3 text-left">
                                                             <div className="flex items-center gap-2 justify-end">
-                                                                {canWrite && session.status === 'SCHEDULED' && (
+                                                                {canWrite && (
                                                                     <>
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        size="sm"
-                                                                        className="text-red-500 hover:text-red-700 hover:bg-red-50 gap-1 text-xs"
-                                                                        onClick={(e) => { e.stopPropagation(); setCancelSessionId(session._id); }}
-                                                                    >
-                                                                        <CalendarX className="h-3.5 w-3.5" />
-                                                                        إلغاء
-                                                                    </Button>
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        size="sm"
-                                                                        className="text-gray-500 hover:text-gray-700 hover:bg-gray-50 gap-1 text-xs"
-                                                                        onClick={(e) => { e.stopPropagation(); setDeleteSessionId(session._id); }}
-                                                                    >
-                                                                        <Trash2 className="h-3.5 w-3.5" />
-                                                                        حذف
-                                                                    </Button>
+                                                                        {session.status === 'SCHEDULED' && (
+                                                                            <Button
+                                                                                variant="ghost"
+                                                                                size="sm"
+                                                                                className="text-red-500 hover:text-red-700 hover:bg-red-50 gap-1 text-xs"
+                                                                                onClick={(e) => { e.stopPropagation(); setCancelSessionId(session._id); }}
+                                                                            >
+                                                                                <CalendarX className="h-3.5 w-3.5" />
+                                                                                إلغاء
+                                                                            </Button>
+                                                                        )}
+                                                                        <Button
+                                                                            variant="ghost"
+                                                                            size="sm"
+                                                                            className="text-gray-500 hover:text-red-600 hover:bg-red-50 gap-1 text-xs"
+                                                                            onClick={(e) => { e.stopPropagation(); setDeleteSessionId(session._id); }}
+                                                                        >
+                                                                            <Trash2 className="h-3.5 w-3.5" />
+                                                                            حذف
+                                                                        </Button>
                                                                     </>
                                                                 )}
                                                                 <Button

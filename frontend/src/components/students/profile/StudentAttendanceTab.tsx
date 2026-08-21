@@ -1,12 +1,44 @@
-import { Loader2, History, Check, AlertCircle, FileText } from 'lucide-react';
+'use client';
+
+import { useState } from 'react';
+import { Loader2, History, Check, X, Clock, UserCheck, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { AttendanceAdjustmentModal } from './AttendanceAdjustmentModal';
 
 interface Props {
     reportLoading: boolean;
     report: any;
+    studentId?: string;
+    studentName?: string;
+    canWrite?: boolean;
 }
 
-export function StudentAttendanceTab({ reportLoading, report }: Props) {
+const formatSessionDate = (dateStr: string) => {
+    try {
+        const d = new Date(dateStr);
+        const dayName = d.toLocaleDateString('ar-EG', { weekday: 'short' });
+        const day = d.getDate();
+        const month = d.toLocaleDateString('ar-EG', { month: 'short' });
+        const fullDate = d.toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        return { dayName, dateFormatted: `${day} ${month}`, fullDate };
+    } catch {
+        return { dayName: '—', dateFormatted: '—', fullDate: '' };
+    }
+};
+
+export function StudentAttendanceTab({
+    reportLoading,
+    report,
+    studentId,
+    studentName,
+    canWrite = true,
+}: Props) {
+    const [selectedSessionForAdjustment, setSelectedSessionForAdjustment] = useState<{
+        sessionId?: string;
+        date: string;
+        status: string;
+    } | null>(null);
+
     if (reportLoading) {
         return (
             <div className="flex flex-col items-center justify-center py-16 text-gray-400">
@@ -42,48 +74,114 @@ export function StudentAttendanceTab({ reportLoading, report }: Props) {
             </div>
             
             {report.attendance.history?.length > 0 && (
-                <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100 shadow-sm">
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-4">
+                <div className="bg-white p-4 sm:p-6 rounded-2xl border border-gray-100 shadow-sm">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-5">
                         <div className="flex items-center gap-2">
-                            <History className="h-4 w-4 text-gray-400 shrink-0" />
-                            <p className="text-sm font-bold text-gray-700">سجل آخر {report.attendance.history.length} حصة</p>
+                            <div className="p-2 rounded-xl bg-primary/10 text-primary">
+                                <History className="h-4 w-4 shrink-0" />
+                            </div>
+                            <div>
+                                <p className="text-sm font-bold text-gray-800">سجل الحضور والغياب للـ {report.attendance.history.length} حصة الأخيرة</p>
+                                <p className="text-[11px] text-gray-400 mt-0.5">مرتبة من الأحدث (يمين) إلى الأقدم (يسار) — انقر على أي حصة لتعديل حالتها أو حذفها</p>
+                            </div>
                         </div>
                     </div>
-                    <div className="flex flex-wrap gap-2 sm:gap-2.5">
+
+                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2.5 sm:gap-3">
                         {report.attendance.history.map((h: any, i: number) => {
                             const isPresent = h.status === 'PRESENT' || h.status === 'LATE';
                             const isAbsent = h.status === 'ABSENT';
                             const isExcused = h.status === 'EXCUSED';
                             const isGuest = h.status === 'GUEST';
+                            const { dayName, dateFormatted, fullDate } = formatSessionDate(h.date);
+
                             return (
                                 <div
                                     key={i}
-                                    title={`${new Date(h.date).toLocaleDateString('ar-EG', { weekday: 'short', month: 'short', day: 'numeric' })} — ${isPresent ? 'حاضر' : isExcused ? 'بعذر / معوّض' : isGuest ? 'زائر' : isAbsent ? 'غائب' : '—'}`}
+                                    title={`${fullDate} — ${isPresent ? 'حاضر' : isExcused ? 'بعذر / معوّض' : isGuest ? 'زائر' : isAbsent ? 'غائب' : '—'} (انقر للتعديل أو الحذف)`}
+                                    onClick={() => canWrite && h.sessionId && setSelectedSessionForAdjustment({
+                                        sessionId: h.sessionId,
+                                        date: h.date,
+                                        status: h.status
+                                    })}
                                     className={cn(
-                                        'w-8 h-8 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center text-xs sm:text-sm font-bold border-2 transition-all cursor-help',
-                                        isPresent ? 'bg-green-50 text-green-600 border-green-200 hover:bg-green-100' :
-                                        isAbsent  ? 'bg-red-50 text-red-500 border-red-200 hover:bg-red-100' :
-                                        isExcused ? 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100' :
-                                        isGuest   ? 'bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100' :
-                                        'bg-gray-50 text-gray-400 border-gray-200 hover:bg-gray-100'
+                                        'flex flex-col items-center justify-center p-2.5 rounded-2xl border transition-all duration-200 select-none',
+                                        canWrite && h.sessionId && 'cursor-pointer hover:scale-[1.04] hover:shadow-md active:scale-95',
+                                        isPresent ? 'bg-emerald-50/80 border-emerald-200 text-emerald-800 hover:bg-emerald-100/80' :
+                                        isAbsent  ? 'bg-red-50/80 border-red-200 text-red-800 hover:bg-red-100/80' :
+                                        isExcused ? 'bg-blue-50/80 border-blue-200 text-blue-800 hover:bg-blue-100/80' :
+                                        isGuest   ? 'bg-amber-50/80 border-amber-200 text-amber-800 hover:bg-amber-100/80' :
+                                        'bg-gray-50 border-gray-200 text-gray-700'
                                     )}
                                 >
-                                    {isPresent ? <Check className="h-5 w-5" /> : 
-                                     isAbsent ? <AlertCircle className="h-4 w-4" /> : 
-                                     isExcused ? <span className="text-[10px] font-bold">عذر</span> :
-                                     isGuest ? <span className="text-[10px] font-bold">زائر</span> : '—'}
+                                    {/* Status Badge */}
+                                    <div className="flex items-center gap-1.5 mb-1.5">
+                                        <div className={cn(
+                                            "w-5 h-5 rounded-full flex items-center justify-center shrink-0 shadow-2xs",
+                                            isPresent ? "bg-emerald-500 text-white" :
+                                            isAbsent  ? "bg-red-500 text-white" :
+                                            isExcused ? "bg-blue-500 text-white" :
+                                            isGuest   ? "bg-amber-500 text-white" :
+                                            "bg-gray-400 text-white"
+                                        )}>
+                                            {isPresent ? <Check className="h-3 w-3 stroke-[3]" /> :
+                                             isAbsent  ? <X className="h-3 w-3 stroke-[3]" /> :
+                                             isExcused ? <Clock className="h-3 w-3" /> :
+                                             isGuest   ? <UserCheck className="h-3 w-3" /> : null}
+                                        </div>
+                                        <span className="text-[11px] font-bold">
+                                            {isPresent ? 'حاضر' : isAbsent ? 'غائب' : isExcused ? 'بعذر' : isGuest ? 'زائر' : '—'}
+                                        </span>
+                                    </div>
+
+                                    {/* Divider */}
+                                    <div className={cn(
+                                        "w-full h-px mb-1.5 opacity-60",
+                                        isPresent ? "bg-emerald-200" :
+                                        isAbsent  ? "bg-red-200" :
+                                        isExcused ? "bg-blue-200" :
+                                        isGuest   ? "bg-amber-200" :
+                                        "bg-gray-200"
+                                    )} />
+
+                                    {/* Day & Date */}
+                                    <span className="text-[10px] font-semibold opacity-75 leading-none mb-0.5">{dayName}</span>
+                                    <span className="text-xs font-black tracking-tight">{dateFormatted}</span>
                                 </div>
-                            )
+                            );
                         })}
                     </div>
-                    <div className="flex items-center gap-4 mt-4 pt-4 border-t border-gray-50 flex-wrap">
-                        <span className="flex items-center gap-1.5 text-xs text-gray-500 font-medium"><div className="w-2.5 h-2.5 rounded-full bg-green-400"></div> حاضر</span>
-                        <span className="flex items-center gap-1.5 text-xs text-gray-500 font-medium"><div className="w-2.5 h-2.5 rounded-full bg-red-400"></div> غائب</span>
-                        <span className="flex items-center gap-1.5 text-xs text-gray-500 font-medium"><div className="w-2.5 h-2.5 rounded-full bg-blue-400"></div> بعذر / معوّض</span>
-                        <span className="flex items-center gap-1.5 text-xs text-gray-500 font-medium"><div className="w-2.5 h-2.5 rounded-full bg-amber-400"></div> زائر</span>
-                        <span className="flex items-center gap-1.5 text-xs text-gray-400 ml-auto mr-auto sm:mr-0">(من اليمين: الأحدث)</span>
+
+                    {/* Legend */}
+                    <div className="flex items-center gap-4 mt-5 pt-4 border-t border-gray-100 flex-wrap text-xs text-gray-600 font-semibold">
+                        <span className="flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> حاضر
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span> غائب
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span> بعذر / معوّض
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span> زائر
+                        </span>
                     </div>
                 </div>
+            )}
+
+            {/* Modal for adjusting or deleting session attendance */}
+            {studentId && (
+                <AttendanceAdjustmentModal
+                    open={selectedSessionForAdjustment !== null}
+                    onOpenChange={(open) => { if (!open) setSelectedSessionForAdjustment(null); }}
+                    sessionId={selectedSessionForAdjustment?.sessionId}
+                    studentId={studentId}
+                    studentName={studentName}
+                    sessionDate={selectedSessionForAdjustment?.date}
+                    currentStatus={selectedSessionForAdjustment?.status}
+                    canWrite={canWrite}
+                />
             )}
         </div>
     );
