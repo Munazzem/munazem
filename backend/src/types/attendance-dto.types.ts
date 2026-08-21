@@ -26,3 +26,18 @@ export interface BatchAttendanceDTO {
         notes?:    string;
     }[];
 }
+
+// Offline Outbox Sync Batch DTO
+export interface SyncAttendanceRecordDTO {
+    clientMutationId: string;
+    studentId: string;
+    status?: AttendanceStatus;
+    isGuest?: boolean;
+    scannedAt?: string;
+    notes?: string;
+}
+
+export interface SyncBatchAttendanceDTO {
+    sessionId: string;
+    records: SyncAttendanceRecordDTO[];
+}

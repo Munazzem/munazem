@@ -7,7 +7,7 @@ import { authenticate } from '../../middlewares/auth.middleware.js';
 import { authorizeRoles } from '../../middlewares/roles.middleware.js';
 import { PdfService } from '../reports/pdf.service.js';
 import { validate } from '../../middlewares/validate.middleware.js';
-import { recordAttendanceSchema, batchRecordAttendanceSchema, updateAttendanceSchema, adjustCompletedAttendanceSchema } from '../../validation/attendance.validation.js';
+import { recordAttendanceSchema, batchRecordAttendanceSchema, updateAttendanceSchema, adjustCompletedAttendanceSchema, syncBatchAttendanceSchema } from '../../validation/attendance.validation.js';
 
 const attendanceRouter = Router();
 
@@ -27,6 +27,21 @@ attendanceRouter.post(
             const teacherId = resolveTeacherId(user);
             const record = await AttendanceService.recordAttendance(user.userId, req.body, teacherId);
             return SuccessResponse({ res, data: record, message: 'تم تسجيل الحضور بنجاح', status: 201 });
+        } catch (error) { next(error); }
+    }
+);
+
+// ─── POST /attendance/batch-sync — Offline Outbox Batch Sync
+attendanceRouter.post(
+    '/batch-sync',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    validate(syncBatchAttendanceSchema),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const user = (req as any).user;
+            const teacherId = resolveTeacherId(user);
+            const result = await AttendanceService.syncBatchAttendance(user.userId, req.body, teacherId);
+            return SuccessResponse({ res, data: result, message: result.message });
         } catch (error) { next(error); }
     }
 );

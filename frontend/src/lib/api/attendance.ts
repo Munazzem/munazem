@@ -5,9 +5,18 @@ import type {
     RecordAttendanceDTO,
     AttendanceStatus,
     IWhatsAppLink,
+    SyncAttendanceRecordDTO,
 } from '@/types/session.types';
 
 export type { IWhatsAppLink };
+
+export const syncBatchAttendance = async (
+    sessionId: string,
+    records: SyncAttendanceRecordDTO[]
+): Promise<{ success: boolean; upsertedCount: number; matchedCount: number; total: number; message: string }> => {
+    const res = await apiClient.post('/attendance/batch-sync', { sessionId, records });
+    return (res as any).data;
+};
 
 export const recordAttendance = async (data: RecordAttendanceDTO): Promise<IAttendanceRecord> => {
     const res = await apiClient.post('/attendance', data);

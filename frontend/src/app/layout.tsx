@@ -7,6 +7,7 @@ import { OfflineIndicator } from "@/components/ui/offline-indicator";
 import { PWAEventListener } from "@/components/pwa/PWAEventListener";
 import { InstallPrompt } from "@/components/ui/InstallPrompt";
 import { CacheWarmer } from "@/components/pwa/CacheWarmer";
+import { OfflineSyncWorker } from "@/components/pwa/OfflineSyncWorker";
 
 const cairo = Cairo({
   variable: "--font-cairo",
@@ -53,6 +54,7 @@ export default function RootLayout({
             {children}
             <PWAEventListener />
             <CacheWarmer />
+            <OfflineSyncWorker />
             <Toaster position="top-center" richColors theme="light" />
             <OfflineIndicator />
             <InstallPrompt />
