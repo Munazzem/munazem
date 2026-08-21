@@ -243,14 +243,18 @@ export class PaymentsService {
                 defaultStartSession = currentSessionNumber + 1;
             }
             
-            // Respect custom quota from UI if explicitly checked/provided, otherwise full cycle price
+            // Respect custom quota from UI if explicitly checked/provided, otherwise calculate pro-rata for mid-cycle joiners
+            const defaultChargeable = (!wasRegisteredBeforeCycle && defaultStartSession > 1)
+                ? Math.max(1, capacity - defaultStartSession + 1)
+                : capacity;
+
             const chargeableSessions = data.customSessionsQuota !== undefined 
                 ? data.customSessionsQuota 
-                : capacity;
+                : defaultChargeable;
                 
             const cycleCharge = data.customSessionsQuota !== undefined && capacity > 0
                 ? Math.round(data.customSessionsQuota * pricePerSession)
-                : fullMonthPrice;
+                : ((!wasRegisteredBeforeCycle && defaultStartSession > 1) ? Math.round(chargeableSessions * pricePerSession) : fullMonthPrice);
 
             enrollment = new CycleEnrollmentModel({
                 studentId: student._id,

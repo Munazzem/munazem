@@ -616,6 +616,22 @@ export class AttendanceService {
                 await CycleEnrollmentModel.bulkWrite(enrollmentOps, { session: dbSession });
             }
 
+            if (cycleRolledOver || (!group.cycle?.startedAt && currentSessionNumber === 1)) {
+                const studentDebtUpdates = activeStudents.map(student => {
+                    // @ts-ignore
+                    const fullMonthPrice = (priceSnapshot instanceof Map ? priceSnapshot.get(student.gradeLevel) : priceSnapshot?.[student.gradeLevel]) || 0;
+                    return {
+                        updateOne: {
+                            filter: { _id: student._id },
+                            update: { $inc: { totalDebt: fullMonthPrice } }
+                        }
+                    };
+                });
+                if (studentDebtUpdates.length > 0) {
+                    await StudentModel.bulkWrite(studentDebtUpdates, { session: dbSession });
+                }
+            }
+
             // Group Cycle Update
             await GroupModel.findByIdAndUpdate(
                 group._id,
