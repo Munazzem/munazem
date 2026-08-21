@@ -305,6 +305,7 @@ export class CardsService {
             $or: [
                 { 'presentStudents.studentId': student._id },
                 { 'absentStudents.studentId':  student._id },
+                { 'guestStudents.studentId':   student._id },
             ],
         }).sort({ date: -1 }).lean() as any;
 
@@ -314,8 +315,9 @@ export class CardsService {
         if (lastSnapshot) {
             const sid = student._id.toString();
             const isPresent = lastSnapshot.presentStudents?.some((s: any) => s.studentId.toString() === sid);
+            const isGuest   = lastSnapshot.guestStudents?.some((s: any) => s.studentId.toString() === sid);
             lastAttendanceDate   = lastSnapshot.date?.toISOString() ?? null;
-            lastAttendanceStatus = isPresent ? 'PRESENT' : 'ABSENT';
+            lastAttendanceStatus = isPresent ? 'PRESENT' : isGuest ? 'GUEST' : 'ABSENT';
         }
 
         // Last payment

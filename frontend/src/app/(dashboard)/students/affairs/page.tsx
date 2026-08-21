@@ -6,7 +6,7 @@ import { fetchStudents } from '@/lib/api/students';
 import { recordSubscription, payDebt } from '@/lib/api/payments';
 import { QK } from '@/lib/query-keys';
 import { toast } from 'sonner';
-import { Loader2, AlertTriangle, Wallet, BookOpen, UserX, Receipt, CreditCard, ArrowRight } from 'lucide-react';
+import { Loader2, AlertTriangle, Wallet, BookOpen, UserX, Receipt, CreditCard, ArrowRight, Clock } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -34,6 +34,11 @@ export default function StudentAffairsPage() {
         queryFn: () => fetchStudents({ limit: 5000, hasNoActiveSubscription: true }),
     });
 
+    const { data: pastCycleDebtsData, isLoading: pastCycleDebtsLoading } = useQuery({
+        queryKey: QK.students.list({ affairs: 'past_cycle_debts' }),
+        queryFn: () => fetchStudents({ limit: 5000, hasPastCycleDebt: true }),
+    });
+
     const { data: dropoutsData, isLoading: dropoutsLoading } = useQuery({
         queryKey: QK.students.list({ affairs: 'dropouts' }),
         queryFn: () => fetchStudents({ limit: 5000, isDroppedOut: true }),
@@ -41,6 +46,7 @@ export default function StudentAffairsPage() {
 
     const debtsStudents = Array.isArray(debtsData?.data) ? debtsData.data : [];
     const lateStudents = Array.isArray(lateData?.data) ? lateData.data : [];
+    const pastCycleDebtsStudents = Array.isArray(pastCycleDebtsData?.data) ? pastCycleDebtsData.data : [];
     const dropoutsStudents = Array.isArray(dropoutsData?.data) ? dropoutsData.data : [];
 
     // ─── Grouping Helper ───
@@ -61,6 +67,7 @@ export default function StudentAffairsPage() {
 
     const debtsGrouped = useMemo(() => groupStudents(debtsStudents), [debtsStudents]);
     const lateGrouped = useMemo(() => groupStudents(lateStudents), [lateStudents]);
+    const pastCycleDebtsGrouped = useMemo(() => groupStudents(pastCycleDebtsStudents), [pastCycleDebtsStudents]);
     const dropoutsGrouped = useMemo(() => groupStudents(dropoutsStudents), [dropoutsStudents]);
 
     // ─── Quick Actions State & Mutations ───
@@ -193,6 +200,9 @@ export default function StudentAffairsPage() {
                     <TabsTrigger value="debts" className="flex-1 min-w-[120px] rounded-lg data-[state=active]:bg-primary/10 data-[state=active]:text-primary font-bold py-2.5">
                         <Wallet className="h-4 w-4 ml-2" /> المديونيات
                     </TabsTrigger>
+                    <TabsTrigger value="past_cycle_debts" className="flex-1 min-w-[120px] rounded-lg data-[state=active]:bg-amber-50 data-[state=active]:text-amber-800 font-bold py-2.5">
+                        <Clock className="h-4 w-4 ml-2 text-amber-600" /> مديونيات دورات سابقة
+                    </TabsTrigger>
                     <TabsTrigger value="late_subs" className="flex-1 min-w-[120px] rounded-lg data-[state=active]:bg-primary/10 data-[state=active]:text-primary font-bold py-2.5">
                         <BookOpen className="h-4 w-4 ml-2" /> اشتراكات متأخرة
                     </TabsTrigger>
@@ -217,6 +227,28 @@ export default function StudentAffairsPage() {
                             (student) => (
                                 <Badge className="bg-red-100 text-red-700 hover:bg-red-100 border-0 shadow-sm px-2 text-[10px]">
                                     عليه {student.totalDebt} ج
+                                </Badge>
+                            )
+                        )
+                    )}
+                </TabsContent>
+
+                {/* 2. Past Cycle Debts Tab */}
+                <TabsContent value="past_cycle_debts" className="mt-0 focus-visible:outline-none">
+                    {pastCycleDebtsLoading ? (
+                        <div className="flex justify-center p-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+                    ) : (
+                        renderGroupedList(
+                            pastCycleDebtsGrouped,
+                            'لا يوجد طلاب لديهم مديونيات من دورات سابقة.',
+                            (student) => (
+                                <Button size="sm" variant="outline" className="h-8 text-xs font-bold text-amber-800 border-amber-300 bg-amber-50/50 hover:bg-amber-100 w-full" onClick={() => router.push(`/students/${student._id}`)}>
+                                    <Receipt className="h-3.5 w-3.5 ml-1.5" /> تفاصيل وسداد الدورات
+                                </Button>
+                            ),
+                            (student) => (
+                                <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 border-0 shadow-sm px-2 text-[10px]">
+                                    دورات سابقة
                                 </Badge>
                             )
                         )

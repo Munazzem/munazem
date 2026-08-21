@@ -1,11 +1,17 @@
 import { SessionModel } from '../../database/models/session.model.js';
 import { GroupModel }   from '../../database/models/group.model.js';
 import { AttendanceModel } from '../../database/models/attendance.model.js';
-import { SessionStatus } from '../../common/enums/enum.service.js';
+import { AttendanceSnapshotModel } from '../../database/models/attendance-snapshot.model.js';
+import { StudentModel } from '../../database/models/student.model.js';
+import { CycleEnrollmentModel } from '../../database/models/cycle-enrollment.model.js';
+import { SessionStatus, AttendanceStatus } from '../../common/enums/enum.service.js';
 import { NotFoundException, BadRequestException, ConflictException } from '../../common/utils/response/error.responce.js';
 import { trackEvent } from '../../common/utils/activity.service.js';
+import { withTransaction } from '../../common/utils/transaction.util.js';
+import { cache, CacheKeys } from '../../infrastructure/cache/cache.service.js';
 import type { CreateSessionDTO } from '../../types/attendance-dto.types.js';
 import { DAY_MAP } from '../../common/utils/date.util.js';
+
 
 /**
  * Given a group schedule and a reference date, returns the next available
@@ -179,22 +185,125 @@ export class SessionService {
     }
 
     // Delete session permanently — NO replacement generated.
-    // Used for end-of-term cleanup or removing unnecessary sessions.
+    // Cleans up all attendance records, snapshots, absences, cycle counter, and cycle enrollments if completed.
     static async deleteSession(sessionId: string, teacherId: string) {
         const session = await SessionModel.findOne({ _id: sessionId, teacherId }).lean();
         if (!session) throw NotFoundException({ message: 'الحصة غير موجودة' });
 
-        if (session.status === SessionStatus.COMPLETED) {
-            throw BadRequestException({ message: 'لا يمكن حذف حصة مكتملة' });
-        }
+        await withTransaction(async (dbSession) => {
+            // 1. If completed session, handle snapshots, excused absences, consecutive absences, and cycle counter
+            if (session.status === SessionStatus.COMPLETED) {
+                const snapshot = await AttendanceSnapshotModel.findOne({ sessionId }).session(dbSession).lean();
+                
+                if (snapshot) {
+                    // Refund excused absences
+                    if (snapshot.presentStudents && snapshot.presentStudents.length > 0) {
+                        const excusedStudentIds = snapshot.presentStudents
+                            .filter(s => s.status === AttendanceStatus.EXCUSED)
+                            .map(s => s.studentId);
+                        
+                        if (excusedStudentIds.length > 0) {
+                            await StudentModel.updateMany(
+                                { _id: { $in: excusedStudentIds } },
+                                { $inc: { excusedSessionsCount: 1 } },
+                                { session: dbSession }
+                            );
+                        }
+                    }
 
-        // Delete any attendance records for this session
-        await AttendanceModel.deleteMany({ sessionId });
+                    // Decrement consecutive absences for students marked absent in this session
+                    if (snapshot.absentStudents && snapshot.absentStudents.length > 0) {
+                        const absentStudentIds = snapshot.absentStudents.map(s => s.studentId);
+                        if (absentStudentIds.length > 0) {
+                            // Find current students and decrement consecutiveAbsences safely (min 0)
+                            const students = await StudentModel.find(
+                                { _id: { $in: absentStudentIds } },
+                                { _id: 1, consecutiveAbsences: 1 }
+                            ).session(dbSession).lean();
 
-        // Delete the session document itself
-        await SessionModel.findByIdAndDelete(sessionId);
+                            const updateOps = students.map(st => ({
+                                updateOne: {
+                                    filter: { _id: st._id },
+                                    update: { $set: { consecutiveAbsences: Math.max(0, (st.consecutiveAbsences || 1) - 1) } }
+                                }
+                            }));
 
-        return { message: 'تم حذف الحصة بدون تعويض' };
+                            if (updateOps.length > 0) {
+                                await StudentModel.bulkWrite(updateOps, { session: dbSession });
+                            }
+                        }
+                    }
+                }
+
+                // 2. Revert Group Cycle if applicable
+                if (session.groupId) {
+                    const group = await GroupModel.findById(session.groupId).session(dbSession).lean();
+                    if (group?.cycle) {
+                        const cycleCapacity = group.cycle.capacity || (group.schedule?.length || 2) * 4;
+                        const currentSessionNum = group.cycle.currentSessionNumber || 0;
+                        const currentCycleNum = group.cycle.currentCycleNumber || 1;
+
+                        // Case A: This was session 1 of a rolled-over cycle (e.g. cycle 2, session 1)
+                        if (currentSessionNum <= 1 && currentCycleNum > 1) {
+                            const newCycleNum = currentCycleNum - 1;
+                            const newSessionNum = cycleCapacity;
+
+                            // Revert group cycle
+                            await GroupModel.findByIdAndUpdate(
+                                group._id,
+                                {
+                                    $set: {
+                                        'cycle.currentCycleNumber': newCycleNum,
+                                        'cycle.currentSessionNumber': newSessionNum,
+                                    }
+                                },
+                                { session: dbSession }
+                            );
+
+                            // Clean up any unpaid cycle enrollment records for the reverted cycle
+                            await CycleEnrollmentModel.deleteMany(
+                                {
+                                    groupId: group._id,
+                                    cycleNumber: currentCycleNum,
+                                    totalPaid: 0
+                                },
+                                { session: dbSession }
+                            );
+                        } 
+                        // Case B: Regular mid-cycle session decrement
+                        else if (currentSessionNum > 0) {
+                            const newSessionNum = currentSessionNum - 1;
+                            await GroupModel.findByIdAndUpdate(
+                                group._id,
+                                { $set: { 'cycle.currentSessionNumber': newSessionNum } },
+                                { session: dbSession }
+                            );
+                        }
+                    }
+                }
+            }
+
+            // 3. Delete attendance snapshots
+            await AttendanceSnapshotModel.deleteMany({ sessionId }, { session: dbSession });
+
+            // 4. Delete any attendance records for this session
+            await AttendanceModel.deleteMany({ sessionId }, { session: dbSession });
+
+            // 5. Delete the session document itself
+            await SessionModel.findByIdAndDelete(sessionId, { session: dbSession });
+        });
+
+        // 6. Invalidate dashboard and session caches
+        cache.del(CacheKeys.dashboard(teacherId));
+
+        trackEvent('session_deleted', {
+            tenantId: teacherId,
+            userId: teacherId,
+            targetId: sessionId,
+            meta: { status: session.status, groupId: session.groupId?.toString() }
+        });
+
+        return { message: 'تم حذف الحصة وإلغاء جميع سجلاتها بنجاح' };
     }
 
     // ─── Auto-generate today's sessions from group schedules ─────────

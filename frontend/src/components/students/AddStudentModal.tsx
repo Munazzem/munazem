@@ -11,8 +11,9 @@ import { fetchGroups } from '@/lib/api/groups';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { getAllowedGrades } from '@/lib/utils/grades';
 import { toast } from 'sonner';
-import { Plus, Loader2 } from 'lucide-react';
+import { Plus, Loader2, AlertTriangle, Users } from 'lucide-react';
 import { QK } from '@/lib/query-keys';
+import { checkDuplicateStudent, type DuplicateCheckResult } from '@/lib/api/students';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -90,9 +91,12 @@ export function AddStudentModal() {
 
   const handleOpenChange = (newOpen: boolean) => {
     setOpen(newOpen);
-    if (!newOpen && newCard) {
-      // Clear the search param when closing the modal so it doesn't reopen on refresh
-      router.replace('/students', { scroll: false });
+    if (!newOpen) {
+      form.reset();
+      if (newCard) {
+        // Clear the search param when closing the modal so it doesn't reopen on refresh
+        router.replace('/students', { scroll: false });
+      }
     }
   };
 
@@ -114,11 +118,28 @@ export function AddStudentModal() {
     new Set(groups.map(g => g.gradeLevel).filter(g => allowedGrades.includes(g)))
   );
   
-  // Watch the selected gradeLevel to filter the groups dropdown
+  // Watch fields for duplicate detection and group filtering
+  const watchedFullName = useWatch({ control: form.control, name: 'fullName' });
+  const watchedStudentPhone = useWatch({ control: form.control, name: 'studentPhone' });
+  const watchedParentPhone = useWatch({ control: form.control, name: 'parentPhone' });
   const selectedGradeLevel = useWatch({ control: form.control, name: 'gradeLevel' });
+
   const filteredGroups = selectedGradeLevel 
         ? groups.filter(g => g.gradeLevel === selectedGradeLevel)
         : groups;
+
+  // Real-time duplicate student check
+  const { data: duplicateResult } = useQuery<DuplicateCheckResult>({
+    queryKey: ['check-duplicate-student', watchedFullName, watchedStudentPhone, watchedParentPhone, selectedGradeLevel],
+    queryFn: () => checkDuplicateStudent({
+      fullName: watchedFullName,
+      studentPhone: watchedStudentPhone || undefined,
+      parentPhone: watchedParentPhone || undefined,
+      gradeLevel: selectedGradeLevel || undefined,
+    }),
+    enabled: !!(watchedFullName && watchedFullName.trim().length >= 3 && (watchedStudentPhone?.length === 11 || watchedParentPhone?.length === 11)),
+    staleTime: 1000 * 30,
+  });
 
   // Mutation for creating a student
   const mutation = useMutation({
@@ -129,13 +150,17 @@ export function AddStudentModal() {
       form.reset();
       handleOpenChange(false); // Close Modal on success
     },
-    onError: (error: { response?: { data?: { message?: string } } } | Error) => {
-        const err = error as { response?: { data?: { message?: string } } };
-      
+    onError: (error: any) => {
+      const message = error?.response?.data?.message || error?.message || 'حدث خطأ أثناء إضافة الطالب';
+      toast.error(message);
     },
   });
 
   const onSubmit = (values: z.infer<typeof formSchema>) => {
+    if (duplicateResult?.isDuplicate) {
+      toast.error(duplicateResult.message || 'هذا الطالب مسجل بالفعل مسبقاً');
+      return;
+    }
     mutation.mutate(values);
   };
 
@@ -264,10 +289,32 @@ export function AddStudentModal() {
                 />
             </div>
 
+            {/* Duplicate Student Alert */}
+            {duplicateResult?.isDuplicate && (
+              <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-xl text-xs flex items-start gap-2.5 shadow-sm animate-in fade-in slide-in-from-top-1 duration-200">
+                <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-bold text-red-900">تنبيه: الطالب مسجل بالفعل في المنظومة!</p>
+                  <p className="leading-relaxed text-red-800">{duplicateResult.message}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Siblings (Different name, same parent phone) -> Allowed info banner */}
+            {duplicateResult?.isSibling && !duplicateResult.isDuplicate && (
+              <div className="bg-blue-50 border border-blue-200 text-blue-800 p-3 rounded-xl text-xs flex items-start gap-2.5 shadow-sm animate-in fade-in slide-in-from-top-1 duration-200">
+                <Users className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <p className="font-bold text-blue-950">ملاحظة: رقم ولي الأمر مسجل مسبقاً (إخوة)</p>
+                  <p className="leading-relaxed text-blue-800">{duplicateResult.message}</p>
+                </div>
+              </div>
+            )}
+
             <Button 
                 type="submit" 
                 className="w-full font-bold mt-4" 
-                disabled={mutation.isPending}
+                disabled={mutation.isPending || duplicateResult?.isDuplicate}
             >
               {mutation.isPending ? (
                   <>
