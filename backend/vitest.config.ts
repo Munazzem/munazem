@@ -5,6 +5,10 @@ export default defineConfig({
         // ── Environment ──────────────────────────────────────────────────
         globals: true,          // describe, it, expect بدون imports
         environment: 'node',    // Node.js environment (مش jsdom)
+        onConsoleLog() {
+            // Suppress RPC console log streaming during worker teardown
+            return false;
+        },
 
         // ── File patterns ─────────────────────────────────────────────────
         include: ['tests/**/*.test.ts'],
