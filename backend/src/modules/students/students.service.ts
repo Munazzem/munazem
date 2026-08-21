@@ -62,95 +62,91 @@ export class StudentService {
         const studentPhone = data.studentPhone?.trim();
         const parentPhone = data.parentPhone?.trim();
 
-        // 1. Check duplicate studentPhone
-        if (studentPhone) {
-            const query: any = { teacherId, studentPhone };
-            if (data.excludeStudentId) query._id = { $ne: new Types.ObjectId(data.excludeStudentId) };
-            const existingByPhone = await StudentModel.findOne(query).populate('groupId', 'name').lean();
-            if (existingByPhone) {
-                return {
-                    isDuplicate: true,
-                    isSibling: false,
-                    reason: 'STUDENT_PHONE',
-                    message: `رقم هاتف الطالب (${studentPhone}) مسجل بالفعل مسبقاً باسم "${existingByPhone.studentName}" في مجموعة (${(existingByPhone.groupId as any)?.name || 'بدون مجموعة'})`,
-                    existingStudent: {
-                        _id: existingByPhone._id,
-                        studentName: existingByPhone.studentName,
-                        studentCode: existingByPhone.studentCode,
-                        groupName: (existingByPhone.groupId as any)?.name || 'بدون مجموعة',
-                        gradeLevel: existingByPhone.gradeLevel,
-                    }
-                };
-            }
-        }
-
-        // 2. Fetch students for this teacher to check name & parentPhone
+        // Fetch students for this teacher to check name & phone matches
         const query: any = { teacherId };
         if (data.excludeStudentId) query._id = { $ne: new Types.ObjectId(data.excludeStudentId) };
         const allStudents = await StudentModel.find(query, {
             studentName: 1,
+            studentPhone: 1,
             parentPhone: 1,
             gradeLevel: 1,
             groupId: 1,
             studentCode: 1
         }).populate('groupId', 'name').lean();
 
-        // Find students with exact/normalized name match
-        const sameNameStudent = allStudents.find(s => normalizeArabic(s.studentName) === normName);
+        // 1. Check for Duplicate: SAME NAME AND (SAME studentPhone OR SAME parentPhone)
+        const sameNameAndPhoneStudent = allStudents.find(s => {
+            const sameName = normalizeArabic(s.studentName) === normName;
+            if (!sameName) return false;
 
-        if (sameNameStudent) {
-            // A. Same name AND same parentPhone -> Duplicate
-            if (parentPhone && sameNameStudent.parentPhone === parentPhone) {
-                return {
-                    isDuplicate: true,
-                    isSibling: false,
-                    reason: 'NAME_AND_PARENT_PHONE',
-                    message: `الطالب "${sameNameStudent.studentName}" مسجل مسبقاً بنفس رقم ولي الأمر في مجموعة (${(sameNameStudent.groupId as any)?.name || 'بدون مجموعة'})`,
-                    existingStudent: {
-                        _id: sameNameStudent._id,
-                        studentName: sameNameStudent.studentName,
-                        studentCode: sameNameStudent.studentCode,
-                        groupName: (sameNameStudent.groupId as any)?.name || 'بدون مجموعة',
-                        gradeLevel: sameNameStudent.gradeLevel,
-                    }
-                };
-            }
+            const sameStudentPhone = studentPhone && (s.studentPhone === studentPhone || s.parentPhone === studentPhone);
+            const sameParentPhone = parentPhone && (s.parentPhone === parentPhone || s.studentPhone === parentPhone);
 
-            // B. Same name AND same gradeLevel -> Duplicate in same grade
-            if (data.gradeLevel && sameNameStudent.gradeLevel === data.gradeLevel) {
-                return {
-                    isDuplicate: true,
-                    isSibling: false,
-                    reason: 'NAME_AND_GRADE',
-                    message: `يوجد طالب مسجل بالفعل بنفس الاسم "${sameNameStudent.studentName}" في مرحلة (${data.gradeLevel}) بمجموعة (${(sameNameStudent.groupId as any)?.name || 'بدون مجموعة'})`,
-                    existingStudent: {
-                        _id: sameNameStudent._id,
-                        studentName: sameNameStudent.studentName,
-                        studentCode: sameNameStudent.studentCode,
-                        groupName: (sameNameStudent.groupId as any)?.name || 'بدون مجموعة',
-                        gradeLevel: sameNameStudent.gradeLevel,
-                    }
-                };
-            }
+            return sameStudentPhone || sameParentPhone;
+        });
+
+        if (sameNameAndPhoneStudent) {
+            const matchedPhone = (studentPhone && (sameNameAndPhoneStudent.studentPhone === studentPhone || sameNameAndPhoneStudent.parentPhone === studentPhone))
+                ? studentPhone
+                : (parentPhone && (sameNameAndPhoneStudent.parentPhone === parentPhone || sameNameAndPhoneStudent.studentPhone === parentPhone) ? parentPhone : '');
+
+            return {
+                isDuplicate: true,
+                isSibling: false,
+                reason: 'SAME_NAME_AND_PHONE',
+                message: `الطالب "${sameNameAndPhoneStudent.studentName}" مسجل مسبقاً بنفس رقم الهاتف (${matchedPhone}) في مجموعة (${(sameNameAndPhoneStudent.groupId as any)?.name || 'بدون مجموعة'})`,
+                existingStudent: {
+                    _id: sameNameAndPhoneStudent._id,
+                    studentName: sameNameAndPhoneStudent.studentName,
+                    studentCode: sameNameAndPhoneStudent.studentCode,
+                    groupName: (sameNameAndPhoneStudent.groupId as any)?.name || 'بدون مجموعة',
+                    gradeLevel: sameNameAndPhoneStudent.gradeLevel,
+                }
+            };
         }
 
-        // 3. Check for Siblings: same parentPhone, but DIFFERENT studentName (Allowed!)
-        if (parentPhone) {
-            const sibling = allStudents.find(s => s.parentPhone === parentPhone && normalizeArabic(s.studentName) !== normName);
-            if (sibling) {
-                return {
-                    isDuplicate: false,
-                    isSibling: true,
-                    message: `رقم ولي الأمر مسجل مسبقاً لأخ/أخت الطالب: "${sibling.studentName}" (${sibling.gradeLevel})`,
-                    siblingStudent: {
-                        _id: sibling._id,
-                        studentName: sibling.studentName,
-                        studentCode: sibling.studentCode,
-                        groupName: (sibling.groupId as any)?.name || 'بدون مجموعة',
-                        gradeLevel: sibling.gradeLevel,
-                    }
-                };
-            }
+        // 2. Check for Duplicate: SAME NAME AND SAME GRADE LEVEL
+        const sameNameSameGrade = allStudents.find(s => 
+            normalizeArabic(s.studentName) === normName && 
+            data.gradeLevel && 
+            s.gradeLevel === data.gradeLevel
+        );
+
+        if (sameNameSameGrade) {
+            return {
+                isDuplicate: true,
+                isSibling: false,
+                reason: 'NAME_AND_GRADE',
+                message: `يوجد طالب مسجل بالفعل بنفس الاسم "${sameNameSameGrade.studentName}" في مرحلة (${data.gradeLevel}) بمجموعة (${(sameNameSameGrade.groupId as any)?.name || 'بدون مجموعة'})`,
+                existingStudent: {
+                    _id: sameNameSameGrade._id,
+                    studentName: sameNameSameGrade.studentName,
+                    studentCode: sameNameSameGrade.studentCode,
+                    groupName: (sameNameSameGrade.groupId as any)?.name || 'بدون مجموعة',
+                    gradeLevel: sameNameSameGrade.gradeLevel,
+                }
+            };
+        }
+
+        // 3. Check for Siblings / Shared Phone: SAME parentPhone or studentPhone, but DIFFERENT studentName (Allowed!)
+        const sibling = allStudents.find(s => 
+            normalizeArabic(s.studentName) !== normName && 
+            ((parentPhone && s.parentPhone === parentPhone) || (studentPhone && s.studentPhone === studentPhone))
+        );
+
+        if (sibling) {
+            return {
+                isDuplicate: false,
+                isSibling: true,
+                message: `رقم الهاتف مسجل مسبقاً لأخ/أخت الطالب: "${sibling.studentName}" (${sibling.gradeLevel})`,
+                siblingStudent: {
+                    _id: sibling._id,
+                    studentName: sibling.studentName,
+                    studentCode: sibling.studentCode,
+                    groupName: (sibling.groupId as any)?.name || 'بدون مجموعة',
+                    gradeLevel: sibling.gradeLevel,
+                }
+            };
         }
 
         return { isDuplicate: false, isSibling: false };
