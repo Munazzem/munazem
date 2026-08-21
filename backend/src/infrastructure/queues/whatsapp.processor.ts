@@ -15,7 +15,12 @@ const INTER_MESSAGE_DELAY_MS = parseInt(process.env.WA_INTER_MESSAGE_DELAY_MS ??
 const WORKER_CONCURRENCY     = parseInt(process.env.WA_WORKER_CONCURRENCY ?? '50');
 
 // Shared Redis client for per-teacher rate limiting
-const redis = new Redis(envVars.redisUrl);
+const redis = new Redis(envVars.redisUrl, {
+    maxRetriesPerRequest: 1,
+    retryStrategy: (times) => (times > 3 ? null : Math.min(times * 200, 2000)),
+    lazyConnect: true,
+});
+redis.on('error', () => {});
 // Active worker reference
 let _worker: Worker<WhatsAppJobData> | null = null;
 
@@ -39,7 +44,6 @@ async function buildMessage(data: WhatsAppJobData): Promise<{ message: string; t
     const date = new Date(data.examDate).toLocaleDateString('ar-EG', {
         year: 'numeric', month: 'long', day: 'numeric',
     });
-    const passLabel = data.passed ? '✅ ناجح' : '❌ راسب';
     const replacements = {
         studentName: data.studentName,
         examName: data.examTitle,
@@ -47,8 +51,6 @@ async function buildMessage(data: WhatsAppJobData): Promise<{ message: string; t
         studentScore: String(data.score),
         examTotal: String(data.totalMarks),
         percentage: String(data.percentage),
-        grade: String(data.grade),
-        passLabel: passLabel,
         teacherName: data.teacherName || '',
     };
     const { text, templateIdx } = await pickTemplate('exam_result', replacements);

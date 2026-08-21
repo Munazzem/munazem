@@ -42,10 +42,11 @@ router.get('/me', authenticate, async (req: Request, res: Response, next: NextFu
 
         // BRANDING INHERITANCE: If assistant, merge teacher's center info
         if (user.role === 'assistant' && user.teacherId) {
-            const teacher = await UserModel.findById(user.teacherId, { centerName: 1, logoUrl: 1 }).lean();
+            const teacher = await UserModel.findById(user.teacherId, { name: 1, centerName: 1, logoUrl: 1 }).lean();
             if (teacher) {
                 userObject.centerName = teacher.centerName;
                 userObject.logoUrl = teacher.logoUrl;
+                userObject.teacherName = teacher.name;
             }
         }
 

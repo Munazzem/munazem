@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -106,8 +106,8 @@ export function QrScanner({ onScanned, mode = 'actions' }: QrScannerProps) {
                 <Input
                     placeholder="أو أدخل رقم الكارت / الكود يدوياً..."
                     value={manualInput}
-                    onChange={e => setManualInput(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter' && manualInput.trim()) { onScanned(manualInput.trim()); setManualInput(''); }}}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setManualInput(e.target.value)}
+                    onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter' && manualInput.trim()) { onScanned(manualInput.trim()); setManualInput(''); }}}
                     className="flex-1 text-sm bg-gray-50"
                 />
                 <Button

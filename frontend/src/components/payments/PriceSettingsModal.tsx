@@ -54,6 +54,7 @@ export function PriceSettingsModal() {
         onSuccess: () => {
             toast.success('تم حفظ الإعدادات بنجاح');
             queryClient.invalidateQueries({ queryKey: QK.payments.priceSettings });
+            queryClient.invalidateQueries({ queryKey: QK.dashboard.summary });
             setOpen(false);
         },
     });
@@ -121,7 +122,7 @@ export function PriceSettingsModal() {
                                         <div className="relative w-32 shrink-0">
                                             <Input
                                                 type="number"
-                                                min="0"
+                                                min="1"
                                                 placeholder="0"
                                                 value={prices[grade]}
                                                 onChange={(e) => setPrices((prev) => ({ ...prev, [grade]: e.target.value }))}

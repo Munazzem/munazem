@@ -36,6 +36,10 @@ async function getClient(): Promise<any> {
             },
             lazyConnect: true,
         });
+
+        // Silence unhandled error events emitted by ioredis
+        redisClient.on('error', () => {});
+
         await redisClient.connect();
         logger.info('cache_redis_connected');
         return redisClient;
@@ -118,6 +122,20 @@ export const cache = {
             } while (cursor !== '0');
         } catch {
             // Silently fail
+        }
+    },
+
+    /**
+     * Disconnect the Redis client gracefully (e.g. during test teardown).
+     */
+    async disconnect(): Promise<void> {
+        if (redisClient) {
+            try {
+                redisClient.disconnect(false);
+            } catch {
+                // Silently fail
+            }
+            redisClient = null;
         }
     },
 };

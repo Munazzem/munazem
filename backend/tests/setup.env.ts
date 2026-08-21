@@ -42,6 +42,13 @@ afterAll(async () => {
         await mongoose.connection.close();
     }
 
+    try {
+        const { cache } = await import('../src/infrastructure/cache/cache.service.js');
+        await cache.disconnect();
+    } catch {
+        // Silently ignore if not initialized
+    }
+
     // drain: نخلي أي pending console.log callbacks تتنفذ قبل ما
     // vitest worker يغلق الـ RPC channel، عشان نتجنب EnvironmentTeardownError
     await new Promise((resolve) => setTimeout(resolve, 100));

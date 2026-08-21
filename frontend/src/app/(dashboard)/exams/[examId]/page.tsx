@@ -86,17 +86,14 @@ const buildExamWhatsAppMessage = (
     score: number,
     totalMarks: number,
     percentage: number,
-    grade: string,
-    passed: boolean,
     teacherName: string
 ) => {
-    const passedLabel = passed ? 'ناجح ✅' : 'راسب ❌';
     const signature = teacherName ? `\nمع تحيات: أ/ ${teacherName}` : '';
     const templates = [
-        `السلام عليكم ورحمة الله،\nتقرير نتيجة اختبار [**${examTitle}**] للطالب/ة: **${studentName}**\n📊 الدرجة: **${score} من ${totalMarks}** (${percentage}%)\n📈 التقدير: **${grade}** (${passedLabel})\n\n📌 **الرجاء الرد بـ (تم) لتأكيد الاطلاع على النتيجة.**${signature}`,
-        `أهلاً بحضرتك يا فندم،\nتم رصد درجات اختبار **${examTitle}**، وحصل **${studentName}** على: **${score} / ${totalMarks}** (تقدير: **${grade}**).\nنرجو الاستمرار في التحفيز والمتابعة المستمرة.\n\n📌 **يرجى الرد بكلمة (تم) لتأكيد الاستلام.**${signature}`,
-        `📈 **إشعار نتيجة اختبار**:\nالطالب: **${studentName}** | الاختبار: **${examTitle}**\n🎯 النتيجة: **${score} من ${totalMarks}** (${percentage}%) — ${passedLabel}\n\n📌 **الرجاء الرد بـ (تم) للتأكيد.**${signature}`,
-        `تحية طيبة،\nنود إحاطتكم علمًا بنتيجة **${studentName}** في امتحان **${examTitle}**:\nالدرجة المحققة: **${score} من أصل ${totalMarks}** (${grade}).\n\n📌 **الرجاء الرد بـ (تم) للاطلاع.**${signature}`,
+        `السلام عليكم ورحمة الله،\nتقرير نتيجة اختبار [**${examTitle}**] للطالب/ة: **${studentName}**\n📊 الدرجة: **${score} من ${totalMarks}** (${percentage}%)\n\n📌 **الرجاء الرد بـ (تم) لتأكيد الاطلاع على النتيجة.**${signature}`,
+        `أهلاً بحضرتك يا فندم،\nتم رصد درجات اختبار **${examTitle}**، وحصل **${studentName}** على: **${score} من ${totalMarks}** (${percentage}%).\nشاكرين لكم حرصكم ومتابعتكم المستمرة لمستوى الطالب.\n\n📌 **يرجى الرد بكلمة (تم) لتأكيد الاستلام.**${signature}`,
+        `📈 **إشعار نتيجة اختبار**:\nالطالب/ة: **${studentName}** | الاختبار: **${examTitle}**\n🎯 النتيجة المحققة: **${score} من ${totalMarks}** (${percentage}%)\n\n📌 **الرجاء الرد بـ (تم) للتأكيد.**${signature}`,
+        `تحية طيبة،\nنود إحاطتكم علمًا بنتيجة **${studentName}** في اختبار **${examTitle}**:\n📊 الدرجة: **${score} من ${totalMarks}** (${percentage}%).\nمع تمنياتنا للطالب بدوام التوفيق والتقدم.\n\n📌 **الرجاء الرد بـ (تم) للاطلاع.**${signature}`,
     ];
 
     const hash = studentName.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
@@ -436,102 +433,114 @@ export default function ExamDetailPage() {
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-gray-50">
-                                                    {results.map((r: any) => {
-                                                        const name = r.studentName ?? '—';
-                                                        const waMsg = buildExamWhatsAppMessage(
-                                                            name,
-                                                            examData.title,
-                                                            r.score,
-                                                            examData.totalMarks,
-                                                            r.percentage,
-                                                            r.grade,
-                                                            r.passed,
-                                                            user?.name || ''
-                                                        );
-                                                        return (
-                                                            <tr key={r._id} className="hover:bg-gray-50/50">
-                                                                <td className="px-6 py-3 font-medium text-gray-900">{name}</td>
-                                                                <td className="px-4 py-3 text-center font-bold text-gray-800">
-                                                                    {r.score} / {examData.totalMarks}
-                                                                </td>
-                                                                <td className="px-4 py-3 text-center text-gray-600">{r.percentage}%</td>
-                                                                <td className="px-4 py-3 text-center">
-                                                                    <span className={cn(
-                                                                        'inline-block w-10 text-center text-sm font-bold px-1.5 py-0.5 rounded',
-                                                                        GRADE_COLORS[r.grade] ?? 'bg-gray-100 text-gray-700'
-                                                                    )}>
-                                                                        {r.grade}
-                                                                    </span>
-                                                                </td>
-                                                                <td className="px-4 py-3 text-center">
-                                                                    <span className={cn(
-                                                                        'text-xs font-medium px-2 py-0.5 rounded-full',
-                                                                        r.passed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                                                                    )}>
-                                                                        {r.passed ? 'ناجح' : 'راسب'}
-                                                                    </span>
-                                                                </td>
-                                                                <td className="px-4 py-3 text-center">
-                                                                    <a
-                                                                        href={r.parentPhone ? `https://wa.me/${formatWhatsAppNumber(r.parentPhone)}?text=${waMsg}` : `https://wa.me/?text=${waMsg}`}
-                                                                        target="_blank"
-                                                                        rel="noopener noreferrer"
-                                                                        className="inline-flex items-center justify-center h-7 w-7 rounded-full bg-green-50 hover:bg-green-100 text-green-600 transition-colors"
-                                                                        title={r.parentPhone ? `إرسال لـ ${r.parentPhone}` : 'إرسال النتيجة'}
-                                                                    >
-                                                                        <MessageCircle className="h-3.5 w-3.5" />
-                                                                    </a>
-                                                                </td>
-                                                            </tr>
-                                                        );
-                                                    })}
+                                                    {(() => {
+                                                        const effectiveTeacherName =
+                                                            (resultsData as any)?.teacherName ||
+                                                            user?.teacherName ||
+                                                            (user?.role === 'teacher' ? user?.name : '') ||
+                                                            '';
+
+                                                        return results.map((r: any) => {
+                                                            const name = r.studentName ?? '—';
+                                                            const waMsg = buildExamWhatsAppMessage(
+                                                                name,
+                                                                examData.title,
+                                                                r.score,
+                                                                examData.totalMarks,
+                                                                r.percentage,
+                                                                effectiveTeacherName
+                                                            );
+                                                            return (
+                                                                <tr key={r._id} className="hover:bg-gray-50/50">
+                                                                    <td className="px-6 py-3 font-medium text-gray-900">{name}</td>
+                                                                    <td className="px-4 py-3 text-center font-bold text-gray-800">
+                                                                        {r.score} / {examData.totalMarks}
+                                                                    </td>
+                                                                    <td className="px-4 py-3 text-center text-gray-600">{r.percentage}%</td>
+                                                                    <td className="px-4 py-3 text-center">
+                                                                        <span className={cn(
+                                                                            'inline-block w-10 text-center text-sm font-bold px-1.5 py-0.5 rounded',
+                                                                            GRADE_COLORS[r.grade] ?? 'bg-gray-100 text-gray-700'
+                                                                        )}>
+                                                                            {r.grade}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td className="px-4 py-3 text-center">
+                                                                        <span className={cn(
+                                                                            'text-xs font-medium px-2 py-0.5 rounded-full',
+                                                                            r.passed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                                                        )}>
+                                                                            {r.passed ? 'ناجح' : 'راسب'}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td className="px-4 py-3 text-center">
+                                                                        <a
+                                                                            href={r.parentPhone ? `https://wa.me/${formatWhatsAppNumber(r.parentPhone)}?text=${waMsg}` : `https://wa.me/?text=${waMsg}`}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                            className="inline-flex items-center justify-center h-7 w-7 rounded-full bg-green-50 hover:bg-green-100 text-green-600 transition-colors"
+                                                                            title={r.parentPhone ? `إرسال لـ ${r.parentPhone}` : 'إرسال النتيجة'}
+                                                                        >
+                                                                            <MessageCircle className="h-3.5 w-3.5" />
+                                                                        </a>
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        });
+                                                    })()}
                                                 </tbody>
                                             </table>
                                         </div>
 
                                         {/* Mobile cards */}
                                         <div className="sm:hidden divide-y divide-gray-50">
-                                            {results.map((r: any) => {
-                                                const name = r.studentName ?? '—';
-                                                const waMsg = buildExamWhatsAppMessage(
-                                                    name,
-                                                    examData.title,
-                                                    r.score,
-                                                    examData.totalMarks,
-                                                    r.percentage,
-                                                    r.grade,
-                                                    r.passed,
-                                                    user?.name || ''
-                                                );
-                                                return (
-                                                    <div key={r._id} className="p-4">
-                                                        <div className="flex items-center justify-between">
-                                                            <span className="font-medium text-gray-900">{name}</span>
-                                                            <div className="flex items-center gap-2">
-                                                                <span className={cn(
-                                                                    'text-xs font-medium px-2 py-0.5 rounded-full',
-                                                                    r.passed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                                                                )}>
-                                                                    {r.passed ? 'ناجح' : 'راسب'}
-                                                                </span>
-                                                                <a
-                                                                    href={r.parentPhone ? `https://wa.me/${formatWhatsAppNumber(r.parentPhone)}?text=${waMsg}` : `https://wa.me/?text=${waMsg}`}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    className="inline-flex items-center justify-center h-7 w-7 rounded-full bg-green-50 hover:bg-green-100 text-green-600 transition-colors"
-                                                                >
-                                                                    <MessageCircle className="h-3.5 w-3.5" />
-                                                                </a>
+                                            {(() => {
+                                                const effectiveTeacherName =
+                                                    (resultsData as any)?.teacherName ||
+                                                    user?.teacherName ||
+                                                    (user?.role === 'teacher' ? user?.name : '') ||
+                                                    '';
+
+                                                return results.map((r: any) => {
+                                                    const name = r.studentName ?? '—';
+                                                    const waMsg = buildExamWhatsAppMessage(
+                                                        name,
+                                                        examData.title,
+                                                        r.score,
+                                                        examData.totalMarks,
+                                                        r.percentage,
+                                                        effectiveTeacherName
+                                                    );
+                                                    return (
+                                                        <div key={r._id} className="p-4">
+                                                            <div className="flex items-center justify-between">
+                                                                <span className="font-medium text-gray-900">{name}</span>
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className={cn(
+                                                                        'text-xs font-medium px-2 py-0.5 rounded-full',
+                                                                        r.passed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                                                    )}>
+                                                                        {r.passed ? 'ناجح' : 'راسب'}
+                                                                    </span>
+                                                                    <a
+                                                                        href={r.parentPhone ? `https://wa.me/${formatWhatsAppNumber(r.parentPhone)}?text=${waMsg}` : `https://wa.me/?text=${waMsg}`}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className="inline-flex items-center justify-center h-7 w-7 rounded-full bg-green-50 hover:bg-green-100 text-green-600 transition-colors"
+                                                                    >
+                                                                        <MessageCircle className="h-3.5 w-3.5" />
+                                                                    </a>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-sm text-gray-500">
+                                                                <span>الدرجة: <strong className="text-gray-800">{r.score}</strong></span>
+                                                                <span>النسبة: <strong className="text-gray-800">{r.percentage}%</strong></span>
+                                                                <span>التقدير: <strong className={GRADE_COLORS[r.grade] ? 'font-bold' : ''}>{r.grade}</strong></span>
                                                             </div>
                                                         </div>
-                                                        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-sm text-gray-500">
-                                                            <span>الدرجة: <strong className="text-gray-800">{r.score}</strong></span>
-                                                            <span>النسبة: <strong className="text-gray-800">{r.percentage}%</strong></span>
-                                                            <span>التقدير: <strong className={GRADE_COLORS[r.grade] ? 'font-bold' : ''}>{r.grade}</strong></span>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
+                                                    );
+                                                });
+                                            })()}
                                         </div>
                                     </>
                                 )}

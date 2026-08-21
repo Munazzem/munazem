@@ -44,7 +44,7 @@ function resolveOriginalAmount(
 ): number {
     // Level 1: Group-level override (most specific)
     // Note: != null catches both null and undefined intentionally
-    if (groupCustomPrice != null) {
+    if (groupCustomPrice != null && groupCustomPrice > 0) {
         return groupCustomPrice;
     }
 
@@ -214,17 +214,42 @@ export class PaymentsService {
         let enrollmentCreatedNow = false;
 
         if (!enrollment) {
-            // The price snapshot (or PriceSettings or group.customPrice) is fundamentally the FULL CYCLE subscription price
-            let fullMonthPrice = (group as any)?.customPrice;
-            if (fullMonthPrice === undefined || fullMonthPrice === null) {
-                fullMonthPrice = (priceSnapshot instanceof Map ? priceSnapshot.get(student.gradeLevel) : priceSnapshot?.[student.gradeLevel]);
+            // Resolve full cycle price using priority order:
+            // 1. group.customPrice (most specific — persistent group override)
+            // 2. priceSnapshot (frozen cycle price at cycle start)
+            // 3. PriceSettings (teacher's grade-level default) → throws if not found
+            let fullMonthPrice: number | null | undefined;
+
+            // Priority 1: group.customPrice override
+            const groupCustomPrice = (group as any)?.customPrice;
+            if (groupCustomPrice != null && groupCustomPrice > 0) {
+                fullMonthPrice = groupCustomPrice;
             }
-            if (fullMonthPrice === undefined || fullMonthPrice === null) {
+
+            // Priority 2: cycle's frozen price snapshot (if no custom price)
+            if (fullMonthPrice == null || fullMonthPrice <= 0) {
+                const snapshotPrice = priceSnapshot instanceof Map
+                    ? priceSnapshot.get(student.gradeLevel)
+                    : (priceSnapshot as any)?.[student.gradeLevel];
+                if (snapshotPrice != null && snapshotPrice > 0) {
+                    fullMonthPrice = snapshotPrice;
+                }
+            }
+
+            // Priority 3: PriceSettings fallback (throws if nothing configured)
+            if (fullMonthPrice == null || fullMonthPrice <= 0) {
                 const settings = await PriceSettingsModel.findOne({ teacherId }).lean();
-                fullMonthPrice = settings?.prices.find(p => p.gradeLevel === student.gradeLevel)?.amount || 0;
+                fullMonthPrice = resolveOriginalAmount(
+                    undefined, // customPrice already checked above
+                    student.gradeLevel,
+                    settings,
+                );
             }
-            
-            const pricePerSession = capacity > 0 ? fullMonthPrice / capacity : 0;
+
+            if (capacity <= 0) {
+                throw BadRequestException({ message: 'سعة الدورة يجب أن تكون أكبر من صفر — لا يمكن حساب سعر الحصة' });
+            }
+            const pricePerSession = fullMonthPrice / capacity;
             
             // If student joined before the cycle started, they start from session 1; otherwise start from next session
             const studentCreatedAt = (student as any).createdAt;
@@ -1043,6 +1068,9 @@ export class PaymentsService {
         }).sort({ cycleNumber: 1 }).lean(); // Sort oldest to newest
 
         const cycleDebt = unpaidEnrollments.reduce((sum, e) => sum + e.remainingAmount, 0);
+        if (cycleDebt > totalStudentDebt) {
+            console.warn(`[payDebt] FIFO inconsistency: cycleDebt (${cycleDebt}) > totalStudentDebt (${totalStudentDebt}) for student ${student._id}. Capped to totalStudentDebt.`);
+        }
         const historicalDebt = Math.max(0, totalStudentDebt - cycleDebt);
 
         let remainingAmountToPay = data.amount;
@@ -1417,24 +1445,46 @@ export class PaymentsService {
                 if (enrollment) {
                     const amountToRevert = tx.paidAmount + (tx.discountAmount || 0);
                     enrollment.totalPaid = Math.max(0, enrollment.totalPaid - amountToRevert);
-                    enrollment.remainingAmount += amountToRevert;
+                    enrollment.remainingAmount = Math.min(
+                        enrollment.cycleCharge,
+                        enrollment.remainingAmount + amountToRevert
+                    );
 
-                    if (enrollment.remainingAmount >= enrollment.cycleCharge) {
-                        enrollment.remainingAmount = enrollment.cycleCharge;
-                        enrollment.status = CycleEnrollmentStatus.UNPAID;
-                    } else if (enrollment.remainingAmount <= 0) {
-                        enrollment.remainingAmount = 0;
-                        enrollment.status = CycleEnrollmentStatus.PAID;
+                    // If enrollment is back to fully unpaid (no payments remain after reversal),
+                    // it was created alongside this transaction. Delete it and reverse the net
+                    // debt originally added (tx.remainingAmount = cycleCharge - amountToRevert).
+                    if (enrollment.totalPaid <= 0 && enrollment.remainingAmount >= enrollment.cycleCharge) {
+                        await CycleEnrollmentModel.deleteOne({ _id: enrollment._id }, { session });
+                        // net debt added at creation = cycleCharge - (paidAmount + discountAmount)
+                        //                           = tx.remainingAmount at the time of the transaction
+                        const netDebtAdded = tx.remainingAmount || 0;
+                        if (netDebtAdded > 0 && tx.studentId) {
+                            await StudentModel.findByIdAndUpdate(
+                                tx.studentId,
+                                { $inc: { totalDebt: -netDebtAdded } },
+                                { session }
+                            );
+                        }
                     } else {
-                        enrollment.status = CycleEnrollmentStatus.PARTIALLY_PAID;
-                    }
-                    
-                    await enrollment.save({ session });
-                }
-            }
+                        // Enrollment still has other payments — just re-add this payment's
+                        // portion to student debt and update status.
+                        enrollment.status = enrollment.remainingAmount <= 0
+                            ? CycleEnrollmentStatus.PAID
+                            : enrollment.remainingAmount >= enrollment.cycleCharge
+                                ? CycleEnrollmentStatus.UNPAID
+                                : CycleEnrollmentStatus.PARTIALLY_PAID;
 
-            // 5. If this transaction had a remaining amount, revert from student's total debt
-            if (tx.remainingAmount && tx.remainingAmount > 0 && tx.studentId) {
+                        await enrollment.save({ session });
+
+                        await StudentModel.findByIdAndUpdate(
+                            tx.studentId,
+                            { $inc: { totalDebt: amountToRevert } },
+                            { session }
+                        );
+                    }
+                }
+            } else if (tx.remainingAmount && tx.remainingAmount > 0 && tx.studentId) {
+                // Non-subscription transactions (e.g., notebook sale): revert remainingAmount from debt
                 await StudentModel.findByIdAndUpdate(
                     tx.studentId,
                     { $inc: { totalDebt: -tx.remainingAmount } },
@@ -1442,7 +1492,7 @@ export class PaymentsService {
                 );
             }
 
-            // 6. If this transaction was a DEBT_PAYMENT itself, deleting it means the debt comes back
+            // 5. If this transaction was a DEBT_PAYMENT itself, deleting it means the debt comes back
             if (tx.category === TransactionCategory.DEBT_PAYMENT && tx.studentId) {
                 await StudentModel.findByIdAndUpdate(
                     tx.studentId,
