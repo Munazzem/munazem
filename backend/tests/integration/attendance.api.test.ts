@@ -84,6 +84,82 @@ describe('POST /attendance/batch', () => {
 });
 
 // =============================================================================
+// POST /attendance/batch-sync (Offline Outbox Sync)
+// =============================================================================
+describe('POST /attendance/batch-sync', () => {
+
+    it('يُزامن المسحات المعلقة بنجاح وبطريقة Idempotent تمنع التكرار', async () => {
+        await seedTeacher();
+        const group = await seedGroup();
+        const session = await seedSession({ groupId: group._id as any });
+        const student1 = await seedStudent(group._id as any, { studentCode: 'S1' });
+        const student2 = await seedStudent(group._id as any, { studentCode: 'S2' });
+
+        const syncPayload = {
+            sessionId: session._id.toString(),
+            records: [
+                {
+                    clientMutationId: 'mutation-uuid-1',
+                    studentId: student1._id.toString(),
+                    status: AttendanceStatus.PRESENT,
+                    scannedAt: new Date().toISOString()
+                },
+                {
+                    clientMutationId: 'mutation-uuid-2',
+                    studentId: student2._id.toString(),
+                    status: AttendanceStatus.LATE,
+                    scannedAt: new Date().toISOString()
+                }
+            ]
+        };
+
+        // First sync run: both should be upserted
+        const res1 = await app
+            .post('/attendance/batch-sync')
+            .set('Authorization', bearerHeader(makeTeacherToken()))
+            .send(syncPayload);
+
+        expect(res1.status).toBe(200);
+        expect(res1.body.data.upsertedCount).toBe(2);
+        expect(res1.body.data.matchedCount).toBe(0);
+
+        // Second sync run (replay of same batch): should match existing records without duplicate error (409)
+        const res2 = await app
+            .post('/attendance/batch-sync')
+            .set('Authorization', bearerHeader(makeTeacherToken()))
+            .send(syncPayload);
+
+        expect(res2.status).toBe(200);
+        expect(res2.body.data.upsertedCount).toBe(0);
+        expect(res2.body.data.matchedCount).toBe(2);
+    });
+
+    it('يرفض المزامنة على حصة مكتملة بالفعل COMPLETED', async () => {
+        await seedTeacher();
+        const group = await seedGroup();
+        const session = await seedSession({ groupId: group._id as any, status: SessionStatus.COMPLETED });
+        const student = await seedStudent(group._id as any);
+
+        const res = await app
+            .post('/attendance/batch-sync')
+            .set('Authorization', bearerHeader(makeTeacherToken()))
+            .send({
+                sessionId: session._id.toString(),
+                records: [
+                    {
+                        clientMutationId: 'mutation-uuid-3',
+                        studentId: student._id.toString(),
+                        status: AttendanceStatus.PRESENT
+                    }
+                ]
+            });
+
+        expect(res.status).toBe(400);
+        expect(res.body.message).toContain('مكتملة');
+    });
+});
+
+// =============================================================================
 // GET /attendance/session/:sessionId
 // =============================================================================
 describe('GET /attendance/session/:sessionId', () => {

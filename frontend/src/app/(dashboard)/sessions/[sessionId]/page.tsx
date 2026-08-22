@@ -32,6 +32,8 @@ import { SnapshotSummary } from '@/components/sessions/SnapshotSummary';
 import { WhatsAppLinksDialog } from '@/components/sessions/WhatsAppLinksDialog';
 import { toast } from 'sonner';
 import { QK } from '@/lib/query-keys';
+import { useOfflineSyncStore } from '@/lib/store/offline-sync.store';
+import { OutboxService } from '@/lib/offline/outbox.service';
 import {
     ArrowRight,
     CheckCircle2,
@@ -51,6 +53,8 @@ import {
     Receipt,
     FileDown,
     Trash2,
+    RefreshCw,
+    WifiOff,
 } from 'lucide-react';
 import { ReportCardSkeleton } from '@/components/layout/skeletons/ReportCardSkeleton';
 import { TableSkeleton } from '@/components/layout/skeletons/TableSkeleton';
@@ -172,14 +176,58 @@ export default function SessionDetailPage() {
         (groupStudentsData?.data ?? []).map((s) => [s._id, s.hasActiveSubscription ?? true])
     );
 
-    const alreadyRecordedIds = new Set(
+    const pendingCount = useOfflineSyncStore((s) => s.pendingCount);
+    const isSyncing = useOfflineSyncStore((s) => s.isSyncing);
+    const flushQueue = useOfflineSyncStore((s) => s.flushQueue);
+    const refreshPendingCount = useOfflineSyncStore((s) => s.refreshPendingCount);
+
+    const [localPendingRecords, setLocalPendingRecords] = useState<IAttendanceRecord[]>([]);
+
+    // Refresh pending count and load local pending records on mount / change
+    useEffect(() => {
+        refreshPendingCount(sessionId).catch(() => {});
+        OutboxService.getPendingMutations(sessionId).then((mutations) => {
+            const mapped: IAttendanceRecord[] = mutations.map(m => ({
+                _id: `temp-${m.clientMutationId}`,
+                studentId: {
+                    _id: m.studentId,
+                    studentName: m.studentName,
+                    studentCode: m.studentCode,
+                    studentPhone: m.studentPhone,
+                },
+                sessionId: m.sessionId,
+                status: m.status,
+                isGuest: m.isGuest,
+                scannedAt: m.scannedAt,
+                _syncStatus: m.syncStatus,
+            }));
+            setLocalPendingRecords(mapped);
+        }).catch(() => {});
+    }, [sessionId, pendingCount, refreshPendingCount]);
+
+    // Build unified attendance records: server records + local pending records not yet in server list
+    const combinedAttendanceRecords = [...attendanceRecords];
+    const serverStudentIdSet = new Set(
         attendanceRecords
             .map((r) => (r.studentId as any)?._id ?? (r.studentId as any))
             .filter(Boolean)
     );
 
+    for (const pending of localPendingRecords) {
+        const pId = (pending.studentId as any)?._id ?? (pending.studentId as any);
+        if (pId && !serverStudentIdSet.has(pId)) {
+            combinedAttendanceRecords.push(pending);
+        }
+    }
+
+    const alreadyRecordedIds = new Set(
+        combinedAttendanceRecords
+            .map((r) => (r.studentId as any)?._id ?? (r.studentId as any))
+            .filter(Boolean)
+    );
+
     // Sort attendance records alphabetically by student name
-    const sortedAttendanceRecords = [...attendanceRecords].sort((a, b) => {
+    const sortedAttendanceRecords = [...combinedAttendanceRecords].sort((a, b) => {
         const nameA = (a.studentId as any)?.studentName ?? '';
         const nameB = (b.studentId as any)?.studentName ?? '';
         return nameA.localeCompare(nameB, 'ar');
@@ -200,7 +248,7 @@ export default function SessionDetailPage() {
         }
     }, [session?.status, sessionId, queryClient]);
 
-    // Record attendance
+    // Record attendance (Online-first with IndexedDB offline outbox fallback)
     const recordMutation = useMutation({
         mutationFn: async (studentId: string) => {
             await ensureInProgress();
@@ -211,50 +259,87 @@ export default function SessionDetailPage() {
             });
         },
         onMutate: async (studentId) => {
-            // Cancel outgoing refetches
             await queryClient.cancelQueries({ queryKey: QK.attendance.bySession(sessionId) });
-
-            // Snapshot previous value
             const previousAttendance = queryClient.getQueryData<IAttendanceRecord[]>(QK.attendance.bySession(sessionId)) || [];
 
-            // Find student info for optimistic record
             const student = groupStudentsData?.data?.find(s => s._id === studentId);
-            
-            // Create optimistic record
-            const optimisticRecord: any = {
-                _id: `temp-${Date.now()}`,
-                studentId: student || { _id: studentId, studentName: 'جاري التحميل...', studentCode: '...' },
+            const clientMutationId = `mut-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+            const isGuest = student ? (student.groupId !== groupId) : false;
+
+            const studentInfo = student
+                ? {
+                      _id: student._id,
+                      studentName: student.studentName,
+                      studentCode: student.studentCode,
+                      studentPhone: student.studentPhone,
+                  }
+                : {
+                      _id: studentId,
+                      studentName: 'جاري التحميل...',
+                      studentCode: '...',
+                  };
+
+            const optimisticRecord: IAttendanceRecord = {
+                _id: `temp-${clientMutationId}`,
+                studentId: studentInfo,
                 sessionId,
                 status: 'PRESENT',
+                isGuest,
                 scannedAt: new Date().toISOString(),
-                createdAt: new Date().toISOString(),
+                _syncStatus: 'QUEUED',
             };
 
-            // Update cache
             queryClient.setQueryData(QK.attendance.bySession(sessionId), [...previousAttendance, optimisticRecord]);
 
-            return { previousAttendance };
+            return { previousAttendance, clientMutationId, optimisticRecord, student };
         },
         onSuccess: (record) => {
             const name = (record.studentId as any)?.studentName ?? 'الطالب';
             const guestSuffix = (record as any).isGuest ? ' (طالب زائر)' : '';
             toast.success(`تم تسجيل حضور ${name}${guestSuffix}`);
         },
-        onError: (err: any, studentId, context) => {
-            // Rollback optimistic update
+        onError: async (err: any, studentId, context) => {
+            const isNetworkError = !err.response || err.code === 'ERR_NETWORK' || err.message?.includes('Network') || err.message?.includes('timeout') || err.message?.includes('Failed to fetch');
+
+            if (isNetworkError && context) {
+                const studentName = context.student?.studentName || 'الطالب';
+                const studentCode = context.student?.studentCode || '...';
+                const studentPhone = context.student?.studentPhone || '';
+                const isGuest = context.student ? (context.student.groupId !== groupId) : false;
+
+                // Enqueue to IndexedDB Outbox
+                await OutboxService.enqueueAttendance({
+                    clientMutationId: context.clientMutationId,
+                    sessionId,
+                    studentId,
+                    studentName,
+                    studentCode,
+                    studentPhone,
+                    status: 'PRESENT',
+                    isGuest,
+                    scannedAt: context.optimisticRecord.scannedAt,
+                    createdAt: Date.now(),
+                    syncStatus: 'QUEUED',
+                    retryCount: 0,
+                });
+
+                await refreshPendingCount(sessionId);
+                toast.info(`تم حفظ حضور ${studentName} محلياً (سيتم رفعه عند توفر الإنترنت)`, {
+                    icon: '⏳',
+                    duration: 4000,
+                });
+                return; // Do NOT rollback!
+            }
+
+            // Rollback for actual API/validation errors (409, 400, etc.)
             if (context?.previousAttendance) {
                 queryClient.setQueryData(QK.attendance.bySession(sessionId), context.previousAttendance);
             }
-
-            const msg = err?.response?.data?.message ?? 'حدث خطأ (قد يكون بسبب انقطاع الاتصال)';
-            // Note: The global axios interceptor will automatically display the error message as a toast.
-            if (msg.includes('بالفعل')) {
-                // If it's already registered, we can rely on the interceptor's error toast, or we could skip it.
-                // We'll let the interceptor handle it to avoid duplicate toasts.
-            }
         },
         onSettled: () => {
-            queryClient.invalidateQueries({ queryKey: QK.attendance.bySession(sessionId) });
+            if (typeof window !== 'undefined' && navigator.onLine) {
+                queryClient.invalidateQueries({ queryKey: QK.attendance.bySession(sessionId) });
+            }
             setSearchQuery('');
         },
     });
@@ -449,7 +534,15 @@ export default function SessionDetailPage() {
                             <Button
                                 size="sm"
                                 variant="destructive"
-                                onClick={() => setShowCompleteConfirm(true)}
+                                onClick={() => {
+                                    if (pendingCount > 0) {
+                                        toast.error(`يوجد ${pendingCount} سجلات حضور معلقة محلياً. يرجى المزامنة أولاً قبل إنهاء الحصة لتجنب احتساب الطلاب كغائبين.`, {
+                                            duration: 6000,
+                                        });
+                                        return;
+                                    }
+                                    setShowCompleteConfirm(true);
+                                }}
                                 className="gap-1.5 text-xs sm:text-sm"
                             >
                                 <CheckCircle2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
@@ -470,6 +563,44 @@ export default function SessionDetailPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Offline Pending Sync Banner */}
+            {pendingCount > 0 && isSessionActive && (
+                <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-3 sm:p-4 flex items-center justify-between gap-3 animate-in fade-in">
+                    <div className="flex items-center gap-2.5 text-amber-800">
+                        <Clock className="h-5 w-5 text-amber-600 shrink-0 animate-pulse" />
+                        <div>
+                            <p className="text-xs sm:text-sm font-bold">
+                                يوجد {pendingCount} {pendingCount === 1 ? 'سجل حضور معلق محلياً' : 'سجلات حضور معلقة محلياً'}
+                            </p>
+                            <p className="text-[10px] sm:text-xs text-amber-700 mt-0.5">
+                                تم حفظ الحضور بأمان على جهازك وسيتم رفعه تلقائياً للسيرفر فور توفر الاتصال
+                            </p>
+                        </div>
+                    </div>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={isSyncing}
+                        onClick={async () => {
+                            const { synced } = await flushQueue(sessionId, () => {
+                                queryClient.invalidateQueries({ queryKey: QK.attendance.bySession(sessionId) });
+                            });
+                            if (synced > 0) {
+                                toast.success(`تمت مزامنة ${synced} سجل بنجاح`);
+                            }
+                        }}
+                        className="border-amber-300 bg-white hover:bg-amber-100/50 text-amber-900 text-xs font-bold gap-1.5 shrink-0"
+                    >
+                        {isSyncing ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                            <RefreshCw className="h-3.5 w-3.5" />
+                        )}
+                        {isSyncing ? 'جاري الرفع...' : 'مزامنة الآن'}
+                    </Button>
+                </div>
+            )}
 
             {/* Future Session Warning Banner */}
             {isFutureSession && session.status !== 'COMPLETED' && session.status !== 'CANCELLED' && (
@@ -610,12 +741,17 @@ export default function SessionDetailPage() {
                                                         hour: '2-digit',
                                                         minute: '2-digit',
                                                     })}
-                                                    {record._id.toString().startsWith('temp-') && (
-                                                        <span className="flex items-center gap-1 text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded mr-2 inline-flex">
-                                                            <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                                                            جاري المزامنة...
+                                                    {record._syncStatus === 'QUEUED' || record._id.toString().startsWith('temp-') ? (
+                                                        <span className="inline-flex items-center gap-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-medium shrink-0 mr-2">
+                                                            <Clock className="h-2.5 w-2.5 text-amber-600 animate-pulse" />
+                                                            معلق محلياً
                                                         </span>
-                                                    )}
+                                                    ) : record._syncStatus === 'SYNCING' ? (
+                                                        <span className="inline-flex items-center gap-1 text-[10px] text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded font-medium shrink-0 mr-2">
+                                                            <Loader2 className="h-2.5 w-2.5 text-blue-600 animate-spin" />
+                                                            جاري الحفظ
+                                                        </span>
+                                                    ) : null}
                                                 </p>
                                             </div>
                                             <span className={cn(
