@@ -30,6 +30,9 @@ export function Header() {
                         teacherId:  fresh.teacherId ?? null,
                         centerName: fresh.centerName,
                         logoUrl:    fresh.logoUrl,
+                        assistantsAccessEnabled: fresh.assistantsAccessEnabled,
+                        planTier:   fresh.planTier ?? null,
+                        features:   fresh.features ?? { homeworkTracking: false },
                     };
                     login(mapped, token);
                 }

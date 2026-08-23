@@ -46,10 +46,14 @@ export interface AdminTenant {
     email?:       string;
     phone:        string;
     stages?:      string[];
+    subject?:     string;
     isActive:     boolean;
     centerName?:  string;
     createdAt:    string;
     studentCount: number;
+    features?: {
+        homeworkTracking?: boolean;
+    };
     subscription: {
         planTier:       string;
         status:         string;
