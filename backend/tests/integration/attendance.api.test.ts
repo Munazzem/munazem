@@ -188,6 +188,37 @@ describe('POST /attendance/batch-sync', () => {
         expect(res.status).toBe(400);
         expect(res.body.message).toContain('مُلغاة');
     });
+
+    it('يقبل المزامنة باستخدام rawToken لطالب زائر/أوفلاين بدون studentId ويقوم بحله بنجاح', async () => {
+        await seedTeacher();
+        const group = await seedGroup();
+        const session = await seedSession({ groupId: group._id as any });
+        const student = await seedStudent(group._id as any, { studentCode: 'RAW-CODE-99' });
+
+        const res = await app
+            .post('/attendance/batch-sync')
+            .set('Authorization', bearerHeader(makeTeacherToken()))
+            .send({
+                sessionId: session._id.toString(),
+                records: [
+                    {
+                        clientMutationId: 'mutation-uuid-raw-1',
+                        rawToken: 'RAW-CODE-99',
+                        status: AttendanceStatus.PRESENT,
+                        scannedAt: new Date().toISOString(),
+                    }
+                ]
+            });
+
+        expect(res.status).toBe(200);
+        expect(res.body.data.success).toBe(true);
+        expect(res.body.data.upsertedCount).toBe(1);
+
+        const { AttendanceModel } = await import('../../src/database/models/attendance.model.js');
+        const record = await AttendanceModel.findOne({ sessionId: session._id, studentId: student._id });
+        expect(record).not.toBeNull();
+        expect(record?.status).toBe(AttendanceStatus.PRESENT);
+    });
 });
 
 // =============================================================================

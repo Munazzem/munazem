@@ -14,7 +14,11 @@ export const syncBatchAttendance = async (
     sessionId: string,
     records: SyncAttendanceRecordDTO[]
 ): Promise<{ success: boolean; upsertedCount: number; matchedCount: number; total: number; message: string }> => {
-    const res = await apiClient.post('/attendance/batch-sync', { sessionId, records });
+    const res = await apiClient.post(
+        '/attendance/batch-sync',
+        { sessionId, records },
+        { headers: { 'x-skip-error-toast': '1' } }
+    );
     return (res as any).data;
 };
 

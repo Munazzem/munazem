@@ -41,7 +41,7 @@ export class OutboxService {
                 req.onsuccess = () => {
                     const all: IOfflineOutboxMutation[] = req.result || [];
                     const filtered = all.filter(m => {
-                        const isPending = m.syncStatus === 'QUEUED' || m.syncStatus === 'FAILED';
+                        const isPending = m.syncStatus === 'QUEUED' || (m.syncStatus === 'FAILED' && (m.retryCount || 0) < 5);
                         const matchesSession = sessionId ? m.sessionId === sessionId : true;
                         return isPending && matchesSession;
                     });
