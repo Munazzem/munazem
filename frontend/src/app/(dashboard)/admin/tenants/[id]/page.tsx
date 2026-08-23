@@ -158,6 +158,7 @@ export default function TenantDetailPage() {
                     <InfoRow label="الهاتف"   value={teacher.phone} />
                     <InfoRow label="البريد"   value={teacher.email} />
                     <InfoRow label="المراحل"  value={formatStages(teacher.stages)} />
+                    <InfoRow label="متابعة الواجبات" value={teacher.features?.homeworkTracking ? 'مفعلة 📚' : 'معطلة ⚪'} />
                     <InfoRow label="الحالة"   value={isActive ? 'نشط ✅' : 'موقوف ❌'} />
                 </div>
 

@@ -9,6 +9,7 @@ export interface IAttendance {
     isGuest:     boolean;           // طالب من مجموعة تانية
     scannedAt:   Date;
     scannedBy?:  Types.ObjectId;   // المساعد الذي سجّل (optional)
+    homeworkDone?: boolean | null;
     notes?:      string;
     isConsumed?: boolean;
     exemptionDecision?: {

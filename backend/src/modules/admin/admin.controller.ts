@@ -11,6 +11,9 @@ import { SubscriptionService } from '../subscriptions/subscriptions.service.js';
 
 import { generateWeeklyReports } from './../automation/automation.service.js';
 
+import { validate } from '../../middlewares/validate.middleware.js';
+import { updateTenantSchema } from '../../validation/user.validation.js';
+
 const adminRouter = Router();
 
 // All admin routes require authentication
@@ -80,7 +83,7 @@ adminRouter.get('/tenants/:id', async (req: Request, res: Response, next: NextFu
 });
 
 // ── PATCH /admin/tenants/:id ─────────────────────────────────────────
-adminRouter.patch('/tenants/:id', async (req: Request, res: Response, next: NextFunction) => {
+adminRouter.patch('/tenants/:id', validate(updateTenantSchema), async (req: Request, res: Response, next: NextFunction) => {
     try {
         const data = await AdminService.updateTenant(req.params['id'] as string, req.body);
         return SuccessResponse({ res, data, message: 'Teacher updated successfully' });

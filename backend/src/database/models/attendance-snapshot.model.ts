@@ -7,6 +7,7 @@ const studentEntrySchema = new Schema({
     studentName: { type: String, required: true },  // embedded — zero populate needed
     scannedAt:   { type: Date },                    // only for present/late
     status:      { type: String, enum: Object.values(AttendanceStatus) },
+    homeworkDone: { type: Boolean, default: null },
 }, { _id: false });
 
 const attendanceSnapshotSchema = new Schema<IAttendanceSnapshotDocument>({

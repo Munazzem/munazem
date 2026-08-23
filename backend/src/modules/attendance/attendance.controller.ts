@@ -163,8 +163,8 @@ attendanceRouter.patch(
             const user = (req as any).user;
             const teacherId = resolveTeacherId(user);
             const attendanceId = req.params['id'] as string;
-            const { status, notes } = req.body as { status: string; notes?: string };
-            const updated = await AttendanceService.updateAttendance(attendanceId, user.userId, status, teacherId, notes);
+            const { status, notes, homeworkDone } = req.body as { status?: string; notes?: string; homeworkDone?: boolean };
+            const updated = await AttendanceService.updateAttendance(attendanceId, user.userId, status, teacherId, notes, homeworkDone);
             return SuccessResponse({ res, data: updated, message: 'تم تحديث حالة الحضور بنجاح' });
         } catch (error) { next(error); }
     }
@@ -180,14 +180,15 @@ attendanceRouter.patch(
             const user = (req as any).user;
             const teacherId = resolveTeacherId(user);
             const sessionId = req.params['sessionId'] as string;
-            const { studentId, status, notes } = req.body as { studentId: string; status: any; notes?: string };
+            const { studentId, status, notes, homeworkDone } = req.body as { studentId: string; status: any; notes?: string; homeworkDone?: boolean };
             const result = await AttendanceService.adjustCompletedSessionAttendance(
                 sessionId,
                 studentId,
                 status,
                 teacherId,
                 user.userId,
-                notes
+                notes,
+                homeworkDone
             );
             return SuccessResponse({ res, data: result, message: result.message });
         } catch (error) { next(error); }

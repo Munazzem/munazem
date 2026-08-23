@@ -32,6 +32,7 @@ const schema = z.object({
     phone: z.string().min(10, 'رقم الهاتف مطلوب'),
     stages: z.array(z.string()).min(1, 'اختر مرحلة واحدة على الأقل').optional(),
     subject: z.string().optional(),
+    homeworkTracking: z.boolean().optional(),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -47,11 +48,18 @@ export function EditTeacherModal({ teacher }: { teacher: any }) {
             phone: teacher?.phone || '',
             stages: teacher?.stages || [],
             subject: teacher?.subject || '',
+            homeworkTracking: teacher?.features?.homeworkTracking ?? false,
         },
     });
 
     const mutation = useMutation({
-        mutationFn: (values: FormValues) => updateTenant(teacher._id, values),
+        mutationFn: (values: FormValues) => updateTenant(teacher._id, {
+            name: values.name,
+            phone: values.phone,
+            stages: values.stages,
+            subject: values.subject,
+            features: { homeworkTracking: values.homeworkTracking ?? false },
+        }),
         onSuccess: () => {
             toast.success('تم التحديث بنجاح');
             queryClient.invalidateQueries({ queryKey: ['admin-tenant', teacher._id] });
@@ -70,6 +78,7 @@ export function EditTeacherModal({ teacher }: { teacher: any }) {
                 phone: teacher?.phone || '',
                 stages: teacher?.stages || [],
                 subject: teacher?.subject || '',
+                homeworkTracking: teacher?.features?.homeworkTracking ?? false,
             });
             setOpen(val);
         }}>
@@ -172,6 +181,29 @@ export function EditTeacherModal({ teacher }: { teacher: any }) {
                                         <Input {...field} placeholder="مثال: الرياضيات" />
                                     </FormControl>
                                     <FormMessage />
+                                </FormItem>
+                            )}
+                        />
+
+                        <FormField
+                            control={form.control}
+                            name="homeworkTracking"
+                            render={({ field }) => (
+                                <FormItem className="flex flex-row items-center justify-between rounded-xl border border-gray-100 bg-gray-50/70 p-3 mt-3">
+                                    <div className="space-y-0.5 ml-2">
+                                        <FormLabel className="text-sm font-semibold text-gray-800 cursor-pointer">
+                                            تفعيل متابعة الواجبات
+                                        </FormLabel>
+                                        <p className="text-[11px] text-gray-500">
+                                            إتاحة تسجيل وحفظ أداء الواجب للطلاب أثناء الحصة
+                                        </p>
+                                    </div>
+                                    <FormControl>
+                                        <Checkbox
+                                            checked={field.value}
+                                            onCheckedChange={field.onChange}
+                                        />
+                                    </FormControl>
                                 </FormItem>
                             )}
                         />

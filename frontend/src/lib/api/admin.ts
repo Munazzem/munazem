@@ -63,7 +63,14 @@ export const activateTenant = async (id: string): Promise<void> => {
     await apiClient.post(`/admin/tenants/${id}/activate`);
 };
 
-export const updateTenant = async (tenantId: string, payload: { name?: string; phone?: string; stages?: string[]; subject?: string; centerName?: string }) => {
+export const updateTenant = async (tenantId: string, payload: {
+    name?: string;
+    phone?: string;
+    stages?: string[];
+    subject?: string;
+    centerName?: string;
+    features?: { homeworkTracking?: boolean };
+}) => {
     const res = await apiClient.patch(`/admin/tenants/${tenantId}`, payload);
     return (res as any).data;
 };

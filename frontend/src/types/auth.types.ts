@@ -13,6 +13,9 @@ export interface User {
     logoUrl?: string;
     assistantsAccessEnabled?: boolean;
     planTier?: 'MINI' | 'BASIC' | 'PREMIUM' | null;
+    features?: {
+        homeworkTracking?: boolean;
+    };
 }
 
 export interface AuthState {

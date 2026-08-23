@@ -536,53 +536,71 @@ export class PdfService {
         const session = await SessionService.getSessionById(sessionId, teacherId);
         const attendanceList = await AttendanceService.getSessionAttendance(sessionId, teacherId);
 
+        const isHomeworkTrackingEnabled = Boolean(teacher?.features?.homeworkTracking);
+
         const content = `
             <div style="background: #f9f9f9; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                <p><strong>تاريخ الحصة:</strong> <span dir="ltr">${new Date(session.date).toLocaleDateString()}</span></p>
+                <p><strong>تاريخ الحصة:</strong> <span dir="ltr">${new Date(session.date).toLocaleDateString('ar-EG')}</span></p>
                 <p><strong>وقت البدء:</strong> ${session.startTime}</p>
                 <p><strong>حالة الحصة:</strong> ${session.status === 'COMPLETED' ? 'مكتملة' : 'قيد الإجراء'}</p>
                 <p><strong>عدد المسجلين في الكشف:</strong> ${attendanceList.length} طالب</p>
             </div>
 
-            <h3 class="section-title">كشف أسماء الطلاب والغياب</h3>
+            <h3 class="section-title">كشف أسماء الطلاب والحضور</h3>
             <table>
                 <thead>
                     <tr>
-                        <th>م</th>
-                        <th>كود الطالب</th>
-                        <th>اسم الطالب</th>
-                        <th>رقم الهاتف</th>
-                        <th>حالة الحضور</th>
-                        <th>وقت التسجيل</th>
+                        <th style="width: 5%;">م</th>
+                        <th style="width: 15%;">كود الطالب</th>
+                        <th style="width: ${isHomeworkTrackingEnabled ? '30%' : '35%'};">اسم الطالب</th>
+                        <th style="width: ${isHomeworkTrackingEnabled ? '20%' : '25%'};">رقم الهاتف</th>
+                        <th style="width: 10%; text-align: center;">الحالة</th>
+                        ${isHomeworkTrackingEnabled ? '<th style="width: 10%; text-align: center;">الواجب</th>' : ''}
+                        <th style="width: 10%; text-align: center;">الوقت</th>
                     </tr>
                 </thead>
                 <tbody>
-                    ${attendanceList.length === 0 ? '<tr><td colspan="6">لم يتم تسجيل أي طلاب في هذا الكشف</td></tr>' : 
+                    ${attendanceList.length === 0 ? `<tr><td colspan="${isHomeworkTrackingEnabled ? '7' : '6'}" style="text-align: center; color: #9ca3af;">لم يتم تسجيل أي طلاب في هذا الكشف</td></tr>` : 
                     attendanceList.map((record: any, index: number) => {
                         const isAttended = record.status === 'PRESENT' || record.status === 'LATE';
                         const isGuest = record.isGuest === true;
-                        const statusColor = isAttended ? 'green' : (record.status === 'EXCUSED' ? 'orange' : 'red');
+                        const statusColor = isAttended ? '#15803d' : (record.status === 'EXCUSED' ? '#2563eb' : '#dc2626');
                         let statusText = 'غائب';
                         if (isAttended) {
-                            statusText = isGuest ? 'زائر (مجموعة أخرى)' : 'حاضر';
+                            statusText = isGuest ? 'زائر' : (record.status === 'LATE' ? 'متأخر' : 'حاضر');
                         } else if (record.status === 'EXCUSED') {
                             statusText = 'بعذر';
                         }
+
+                        let hwColumn = '';
+                        if (isHomeworkTrackingEnabled) {
+                            if (isAttended && typeof record.homeworkDone === 'boolean') {
+                                hwColumn = record.homeworkDone
+                                    ? '<td style="color: #15803d; font-weight: bold; text-align: center;">تم</td>'
+                                    : '<td style="color: #dc2626; font-weight: bold; text-align: center;">لم يتم</td>';
+                            } else {
+                                hwColumn = '<td style="color: #9ca3af; text-align: center;">—</td>';
+                            }
+                        }
+
+                        const time = record.scannedAt || record.checkInTime;
+
                         return `
                         <tr>
-                            <td>${index + 1}</td>
+                            <td style="text-align: center;">${index + 1}</td>
                             <td>${record.studentId?.studentCode || '—'}</td>
-                            <td>${record.studentId?.studentName || '—'}</td>
-                            <td dir="ltr">${record.studentId?.studentPhone || '—'}</td>
-                            <td style="color: ${statusColor}; font-weight: bold;">${statusText}</td>
-                            <td dir="ltr">${record.checkInTime ? new Date(record.checkInTime).toLocaleTimeString() : '—'}</td>
+                            <td style="font-weight: 600;">${record.studentId?.studentName || '—'}</td>
+                            <td dir="ltr" style="text-align: right;">${record.studentId?.studentPhone || '—'}</td>
+                            <td style="color: ${statusColor}; font-weight: bold; text-align: center;">${statusText}</td>
+                            ${hwColumn}
+                            <td dir="ltr" style="text-align: center;">${time ? new Date(time).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
                         </tr>
                         `;
                     }).join('')}
                 </tbody>
             </table>
         `;
-        return this.wrapHtmlContent(`كشف غياب الحصة`, content, teacher?.centerName, teacher?.logoUrl);
+        return this.wrapHtmlContent(`كشف حضور الحصة`, content, teacher?.centerName, teacher?.logoUrl);
     }
 
     // ─────────────────────────────────────────────────────────────────

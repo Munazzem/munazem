@@ -211,10 +211,27 @@ export class AdminService {
     }
 
     // ── Update Tenant Profile ─────────────────────────────────────────
-    static async updateTenant(id: string, updateData: { name?: string; phone?: string; stages?: string[]; subject?: string; centerName?: string }) {
+    static async updateTenant(id: string, updateData: {
+        name?: string;
+        phone?: string;
+        stages?: string[];
+        subject?: string;
+        centerName?: string;
+        features?: { homeworkTracking?: boolean };
+    }) {
+        const updateDoc: any = {};
+        if (updateData.name !== undefined) updateDoc.name = updateData.name;
+        if (updateData.phone !== undefined) updateDoc.phone = updateData.phone;
+        if (updateData.stages !== undefined) updateDoc.stages = updateData.stages;
+        if (updateData.subject !== undefined) updateDoc.subject = updateData.subject;
+        if (updateData.centerName !== undefined) updateDoc.centerName = updateData.centerName;
+        if (updateData.features?.homeworkTracking !== undefined) {
+            updateDoc['features.homeworkTracking'] = updateData.features.homeworkTracking;
+        }
+
         const teacher = await UserModel.findByIdAndUpdate(
             id,
-            { $set: updateData },
+            { $set: updateDoc },
             { new: true, runValidators: true }
         ).select('-password').lean();
         

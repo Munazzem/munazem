@@ -64,10 +64,11 @@ export const useOfflineSyncStore = create<OfflineSyncState>((set, get) => ({
                 //   rawToken             — offline scan with no local match; server resolves
                 ...(i.studentId ? { studentId: i.studentId } : {}),
                 ...(i.rawToken  ? { rawToken:  i.rawToken  } : {}),
-                status:    i.status,
-                isGuest:   i.isGuest,
-                scannedAt: i.scannedAt,
-                notes:     i.notes,
+                status:       i.status,
+                isGuest:      i.isGuest,
+                homeworkDone: i.homeworkDone ?? undefined,
+                scannedAt:    i.scannedAt,
+                notes:        i.notes,
             }));
 
             try {

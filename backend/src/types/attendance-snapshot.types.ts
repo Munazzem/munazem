@@ -6,6 +6,7 @@ export interface IStudentEntry {
     studentName: string;            // embedded — no populate needed on read
     scannedAt?:  Date;              // only for present/late
     status?:     AttendanceStatus;
+    homeworkDone?: boolean | null;
 }
 
 export interface IAttendanceSnapshot {
