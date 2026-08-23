@@ -29,6 +29,7 @@ export interface IAttendanceRecord {
     sessionId: string;
     status: AttendanceStatus;
     isGuest: boolean;
+    homeworkDone?: boolean | null;
     scannedAt: string;
     scannedBy?: string;
     notes?: string;
@@ -47,6 +48,7 @@ export interface IOfflineOutboxMutation {
     studentPhone?: string;
     status: AttendanceStatus;
     isGuest: boolean;
+    homeworkDone?: boolean | null;
     scannedAt: string;
     createdAt: number;
     syncStatus: MutationSyncStatus;
@@ -60,11 +62,12 @@ export interface SyncAttendanceRecordDTO {
     /** MongoDB ObjectId — fast path. */
     studentId?: string;
     /** QR token / barcode / studentCode — deferred server-side resolution. */
-    rawToken?:  string;
-    status?:    AttendanceStatus;
-    isGuest?:   boolean;
-    scannedAt?: string;
-    notes?:     string;
+    rawToken?:     string;
+    status?:       AttendanceStatus;
+    isGuest?:      boolean;
+    homeworkDone?: boolean;
+    scannedAt?:    string;
+    notes?:        string;
 }
 
 export interface SyncBatchAttendanceDTO {
@@ -76,6 +79,8 @@ export interface IAttendanceSnapshotStudent {
     studentId: string;
     studentName: string;
     scannedAt?: string;
+    status?: AttendanceStatus;
+    homeworkDone?: boolean | null;
 }
 
 export interface IAttendanceSnapshot {
@@ -104,6 +109,7 @@ export interface RecordAttendanceDTO {
     studentId: string;
     status: AttendanceStatus;
     isGuest?: boolean;
+    homeworkDone?: boolean;
     notes?: string;
 }
 

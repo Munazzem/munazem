@@ -75,6 +75,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import { HomeworkToggleButton } from '@/components/sessions/HomeworkToggleButton';
 import { cn } from '@/lib/utils';
 import type { IAttendanceRecord, IAttendanceSnapshot, AttendanceStatus } from '@/types/session.types';
 
@@ -113,6 +114,7 @@ export default function SessionDetailPage() {
     const user = useAuthStore((s) => s.user);
     const queryClient = useQueryClient();
     const canWrite = user?.role === 'assistant' || user?.role === 'teacher';
+    const isHomeworkTrackingEnabled = Boolean(user?.features?.homeworkTracking);
 
     const [searchQuery, setSearchQuery] = useState('');
     const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
@@ -120,6 +122,7 @@ export default function SessionDetailPage() {
     const [editRecord, setEditRecord] = useState<IAttendanceRecord | null>(null);
     const [showWhatsApp, setShowWhatsApp] = useState(false);
     const [pdfLoading, setPdfLoading] = useState(false);
+    const [pendingHomeworkToggleIds, setPendingHomeworkToggleIds] = useState<Set<string>>(new Set());
 
     // Excused Absence State
     const [excuseStudent, setExcuseStudent] = useState<any | null>(null);
@@ -196,11 +199,12 @@ export default function SessionDetailPage() {
                     studentCode: m.studentCode ?? '...',
                     studentPhone: m.studentPhone,
                 },
-                sessionId:   m.sessionId,
-                status:      m.status,
-                isGuest:     m.isGuest,
-                scannedAt:   m.scannedAt,
-                _syncStatus: m.syncStatus,
+                sessionId:    m.sessionId,
+                status:       m.status,
+                isGuest:      m.isGuest,
+                homeworkDone: m.homeworkDone ?? true,
+                scannedAt:    m.scannedAt,
+                _syncStatus:  m.syncStatus,
             }));
             setLocalPendingRecords(mapped);
         }).catch(() => {});
@@ -257,6 +261,7 @@ export default function SessionDetailPage() {
                 sessionId,
                 studentId,
                 status: 'PRESENT',
+                homeworkDone: true,
             });
         },
         onMutate: async (studentId) => {
@@ -286,6 +291,7 @@ export default function SessionDetailPage() {
                 sessionId,
                 status: 'PRESENT',
                 isGuest,
+                homeworkDone: true,
                 scannedAt: new Date().toISOString(),
                 _syncStatus: 'QUEUED',
             };
@@ -318,6 +324,7 @@ export default function SessionDetailPage() {
                     studentPhone,
                     status: 'PRESENT',
                     isGuest,
+                    homeworkDone: true,
                     scannedAt: context.optimisticRecord.scannedAt,
                     createdAt: Date.now(),
                     syncStatus: 'QUEUED',
@@ -347,12 +354,22 @@ export default function SessionDetailPage() {
 
     // Update attendance status (supports live editing and post-completion adjustments)
     const updateMutation = useMutation({
-        mutationFn: async ({ id, status, studentId }: { id: string; status: AttendanceStatus; studentId?: string }) => {
+        mutationFn: async ({ id, status, notes, homeworkDone, studentId }: {
+            id: string;
+            status?: AttendanceStatus;
+            notes?: string;
+            homeworkDone?: boolean;
+            studentId?: string;
+        }) => {
             if (session?.status === 'COMPLETED') {
                 const sId = studentId || (typeof editRecord?.studentId === 'object' ? (editRecord?.studentId as any)._id : editRecord?.studentId) || id;
-                return adjustCompletedAttendance(sessionId, sId, status);
+                return adjustCompletedAttendance(sessionId, sId, status || editRecord?.status || 'PRESENT', notes, homeworkDone);
             }
-            return updateAttendance(id, status);
+            return updateAttendance(id, {
+                ...(status ? { status } : {}),
+                ...(notes !== undefined ? { notes } : {}),
+                ...(homeworkDone !== undefined ? { homeworkDone } : {}),
+            });
         },
         onSuccess: () => {
             toast.success('تم تحديث حالة الحضور بنجاح');
@@ -362,10 +379,62 @@ export default function SessionDetailPage() {
             queryClient.invalidateQueries({ queryKey: QK.students.details });
             setEditRecord(null);
         },
-        onError: (err: any) => {
+        onError: () => {
             // Handled by interceptor
         },
     });
+
+    // Toggle homework tracking status for a student record (online or offline temp record)
+    const handleToggleHomework = async (record: IAttendanceRecord, newStatus: boolean) => {
+        const isTemp = record._id.toString().startsWith('temp-');
+        
+        if (isTemp) {
+            const clientMutationId = record._id.toString().replace('temp-', '');
+            // 1. Update IndexedDB mutation directly
+            await OutboxService.updateMutation(clientMutationId, { homeworkDone: newStatus });
+            // 2. Optimistically update localPendingRecords state
+            setLocalPendingRecords(prev =>
+                prev.map(r => r._id === record._id ? { ...r, homeworkDone: newStatus } : r)
+            );
+            // 3. Optimistically update React Query cache
+            queryClient.setQueryData(QK.attendance.bySession(sessionId), (prev: IAttendanceRecord[] = []) =>
+                prev.map(r => r._id === record._id ? { ...r, homeworkDone: newStatus } : r)
+            );
+            toast.success(newStatus ? 'تم تسجيل تسليم الواجب محلياً' : 'تم تسجيل عدم تسليم الواجب محلياً');
+            return;
+        }
+
+        // Real DB record:
+        const previousAttendance = queryClient.getQueryData<IAttendanceRecord[]>(QK.attendance.bySession(sessionId)) || [];
+        
+        // Optimistic UI update
+        queryClient.setQueryData(QK.attendance.bySession(sessionId), (prev: IAttendanceRecord[] = []) =>
+            prev.map(r => r._id === record._id ? { ...r, homeworkDone: newStatus } : r)
+        );
+
+        setPendingHomeworkToggleIds(prev => new Set(prev).add(record._id));
+
+        try {
+            if (session?.status === 'COMPLETED') {
+                const studentId = typeof record.studentId === 'object' ? (record.studentId as any)?._id : record.studentId;
+                await adjustCompletedAttendance(sessionId, studentId, record.status, record.notes, newStatus);
+            } else {
+                await updateAttendance(record._id, { homeworkDone: newStatus });
+            }
+            toast.success(newStatus ? 'تم تسجيل تسليم الواجب' : 'تم تسجيل عدم تسليم الواجب');
+            queryClient.invalidateQueries({ queryKey: QK.attendance.bySession(sessionId) });
+            queryClient.invalidateQueries({ queryKey: QK.attendance.snapshot(sessionId) });
+        } catch (err: any) {
+            queryClient.setQueryData(QK.attendance.bySession(sessionId), previousAttendance);
+            toast.error('تعذر تحديث حالة الواجب');
+        } finally {
+            setPendingHomeworkToggleIds(prev => {
+                const next = new Set(prev);
+                next.delete(record._id);
+                return next;
+            });
+        }
+    };
 
     // Record excuse
     const setExcuseMutation = useMutation({
@@ -512,6 +581,7 @@ export default function SessionDetailPage() {
                         sessionId,
                         status: 'PRESENT',
                         isGuest,
+                        homeworkDone: true,
                         scannedAt,
                         _syncStatus: 'QUEUED',
                     } as IAttendanceRecord,
@@ -520,16 +590,17 @@ export default function SessionDetailPage() {
                 await OutboxService.enqueueAttendance({
                     clientMutationId,
                     sessionId,
-                    studentId:   localStudent._id,   // ObjectId — fast sync path
-                    studentName: localStudent.studentName,
-                    studentCode: localStudent.studentCode,
+                    studentId:    localStudent._id,   // ObjectId — fast sync path
+                    studentName:  localStudent.studentName,
+                    studentCode:  localStudent.studentCode,
                     studentPhone: localStudent.studentPhone ?? '',
-                    status:      'PRESENT',
+                    status:       'PRESENT',
                     isGuest,
+                    homeworkDone: true,
                     scannedAt,
-                    createdAt:   Date.now(),
-                    syncStatus:  'QUEUED',
-                    retryCount:  0,
+                    createdAt:    Date.now(),
+                    syncStatus:   'QUEUED',
+                    retryCount:   0,
                 });
 
                 await refreshPendingCount(sessionId);
@@ -543,14 +614,15 @@ export default function SessionDetailPage() {
                 await OutboxService.enqueueAttendance({
                     clientMutationId,
                     sessionId,
-                    rawToken:    scanInput,           // deferred server-side resolution
-                    studentName: `طالب زائر (${scanInput.slice(-6)})`,
-                    status:      'PRESENT',
-                    isGuest:     true,               // assume guest until server confirms
+                    rawToken:     scanInput,           // deferred server-side resolution
+                    studentName:  `طالب زائر (${scanInput.slice(-6)})`,
+                    status:       'PRESENT',
+                    isGuest:      true,               // assume guest until server confirms
+                    homeworkDone: true,
                     scannedAt,
-                    createdAt:   Date.now(),
-                    syncStatus:  'QUEUED',
-                    retryCount:  0,
+                    createdAt:    Date.now(),
+                    syncStatus:   'QUEUED',
+                    retryCount:   0,
                 });
 
                 // Optimistic UI placeholder (no studentId known yet)
@@ -566,6 +638,7 @@ export default function SessionDetailPage() {
                         sessionId,
                         status: 'PRESENT',
                         isGuest: true,
+                        homeworkDone: true,
                         scannedAt,
                         _syncStatus: 'QUEUED',
                     } as IAttendanceRecord,
@@ -873,23 +946,35 @@ export default function SessionDetailPage() {
                                                     ) : null}
                                                 </p>
                                             </div>
-                                            <span className={cn(
-                                                'text-xs px-2 py-0.5 rounded-full border font-medium',
-                                                ATTENDANCE_COLORS[record.status]
-                                            )}>
-                                                {ATTENDANCE_LABELS[record.status]}
-                                            </span>
-                                            {canWrite && (
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    className="h-7 w-7 text-gray-400 hover:text-gray-600"
-                                                    title="تعديل حالة الحضور"
-                                                    onClick={() => setEditRecord(record)}
-                                                >
-                                                    <Edit2 className="h-3.5 w-3.5" />
-                                                </Button>
-                                            )}
+                                            <div className="flex items-center gap-1.5 shrink-0 min-w-0">
+                                                {/* Homework Tracking Toggle Button */}
+                                                {isHomeworkTrackingEnabled && (record.status === 'PRESENT' || record.status === 'LATE') && (
+                                                    <HomeworkToggleButton
+                                                        recordId={record._id}
+                                                        homeworkDone={record.homeworkDone}
+                                                        disabled={!canWrite}
+                                                        isPending={pendingHomeworkToggleIds.has(record._id)}
+                                                        onToggle={(newVal) => handleToggleHomework(record, newVal)}
+                                                    />
+                                                )}
+                                                <span className={cn(
+                                                    'text-xs px-2 py-0.5 rounded-full border font-medium shrink-0',
+                                                    ATTENDANCE_COLORS[record.status]
+                                                )}>
+                                                    {ATTENDANCE_LABELS[record.status]}
+                                                </span>
+                                                {canWrite && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-7 w-7 text-gray-400 hover:text-gray-600 shrink-0"
+                                                        title="تعديل حالة الحضور"
+                                                        onClick={() => setEditRecord(record)}
+                                                    >
+                                                        <Edit2 className="h-3.5 w-3.5" />
+                                                    </Button>
+                                                )}
+                                            </div>
                                         </li>
                                     );
                                 })}
@@ -1043,9 +1128,10 @@ export default function SessionDetailPage() {
             {editRecord && (
                 <EditAttendanceDialog
                     record={editRecord}
+                    showHomeworkTracking={isHomeworkTrackingEnabled}
                     onClose={() => setEditRecord(null)}
-                    onSave={(status) =>
-                        updateMutation.mutate({ id: editRecord._id, status })
+                    onSave={(status, notes, homeworkDone) =>
+                        updateMutation.mutate({ id: editRecord._id, status, notes, homeworkDone })
                     }
                 />
             )}

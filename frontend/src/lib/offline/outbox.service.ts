@@ -28,6 +28,37 @@ export class OutboxService {
     }
 
     /**
+     * Update fields of an existing mutation in IndexedDB in-place by clientMutationId.
+     */
+    static async updateMutation(clientMutationId: string, updates: Partial<IOfflineOutboxMutation>): Promise<void> {
+        try {
+            const db = await getOfflineDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(OUTBOX_STORE, 'readwrite');
+                const store = tx.objectStore(OUTBOX_STORE);
+                const getReq = store.get(clientMutationId);
+
+                getReq.onsuccess = () => {
+                    if (getReq.result) {
+                        const updated: IOfflineOutboxMutation = {
+                            ...getReq.result,
+                            ...updates,
+                        };
+                        const putReq = store.put(updated);
+                        putReq.onsuccess = () => resolve();
+                        putReq.onerror = () => reject(putReq.error);
+                    } else {
+                        resolve();
+                    }
+                };
+                getReq.onerror = () => reject(getReq.error);
+            });
+        } catch (error) {
+            console.error('Failed to update outbox mutation in IndexedDB:', error);
+        }
+    }
+
+    /**
      * Get all un-synced mutations (status != 'RESOLVED').
      */
     static async getPendingMutations(sessionId?: string): Promise<IOfflineOutboxMutation[]> {

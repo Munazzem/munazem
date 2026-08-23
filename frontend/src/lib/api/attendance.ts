@@ -38,10 +38,13 @@ export const getSessionAttendance = async (
 
 export const updateAttendance = async (
     attendanceId: string,
-    status: AttendanceStatus,
+    payload: { status?: AttendanceStatus; notes?: string; homeworkDone?: boolean } | AttendanceStatus,
     notes?: string
 ): Promise<IAttendanceRecord> => {
-    const res = await apiClient.patch(`/attendance/${attendanceId}`, { status, notes });
+    const body = typeof payload === 'string'
+        ? { status: payload, ...(notes !== undefined ? { notes } : {}) }
+        : payload;
+    const res = await apiClient.patch(`/attendance/${attendanceId}`, body);
     return (res as any).data;
 };
 
@@ -49,9 +52,15 @@ export const adjustCompletedAttendance = async (
     sessionId: string,
     studentId: string,
     status: AttendanceStatus,
-    notes?: string
+    notes?: string,
+    homeworkDone?: boolean
 ): Promise<{ success: boolean; message: string; record?: IAttendanceRecord }> => {
-    const res = await apiClient.patch(`/attendance/session/${sessionId}/adjust`, { studentId, status, notes });
+    const res = await apiClient.patch(`/attendance/session/${sessionId}/adjust`, {
+        studentId,
+        status,
+        ...(notes !== undefined ? { notes } : {}),
+        ...(homeworkDone !== undefined ? { homeworkDone } : {}),
+    });
     return (res as any).data;
 };
 
