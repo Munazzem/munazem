@@ -13,6 +13,7 @@ export interface RecordAttendanceDTO {
     sessionId: string;
     status:    AttendanceStatus;
     isGuest?:  boolean;
+    homeworkDone?: boolean;
     notes?:    string;
 }
 
@@ -23,6 +24,7 @@ export interface BatchAttendanceDTO {
         studentId: string;
         status:    AttendanceStatus;
         isGuest?:  boolean;
+        homeworkDone?: boolean;
         notes?:    string;
     }[];
 }
@@ -37,6 +39,7 @@ export interface SyncAttendanceRecordDTO {
     rawToken?:  string;  // QR token / barcode / studentCode — deferred resolution
     status?:    AttendanceStatus;
     isGuest?:   boolean;
+    homeworkDone?: boolean;
     scannedAt?: string;
     notes?:     string;
 }

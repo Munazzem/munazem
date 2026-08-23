@@ -288,4 +288,110 @@ describe('POST /attendance/session/:sessionId/complete', () => {
         expect(res.status).toBe(200);
         expect(res.body.message).toContain('تم إنهاء الحصة');
     });
+
+    it('يحفظ حالة الواجب homeworkDone داخل الـ snapshot بدقة للطلاب الحاضرين', async () => {
+        await seedTeacher();
+        const group = await seedGroup();
+        const session = await seedSession({ groupId: group._id as any, status: SessionStatus.SCHEDULED });
+        const student1 = await seedStudent(group._id as any, { studentCode: 'HW-1' });
+        const student2 = await seedStudent(group._id as any, { studentCode: 'HW-2' });
+
+        // Record student 1 as present with homeworkDone: true
+        await seedAttendance(session._id as any, student1._id as any, {
+            status: AttendanceStatus.PRESENT,
+            homeworkDone: true,
+        });
+
+        // Record student 2 as present with homeworkDone: false
+        await seedAttendance(session._id as any, student2._id as any, {
+            status: AttendanceStatus.PRESENT,
+            homeworkDone: false,
+        });
+
+        const res = await app
+            .post(`/attendance/session/${session._id}/complete`)
+            .set('Authorization', bearerHeader(makeTeacherToken()));
+
+        expect(res.status).toBe(200);
+        const { AttendanceSnapshotModel } = await import('../../src/database/models/attendance-snapshot.model.js');
+        const snapshot = await AttendanceSnapshotModel.findOne({ sessionId: session._id });
+        expect(snapshot).not.toBeNull();
+        
+        const snap1 = snapshot?.presentStudents.find(s => s.studentId.toString() === student1._id.toString());
+        const snap2 = snapshot?.presentStudents.find(s => s.studentId.toString() === student2._id.toString());
+        
+        expect(snap1?.homeworkDone).toBe(true);
+        expect(snap2?.homeworkDone).toBe(false);
+    });
+});
+
+// =============================================================================
+// Homework Tracking: Record, Update, Batch-Sync
+// =============================================================================
+describe('Homework Tracking Features', () => {
+
+    it('يُسجل الحضور مع homeworkDone بنجاح ويسمح بتعديل حالة الواجب عبر PATCH', async () => {
+        await seedTeacher();
+        const group = await seedGroup();
+        const session = await seedSession({ groupId: group._id as any });
+        const student = await seedStudent(group._id as any, { barcode: 'HW-BARCODE-1' });
+
+        // 1. Record attendance with explicit homeworkDone: true
+        const recordRes = await app
+            .post('/attendance')
+            .set('Authorization', bearerHeader(makeTeacherToken()))
+            .send({
+                sessionId: session._id.toString(),
+                studentId: student._id.toString(),
+                status: AttendanceStatus.PRESENT,
+                homeworkDone: true
+            });
+
+        expect(recordRes.status).toBe(201);
+        expect(recordRes.body.data.homeworkDone).toBe(true);
+
+        const attendanceId = recordRes.body.data._id;
+
+        // 2. Update homeworkDone to false via PATCH /attendance/:id
+        const patchRes = await app
+            .patch(`/attendance/${attendanceId}`)
+            .set('Authorization', bearerHeader(makeTeacherToken()))
+            .send({
+                homeworkDone: false
+            });
+
+        expect(patchRes.status).toBe(200);
+        expect(patchRes.body.data.homeworkDone).toBe(false);
+    });
+
+    it('يُزامن المسحات المعلقة مع homeworkDone بنجاح في batch-sync', async () => {
+        await seedTeacher();
+        const group = await seedGroup();
+        const session = await seedSession({ groupId: group._id as any });
+        const student = await seedStudent(group._id as any, { studentCode: 'HW-SYNC-1' });
+
+        const syncRes = await app
+            .post('/attendance/batch-sync')
+            .set('Authorization', bearerHeader(makeTeacherToken()))
+            .send({
+                sessionId: session._id.toString(),
+                records: [
+                    {
+                        clientMutationId: 'hw-mut-1',
+                        studentId: student._id.toString(),
+                        status: AttendanceStatus.PRESENT,
+                        homeworkDone: false,
+                        scannedAt: new Date().toISOString(),
+                    }
+                ]
+            });
+
+        expect(syncRes.status).toBe(200);
+        expect(syncRes.body.data.success).toBe(true);
+
+        const { AttendanceModel } = await import('../../src/database/models/attendance.model.js');
+        const record = await AttendanceModel.findOne({ sessionId: session._id, studentId: student._id });
+        expect(record).not.toBeNull();
+        expect(record?.homeworkDone).toBe(false);
+    });
 });

@@ -89,6 +89,9 @@ const userSchema = new Schema<IUserDocument>(
             trim: true,
             default: '',
         },
+        features: {
+            homeworkTracking: { type: Boolean, default: false },
+        },
     },
     {
         timestamps: true,

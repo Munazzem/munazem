@@ -85,6 +85,7 @@ export class AttendanceService {
                 scannedAt: new Date(),
                 scannedBy,
                 type:      'SESSION',
+                ...(data.homeworkDone !== undefined ? { homeworkDone: data.homeworkDone } : (data.status === AttendanceStatus.PRESENT || data.status === AttendanceStatus.LATE ? { homeworkDone: true } : {})),
                 ...(data.notes ? { notes: data.notes } : {}),
             });
 
@@ -193,13 +194,13 @@ export class AttendanceService {
             throw BadRequestException({ message: 'لا يمكن تسجيل الحضور قبل يوم الحصة' });
         }
 
-        // Build bulk records — insertMany with ordered:false to continue on duplicate errors
         // Build bulk records
         const docs = data.records.map(r => ({
             studentId: new mongoose.Types.ObjectId(r.studentId),
             sessionId: new mongoose.Types.ObjectId(data.sessionId),
             status:    r.status,
             isGuest:   r.isGuest ?? false,
+            homeworkDone: r.homeworkDone !== undefined ? r.homeworkDone : (r.status === AttendanceStatus.PRESENT || r.status === AttendanceStatus.LATE ? true : null),
             scannedAt: new Date(),
             scannedBy: new mongoose.Types.ObjectId(scannedBy),
             notes:     r.notes,
@@ -309,6 +310,7 @@ export class AttendanceService {
             clientMutationId: string;
             status:           AttendanceStatus;
             isGuest:          boolean;           // always set (defaults to false)
+            homeworkDone:     boolean | undefined; // explicit union — required by exactOptionalPropertyTypes
             scannedAt:        Date;
             notes:            string | undefined; // explicit union — required by exactOptionalPropertyTypes
         };
@@ -351,6 +353,7 @@ export class AttendanceService {
                 clientMutationId: record.clientMutationId,
                 status:           record.status || AttendanceStatus.PRESENT,
                 isGuest:          resolvedIsGuest ?? false,
+                homeworkDone:     record.homeworkDone,
                 scannedAt,
                 notes:            record.notes,
             });
@@ -381,9 +384,10 @@ export class AttendanceService {
         // to adjustCompletedSessionAttendance. This ensures that even if the teacher
         // finished the session early, offline attendance records are never lost.
         type LateAdjustItem = {
-            studentId: mongoose.Types.ObjectId;
-            status:    AttendanceStatus;
-            notes?:    string;
+            studentId:     mongoose.Types.ObjectId;
+            status:        AttendanceStatus;
+            homeworkDone?: boolean;
+            notes?:        string;
         };
         const lateAdjustRecords: LateAdjustItem[] = [];
 
@@ -405,6 +409,7 @@ export class AttendanceService {
                 lateAdjustRecords.push({
                     studentId: rec.studentId,
                     status:    rec.status,
+                    ...(rec.homeworkDone !== undefined ? { homeworkDone: rec.homeworkDone } : {}),
                     ...(rec.notes ? { notes: rec.notes } : {}),
                 });
                 continue;
@@ -425,6 +430,7 @@ export class AttendanceService {
                             scannedAt:  rec.scannedAt,
                             scannedBy:  new mongoose.Types.ObjectId(scannedBy),
                             type:       'SESSION',
+                            ...(rec.homeworkDone !== undefined ? { homeworkDone: rec.homeworkDone } : {}),
                             ...(rec.notes ? { notes: rec.notes } : {}),
                         },
                     },
@@ -447,7 +453,8 @@ export class AttendanceService {
                     item.status,
                     teacherId,
                     scannedBy,  // updatedBy — the assistant performing the sync
-                    item.notes
+                    item.notes,
+                    item.homeworkDone
                 );
                 adjustedCount++;
             } catch {
@@ -648,10 +655,11 @@ export class AttendanceService {
             
             if (record && record.status !== AttendanceStatus.ABSENT) {
                 presentStudents.push({
-                    studentId:   student._id,
-                    studentName: student.studentName,
-                    scannedAt:   record.scannedAt,
-                    status:      record.status,
+                    studentId:    student._id,
+                    studentName:  student.studentName,
+                    scannedAt:    record.scannedAt,
+                    status:       record.status,
+                    homeworkDone: record.homeworkDone ?? null,
                 });
             } else {
                 const isCompensated = compensatedMap.has(student._id.toString());
@@ -661,10 +669,11 @@ export class AttendanceService {
                 
                 if (isExcused) {
                     presentStudents.push({
-                        studentId:   student._id,
-                        studentName: student.studentName,
-                        scannedAt:   session.date,
-                        status:      AttendanceStatus.EXCUSED,
+                        studentId:    student._id,
+                        studentName:  student.studentName,
+                        scannedAt:    session.date,
+                        status:       AttendanceStatus.EXCUSED,
+                        homeworkDone: null,
                     });
                     
                     if (!record) {
@@ -767,9 +776,10 @@ export class AttendanceService {
                 const student = guestMap.get(r.studentId.toString());
                 if (student) {
                     guestStudents.push({
-                        studentId:   student._id,
-                        studentName: student.studentName,
-                        scannedAt:   r.scannedAt,
+                        studentId:    student._id,
+                        studentName:  student.studentName,
+                        scannedAt:    r.scannedAt,
+                        homeworkDone: r.homeworkDone ?? null,
                     });
                 }
             }
@@ -1054,34 +1064,44 @@ export class AttendanceService {
     }
 
     // ─── Update a single attendance record (manual edit by assistant) ──
-    static async updateAttendance(attendanceId: string, updatedBy: string, status: string, teacherId: string, notes?: string) {
+    static async updateAttendance(
+        attendanceId: string,
+        updatedBy: string,
+        status?: string,
+        teacherId?: string,
+        notes?: string,
+        homeworkDone?: boolean
+    ) {
         const record = await AttendanceModel.findById(attendanceId).lean();
         if (!record) throw NotFoundException({ message: 'سجل الحضور غير موجود' });
 
         // Verify the session belongs to this teacher before allowing edit (if session-based)
-        if (record.sessionId) {
+        if (record.sessionId && teacherId) {
             const session = await SessionModel.findOne({ _id: record.sessionId as any, teacherId }).lean();
             if (!session) throw NotFoundException({ message: 'الحصة غير موجودة أو لا صلاحية لك عليها' });
             if (session.status === SessionStatus.COMPLETED) {
                 throw BadRequestException({ message: 'لا يمكن تعديل حضور حصة مكتملة' });
             }
-        } else {
+        } else if (teacherId) {
             // For manual records, just verify the student belongs to the teacher
             const student = await StudentModel.findOne({ _id: record.studentId, teacherId }).lean();
             if (!student) throw NotFoundException({ message: 'الطالب غير موجود أو لا صلاحية لك عليه' });
         }
 
-        if (!Object.values(AttendanceStatus).includes(status as AttendanceStatus)) {
+        if (status && !Object.values(AttendanceStatus).includes(status as AttendanceStatus)) {
             throw BadRequestException({ message: 'حالة الحضور غير صحيحة' });
         }
 
+        const updateFields: any = {
+            scannedBy: new mongoose.Types.ObjectId(updatedBy),
+        };
+        if (status) updateFields.status = status;
+        if (notes !== undefined) updateFields.notes = notes;
+        if (homeworkDone !== undefined) updateFields.homeworkDone = homeworkDone;
+
         return await AttendanceModel.findByIdAndUpdate(
             attendanceId,
-            {
-                status,
-                scannedBy: new mongoose.Types.ObjectId(updatedBy),
-                ...(notes !== undefined ? { notes } : {}),
-            },
+            updateFields,
             { new: true, runValidators: true }
         ).lean();
     }
@@ -1093,7 +1113,8 @@ export class AttendanceService {
         newStatus: AttendanceStatus,
         teacherId: string,
         updatedBy: string,
-        notes?: string
+        notes?: string,
+        homeworkDone?: boolean
     ) {
         const session = await SessionModel.findOne({ _id: sessionId, teacherId }).lean();
         if (!session) throw NotFoundException({ message: 'الحصة غير موجودة' });
@@ -1111,7 +1132,7 @@ export class AttendanceService {
         let record = await AttendanceModel.findOne({ sessionId, studentId });
         const oldStatus = record ? record.status : AttendanceStatus.ABSENT;
 
-        if (oldStatus === newStatus && record) {
+        if (oldStatus === newStatus && record && (homeworkDone === undefined || record.homeworkDone === homeworkDone) && (notes === undefined || record.notes === notes)) {
             return { success: true, message: 'لم يحدث تغيير في حالة الحضور', record };
         }
 
@@ -1124,6 +1145,7 @@ export class AttendanceService {
                 scannedBy: new mongoose.Types.ObjectId(updatedBy),
                 scannedAt: session.date,
                 isConsumed: newStatus === AttendanceStatus.ABSENT,
+                ...(homeworkDone !== undefined ? { homeworkDone } : {}),
                 ...(notes ? { notes } : {})
             });
             await record.save();
@@ -1131,6 +1153,7 @@ export class AttendanceService {
             record.status = newStatus;
             record.scannedBy = new mongoose.Types.ObjectId(updatedBy);
             if (notes !== undefined) record.notes = notes;
+            if (homeworkDone !== undefined) record.homeworkDone = homeworkDone;
             record.isConsumed = newStatus === AttendanceStatus.ABSENT;
             await record.save();
         }
@@ -1162,7 +1185,8 @@ export class AttendanceService {
                     studentId: student._id,
                     studentName: student.studentName,
                     scannedAt: session.date,
-                    status: newStatus
+                    status: newStatus,
+                    homeworkDone: record.homeworkDone ?? null
                 });
             }
 
@@ -1191,7 +1215,8 @@ export class AttendanceService {
                 studentName: student.studentName,
                 sessionId,
                 oldStatus,
-                newStatus
+                newStatus,
+                homeworkDone: record.homeworkDone
             }
         });
 
