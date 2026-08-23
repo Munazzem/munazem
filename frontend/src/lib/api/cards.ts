@@ -68,7 +68,11 @@ export const generateCardBatch = async (count: number): Promise<BatchGenerateRes
 /** Resolve any QR scan input (URL, token, cardNumber, barcode, studentCode) */
 export const resolveCard = async (scanInput: string): Promise<CardResolveResult> => {
     const encoded = encodeURIComponent(scanInput);
-    const res = await apiClient.get(`/cards/resolve/${encoded}`);
+    const res = await apiClient.get(`/cards/resolve/${encoded}`, {
+        // Suppress the global error toast — callers that need offline fallback
+        // (handleQRScan) handle network errors themselves.
+        headers: { 'x-skip-error-toast': '1' },
+    });
     return (res as any).data;
 };
 

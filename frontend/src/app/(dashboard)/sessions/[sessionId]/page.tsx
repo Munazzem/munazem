@@ -32,6 +32,8 @@ import { SnapshotSummary } from '@/components/sessions/SnapshotSummary';
 import { WhatsAppLinksDialog } from '@/components/sessions/WhatsAppLinksDialog';
 import { toast } from 'sonner';
 import { QK } from '@/lib/query-keys';
+import { useOfflineSyncStore } from '@/lib/store/offline-sync.store';
+import { OutboxService } from '@/lib/offline/outbox.service';
 import {
     ArrowRight,
     CheckCircle2,
@@ -51,6 +53,8 @@ import {
     Receipt,
     FileDown,
     Trash2,
+    RefreshCw,
+    WifiOff,
 } from 'lucide-react';
 import { ReportCardSkeleton } from '@/components/layout/skeletons/ReportCardSkeleton';
 import { TableSkeleton } from '@/components/layout/skeletons/TableSkeleton';
@@ -71,6 +75,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import { HomeworkToggleButton } from '@/components/sessions/HomeworkToggleButton';
 import { cn } from '@/lib/utils';
 import type { IAttendanceRecord, IAttendanceSnapshot, AttendanceStatus } from '@/types/session.types';
 
@@ -109,6 +114,7 @@ export default function SessionDetailPage() {
     const user = useAuthStore((s) => s.user);
     const queryClient = useQueryClient();
     const canWrite = user?.role === 'assistant' || user?.role === 'teacher';
+    const isHomeworkTrackingEnabled = Boolean(user?.features?.homeworkTracking);
 
     const [searchQuery, setSearchQuery] = useState('');
     const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
@@ -116,6 +122,7 @@ export default function SessionDetailPage() {
     const [editRecord, setEditRecord] = useState<IAttendanceRecord | null>(null);
     const [showWhatsApp, setShowWhatsApp] = useState(false);
     const [pdfLoading, setPdfLoading] = useState(false);
+    const [pendingHomeworkToggleIds, setPendingHomeworkToggleIds] = useState<Set<string>>(new Set());
 
     // Excused Absence State
     const [excuseStudent, setExcuseStudent] = useState<any | null>(null);
@@ -172,14 +179,60 @@ export default function SessionDetailPage() {
         (groupStudentsData?.data ?? []).map((s) => [s._id, s.hasActiveSubscription ?? true])
     );
 
-    const alreadyRecordedIds = new Set(
+    const pendingCount = useOfflineSyncStore((s) => s.pendingCount);
+    const isSyncing = useOfflineSyncStore((s) => s.isSyncing);
+    const flushQueue = useOfflineSyncStore((s) => s.flushQueue);
+    const refreshPendingCount = useOfflineSyncStore((s) => s.refreshPendingCount);
+
+    const [localPendingRecords, setLocalPendingRecords] = useState<IAttendanceRecord[]>([]);
+
+    // Refresh pending count and load local pending records on mount / change
+    useEffect(() => {
+        refreshPendingCount(sessionId).catch(() => {});
+        OutboxService.getPendingMutations(sessionId).then((mutations) => {
+            const mapped: IAttendanceRecord[] = mutations.map(m => ({
+                _id: `temp-${m.clientMutationId}`,
+                studentId: {
+                    // rawToken records have no studentId yet — use clientMutationId as temp display id
+                    _id:         m.studentId ?? m.clientMutationId,
+                    studentName: m.studentName,
+                    studentCode: m.studentCode ?? '...',
+                    studentPhone: m.studentPhone,
+                },
+                sessionId:    m.sessionId,
+                status:       m.status,
+                isGuest:      m.isGuest,
+                homeworkDone: m.homeworkDone ?? true,
+                scannedAt:    m.scannedAt,
+                _syncStatus:  m.syncStatus,
+            }));
+            setLocalPendingRecords(mapped);
+        }).catch(() => {});
+    }, [sessionId, pendingCount, refreshPendingCount]);
+
+    // Build unified attendance records: server records + local pending records not yet in server list
+    const combinedAttendanceRecords = [...attendanceRecords];
+    const serverStudentIdSet = new Set(
         attendanceRecords
             .map((r) => (r.studentId as any)?._id ?? (r.studentId as any))
             .filter(Boolean)
     );
 
+    for (const pending of localPendingRecords) {
+        const pId = (pending.studentId as any)?._id ?? (pending.studentId as any);
+        if (pId && !serverStudentIdSet.has(pId)) {
+            combinedAttendanceRecords.push(pending);
+        }
+    }
+
+    const alreadyRecordedIds = new Set(
+        combinedAttendanceRecords
+            .map((r) => (r.studentId as any)?._id ?? (r.studentId as any))
+            .filter(Boolean)
+    );
+
     // Sort attendance records alphabetically by student name
-    const sortedAttendanceRecords = [...attendanceRecords].sort((a, b) => {
+    const sortedAttendanceRecords = [...combinedAttendanceRecords].sort((a, b) => {
         const nameA = (a.studentId as any)?.studentName ?? '';
         const nameB = (b.studentId as any)?.studentName ?? '';
         return nameA.localeCompare(nameB, 'ar');
@@ -200,7 +253,7 @@ export default function SessionDetailPage() {
         }
     }, [session?.status, sessionId, queryClient]);
 
-    // Record attendance
+    // Record attendance (Online-first with IndexedDB offline outbox fallback)
     const recordMutation = useMutation({
         mutationFn: async (studentId: string) => {
             await ensureInProgress();
@@ -208,65 +261,115 @@ export default function SessionDetailPage() {
                 sessionId,
                 studentId,
                 status: 'PRESENT',
+                homeworkDone: true,
             });
         },
         onMutate: async (studentId) => {
-            // Cancel outgoing refetches
             await queryClient.cancelQueries({ queryKey: QK.attendance.bySession(sessionId) });
-
-            // Snapshot previous value
             const previousAttendance = queryClient.getQueryData<IAttendanceRecord[]>(QK.attendance.bySession(sessionId)) || [];
 
-            // Find student info for optimistic record
             const student = groupStudentsData?.data?.find(s => s._id === studentId);
-            
-            // Create optimistic record
-            const optimisticRecord: any = {
-                _id: `temp-${Date.now()}`,
-                studentId: student || { _id: studentId, studentName: 'جاري التحميل...', studentCode: '...' },
+            const clientMutationId = `mut-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+            const isGuest = student ? (student.groupId !== groupId) : false;
+
+            const studentInfo = student
+                ? {
+                      _id: student._id,
+                      studentName: student.studentName,
+                      studentCode: student.studentCode,
+                      studentPhone: student.studentPhone,
+                  }
+                : {
+                      _id: studentId,
+                      studentName: 'جاري التحميل...',
+                      studentCode: '...',
+                  };
+
+            const optimisticRecord: IAttendanceRecord = {
+                _id: `temp-${clientMutationId}`,
+                studentId: studentInfo,
                 sessionId,
                 status: 'PRESENT',
+                isGuest,
+                homeworkDone: true,
                 scannedAt: new Date().toISOString(),
-                createdAt: new Date().toISOString(),
+                _syncStatus: 'QUEUED',
             };
 
-            // Update cache
             queryClient.setQueryData(QK.attendance.bySession(sessionId), [...previousAttendance, optimisticRecord]);
 
-            return { previousAttendance };
+            return { previousAttendance, clientMutationId, optimisticRecord, student };
         },
         onSuccess: (record) => {
             const name = (record.studentId as any)?.studentName ?? 'الطالب';
             const guestSuffix = (record as any).isGuest ? ' (طالب زائر)' : '';
             toast.success(`تم تسجيل حضور ${name}${guestSuffix}`);
         },
-        onError: (err: any, studentId, context) => {
-            // Rollback optimistic update
+        onError: async (err: any, studentId, context) => {
+            const isNetworkError = !err.response || err.code === 'ERR_NETWORK' || err.message?.includes('Network') || err.message?.includes('timeout') || err.message?.includes('Failed to fetch');
+
+            if (isNetworkError && context) {
+                const studentName = context.student?.studentName || 'الطالب';
+                const studentCode = context.student?.studentCode || '...';
+                const studentPhone = context.student?.studentPhone || '';
+                const isGuest = context.student ? (context.student.groupId !== groupId) : false;
+
+                // Enqueue to IndexedDB Outbox
+                await OutboxService.enqueueAttendance({
+                    clientMutationId: context.clientMutationId,
+                    sessionId,
+                    studentId,
+                    studentName,
+                    studentCode,
+                    studentPhone,
+                    status: 'PRESENT',
+                    isGuest,
+                    homeworkDone: true,
+                    scannedAt: context.optimisticRecord.scannedAt,
+                    createdAt: Date.now(),
+                    syncStatus: 'QUEUED',
+                    retryCount: 0,
+                });
+
+                await refreshPendingCount(sessionId);
+                toast.info(`تم حفظ حضور ${studentName} محلياً (سيتم رفعه عند توفر الإنترنت)`, {
+                    icon: '⏳',
+                    duration: 4000,
+                });
+                return; // Do NOT rollback!
+            }
+
+            // Rollback for actual API/validation errors (409, 400, etc.)
             if (context?.previousAttendance) {
                 queryClient.setQueryData(QK.attendance.bySession(sessionId), context.previousAttendance);
             }
-
-            const msg = err?.response?.data?.message ?? 'حدث خطأ (قد يكون بسبب انقطاع الاتصال)';
-            // Note: The global axios interceptor will automatically display the error message as a toast.
-            if (msg.includes('بالفعل')) {
-                // If it's already registered, we can rely on the interceptor's error toast, or we could skip it.
-                // We'll let the interceptor handle it to avoid duplicate toasts.
-            }
         },
         onSettled: () => {
-            queryClient.invalidateQueries({ queryKey: QK.attendance.bySession(sessionId) });
+            if (typeof window !== 'undefined' && navigator.onLine) {
+                queryClient.invalidateQueries({ queryKey: QK.attendance.bySession(sessionId) });
+            }
             setSearchQuery('');
         },
     });
 
     // Update attendance status (supports live editing and post-completion adjustments)
     const updateMutation = useMutation({
-        mutationFn: async ({ id, status, studentId }: { id: string; status: AttendanceStatus; studentId?: string }) => {
+        mutationFn: async ({ id, status, notes, homeworkDone, studentId }: {
+            id: string;
+            status?: AttendanceStatus;
+            notes?: string;
+            homeworkDone?: boolean;
+            studentId?: string;
+        }) => {
             if (session?.status === 'COMPLETED') {
                 const sId = studentId || (typeof editRecord?.studentId === 'object' ? (editRecord?.studentId as any)._id : editRecord?.studentId) || id;
-                return adjustCompletedAttendance(sessionId, sId, status);
+                return adjustCompletedAttendance(sessionId, sId, status || editRecord?.status || 'PRESENT', notes, homeworkDone);
             }
-            return updateAttendance(id, status);
+            return updateAttendance(id, {
+                ...(status ? { status } : {}),
+                ...(notes !== undefined ? { notes } : {}),
+                ...(homeworkDone !== undefined ? { homeworkDone } : {}),
+            });
         },
         onSuccess: () => {
             toast.success('تم تحديث حالة الحضور بنجاح');
@@ -276,10 +379,62 @@ export default function SessionDetailPage() {
             queryClient.invalidateQueries({ queryKey: QK.students.details });
             setEditRecord(null);
         },
-        onError: (err: any) => {
+        onError: () => {
             // Handled by interceptor
         },
     });
+
+    // Toggle homework tracking status for a student record (online or offline temp record)
+    const handleToggleHomework = async (record: IAttendanceRecord, newStatus: boolean) => {
+        const isTemp = record._id.toString().startsWith('temp-');
+        
+        if (isTemp) {
+            const clientMutationId = record._id.toString().replace('temp-', '');
+            // 1. Update IndexedDB mutation directly
+            await OutboxService.updateMutation(clientMutationId, { homeworkDone: newStatus });
+            // 2. Optimistically update localPendingRecords state
+            setLocalPendingRecords(prev =>
+                prev.map(r => r._id === record._id ? { ...r, homeworkDone: newStatus } : r)
+            );
+            // 3. Optimistically update React Query cache
+            queryClient.setQueryData(QK.attendance.bySession(sessionId), (prev: IAttendanceRecord[] = []) =>
+                prev.map(r => r._id === record._id ? { ...r, homeworkDone: newStatus } : r)
+            );
+            toast.success(newStatus ? 'تم تسجيل تسليم الواجب محلياً' : 'تم تسجيل عدم تسليم الواجب محلياً');
+            return;
+        }
+
+        // Real DB record:
+        const previousAttendance = queryClient.getQueryData<IAttendanceRecord[]>(QK.attendance.bySession(sessionId)) || [];
+        
+        // Optimistic UI update
+        queryClient.setQueryData(QK.attendance.bySession(sessionId), (prev: IAttendanceRecord[] = []) =>
+            prev.map(r => r._id === record._id ? { ...r, homeworkDone: newStatus } : r)
+        );
+
+        setPendingHomeworkToggleIds(prev => new Set(prev).add(record._id));
+
+        try {
+            if (session?.status === 'COMPLETED') {
+                const studentId = typeof record.studentId === 'object' ? (record.studentId as any)?._id : record.studentId;
+                await adjustCompletedAttendance(sessionId, studentId, record.status, record.notes, newStatus);
+            } else {
+                await updateAttendance(record._id, { homeworkDone: newStatus });
+            }
+            toast.success(newStatus ? 'تم تسجيل تسليم الواجب' : 'تم تسجيل عدم تسليم الواجب');
+            queryClient.invalidateQueries({ queryKey: QK.attendance.bySession(sessionId) });
+            queryClient.invalidateQueries({ queryKey: QK.attendance.snapshot(sessionId) });
+        } catch (err: any) {
+            queryClient.setQueryData(QK.attendance.bySession(sessionId), previousAttendance);
+            toast.error('تعذر تحديث حالة الواجب');
+        } finally {
+            setPendingHomeworkToggleIds(prev => {
+                const next = new Set(prev);
+                next.delete(record._id);
+                return next;
+            });
+        }
+    };
 
     // Record excuse
     const setExcuseMutation = useMutation({
@@ -355,25 +510,147 @@ export default function SessionDetailPage() {
 
     const handleQRScan = useCallback(async (scanInput: string) => {
         try {
-            // First, resolve the scan input (could be a token, barcode, or old code)
+            // Resolve the scan input (token / barcode / code) against the server.
+            // x-skip-error-toast is set in resolveCard so the axios interceptor stays silent —
+            // we own the UX from here.
             const result = await resolveCard(scanInput);
+
             if (!result.student) {
+                // Card exists but is not yet linked to any student
                 toast.error('هذا الكارت جديد وغير مربوط بأي طالب');
                 return;
             }
+
             const studentId = result.student.studentId;
 
             if (alreadyRecordedIds.has(studentId)) {
                 toast.warning('تم تسجيل هذا الطالب مسبقاً');
                 return;
             }
-            
-            // Record attendance
+
+            // ── Online path ─────────────────────────────────────────────────────
             recordMutation.mutate(studentId);
+
         } catch (error: any) {
-            // error toast is handled globally by axios interceptor
+            // ── Offline / network-error path ────────────────────────────────────
+            const isNetworkError =
+                !error.response ||
+                error.code === 'ERR_NETWORK' ||
+                error.message?.includes('Network') ||
+                error.message?.includes('timeout') ||
+                error.message?.includes('Failed to fetch');
+
+            if (!isNetworkError) {
+                // Server returned a real error (404 unrecognized token, 400, etc.)
+                const msg = error.response?.data?.message || 'تعذر تحديد الطالب';
+                toast.error(msg);
+                return;
+            }
+
+            // ── Try local cache resolution ──────────────────────────────────────
+            // groupStudentsData holds students of the session's own group.
+            // Match by barcode or studentCode (the two non-ObjectId identifiers a QR might carry).
+            const localStudents = groupStudentsData?.data ?? [];
+            const localStudent = localStudents.find(
+                s => s.barcode === scanInput || s.studentCode === scanInput
+            );
+
+            const clientMutationId = `mut-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+            const scannedAt = new Date().toISOString();
+
+            if (localStudent) {
+                // ── Cache HIT: student is a known group member ─────────────────
+                if (alreadyRecordedIds.has(localStudent._id)) {
+                    toast.warning('تم تسجيل هذا الطالب مسبقاً');
+                    return;
+                }
+
+                const isGuest = localStudent.groupId !== groupId;
+
+                // Optimistic UI update
+                queryClient.setQueryData(QK.attendance.bySession(sessionId), (prev: IAttendanceRecord[] = []) => [
+                    ...prev,
+                    {
+                        _id: `temp-${clientMutationId}`,
+                        studentId: {
+                            _id: localStudent._id,
+                            studentName: localStudent.studentName,
+                            studentCode: localStudent.studentCode,
+                            studentPhone: localStudent.studentPhone,
+                        },
+                        sessionId,
+                        status: 'PRESENT',
+                        isGuest,
+                        homeworkDone: true,
+                        scannedAt,
+                        _syncStatus: 'QUEUED',
+                    } as IAttendanceRecord,
+                ]);
+
+                await OutboxService.enqueueAttendance({
+                    clientMutationId,
+                    sessionId,
+                    studentId:    localStudent._id,   // ObjectId — fast sync path
+                    studentName:  localStudent.studentName,
+                    studentCode:  localStudent.studentCode,
+                    studentPhone: localStudent.studentPhone ?? '',
+                    status:       'PRESENT',
+                    isGuest,
+                    homeworkDone: true,
+                    scannedAt,
+                    createdAt:    Date.now(),
+                    syncStatus:   'QUEUED',
+                    retryCount:   0,
+                });
+
+                await refreshPendingCount(sessionId);
+                toast.info(`تم حفظ حضور ${localStudent.studentName} محلياً (⏳ سيتم رفعه عند الاتصال)`, {
+                    duration: 4000,
+                });
+
+            } else {
+                // ── Cache MISS: guest student or new student not in local list ──
+                // Enqueue the raw scan token — the server will resolve it at sync time.
+                await OutboxService.enqueueAttendance({
+                    clientMutationId,
+                    sessionId,
+                    rawToken:     scanInput,           // deferred server-side resolution
+                    studentName:  `طالب زائر (${scanInput.slice(-6)})`,
+                    status:       'PRESENT',
+                    isGuest:      true,               // assume guest until server confirms
+                    homeworkDone: true,
+                    scannedAt,
+                    createdAt:    Date.now(),
+                    syncStatus:   'QUEUED',
+                    retryCount:   0,
+                });
+
+                // Optimistic UI placeholder (no studentId known yet)
+                queryClient.setQueryData(QK.attendance.bySession(sessionId), (prev: IAttendanceRecord[] = []) => [
+                    ...prev,
+                    {
+                        _id: `temp-${clientMutationId}`,
+                        studentId: {
+                            _id: clientMutationId,       // temp id — not a real ObjectId
+                            studentName: `طالب زائر (${scanInput.slice(-6)})`,
+                            studentCode: '...',
+                        },
+                        sessionId,
+                        status: 'PRESENT',
+                        isGuest: true,
+                        homeworkDone: true,
+                        scannedAt,
+                        _syncStatus: 'QUEUED',
+                    } as IAttendanceRecord,
+                ]);
+
+                await refreshPendingCount(sessionId);
+                toast.info('تم حفظ مسح كارت مجهول محلياً (⏳ سيُحسم عند الاتصال)', {
+                    duration: 5000,
+                });
+            }
         }
-    }, [alreadyRecordedIds, recordMutation]);
+    }, [alreadyRecordedIds, groupId, groupStudentsData, queryClient, recordMutation, refreshPendingCount, sessionId]);
 
     const groupName =
         typeof session?.groupId === 'object'
@@ -449,7 +726,15 @@ export default function SessionDetailPage() {
                             <Button
                                 size="sm"
                                 variant="destructive"
-                                onClick={() => setShowCompleteConfirm(true)}
+                                onClick={() => {
+                                    if (pendingCount > 0) {
+                                        toast.error(`يوجد ${pendingCount} سجلات حضور معلقة محلياً. يرجى المزامنة أولاً قبل إنهاء الحصة لتجنب احتساب الطلاب كغائبين.`, {
+                                            duration: 6000,
+                                        });
+                                        return;
+                                    }
+                                    setShowCompleteConfirm(true);
+                                }}
                                 className="gap-1.5 text-xs sm:text-sm"
                             >
                                 <CheckCircle2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
@@ -470,6 +755,44 @@ export default function SessionDetailPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Offline Pending Sync Banner */}
+            {pendingCount > 0 && isSessionActive && (
+                <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-3 sm:p-4 flex items-center justify-between gap-3 animate-in fade-in">
+                    <div className="flex items-center gap-2.5 text-amber-800">
+                        <Clock className="h-5 w-5 text-amber-600 shrink-0 animate-pulse" />
+                        <div>
+                            <p className="text-xs sm:text-sm font-bold">
+                                يوجد {pendingCount} {pendingCount === 1 ? 'سجل حضور معلق محلياً' : 'سجلات حضور معلقة محلياً'}
+                            </p>
+                            <p className="text-[10px] sm:text-xs text-amber-700 mt-0.5">
+                                تم حفظ الحضور بأمان على جهازك وسيتم رفعه تلقائياً للسيرفر فور توفر الاتصال
+                            </p>
+                        </div>
+                    </div>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={isSyncing}
+                        onClick={async () => {
+                            const { synced } = await flushQueue(sessionId, () => {
+                                queryClient.invalidateQueries({ queryKey: QK.attendance.bySession(sessionId) });
+                            });
+                            if (synced > 0) {
+                                toast.success(`تمت مزامنة ${synced} سجل بنجاح`);
+                            }
+                        }}
+                        className="border-amber-300 bg-white hover:bg-amber-100/50 text-amber-900 text-xs font-bold gap-1.5 shrink-0"
+                    >
+                        {isSyncing ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                            <RefreshCw className="h-3.5 w-3.5" />
+                        )}
+                        {isSyncing ? 'جاري الرفع...' : 'مزامنة الآن'}
+                    </Button>
+                </div>
+            )}
 
             {/* Future Session Warning Banner */}
             {isFutureSession && session.status !== 'COMPLETED' && session.status !== 'CANCELLED' && (
@@ -610,31 +933,48 @@ export default function SessionDetailPage() {
                                                         hour: '2-digit',
                                                         minute: '2-digit',
                                                     })}
-                                                    {record._id.toString().startsWith('temp-') && (
-                                                        <span className="flex items-center gap-1 text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded mr-2 inline-flex">
-                                                            <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                                                            جاري المزامنة...
+                                                    {record._syncStatus === 'QUEUED' || record._id.toString().startsWith('temp-') ? (
+                                                        <span className="inline-flex items-center gap-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-medium shrink-0 mr-2">
+                                                            <Clock className="h-2.5 w-2.5 text-amber-600 animate-pulse" />
+                                                            معلق محلياً
                                                         </span>
-                                                    )}
+                                                    ) : record._syncStatus === 'SYNCING' ? (
+                                                        <span className="inline-flex items-center gap-1 text-[10px] text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded font-medium shrink-0 mr-2">
+                                                            <Loader2 className="h-2.5 w-2.5 text-blue-600 animate-spin" />
+                                                            جاري الحفظ
+                                                        </span>
+                                                    ) : null}
                                                 </p>
                                             </div>
-                                            <span className={cn(
-                                                'text-xs px-2 py-0.5 rounded-full border font-medium',
-                                                ATTENDANCE_COLORS[record.status]
-                                            )}>
-                                                {ATTENDANCE_LABELS[record.status]}
-                                            </span>
-                                            {canWrite && (
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    className="h-7 w-7 text-gray-400 hover:text-gray-600"
-                                                    title="تعديل حالة الحضور"
-                                                    onClick={() => setEditRecord(record)}
-                                                >
-                                                    <Edit2 className="h-3.5 w-3.5" />
-                                                </Button>
-                                            )}
+                                            <div className="flex items-center gap-1.5 shrink-0 min-w-0">
+                                                {/* Homework Tracking Toggle Button */}
+                                                {isHomeworkTrackingEnabled && (record.status === 'PRESENT' || record.status === 'LATE') && (
+                                                    <HomeworkToggleButton
+                                                        recordId={record._id}
+                                                        homeworkDone={record.homeworkDone}
+                                                        disabled={!canWrite}
+                                                        isPending={pendingHomeworkToggleIds.has(record._id)}
+                                                        onToggle={(newVal) => handleToggleHomework(record, newVal)}
+                                                    />
+                                                )}
+                                                <span className={cn(
+                                                    'text-xs px-2 py-0.5 rounded-full border font-medium shrink-0',
+                                                    ATTENDANCE_COLORS[record.status]
+                                                )}>
+                                                    {ATTENDANCE_LABELS[record.status]}
+                                                </span>
+                                                {canWrite && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-7 w-7 text-gray-400 hover:text-gray-600 shrink-0"
+                                                        title="تعديل حالة الحضور"
+                                                        onClick={() => setEditRecord(record)}
+                                                    >
+                                                        <Edit2 className="h-3.5 w-3.5" />
+                                                    </Button>
+                                                )}
+                                            </div>
                                         </li>
                                     );
                                 })}
@@ -788,9 +1128,10 @@ export default function SessionDetailPage() {
             {editRecord && (
                 <EditAttendanceDialog
                     record={editRecord}
+                    showHomeworkTracking={isHomeworkTrackingEnabled}
                     onClose={() => setEditRecord(null)}
-                    onSave={(status) =>
-                        updateMutation.mutate({ id: editRecord._id, status })
+                    onSave={(status, notes, homeworkDone) =>
+                        updateMutation.mutate({ id: editRecord._id, status, notes, homeworkDone })
                     }
                 />
             )}

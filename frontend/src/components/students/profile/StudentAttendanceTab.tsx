@@ -37,6 +37,7 @@ export function StudentAttendanceTab({
         sessionId?: string;
         date: string;
         status: string;
+        homeworkDone?: boolean | null;
     } | null>(null);
 
     if (reportLoading) {
@@ -94,15 +95,17 @@ export function StudentAttendanceTab({
                             const isExcused = h.status === 'EXCUSED';
                             const isGuest = h.status === 'GUEST';
                             const { dayName, dateFormatted, fullDate } = formatSessionDate(h.date);
+                            const hasHomework = typeof h.homeworkDone === 'boolean' && isPresent;
 
                             return (
                                 <div
                                     key={i}
-                                    title={`${fullDate} — ${isPresent ? 'حاضر' : isExcused ? 'بعذر' : isGuest ? 'زائر' : isAbsent ? 'غائب' : '—'} (انقر للتعديل أو الحذف)`}
+                                    title={`${fullDate} — ${isPresent ? (hasHomework ? (h.homeworkDone ? 'حاضر (تم الواجب)' : 'حاضر (لم يتم الواجب)') : 'حاضر') : isExcused ? 'بعذر' : isGuest ? 'زائر' : isAbsent ? 'غائب' : '—'} (انقر للتعديل أو الحذف)`}
                                     onClick={() => canWrite && h.sessionId && setSelectedSessionForAdjustment({
                                         sessionId: h.sessionId,
                                         date: h.date,
-                                        status: h.status
+                                        status: h.status,
+                                        homeworkDone: typeof h.homeworkDone === 'boolean' ? h.homeworkDone : null,
                                     })}
                                     className={cn(
                                         'flex flex-col items-center justify-center p-2.5 rounded-2xl border transition-all duration-200 select-none',
@@ -133,6 +136,18 @@ export function StudentAttendanceTab({
                                             {isPresent ? 'حاضر' : isAbsent ? 'غائب' : isExcused ? 'بعذر' : isGuest ? 'زائر' : '—'}
                                         </span>
                                     </div>
+
+                                    {/* Homework Badge if applicable */}
+                                    {hasHomework && (
+                                        <span className={cn(
+                                            "text-[9px] font-bold px-1.5 py-0.5 rounded-full border mb-1.5 leading-none shrink-0",
+                                            h.homeworkDone
+                                                ? "bg-emerald-100/90 text-emerald-800 border-emerald-300"
+                                                : "bg-rose-100/90 text-rose-800 border-rose-300"
+                                        )}>
+                                            {h.homeworkDone ? 'واجب ✓' : 'بلا واجب ✗'}
+                                        </span>
+                                    )}
 
                                     {/* Divider */}
                                     <div className={cn(
@@ -180,6 +195,7 @@ export function StudentAttendanceTab({
                     studentName={studentName}
                     sessionDate={selectedSessionForAdjustment?.date}
                     currentStatus={selectedSessionForAdjustment?.status}
+                    currentHomeworkDone={selectedSessionForAdjustment?.homeworkDone}
                     canWrite={canWrite}
                 />
             )}

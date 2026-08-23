@@ -35,3 +35,19 @@ export const paySalarySchema = z.object({
     notes:  z.string().max(300).optional(),
   }),
 });
+
+export const updateTenantSchema = z.object({
+  params: z.object({
+    id: z.string().min(1, "معرف المدرس مطلوب"),
+  }),
+  body: z.object({
+    name:       z.string().min(2, "الاسم يجب أن يكون حرفين على الأقل").optional(),
+    phone:      z.string().min(10, "رقم الهاتف غير صحيح").optional(),
+    stages:     z.array(z.string()).optional(),
+    subject:    z.string().optional(),
+    centerName: z.string().optional(),
+    features:   z.object({
+      homeworkTracking: z.boolean({ message: "قيمة تتبع الواجبات يجب أن تكون منطقية (true/false)" }).optional(),
+    }).optional(),
+  }),
+});

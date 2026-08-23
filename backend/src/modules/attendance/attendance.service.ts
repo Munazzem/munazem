@@ -10,11 +10,12 @@ import { SessionStatus, AttendanceStatus, CycleEnrollmentStatus } from '../../co
 import { NotFoundException, BadRequestException, ConflictException } from '../../common/utils/response/error.responce.js';
 import { trackEvent } from '../../common/utils/activity.service.js';
 import { withTransaction } from '../../common/utils/transaction.util.js';
-import type { RecordAttendanceDTO, BatchAttendanceDTO } from '../../types/attendance-dto.types.js';
+import type { RecordAttendanceDTO, BatchAttendanceDTO, SyncBatchAttendanceDTO } from '../../types/attendance-dto.types.js';
 import { enqueueWhatsApp } from '../../infrastructure/queues/whatsapp.queue.js';
 import { cache, CacheKeys } from '../../infrastructure/cache/cache.service.js';
 import mongoose from 'mongoose';
 import { startOfDayEgyptMs } from '../../common/utils/date.util.js';
+import { CardsService } from '../cards/cards.service.js';
 
 // ─── Date helper ─────────────────────────────────────────────────────────────
 // Centralized in common/utils/date.util.ts — returns midnight Egypt time as ms
@@ -84,6 +85,7 @@ export class AttendanceService {
                 scannedAt: new Date(),
                 scannedBy,
                 type:      'SESSION',
+                ...(data.homeworkDone !== undefined ? { homeworkDone: data.homeworkDone } : (data.status === AttendanceStatus.PRESENT || data.status === AttendanceStatus.LATE ? { homeworkDone: true } : {})),
                 ...(data.notes ? { notes: data.notes } : {}),
             });
 
@@ -192,13 +194,13 @@ export class AttendanceService {
             throw BadRequestException({ message: 'لا يمكن تسجيل الحضور قبل يوم الحصة' });
         }
 
-        // Build bulk records — insertMany with ordered:false to continue on duplicate errors
         // Build bulk records
         const docs = data.records.map(r => ({
             studentId: new mongoose.Types.ObjectId(r.studentId),
             sessionId: new mongoose.Types.ObjectId(data.sessionId),
             status:    r.status,
             isGuest:   r.isGuest ?? false,
+            homeworkDone: r.homeworkDone !== undefined ? r.homeworkDone : (r.status === AttendanceStatus.PRESENT || r.status === AttendanceStatus.LATE ? true : null),
             scannedAt: new Date(),
             scannedBy: new mongoose.Types.ObjectId(scannedBy),
             notes:     r.notes,
@@ -285,6 +287,269 @@ export class AttendanceService {
         }
 
         return { inserted: totalInserted, total: docs.length };
+    }
+
+    // ─── Offline Outbox Batch Sync (Idempotent upsert & safe retry) ───
+    static async syncBatchAttendance(scannedBy: string, data: SyncBatchAttendanceDTO, teacherId: string) {
+        const session = await SessionModel.findOne({ _id: data.sessionId, teacherId }).lean();
+        if (!session) throw NotFoundException({ message: 'الحصة غير موجودة' });
+        if (session.status === SessionStatus.CANCELLED) {
+            throw BadRequestException({ message: 'هذه الحصة مُلغاة' });
+        }
+
+        const isCompleted = session.status === SessionStatus.COMPLETED;
+
+        // ── Step 1: Resolve every record to a confirmed student ObjectId ─────────
+        // Records come in two flavours:
+        //   a) { studentId: ObjectId }  — scanned online or resolved from local cache
+        //   b) { rawToken: string }     — scanned offline; no local cache match; resolve now
+        const serverNow = new Date();
+
+        type ResolvedRecord = {
+            studentId:        mongoose.Types.ObjectId;
+            clientMutationId: string;
+            status:           AttendanceStatus;
+            isGuest:          boolean;           // always set (defaults to false)
+            homeworkDone:     boolean | undefined; // explicit union — required by exactOptionalPropertyTypes
+            scannedAt:        Date;
+            notes:            string | undefined; // explicit union — required by exactOptionalPropertyTypes
+        };
+
+        const resolved: ResolvedRecord[] = [];
+
+        for (const record of data.records) {
+            let studentObjectId: mongoose.Types.ObjectId | null = null;
+            let resolvedIsGuest = record.isGuest; // may be overridden below
+
+            // ── Path A: studentId already an ObjectId ───────────────────────────
+            if (record.studentId && mongoose.Types.ObjectId.isValid(record.studentId) && record.studentId.length === 24) {
+                studentObjectId = new mongoose.Types.ObjectId(record.studentId);
+            }
+            // ── Path B: rawToken — deferred server-side resolution ─────────────
+            else if (record.rawToken) {
+                try {
+                    const cardResult = await CardsService.resolveCard(record.rawToken, teacherId);
+                    if (!cardResult.student) {
+                        // NEW / unlinked card — cannot resolve; skip silently
+                        continue;
+                    }
+                    studentObjectId = new mongoose.Types.ObjectId(cardResult.student.studentId);
+                    // isGuest will be computed later against session.groupId
+                    resolvedIsGuest = undefined;
+                } catch {
+                    // Unrecognized token (card deleted, wrong tenant, etc.) — skip
+                    continue;
+                }
+            }
+
+            if (!studentObjectId) continue; // record has neither field — malformed; skip
+
+            // ── Clock-skew guard: cap scannedAt at server time ─────────────────
+            const rawScannedAt = record.scannedAt ? new Date(record.scannedAt) : serverNow;
+            const scannedAt    = rawScannedAt > serverNow ? serverNow : rawScannedAt;
+
+            resolved.push({
+                studentId:        studentObjectId,
+                clientMutationId: record.clientMutationId,
+                status:           record.status || AttendanceStatus.PRESENT,
+                isGuest:          resolvedIsGuest ?? false,
+                homeworkDone:     record.homeworkDone,
+                scannedAt,
+                notes:            record.notes,
+            });
+        }
+
+        if (resolved.length === 0) {
+            return {
+                success: true,
+                upsertedCount: 0,
+                matchedCount: 0,
+                total: data.records.length,
+                message: 'لا توجد سجلات صالحة للمزامنة',
+            };
+        }
+
+        // ── Step 2: Batch-fetch all students in one query ────────────────────────
+        const studentObjectIds = resolved.map(r => r.studentId);
+        const students = await StudentModel.find(
+            { _id: { $in: studentObjectIds }, teacherId },
+            { _id: 1, groupId: 1, gradeLevel: 1 }
+        ).lean();
+
+        const studentMap = new Map(students.map(s => [s._id.toString(), s]));
+        const sessionGroup = await GroupModel.findById(session.groupId, { gradeLevel: 1 }).lean();
+
+        // ── Step 3: Completed-session handling ──────────────────────────────────
+        // When a session is already COMPLETED, offline records are routed directly
+        // to adjustCompletedSessionAttendance. This ensures that even if the teacher
+        // finished the session early, offline attendance records are never lost.
+        type LateAdjustItem = {
+            studentId:     mongoose.Types.ObjectId;
+            status:        AttendanceStatus;
+            homeworkDone?: boolean;
+            notes?:        string;
+        };
+        const lateAdjustRecords: LateAdjustItem[] = [];
+
+        const bulkOps: any[] = [];
+        const validGuestStudentIds: mongoose.Types.ObjectId[] = [];
+
+        for (const rec of resolved) {
+            const student = studentMap.get(rec.studentId.toString());
+            if (!student) continue; // student not found / wrong tenant
+
+            // Grade-level enforcement
+            if (sessionGroup && student.gradeLevel !== sessionGroup.gradeLevel) continue;
+
+            const isGuest = rec.isGuest ?? (student.groupId?.toString() !== session.groupId?.toString());
+            const status  = rec.status;
+
+            // ── Completed-session handling ───────────────────────────────────────
+            if (isCompleted) {
+                lateAdjustRecords.push({
+                    studentId: rec.studentId,
+                    status:    rec.status,
+                    ...(rec.homeworkDone !== undefined ? { homeworkDone: rec.homeworkDone } : {}),
+                    ...(rec.notes ? { notes: rec.notes } : {}),
+                });
+                continue;
+            }
+
+            bulkOps.push({
+                updateOne: {
+                    filter: {
+                        studentId: rec.studentId,
+                        sessionId: new mongoose.Types.ObjectId(data.sessionId),
+                    },
+                    update: {
+                        $setOnInsert: {
+                            studentId: rec.studentId,
+                            sessionId: new mongoose.Types.ObjectId(data.sessionId),
+                            status,
+                            isGuest,
+                            scannedAt:  rec.scannedAt,
+                            scannedBy:  new mongoose.Types.ObjectId(scannedBy),
+                            type:       'SESSION',
+                            ...(rec.homeworkDone !== undefined ? { homeworkDone: rec.homeworkDone } : {}),
+                            ...(rec.notes ? { notes: rec.notes } : {}),
+                        },
+                    },
+                    upsert: true,
+                },
+            });
+
+            if (isGuest && (status === AttendanceStatus.PRESENT || status === AttendanceStatus.LATE)) {
+                validGuestStudentIds.push(rec.studentId);
+            }
+        }
+
+        // ── Step 3b: Apply late adjustments for completed sessions ───────────────
+        let adjustedCount = 0;
+        for (const item of lateAdjustRecords) {
+            try {
+                await AttendanceService.adjustCompletedSessionAttendance(
+                    data.sessionId,
+                    item.studentId.toString(),
+                    item.status,
+                    teacherId,
+                    scannedBy,  // updatedBy — the assistant performing the sync
+                    item.notes,
+                    item.homeworkDone
+                );
+                adjustedCount++;
+            } catch {
+                // Already present or other constraint — skip silently
+            }
+        }
+
+        if (bulkOps.length === 0 && adjustedCount === 0) {
+            return {
+                success: true,
+                upsertedCount: 0,
+                matchedCount: 0,
+                total: data.records.length,
+                message: isCompleted
+                    ? `تمت معالجة ${adjustedCount} سجل على حصة مكتملة`
+                    : 'لا توجد سجلات صالحة للمزامنة',
+            };
+        }
+
+        let upsertedCount = 0;
+        let matchedCount  = 0;
+
+        if (bulkOps.length > 0) {
+            const result = await AttendanceModel.bulkWrite(bulkOps, { ordered: false });
+            upsertedCount = result.upsertedCount;
+            matchedCount  = result.matchedCount;
+        }
+
+        // ── Step 4: Retroactive guest compensation ───────────────────────────────
+        if (validGuestStudentIds.length > 0) {
+            const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+            const absentRecords = await AttendanceModel.find({
+                studentId: { $in: validGuestStudentIds },
+                status: AttendanceStatus.ABSENT,
+                scannedAt: { $gte: oneWeekAgo },
+            }).sort({ scannedAt: -1 }).lean();
+
+            if (absentRecords.length > 0) {
+                const compensatedStudentIds: any[] = [];
+                const updates = absentRecords.map(r => {
+                    compensatedStudentIds.push(r.studentId);
+                    return {
+                        updateOne: {
+                            filter: { _id: r._id },
+                            update: {
+                                $set: {
+                                    status: AttendanceStatus.EXCUSED,
+                                    notes:  'معوّض — حضر كزائر في مجموعة أخرى',
+                                },
+                            },
+                        },
+                    };
+                });
+
+                await AttendanceModel.bulkWrite(updates);
+
+                // Synchronize snapshots for affected past sessions
+                const sessionIdsToSync = Array.from(
+                    new Set(absentRecords.filter(r => r.sessionId).map(r => r.sessionId!.toString()))
+                );
+                const compensatedSet = new Set(compensatedStudentIds.map(id => id.toString()));
+
+                for (const pastSessionId of sessionIdsToSync) {
+                    const pastSnapshot = await AttendanceSnapshotModel.findOne({ sessionId: pastSessionId });
+                    if (pastSnapshot) {
+                        const originalLen = pastSnapshot.absentStudents.length;
+                        pastSnapshot.absentStudents = pastSnapshot.absentStudents.filter(
+                            s => !compensatedSet.has(s.studentId.toString())
+                        );
+                        if (pastSnapshot.absentStudents.length !== originalLen) {
+                            pastSnapshot.absentCount = pastSnapshot.absentStudents.length;
+                            await pastSnapshot.save();
+                        }
+                    }
+                }
+
+                if (compensatedStudentIds.length > 0) {
+                    await StudentModel.updateMany(
+                        { _id: { $in: compensatedStudentIds }, consecutiveAbsences: { $gt: 0 } },
+                        { $inc: { consecutiveAbsences: -1 } }
+                    );
+                }
+            }
+        }
+
+        // Invalidate teacher cache
+        await cache.invalidate(CacheKeys.teacherAll(teacherId));
+
+        return {
+            success:      true,
+            upsertedCount: upsertedCount + adjustedCount,
+            matchedCount,
+            total:        data.records.length,
+            message:      `تمت مزامنة ${upsertedCount + adjustedCount} سجل جديد وتأكيد ${matchedCount} سجل سابق`,
+        };
     }
 
     // ─── Get attendance for a session (the live list) ────────────────
@@ -390,10 +655,11 @@ export class AttendanceService {
             
             if (record && record.status !== AttendanceStatus.ABSENT) {
                 presentStudents.push({
-                    studentId:   student._id,
-                    studentName: student.studentName,
-                    scannedAt:   record.scannedAt,
-                    status:      record.status,
+                    studentId:    student._id,
+                    studentName:  student.studentName,
+                    scannedAt:    record.scannedAt,
+                    status:       record.status,
+                    homeworkDone: record.homeworkDone ?? null,
                 });
             } else {
                 const isCompensated = compensatedMap.has(student._id.toString());
@@ -403,10 +669,11 @@ export class AttendanceService {
                 
                 if (isExcused) {
                     presentStudents.push({
-                        studentId:   student._id,
-                        studentName: student.studentName,
-                        scannedAt:   session.date,
-                        status:      AttendanceStatus.EXCUSED,
+                        studentId:    student._id,
+                        studentName:  student.studentName,
+                        scannedAt:    session.date,
+                        status:       AttendanceStatus.EXCUSED,
+                        homeworkDone: null,
                     });
                     
                     if (!record) {
@@ -509,9 +776,10 @@ export class AttendanceService {
                 const student = guestMap.get(r.studentId.toString());
                 if (student) {
                     guestStudents.push({
-                        studentId:   student._id,
-                        studentName: student.studentName,
-                        scannedAt:   r.scannedAt,
+                        studentId:    student._id,
+                        studentName:  student.studentName,
+                        scannedAt:    r.scannedAt,
+                        homeworkDone: r.homeworkDone ?? null,
                     });
                 }
             }
@@ -796,34 +1064,44 @@ export class AttendanceService {
     }
 
     // ─── Update a single attendance record (manual edit by assistant) ──
-    static async updateAttendance(attendanceId: string, updatedBy: string, status: string, teacherId: string, notes?: string) {
+    static async updateAttendance(
+        attendanceId: string,
+        updatedBy: string,
+        status?: string,
+        teacherId?: string,
+        notes?: string,
+        homeworkDone?: boolean
+    ) {
         const record = await AttendanceModel.findById(attendanceId).lean();
         if (!record) throw NotFoundException({ message: 'سجل الحضور غير موجود' });
 
         // Verify the session belongs to this teacher before allowing edit (if session-based)
-        if (record.sessionId) {
+        if (record.sessionId && teacherId) {
             const session = await SessionModel.findOne({ _id: record.sessionId as any, teacherId }).lean();
             if (!session) throw NotFoundException({ message: 'الحصة غير موجودة أو لا صلاحية لك عليها' });
             if (session.status === SessionStatus.COMPLETED) {
                 throw BadRequestException({ message: 'لا يمكن تعديل حضور حصة مكتملة' });
             }
-        } else {
+        } else if (teacherId) {
             // For manual records, just verify the student belongs to the teacher
             const student = await StudentModel.findOne({ _id: record.studentId, teacherId }).lean();
             if (!student) throw NotFoundException({ message: 'الطالب غير موجود أو لا صلاحية لك عليه' });
         }
 
-        if (!Object.values(AttendanceStatus).includes(status as AttendanceStatus)) {
+        if (status && !Object.values(AttendanceStatus).includes(status as AttendanceStatus)) {
             throw BadRequestException({ message: 'حالة الحضور غير صحيحة' });
         }
 
+        const updateFields: any = {
+            scannedBy: new mongoose.Types.ObjectId(updatedBy),
+        };
+        if (status) updateFields.status = status;
+        if (notes !== undefined) updateFields.notes = notes;
+        if (homeworkDone !== undefined) updateFields.homeworkDone = homeworkDone;
+
         return await AttendanceModel.findByIdAndUpdate(
             attendanceId,
-            {
-                status,
-                scannedBy: new mongoose.Types.ObjectId(updatedBy),
-                ...(notes !== undefined ? { notes } : {}),
-            },
+            updateFields,
             { new: true, runValidators: true }
         ).lean();
     }
@@ -835,7 +1113,8 @@ export class AttendanceService {
         newStatus: AttendanceStatus,
         teacherId: string,
         updatedBy: string,
-        notes?: string
+        notes?: string,
+        homeworkDone?: boolean
     ) {
         const session = await SessionModel.findOne({ _id: sessionId, teacherId }).lean();
         if (!session) throw NotFoundException({ message: 'الحصة غير موجودة' });
@@ -853,7 +1132,7 @@ export class AttendanceService {
         let record = await AttendanceModel.findOne({ sessionId, studentId });
         const oldStatus = record ? record.status : AttendanceStatus.ABSENT;
 
-        if (oldStatus === newStatus && record) {
+        if (oldStatus === newStatus && record && (homeworkDone === undefined || record.homeworkDone === homeworkDone) && (notes === undefined || record.notes === notes)) {
             return { success: true, message: 'لم يحدث تغيير في حالة الحضور', record };
         }
 
@@ -866,6 +1145,7 @@ export class AttendanceService {
                 scannedBy: new mongoose.Types.ObjectId(updatedBy),
                 scannedAt: session.date,
                 isConsumed: newStatus === AttendanceStatus.ABSENT,
+                ...(homeworkDone !== undefined ? { homeworkDone } : {}),
                 ...(notes ? { notes } : {})
             });
             await record.save();
@@ -873,6 +1153,7 @@ export class AttendanceService {
             record.status = newStatus;
             record.scannedBy = new mongoose.Types.ObjectId(updatedBy);
             if (notes !== undefined) record.notes = notes;
+            if (homeworkDone !== undefined) record.homeworkDone = homeworkDone;
             record.isConsumed = newStatus === AttendanceStatus.ABSENT;
             await record.save();
         }
@@ -904,7 +1185,8 @@ export class AttendanceService {
                     studentId: student._id,
                     studentName: student.studentName,
                     scannedAt: session.date,
-                    status: newStatus
+                    status: newStatus,
+                    homeworkDone: record.homeworkDone ?? null
                 });
             }
 
@@ -933,7 +1215,8 @@ export class AttendanceService {
                 studentName: student.studentName,
                 sessionId,
                 oldStatus,
-                newStatus
+                newStatus,
+                homeworkDone: record.homeworkDone
             }
         });
 
@@ -1034,13 +1317,14 @@ export class AttendanceService {
             SessionModel.findOne({ _id: sessionId, teacherId })
                 .populate('groupId', 'name')
                 .lean(),
-            UserModel.findById(teacherId, { name: 1 }).lean(),
+            UserModel.findById(teacherId, { name: 1, features: 1 }).lean(),
         ]);
             
         if (!session) throw NotFoundException({ message: 'الحصة غير موجودة' });
 
         const groupName   = (session.groupId as any)?.name || 'مجموعة غير معروفة';
         const teacherName = teacher?.name || '';
+        const isHomeworkTrackingEnabled = Boolean(teacher?.features?.homeworkTracking);
 
         // 1. Get all students in the group — sorted alphabetically
         const allStudents = await StudentModel.find(
@@ -1071,11 +1355,18 @@ export class AttendanceService {
             const signature = teacherName ? `\n\nمع تحيات أ/ ${teacherName}` : '';
             if (isPresent) {
                 const timeStr = record?.scannedAt ? new Date(record.scannedAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : '';
+                let homeworkLine = '';
+                if (isHomeworkTrackingEnabled && typeof record?.homeworkDone === 'boolean') {
+                    homeworkLine = record.homeworkDone
+                        ? '\n📚 الواجب: تم تسليمه بنجاح ✅'
+                        : '\n⚠️ الواجب: لم يتم تسليمه ❌';
+                }
+
                 const PRESENT_TEMPLATES = [
-                    `السلام عليكم ورحمة الله،\nنحيطكم علمًا بحضور الطالب/ة: **${student.studentName}** لحصة [${groupName}] بتاريخ ${shortDate} (وقت الوصول: ${timeStr}).\n\n📌 **الرجاء الرد بـ (تم) للتأكيد والاستلام.**${signature}`,
-                    `أهلاً بحضرتك،\nتم بنجاح تسجيل حضور **${student.studentName}** لحصة اليوم [${groupName}].\n\n📌 **يرجى الرد بـ (تم) لتأكيد الاطلاع.**${signature}`,
-                    `تحية طيبة،\nنود إعلامكم بتواجد الطالب/ة **${student.studentName}** في مجموعة [${groupName}] بتاريخ ${shortDate}.\n\n📌 **الرجاء الرد بكلمة (تم) للتأكيد.**\nبالتوفيق دائمًا.${signature}`,
-                    `السلام عليكم،\nتم رصد حضور **${student.studentName}** في موعد الحصة اليوم [${groupName}].\n\n📌 **الرجاء الرد بـ (تم) للتأكيد.**${signature}`,
+                    `السلام عليكم ورحمة الله،\nنحيطكم علمًا بحضور الطالب/ة: **${student.studentName}** لحصة [${groupName}] بتاريخ ${shortDate} (وقت الوصول: ${timeStr}).${homeworkLine}\n\n📌 **الرجاء الرد بـ (تم) للتأكيد والاستلام.**${signature}`,
+                    `أهلاً بحضرتك،\nتم بنجاح تسجيل حضور **${student.studentName}** لحصة اليوم [${groupName}].${homeworkLine}\n\n📌 **يرجى الرد بـ (تم) لتأكيد الاطلاع.**${signature}`,
+                    `تحية طيبة،\nنود إعلامكم بتواجد الطالب/ة **${student.studentName}** في مجموعة [${groupName}] بتاريخ ${shortDate}.${homeworkLine}\n\n📌 **الرجاء الرد بكلمة (تم) للتأكيد.**\nبالتوفيق دائمًا.${signature}`,
+                    `السلام عليكم،\nتم رصد حضور **${student.studentName}** في موعد الحصة اليوم [${groupName}].${homeworkLine}\n\n📌 **الرجاء الرد بـ (تم) للتأكيد.**${signature}`,
                 ];
                 message = PRESENT_TEMPLATES[Math.floor(Math.random() * PRESENT_TEMPLATES.length)] as string;
             } else {
@@ -1096,6 +1387,7 @@ export class AttendanceService {
                 studentId: student._id,
                 studentName: student.studentName,
                 status: isPresent ? 'PRESENT' : 'ABSENT',
+                homeworkDone: isPresent && typeof record?.homeworkDone === 'boolean' ? record.homeworkDone : null,
                 whatsappLink: `https://wa.me/${waPhone}?text=${encodedMessage}`,
             };
         });

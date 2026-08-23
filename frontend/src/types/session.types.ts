@@ -16,26 +16,71 @@ export interface ISessionWithGroup extends ISession {
     groupId: { _id: string; name: string };
 }
 
+export type MutationSyncStatus = 'QUEUED' | 'SYNCING' | 'FAILED' | 'RESOLVED';
+
 export interface IAttendanceRecord {
     _id: string;
     studentId: {
         _id: string;
         studentName: string;
-        studentPhone: string;
-        studentCode: string;
+        studentPhone?: string;
+        studentCode?: string;
     } | null;
     sessionId: string;
     status: AttendanceStatus;
     isGuest: boolean;
+    homeworkDone?: boolean | null;
     scannedAt: string;
-    scannedBy: string;
+    scannedBy?: string;
     notes?: string;
+    _syncStatus?: MutationSyncStatus;
+}
+
+export interface IOfflineOutboxMutation {
+    clientMutationId: string;
+    sessionId: string;
+    /** MongoDB ObjectId — present when student was resolved from local cache or online. */
+    studentId?: string;
+    /** Raw QR token / barcode / studentCode — present when local resolution failed. Server resolves at sync time. */
+    rawToken?: string;
+    studentName: string;
+    studentCode?: string;
+    studentPhone?: string;
+    status: AttendanceStatus;
+    isGuest: boolean;
+    homeworkDone?: boolean | null;
+    scannedAt: string;
+    createdAt: number;
+    syncStatus: MutationSyncStatus;
+    retryCount: number;
+    lastError?: string;
+    notes?: string;
+}
+
+export interface SyncAttendanceRecordDTO {
+    clientMutationId: string;
+    /** MongoDB ObjectId — fast path. */
+    studentId?: string;
+    /** QR token / barcode / studentCode — deferred server-side resolution. */
+    rawToken?:     string;
+    status?:       AttendanceStatus;
+    isGuest?:      boolean;
+    homeworkDone?: boolean;
+    scannedAt?:    string;
+    notes?:        string;
+}
+
+export interface SyncBatchAttendanceDTO {
+    sessionId: string;
+    records: SyncAttendanceRecordDTO[];
 }
 
 export interface IAttendanceSnapshotStudent {
     studentId: string;
     studentName: string;
     scannedAt?: string;
+    status?: AttendanceStatus;
+    homeworkDone?: boolean | null;
 }
 
 export interface IAttendanceSnapshot {
@@ -64,6 +109,7 @@ export interface RecordAttendanceDTO {
     studentId: string;
     status: AttendanceStatus;
     isGuest?: boolean;
+    homeworkDone?: boolean;
     notes?: string;
 }
 
@@ -80,8 +126,9 @@ export interface PaginatedSessionsResponse {
 // ── WhatsApp ──────────────────────────────────────────────────────────
 
 export interface IWhatsAppLink {
-    studentId:    string;
-    studentName:  string;
-    status:       'PRESENT' | 'ABSENT';
-    whatsappLink: string;
+    studentId:     string;
+    studentName:   string;
+    status:        'PRESENT' | 'ABSENT';
+    homeworkDone?: boolean | null;
+    whatsappLink:  string;
 }

@@ -39,6 +39,10 @@ const attendanceSchema = new Schema<IAttendanceDocument>({
         type: Schema.Types.ObjectId,
         ref: 'User',
     },
+    homeworkDone: {
+        type: Boolean,
+        default: null,
+    },
     notes: {
         type: String,
     },

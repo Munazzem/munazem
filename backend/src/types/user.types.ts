@@ -24,6 +24,9 @@ export interface IUser {
   whatsappStatus?: 'disconnected' | 'pending' | 'connected';
   subject?:        string;
   assistantsAccessEnabled?: boolean;
+  features?: {
+    homeworkTracking?: boolean;
+  };
 }
 
 export interface IUserDocument extends IUser, Document {

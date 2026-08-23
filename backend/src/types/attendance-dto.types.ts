@@ -13,6 +13,7 @@ export interface RecordAttendanceDTO {
     sessionId: string;
     status:    AttendanceStatus;
     isGuest?:  boolean;
+    homeworkDone?: boolean;
     notes?:    string;
 }
 
@@ -23,6 +24,27 @@ export interface BatchAttendanceDTO {
         studentId: string;
         status:    AttendanceStatus;
         isGuest?:  boolean;
+        homeworkDone?: boolean;
         notes?:    string;
     }[];
+}
+
+// Offline Outbox Sync Batch DTO
+// Either `studentId` (MongoDB ObjectId — resolved online or from local cache)
+// OR `rawToken` (QR UUID / barcode / studentCode — resolved server-side at sync time).
+// One of the two must be present per record.
+export interface SyncAttendanceRecordDTO {
+    clientMutationId: string;
+    studentId?: string;  // MongoDB ObjectId — fast path
+    rawToken?:  string;  // QR token / barcode / studentCode — deferred resolution
+    status?:    AttendanceStatus;
+    isGuest?:   boolean;
+    homeworkDone?: boolean;
+    scannedAt?: string;
+    notes?:     string;
+}
+
+export interface SyncBatchAttendanceDTO {
+    sessionId: string;
+    records: SyncAttendanceRecordDTO[];
 }

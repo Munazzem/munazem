@@ -219,8 +219,12 @@ describe('GET /auth/me', () => {
         expect(res.body.data._id).toBeDefined();
     });
 
-    it('الـ assistant يرث centerName و logoUrl من المعلم', async () => {
-        await seedTeacher({ centerName: 'مركز النجاح', logoUrl: 'https://img.test/logo.png' });
+    it('الـ assistant يرث centerName و logoUrl و features من المعلم', async () => {
+        await seedTeacher({
+            centerName: 'مركز النجاح',
+            logoUrl: 'https://img.test/logo.png',
+            features: { homeworkTracking: true } as any,
+        });
         await seedAssistant();
 
         const res = await app
@@ -230,6 +234,36 @@ describe('GET /auth/me', () => {
         expect(res.status).toBe(200);
         expect(res.body.data.centerName).toBe('مركز النجاح');
         expect(res.body.data.logoUrl).toBe('https://img.test/logo.png');
+        expect(res.body.data.features?.homeworkTracking).toBe(true);
+    });
+
+    it('SuperAdmin يستطيع تفعيل وتعطيل features.homeworkTracking مع التحقق من Zod', async () => {
+        const teacher = await seedTeacher({
+            features: { homeworkTracking: false } as any,
+        });
+
+        const { makeSuperAdminToken } = await import('../helpers/auth.helper.js');
+
+        // 1. Toggle ON
+        const patchRes = await app
+            .patch(`/admin/tenants/${teacher._id}`)
+            .set('Authorization', bearerHeader(makeSuperAdminToken()))
+            .send({
+                features: { homeworkTracking: true }
+            });
+
+        expect(patchRes.status).toBe(200);
+        expect(patchRes.body.data.features?.homeworkTracking).toBe(true);
+
+        // 2. Reject non-boolean value via Zod
+        const invalidRes = await app
+            .patch(`/admin/tenants/${teacher._id}`)
+            .set('Authorization', bearerHeader(makeSuperAdminToken()))
+            .send({
+                features: { homeworkTracking: 'not-a-boolean' }
+            });
+
+        expect(invalidRes.status).toBe(400);
     });
 
     it('يرفض بـ 401 — بدون token', async () => {
