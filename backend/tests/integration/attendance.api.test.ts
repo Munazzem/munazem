@@ -134,7 +134,7 @@ describe('POST /attendance/batch-sync', () => {
         expect(res2.body.data.matchedCount).toBe(2);
     });
 
-    it('يرفض المزامنة على حصة مكتملة بالفعل COMPLETED', async () => {
+    it('يقبل المزامنة بأمان على حصة مكتملة COMPLETED ويُسجل الحضور بنجاح', async () => {
         await seedTeacher();
         const group = await seedGroup();
         const session = await seedSession({ groupId: group._id as any, status: SessionStatus.COMPLETED });
@@ -154,8 +154,39 @@ describe('POST /attendance/batch-sync', () => {
                 ]
             });
 
+        expect(res.status).toBe(200);
+        expect(res.body.data.success).toBe(true);
+        expect(res.body.data.upsertedCount).toBe(1);
+
+        // Verify attendance record exists in DB with PRESENT status
+        const { AttendanceModel } = await import('../../src/database/models/attendance.model.js');
+        const record = await AttendanceModel.findOne({ sessionId: session._id, studentId: student._id });
+        expect(record).not.toBeNull();
+        expect(record?.status).toBe(AttendanceStatus.PRESENT);
+    });
+
+    it('يرفض المزامنة على حصة مُلغاة CANCELLED', async () => {
+        await seedTeacher();
+        const group = await seedGroup();
+        const session = await seedSession({ groupId: group._id as any, status: SessionStatus.CANCELLED });
+        const student = await seedStudent(group._id as any);
+
+        const res = await app
+            .post('/attendance/batch-sync')
+            .set('Authorization', bearerHeader(makeTeacherToken()))
+            .send({
+                sessionId: session._id.toString(),
+                records: [
+                    {
+                        clientMutationId: 'mutation-uuid-4',
+                        studentId: student._id.toString(),
+                        status: AttendanceStatus.PRESENT
+                    }
+                ]
+            });
+
         expect(res.status).toBe(400);
-        expect(res.body.message).toContain('مكتملة');
+        expect(res.body.message).toContain('مُلغاة');
     });
 });
 
