@@ -190,15 +190,16 @@ export default function SessionDetailPage() {
             const mapped: IAttendanceRecord[] = mutations.map(m => ({
                 _id: `temp-${m.clientMutationId}`,
                 studentId: {
-                    _id: m.studentId,
+                    // rawToken records have no studentId yet — use clientMutationId as temp display id
+                    _id:         m.studentId ?? m.clientMutationId,
                     studentName: m.studentName,
-                    studentCode: m.studentCode,
+                    studentCode: m.studentCode ?? '...',
                     studentPhone: m.studentPhone,
                 },
-                sessionId: m.sessionId,
-                status: m.status,
-                isGuest: m.isGuest,
-                scannedAt: m.scannedAt,
+                sessionId:   m.sessionId,
+                status:      m.status,
+                isGuest:     m.isGuest,
+                scannedAt:   m.scannedAt,
                 _syncStatus: m.syncStatus,
             }));
             setLocalPendingRecords(mapped);
@@ -440,25 +441,143 @@ export default function SessionDetailPage() {
 
     const handleQRScan = useCallback(async (scanInput: string) => {
         try {
-            // First, resolve the scan input (could be a token, barcode, or old code)
+            // Resolve the scan input (token / barcode / code) against the server.
+            // x-skip-error-toast is set in resolveCard so the axios interceptor stays silent —
+            // we own the UX from here.
             const result = await resolveCard(scanInput);
+
             if (!result.student) {
+                // Card exists but is not yet linked to any student
                 toast.error('هذا الكارت جديد وغير مربوط بأي طالب');
                 return;
             }
+
             const studentId = result.student.studentId;
 
             if (alreadyRecordedIds.has(studentId)) {
                 toast.warning('تم تسجيل هذا الطالب مسبقاً');
                 return;
             }
-            
-            // Record attendance
+
+            // ── Online path ─────────────────────────────────────────────────────
             recordMutation.mutate(studentId);
+
         } catch (error: any) {
-            // error toast is handled globally by axios interceptor
+            // ── Offline / network-error path ────────────────────────────────────
+            const isNetworkError =
+                !error.response ||
+                error.code === 'ERR_NETWORK' ||
+                error.message?.includes('Network') ||
+                error.message?.includes('timeout') ||
+                error.message?.includes('Failed to fetch');
+
+            if (!isNetworkError) {
+                // Server returned a real error (404 unrecognized token, 400, etc.)
+                const msg = error.response?.data?.message || 'تعذر تحديد الطالب';
+                toast.error(msg);
+                return;
+            }
+
+            // ── Try local cache resolution ──────────────────────────────────────
+            // groupStudentsData holds students of the session's own group.
+            // Match by barcode or studentCode (the two non-ObjectId identifiers a QR might carry).
+            const localStudents = groupStudentsData?.data ?? [];
+            const localStudent = localStudents.find(
+                s => s.barcode === scanInput || s.studentCode === scanInput
+            );
+
+            const clientMutationId = `mut-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+            const scannedAt = new Date().toISOString();
+
+            if (localStudent) {
+                // ── Cache HIT: student is a known group member ─────────────────
+                if (alreadyRecordedIds.has(localStudent._id)) {
+                    toast.warning('تم تسجيل هذا الطالب مسبقاً');
+                    return;
+                }
+
+                const isGuest = localStudent.groupId !== groupId;
+
+                // Optimistic UI update
+                queryClient.setQueryData(QK.attendance.bySession(sessionId), (prev: IAttendanceRecord[] = []) => [
+                    ...prev,
+                    {
+                        _id: `temp-${clientMutationId}`,
+                        studentId: {
+                            _id: localStudent._id,
+                            studentName: localStudent.studentName,
+                            studentCode: localStudent.studentCode,
+                            studentPhone: localStudent.studentPhone,
+                        },
+                        sessionId,
+                        status: 'PRESENT',
+                        isGuest,
+                        scannedAt,
+                        _syncStatus: 'QUEUED',
+                    } as IAttendanceRecord,
+                ]);
+
+                await OutboxService.enqueueAttendance({
+                    clientMutationId,
+                    sessionId,
+                    studentId:   localStudent._id,   // ObjectId — fast sync path
+                    studentName: localStudent.studentName,
+                    studentCode: localStudent.studentCode,
+                    studentPhone: localStudent.studentPhone ?? '',
+                    status:      'PRESENT',
+                    isGuest,
+                    scannedAt,
+                    createdAt:   Date.now(),
+                    syncStatus:  'QUEUED',
+                    retryCount:  0,
+                });
+
+                await refreshPendingCount(sessionId);
+                toast.info(`تم حفظ حضور ${localStudent.studentName} محلياً (⏳ سيتم رفعه عند الاتصال)`, {
+                    duration: 4000,
+                });
+
+            } else {
+                // ── Cache MISS: guest student or new student not in local list ──
+                // Enqueue the raw scan token — the server will resolve it at sync time.
+                await OutboxService.enqueueAttendance({
+                    clientMutationId,
+                    sessionId,
+                    rawToken:    scanInput,           // deferred server-side resolution
+                    studentName: `طالب زائر (${scanInput.slice(-6)})`,
+                    status:      'PRESENT',
+                    isGuest:     true,               // assume guest until server confirms
+                    scannedAt,
+                    createdAt:   Date.now(),
+                    syncStatus:  'QUEUED',
+                    retryCount:  0,
+                });
+
+                // Optimistic UI placeholder (no studentId known yet)
+                queryClient.setQueryData(QK.attendance.bySession(sessionId), (prev: IAttendanceRecord[] = []) => [
+                    ...prev,
+                    {
+                        _id: `temp-${clientMutationId}`,
+                        studentId: {
+                            _id: clientMutationId,       // temp id — not a real ObjectId
+                            studentName: `طالب زائر (${scanInput.slice(-6)})`,
+                            studentCode: '...',
+                        },
+                        sessionId,
+                        status: 'PRESENT',
+                        isGuest: true,
+                        scannedAt,
+                        _syncStatus: 'QUEUED',
+                    } as IAttendanceRecord,
+                ]);
+
+                await refreshPendingCount(sessionId);
+                toast.info('تم حفظ مسح كارت مجهول محلياً (⏳ سيُحسم عند الاتصال)', {
+                    duration: 5000,
+                });
+            }
         }
-    }, [alreadyRecordedIds, recordMutation]);
+    }, [alreadyRecordedIds, groupId, groupStudentsData, queryClient, recordMutation, refreshPendingCount, sessionId]);
 
     const groupName =
         typeof session?.groupId === 'object'

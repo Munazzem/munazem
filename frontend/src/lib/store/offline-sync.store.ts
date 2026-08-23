@@ -59,11 +59,15 @@ export const useOfflineSyncStore = create<OfflineSyncState>((set, get) => ({
 
             const records: SyncAttendanceRecordDTO[] = items.map(i => ({
                 clientMutationId: i.clientMutationId,
-                studentId: i.studentId,
-                status: i.status,
-                isGuest: i.isGuest,
+                // Pass whichever identifier is available:
+                //   studentId (ObjectId) — online or local-cache-resolved scan
+                //   rawToken             — offline scan with no local match; server resolves
+                ...(i.studentId ? { studentId: i.studentId } : {}),
+                ...(i.rawToken  ? { rawToken:  i.rawToken  } : {}),
+                status:    i.status,
+                isGuest:   i.isGuest,
                 scannedAt: i.scannedAt,
-                notes: i.notes,
+                notes:     i.notes,
             }));
 
             try {

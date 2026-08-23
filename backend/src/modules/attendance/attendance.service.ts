@@ -15,6 +15,7 @@ import { enqueueWhatsApp } from '../../infrastructure/queues/whatsapp.queue.js';
 import { cache, CacheKeys } from '../../infrastructure/cache/cache.service.js';
 import mongoose from 'mongoose';
 import { startOfDayEgyptMs } from '../../common/utils/date.util.js';
+import { CardsService } from '../cards/cards.service.js';
 
 // ─── Date helper ─────────────────────────────────────────────────────────────
 // Centralized in common/utils/date.util.ts — returns midnight Egypt time as ms
@@ -291,85 +292,197 @@ export class AttendanceService {
     static async syncBatchAttendance(scannedBy: string, data: SyncBatchAttendanceDTO, teacherId: string) {
         const session = await SessionModel.findOne({ _id: data.sessionId, teacherId }).lean();
         if (!session) throw NotFoundException({ message: 'الحصة غير موجودة' });
-        if (session.status === SessionStatus.COMPLETED) {
-            throw BadRequestException({ message: 'الحصة مكتملة بالفعل، لا يمكن تسجيل حضور جديد عليها' });
-        }
         if (session.status === SessionStatus.CANCELLED) {
             throw BadRequestException({ message: 'هذه الحصة مُلغاة' });
         }
 
-        // Validate student IDs and grade levels
-        const studentObjectIds = data.records.map(r => new mongoose.Types.ObjectId(r.studentId));
-        const students = await StudentModel.find({
-            _id: { $in: studentObjectIds },
-            teacherId
-        }, { _id: 1, groupId: 1, gradeLevel: 1 }).lean();
+        const isCompleted = session.status === SessionStatus.COMPLETED;
 
-        const studentMap = new Map(students.map(s => [s._id.toString(), s]));
-        const sessionGroup = await GroupModel.findById(session.groupId, { gradeLevel: 1 }).lean();
+        // ── Step 1: Resolve every record to a confirmed student ObjectId ─────────
+        // Records come in two flavours:
+        //   a) { studentId: ObjectId }  — scanned online or resolved from local cache
+        //   b) { rawToken: string }     — scanned offline; no local cache match; resolve now
+        const serverNow = new Date();
 
-        const bulkOps: any[] = [];
-        const validGuestStudentIds: mongoose.Types.ObjectId[] = [];
+        type ResolvedRecord = {
+            studentId:        mongoose.Types.ObjectId;
+            clientMutationId: string;
+            status:           AttendanceStatus;
+            isGuest:          boolean;           // always set (defaults to false)
+            scannedAt:        Date;
+            notes:            string | undefined; // explicit union — required by exactOptionalPropertyTypes
+        };
+
+        const resolved: ResolvedRecord[] = [];
 
         for (const record of data.records) {
-            const student = studentMap.get(record.studentId);
-            if (!student) continue; // Skip non-existent students
+            let studentObjectId: mongoose.Types.ObjectId | null = null;
+            let resolvedIsGuest = record.isGuest; // may be overridden below
 
-            // Skip if grade levels mismatch
-            if (sessionGroup && student.gradeLevel !== sessionGroup.gradeLevel) {
-                continue;
+            // ── Path A: studentId already an ObjectId ───────────────────────────
+            if (record.studentId && mongoose.Types.ObjectId.isValid(record.studentId) && record.studentId.length === 24) {
+                studentObjectId = new mongoose.Types.ObjectId(record.studentId);
             }
-
-            const isGuest = record.isGuest ?? (student.groupId?.toString() !== session.groupId?.toString());
-            const status = record.status || AttendanceStatus.PRESENT;
-            const scannedAt = record.scannedAt ? new Date(record.scannedAt) : new Date();
-
-            bulkOps.push({
-                updateOne: {
-                    filter: {
-                        studentId: student._id,
-                        sessionId: new mongoose.Types.ObjectId(data.sessionId)
-                    },
-                    update: {
-                        $setOnInsert: {
-                            studentId: student._id,
-                            sessionId: new mongoose.Types.ObjectId(data.sessionId),
-                            status,
-                            isGuest,
-                            scannedAt,
-                            scannedBy: new mongoose.Types.ObjectId(scannedBy),
-                            type: 'SESSION',
-                            ...(record.notes ? { notes: record.notes } : {}),
-                        }
-                    },
-                    upsert: true
+            // ── Path B: rawToken — deferred server-side resolution ─────────────
+            else if (record.rawToken) {
+                try {
+                    const cardResult = await CardsService.resolveCard(record.rawToken, teacherId);
+                    if (!cardResult.student) {
+                        // NEW / unlinked card — cannot resolve; skip silently
+                        continue;
+                    }
+                    studentObjectId = new mongoose.Types.ObjectId(cardResult.student.studentId);
+                    // isGuest will be computed later against session.groupId
+                    resolvedIsGuest = undefined;
+                } catch {
+                    // Unrecognized token (card deleted, wrong tenant, etc.) — skip
+                    continue;
                 }
-            });
-
-            if (isGuest && (status === AttendanceStatus.PRESENT || status === AttendanceStatus.LATE)) {
-                validGuestStudentIds.push(student._id);
             }
+
+            if (!studentObjectId) continue; // record has neither field — malformed; skip
+
+            // ── Clock-skew guard: cap scannedAt at server time ─────────────────
+            const rawScannedAt = record.scannedAt ? new Date(record.scannedAt) : serverNow;
+            const scannedAt    = rawScannedAt > serverNow ? serverNow : rawScannedAt;
+
+            resolved.push({
+                studentId:        studentObjectId,
+                clientMutationId: record.clientMutationId,
+                status:           record.status || AttendanceStatus.PRESENT,
+                isGuest:          resolvedIsGuest ?? false,
+                scannedAt,
+                notes:            record.notes,
+            });
         }
 
-        if (bulkOps.length === 0) {
+        if (resolved.length === 0) {
             return {
                 success: true,
                 upsertedCount: 0,
                 matchedCount: 0,
                 total: data.records.length,
-                message: 'لا توجد سجلات صالحة للمزامنة'
+                message: 'لا توجد سجلات صالحة للمزامنة',
             };
         }
 
-        const result = await AttendanceModel.bulkWrite(bulkOps, { ordered: false });
+        // ── Step 2: Batch-fetch all students in one query ────────────────────────
+        const studentObjectIds = resolved.map(r => r.studentId);
+        const students = await StudentModel.find(
+            { _id: { $in: studentObjectIds }, teacherId },
+            { _id: 1, groupId: 1, gradeLevel: 1 }
+        ).lean();
 
-        // Retroactive compensation for guest students
+        const studentMap = new Map(students.map(s => [s._id.toString(), s]));
+        const sessionGroup = await GroupModel.findById(session.groupId, { gradeLevel: 1 }).lean();
+
+        // ── Step 3: Completed-session handling ──────────────────────────────────
+        // When a session is already COMPLETED, offline records are routed directly
+        // to adjustCompletedSessionAttendance. This ensures that even if the teacher
+        // finished the session early, offline attendance records are never lost.
+        type LateAdjustItem = {
+            studentId: mongoose.Types.ObjectId;
+            status:    AttendanceStatus;
+            notes?:    string;
+        };
+        const lateAdjustRecords: LateAdjustItem[] = [];
+
+        const bulkOps: any[] = [];
+        const validGuestStudentIds: mongoose.Types.ObjectId[] = [];
+
+        for (const rec of resolved) {
+            const student = studentMap.get(rec.studentId.toString());
+            if (!student) continue; // student not found / wrong tenant
+
+            // Grade-level enforcement
+            if (sessionGroup && student.gradeLevel !== sessionGroup.gradeLevel) continue;
+
+            const isGuest = rec.isGuest ?? (student.groupId?.toString() !== session.groupId?.toString());
+            const status  = rec.status;
+
+            // ── Completed-session handling ───────────────────────────────────────
+            if (isCompleted) {
+                lateAdjustRecords.push({
+                    studentId: rec.studentId,
+                    status:    rec.status,
+                    ...(rec.notes ? { notes: rec.notes } : {}),
+                });
+                continue;
+            }
+
+            bulkOps.push({
+                updateOne: {
+                    filter: {
+                        studentId: rec.studentId,
+                        sessionId: new mongoose.Types.ObjectId(data.sessionId),
+                    },
+                    update: {
+                        $setOnInsert: {
+                            studentId: rec.studentId,
+                            sessionId: new mongoose.Types.ObjectId(data.sessionId),
+                            status,
+                            isGuest,
+                            scannedAt:  rec.scannedAt,
+                            scannedBy:  new mongoose.Types.ObjectId(scannedBy),
+                            type:       'SESSION',
+                            ...(rec.notes ? { notes: rec.notes } : {}),
+                        },
+                    },
+                    upsert: true,
+                },
+            });
+
+            if (isGuest && (status === AttendanceStatus.PRESENT || status === AttendanceStatus.LATE)) {
+                validGuestStudentIds.push(rec.studentId);
+            }
+        }
+
+        // ── Step 3b: Apply late adjustments for completed sessions ───────────────
+        let adjustedCount = 0;
+        for (const item of lateAdjustRecords) {
+            try {
+                await AttendanceService.adjustCompletedSessionAttendance(
+                    data.sessionId,
+                    item.studentId.toString(),
+                    item.status,
+                    teacherId,
+                    scannedBy,  // updatedBy — the assistant performing the sync
+                    item.notes
+                );
+                adjustedCount++;
+            } catch {
+                // Already present or other constraint — skip silently
+            }
+        }
+
+        if (bulkOps.length === 0 && adjustedCount === 0) {
+            return {
+                success: true,
+                upsertedCount: 0,
+                matchedCount: 0,
+                total: data.records.length,
+                message: isCompleted
+                    ? `تمت معالجة ${adjustedCount} سجل على حصة مكتملة`
+                    : 'لا توجد سجلات صالحة للمزامنة',
+            };
+        }
+
+        let upsertedCount = 0;
+        let matchedCount  = 0;
+
+        if (bulkOps.length > 0) {
+            const result = await AttendanceModel.bulkWrite(bulkOps, { ordered: false });
+            upsertedCount = result.upsertedCount;
+            matchedCount  = result.matchedCount;
+        }
+
+        // ── Step 4: Retroactive guest compensation ───────────────────────────────
         if (validGuestStudentIds.length > 0) {
             const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
             const absentRecords = await AttendanceModel.find({
                 studentId: { $in: validGuestStudentIds },
                 status: AttendanceStatus.ABSENT,
-                scannedAt: { $gte: oneWeekAgo }
+                scannedAt: { $gte: oneWeekAgo },
             }).sort({ scannedAt: -1 }).lean();
 
             if (absentRecords.length > 0) {
@@ -382,24 +495,27 @@ export class AttendanceService {
                             update: {
                                 $set: {
                                     status: AttendanceStatus.EXCUSED,
-                                    notes: 'معوّض — حضر كزائر في مجموعة أخرى'
-                                }
-                            }
-                        }
+                                    notes:  'معوّض — حضر كزائر في مجموعة أخرى',
+                                },
+                            },
+                        },
                     };
                 });
 
                 await AttendanceModel.bulkWrite(updates);
 
-                // Synchronize AttendanceSnapshotModel for affected sessions
-                const sessionIdsToSync = Array.from(new Set(absentRecords.filter(r => r.sessionId).map(r => r.sessionId!.toString())));
-                const compensatedStudentIdSet = new Set(compensatedStudentIds.map(id => id.toString()));
+                // Synchronize snapshots for affected past sessions
+                const sessionIdsToSync = Array.from(
+                    new Set(absentRecords.filter(r => r.sessionId).map(r => r.sessionId!.toString()))
+                );
+                const compensatedSet = new Set(compensatedStudentIds.map(id => id.toString()));
+
                 for (const pastSessionId of sessionIdsToSync) {
                     const pastSnapshot = await AttendanceSnapshotModel.findOne({ sessionId: pastSessionId });
                     if (pastSnapshot) {
                         const originalLen = pastSnapshot.absentStudents.length;
                         pastSnapshot.absentStudents = pastSnapshot.absentStudents.filter(
-                            s => !compensatedStudentIdSet.has(s.studentId.toString())
+                            s => !compensatedSet.has(s.studentId.toString())
                         );
                         if (pastSnapshot.absentStudents.length !== originalLen) {
                             pastSnapshot.absentCount = pastSnapshot.absentStudents.length;
@@ -421,11 +537,11 @@ export class AttendanceService {
         await cache.invalidate(CacheKeys.teacherAll(teacherId));
 
         return {
-            success: true,
-            upsertedCount: result.upsertedCount,
-            matchedCount: result.matchedCount,
-            total: data.records.length,
-            message: `تمت مزامنة ${result.upsertedCount} سجل جديد وتأكيد ${result.matchedCount} سجل سابق`
+            success:      true,
+            upsertedCount: upsertedCount + adjustedCount,
+            matchedCount,
+            total:        data.records.length,
+            message:      `تمت مزامنة ${upsertedCount + adjustedCount} سجل جديد وتأكيد ${matchedCount} سجل سابق`,
         };
     }
 

@@ -38,7 +38,10 @@ export interface IAttendanceRecord {
 export interface IOfflineOutboxMutation {
     clientMutationId: string;
     sessionId: string;
-    studentId: string;
+    /** MongoDB ObjectId — present when student was resolved from local cache or online. */
+    studentId?: string;
+    /** Raw QR token / barcode / studentCode — present when local resolution failed. Server resolves at sync time. */
+    rawToken?: string;
     studentName: string;
     studentCode?: string;
     studentPhone?: string;
@@ -54,11 +57,14 @@ export interface IOfflineOutboxMutation {
 
 export interface SyncAttendanceRecordDTO {
     clientMutationId: string;
-    studentId: string;
-    status?: AttendanceStatus;
-    isGuest?: boolean;
+    /** MongoDB ObjectId — fast path. */
+    studentId?: string;
+    /** QR token / barcode / studentCode — deferred server-side resolution. */
+    rawToken?:  string;
+    status?:    AttendanceStatus;
+    isGuest?:   boolean;
     scannedAt?: string;
-    notes?: string;
+    notes?:     string;
 }
 
 export interface SyncBatchAttendanceDTO {
