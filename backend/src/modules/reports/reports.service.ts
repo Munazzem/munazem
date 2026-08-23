@@ -91,11 +91,26 @@ export class ReportsService {
             (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
         );
 
-        const presentCount = deduplicatedEntries.filter(
+        // When a student attended as a GUEST in another group, that GUEST session is already listed in history as their attendance.
+        // Therefore, we do not show redundant phantom EXCUSED entries for their home group's session that was compensated.
+        const guestCount = deduplicatedEntries.filter(e => e.status === 'GUEST').length;
+        let availableGuestCredits = guestCount;
+
+        const effectiveEntries = deduplicatedEntries.filter(e => {
+            if (e.status === AttendanceStatus.EXCUSED) {
+                if (availableGuestCredits > 0) {
+                    availableGuestCredits--;
+                    return false; // Suppress phantom compensated absence card from student profile
+                }
+            }
+            return true;
+        });
+
+        const presentCount = effectiveEntries.filter(
             e => e.status === AttendanceStatus.PRESENT || e.status === AttendanceStatus.LATE || e.status === 'GUEST' || e.status === AttendanceStatus.EXCUSED
         ).length;
-        const absentCount  = deduplicatedEntries.filter(e => e.status === AttendanceStatus.ABSENT).length;
-        const attendanceHistory = deduplicatedEntries.slice(0, 30).map(e => ({
+        const absentCount  = effectiveEntries.filter(e => e.status === AttendanceStatus.ABSENT).length;
+        const attendanceHistory = effectiveEntries.slice(0, 30).map(e => ({
             sessionId: e.sessionId,
             date: e.date,
             status: e.status,

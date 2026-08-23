@@ -135,7 +135,7 @@ export function AttendanceAdjustmentModal({
         },
         {
             value: 'EXCUSED' as AttendanceStatus,
-            label: 'معوّض / بعذر',
+            label: 'بعذر',
             icon: HelpCircle,
             activeColor: 'bg-blue-600 text-white border-blue-600 shadow-md',
             inactiveColor: 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100/70',

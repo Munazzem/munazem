@@ -1,5 +1,3 @@
-// Removed Puppeteer imports and local chrome paths
-
 import { ReportsService } from './reports.service.js';
 import { AttendanceService } from '../attendance/attendance.service.js';
 import { SessionService } from '../sessions/sessions.service.js';
@@ -8,9 +6,12 @@ import { UserModel } from '../../database/models/user.model.js';
 import { StudentModel } from '../../database/models/student.model.js';
 import { GroupModel } from '../../database/models/group.model.js';
 import { SessionModel } from '../../database/models/session.model.js';
+import { AttendanceModel } from '../../database/models/attendance.model.js';
 import { AttendanceSnapshotModel } from '../../database/models/attendance-snapshot.model.js';
 import { TransactionModel } from '../../database/models/transaction.model.js';
-import { SessionStatus, TransactionType, TransactionCategory } from '../../common/enums/enum.service.js';
+import { CycleEnrollmentModel } from '../../database/models/cycle-enrollment.model.js';
+import { SessionStatus, TransactionType, TransactionCategory, AttendanceStatus } from '../../common/enums/enum.service.js';
+import { startOfDayEgypt } from '../../common/utils/date.util.js';
 
 export class PdfService {
 
@@ -617,41 +618,106 @@ export class PdfService {
         const students = await StudentModel.find({ groupId, teacherId, isActive: true })
             .select('studentName studentPhone parentPhone studentCode barcode').sort({ studentName: 1 }).lean();
 
-        // Current Month Sessions for the group
-        const now = new Date();
-        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-        const monthEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-
-        // Fetch up to 8 recent completed sessions in this month
-        const sessions = await SessionModel.find({
-            groupId, teacherId, status: SessionStatus.COMPLETED,
-            date: { $gte: monthStart, $lte: monthEnd }
-        }).sort({ date: 1 }).limit(8).lean();
-
-        // Create a fast lookup map for session attendance
-        const attendanceMap: Record<string, Record<string, boolean>> = {}; // sessionId -> { studentId: true }
-        for (const s of sessions) {
-            const sid = s._id.toString();
-            attendanceMap[sid] = {};
-            const snapshot = await AttendanceSnapshotModel.findOne({ sessionId: s._id }).lean();
-            if (snapshot) {
-                for (const ps of snapshot.presentStudents) {
-                    attendanceMap[sid][ps.studentId.toString()] = true;
-                }
-            }
-        }
-
-        // Subscriptions this month
         const studentIds = students.map(s => s._id);
-        const subscriptions = await TransactionModel.distinct('studentId', {
-            teacherId,
-            studentId: { $in: studentIds },
-            type: TransactionType.INCOME,
-            category: TransactionCategory.SUBSCRIPTION,
-            date: { $gte: monthStart, $lte: monthEnd }
-        });
-        const activeSubSet = new Set(subscriptions.map((id: any) => id.toString()));
 
+        // Cycle parameters
+        const cycleCapacity = (group as any)?.cycle?.capacity || (group?.schedule?.length ? group.schedule.length * 4 : 8);
+        const currentCycleNumber = (group as any)?.cycle?.currentCycleNumber || 1;
+        const rawCycleStartedAt = (group as any)?.cycle?.startedAt;
+        const cycleStartedAt = startOfDayEgypt(rawCycleStartedAt);
+
+        // Current Cycle Sessions for the group (all non-cancelled sessions in this cycle, up to cycleCapacity)
+        const sessions = await SessionModel.find({
+            groupId,
+            teacherId,
+            date: { $gte: cycleStartedAt },
+            status: { $ne: SessionStatus.CANCELLED }
+        }).sort({ date: 1, startTime: 1 }).limit(cycleCapacity).lean();
+
+        const sessionIds = sessions.map(s => s._id);
+
+        // 1. Fetch current cycle enrollments for subscriptions
+        const enrollments = await CycleEnrollmentModel.find({
+            studentId: { $in: studentIds },
+            cycleNumber: currentCycleNumber
+        }).lean();
+
+        const paidSubSet = new Set<string>();
+        enrollments.forEach(e => {
+            if (e.status === 'PAID' || e.status === 'PARTIALLY_PAID' || e.totalPaid > 0) {
+                paidSubSet.add(e.studentId.toString());
+            }
+        });
+
+        // 2. Fetch live attendance records, snapshots, and guest attendances in the cycle
+        const [attendedRecords, sessionSnapshots, guestRecords] = await Promise.all([
+            AttendanceModel.find({
+                studentId: { $in: studentIds },
+                sessionId: { $in: sessionIds as any },
+            }).lean(),
+            AttendanceSnapshotModel.find({
+                sessionId: { $in: sessionIds as any },
+            }).lean(),
+            AttendanceModel.find({
+                studentId: { $in: studentIds },
+                isGuest: true,
+                status: { $in: [AttendanceStatus.PRESENT, AttendanceStatus.LATE] },
+                scannedAt: { $gte: cycleStartedAt },
+            }).lean(),
+        ]);
+
+        // Build student -> sessionId -> status map
+        const studentAttendanceMap = new Map<string, Map<string, AttendanceStatus>>();
+        attendedRecords.forEach(a => {
+            const sid = a.studentId.toString();
+            const sessId = a.sessionId ? a.sessionId.toString() : '';
+            if (sessId) {
+                if (!studentAttendanceMap.has(sid)) studentAttendanceMap.set(sid, new Map());
+                studentAttendanceMap.get(sid)!.set(sessId, a.status as AttendanceStatus);
+            }
+        });
+
+        // Complement with snapshots if direct attendance record not found
+        sessionSnapshots.forEach(snap => {
+            const sessId = snap.sessionId.toString();
+            snap.presentStudents?.forEach((p: any) => {
+                const sid = p.studentId?.toString();
+                if (sid) {
+                    if (!studentAttendanceMap.has(sid)) studentAttendanceMap.set(sid, new Map());
+                    if (!studentAttendanceMap.get(sid)!.has(sessId)) {
+                        studentAttendanceMap.get(sid)!.set(sessId, p.status === AttendanceStatus.EXCUSED ? AttendanceStatus.EXCUSED : AttendanceStatus.PRESENT);
+                    }
+                }
+            });
+            snap.guestStudents?.forEach((g: any) => {
+                const sid = g.studentId?.toString();
+                if (sid) {
+                    if (!studentAttendanceMap.has(sid)) studentAttendanceMap.set(sid, new Map());
+                    if (!studentAttendanceMap.get(sid)!.has(sessId)) {
+                        studentAttendanceMap.get(sid)!.set(sessId, AttendanceStatus.PRESENT);
+                    }
+                }
+            });
+            snap.absentStudents?.forEach((a: any) => {
+                const sid = a.studentId?.toString();
+                if (sid) {
+                    if (!studentAttendanceMap.has(sid)) studentAttendanceMap.set(sid, new Map());
+                    if (!studentAttendanceMap.get(sid)!.has(sessId)) {
+                        studentAttendanceMap.get(sid)!.set(sessId, AttendanceStatus.ABSENT);
+                    }
+                }
+            });
+        });
+
+        // Group guest records by student
+        const studentGuestsMap = new Map<string, any[]>();
+        guestRecords.forEach(g => {
+            const sid = g.studentId.toString();
+            if (!studentGuestsMap.has(sid)) studentGuestsMap.set(sid, []);
+            studentGuestsMap.get(sid)!.push(g);
+        });
+
+        const now = new Date();
         const monthNamesAr = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
         const currentMonthName = monthNamesAr[now.getMonth()];
 
@@ -662,34 +728,34 @@ export class PdfService {
                 <meta charset="UTF-8">
                 <style>
                     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;800&display=swap');
-                    @page { size: A4 landscape; margin: 15mm; }
+                    @page { size: A4 landscape; margin: 12mm; }
                     body {
                         font-family: 'Cairo', sans-serif;
                         background-color: #fff;
                         color: #000;
                         margin: 0;
-                        font-size: 13px;
+                        font-size: 12px;
                     }
                     .header-container {
                         display: flex;
                         justify-content: space-between;
                         align-items: center;
                         border-bottom: 2px solid #000;
-                        padding-bottom: 15px;
-                        margin-bottom: 20px;
+                        padding-bottom: 12px;
+                        margin-bottom: 16px;
                     }
                     .header-info { text-align: right; }
-                    .header-info h1 { margin: 0 0 5px 0; font-size: 20px; }
-                    .header-info h2 { margin: 0; font-size: 16px; font-weight: normal; }
+                    .header-info h1 { margin: 0 0 4px 0; font-size: 18px; }
+                    .header-info h2 { margin: 0 0 3px 0; font-size: 14px; font-weight: normal; }
                     .logo-box { text-align: left; }
                     table {
                         width: 100%;
                         border-collapse: collapse;
-                        margin-bottom: 20px;
+                        margin-bottom: 15px;
                     }
                     th, td {
                         border: 1px solid #000;
-                        padding: 8px 4px;
+                        padding: 6px 3px;
                         text-align: center;
                         vertical-align: middle;
                     }
@@ -698,10 +764,11 @@ export class PdfService {
                         font-weight: bold;
                         -webkit-print-color-adjust: exact;
                         print-color-adjust: exact;
+                        font-size: 11px;
                     }
-                    .student-name { text-align: right; padding-right: 8px; width: 18%; }
-                    .checkbox-col { font-size: 18px; }
-                    .session-col { width: 5%; }
+                    .student-name { text-align: right; padding-right: 6px; width: 18%; font-weight: 600; }
+                    .checkbox-col { font-size: 16px; font-weight: bold; }
+                    .session-col { min-width: 38px; }
                 </style>
             </head>
             <body>
@@ -709,7 +776,7 @@ export class PdfService {
                     <div class="header-info">
                         <h1>${centerName}</h1>
                         <h2>كشف حضور مجموعة: <strong>${group.name}</strong> — ${group.gradeLevel || ''}</h2>
-                        <h2>خاص بشهر: <strong>${currentMonthName} ${now.getFullYear()}</strong></h2>
+                        <h2>الدورة: <strong>${currentCycleNumber}</strong> (سعة: ${cycleCapacity} حصص) — شهر: <strong>${currentMonthName} ${now.getFullYear()}</strong></h2>
                     </div>
                     <div class="logo-box">
                         ${logoImg}
@@ -724,18 +791,23 @@ export class PdfService {
                             <th style="width: 10%">رقم الطالب</th>
                             <th style="width: 10%">رقم ولي الأمر</th>
                             <th style="width: 5%">اشتراك</th>
-                            ${Array.from({ length: 8 }).map((_, i) => {
+                            ${Array.from({ length: cycleCapacity }).map((_, i) => {
                                 const s = sessions[i];
                                 const dateStr = s ? new Date(s.date).toLocaleDateString('ar-EG', { day: 'numeric', month: 'numeric' }) : '-';
-                                return `<th class="session-col">ح${i + 1}<br><span style="font-size:10px; font-weight:normal;">${dateStr}</span></th>`;
+                                return `<th class="session-col">ح${i + 1}<br><span style="font-size:9px; font-weight:normal;">${dateStr}</span></th>`;
                             }).join('')}
                             <th style="width: 8%">ملاحظات</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${students.length === 0 ? '<tr><td colspan="14" style="padding: 20px;">لا يوجد طلاب في هذه المجموعة</td></tr>' : 
+                        ${students.length === 0 ? `<tr><td colspan="${5 + cycleCapacity + 1}" style="padding: 20px;">لا يوجد طلاب في هذه المجموعة</td></tr>` : 
                         students.map((student: any, idx: number) => {
-                            const isSub = activeSubSet.has(student._id.toString());
+                            const sid = student._id.toString();
+                            const isSub = paidSubSet.has(sid);
+                            const studentAttMap = studentAttendanceMap.get(sid) || new Map();
+                            const guestList = studentGuestsMap.get(sid) || [];
+                            const matchedGuestIds = new Set<string>();
+
                             return `
                             <tr>
                                 <td>${idx + 1}</td>
@@ -743,13 +815,36 @@ export class PdfService {
                                 <td dir="ltr">${student.studentPhone || '—'}</td>
                                 <td dir="ltr">${student.parentPhone || '—'}</td>
                                 <td class="checkbox-col">${isSub ? '☑' : '☐'}</td>
-                                ${Array.from({ length: 8 }).map((_, i) => {
+                                ${Array.from({ length: cycleCapacity }).map((_, i) => {
                                     const s = sessions[i];
-                                    if (!s) return '<td></td>'; // Future session
-                                    const isPresent = attendanceMap[s._id.toString()]?.[student._id.toString()];
-                                    return `<td style="font-weight:bold; font-size: 16px; color: ${isPresent ? 'green' : 'red'};">
-                                        ${isPresent ? '✓' : '✗'}
-                                    </td>`;
+                                    if (!s) return '<td></td>'; // Future / unheld session
+                                    
+                                    const sessId = s._id.toString();
+                                    let status = studentAttMap.get(sessId);
+                                    const sessionDateKey = s.date ? new Date(s.date).toISOString().split('T')[0] : '';
+
+                                    // Check cross-date or same-date guest compensation if absent
+                                    let isCompensated = false;
+                                    if (status !== AttendanceStatus.PRESENT && status !== AttendanceStatus.LATE && status !== AttendanceStatus.EXCUSED) {
+                                        const exactGuest = guestList.find(g => {
+                                            const gd = g.scannedAt ? new Date(g.scannedAt).toISOString().split('T')[0] : '';
+                                            return gd === sessionDateKey && !matchedGuestIds.has(g._id.toString());
+                                        });
+
+                                        if (exactGuest) {
+                                            matchedGuestIds.add(exactGuest._id.toString());
+                                            isCompensated = true;
+                                            status = AttendanceStatus.EXCUSED;
+                                        }
+                                    }
+
+                                    if (status === AttendanceStatus.PRESENT || status === AttendanceStatus.LATE || isCompensated) {
+                                        return `<td style="font-weight:bold; font-size: 15px; color: green;">✓</td>`;
+                                    } else if (status === AttendanceStatus.EXCUSED) {
+                                        return `<td style="font-weight:bold; font-size: 11px; color: #0284c7;">عذر</td>`;
+                                    } else {
+                                        return `<td style="font-weight:bold; font-size: 15px; color: red;">✗</td>`;
+                                    }
                                 }).join('')}
                                 <td></td>
                             </tr>
@@ -757,12 +852,9 @@ export class PdfService {
                         }).join('')}
                     </tbody>
                 </table>
-                <div style="text-align:center; font-size:11px; color:#555; margin-top:30px;">
+                <div style="text-align:center; font-size:10px; color:#555; margin-top:20px;">
                     تم الاستخراج آلياً من منصة "مُنظِّم" التعليمية - ${new Date().toLocaleString('ar-EG')}
                 </div>
-                <script>
-                    window.onload = function() { setTimeout(function() { window.print(); }, 500); }
-                </script>
             </body>
             </html>
         `;

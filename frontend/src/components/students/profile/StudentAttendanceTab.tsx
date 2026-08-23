@@ -100,7 +100,7 @@ export function StudentAttendanceTab({
                             return (
                                 <div
                                     key={i}
-                                    title={`${fullDate} — ${isPresent ? (hasHomework ? (h.homeworkDone ? 'حاضر (تم الواجب)' : 'حاضر (لم يتم الواجب)') : 'حاضر') : isExcused ? 'بعذر / معوّض' : isGuest ? 'زائر' : isAbsent ? 'غائب' : '—'} (انقر للتعديل أو الحذف)`}
+                                    title={`${fullDate} — ${isPresent ? (hasHomework ? (h.homeworkDone ? 'حاضر (تم الواجب)' : 'حاضر (لم يتم الواجب)') : 'حاضر') : isExcused ? 'بعذر' : isGuest ? 'زائر' : isAbsent ? 'غائب' : '—'} (انقر للتعديل أو الحذف)`}
                                     onClick={() => canWrite && h.sessionId && setSelectedSessionForAdjustment({
                                         sessionId: h.sessionId,
                                         date: h.date,
@@ -176,7 +176,7 @@ export function StudentAttendanceTab({
                             <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span> غائب
                         </span>
                         <span className="flex items-center gap-1.5">
-                            <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span> بعذر / معوّض
+                            <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span> بعذر
                         </span>
                         <span className="flex items-center gap-1.5">
                             <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span> زائر
