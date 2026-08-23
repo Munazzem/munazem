@@ -19,7 +19,6 @@ export function OfflineSyncWorker() {
     const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
     const flushQueue = useOfflineSyncStore((s) => s.flushQueue);
     const refreshPendingCount = useOfflineSyncStore((s) => s.refreshPendingCount);
-    const pendingCount = useOfflineSyncStore((s) => s.pendingCount);
 
     useEffect(() => {
         if (!isAuthenticated) return;
@@ -29,12 +28,15 @@ export function OfflineSyncWorker() {
         refreshPendingCount().catch(() => {});
 
         const handleSync = async () => {
-            if (navigator.onLine) {
-                const { synced } = await flushQueue(undefined, () => {
-                    queryClient.invalidateQueries({ queryKey: ['attendance'] });
-                });
-                if (synced > 0) {
-                    toast.success(`تمت مزامنة ${synced} سجل حضور معلق مع السيرفر بنجاح`);
+            if (typeof window !== 'undefined' && navigator.onLine) {
+                const currentPending = useOfflineSyncStore.getState().pendingCount;
+                if (currentPending > 0) {
+                    const { synced } = await flushQueue(undefined, () => {
+                        queryClient.invalidateQueries({ queryKey: ['attendance'] });
+                    });
+                    if (synced > 0) {
+                        toast.success(`تمت مزامنة ${synced} سجل حضور معلق مع السيرفر بنجاح`);
+                    }
                 }
             }
         };
@@ -55,9 +57,7 @@ export function OfflineSyncWorker() {
 
         // Periodic background interval when there are pending items
         const intervalId = setInterval(() => {
-            if (navigator.onLine && pendingCount > 0) {
-                handleSync();
-            }
+            handleSync();
         }, 15000);
 
         return () => {
@@ -65,7 +65,7 @@ export function OfflineSyncWorker() {
             document.removeEventListener('visibilitychange', handleVisibilityChange);
             clearInterval(intervalId);
         };
-    }, [isAuthenticated, flushQueue, refreshPendingCount, pendingCount, queryClient]);
+    }, [isAuthenticated, flushQueue, refreshPendingCount, queryClient]);
 
     return null;
 }

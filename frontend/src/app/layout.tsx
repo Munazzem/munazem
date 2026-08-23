@@ -55,7 +55,16 @@ export default function RootLayout({
             <PWAEventListener />
             <CacheWarmer />
             <OfflineSyncWorker />
-            <Toaster position="top-center" richColors theme="light" />
+            <Toaster
+                position="top-center"
+                richColors
+                theme="light"
+                dir="rtl"
+                toastOptions={{
+                    className: 'break-words max-w-[92vw] text-sm',
+                    style: { wordBreak: 'break-word', overflowWrap: 'break-word' }
+                }}
+            />
             <OfflineIndicator />
             <InstallPrompt />
         </Providers>

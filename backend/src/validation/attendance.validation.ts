@@ -46,14 +46,19 @@ export const adjustCompletedAttendanceSchema = z.object({
 export const syncBatchAttendanceSchema = z.object({
   body: z.object({
     sessionId: z.string().min(1, 'معرف الحصة مطلوب'),
-    records: z.array(z.object({
-      clientMutationId: z.string().min(1, 'معرف العملية مطلوب'),
-      studentId: objectId,
-      status:    z.nativeEnum(AttendanceStatus).optional(),
-      isGuest:   z.boolean().optional(),
-      scannedAt: z.string().optional(),
-      notes:     z.string().max(300).optional(),
-    })).min(1, 'يجب إرسال سجل واحد على الأقل للمزامنة'),
+    records: z.array(
+      z.object({
+        clientMutationId: z.string().min(1, 'معرف العملية مطلوب'),
+        studentId:        objectId.optional(),
+        rawToken:         z.string().min(1, 'رمز الكارت غير صحيح').optional(),
+        status:           z.nativeEnum(AttendanceStatus).optional(),
+        isGuest:          z.boolean().optional(),
+        scannedAt:        z.string().optional(),
+        notes:            z.string().max(300).optional(),
+      }).refine((data) => Boolean(data.studentId || data.rawToken), {
+        message: 'يجب إرسال معرف الطالب أو رمز الكارت',
+      })
+    ).min(1, 'يجب إرسال سجل واحد على الأقل للمزامنة'),
   }),
 });
 
