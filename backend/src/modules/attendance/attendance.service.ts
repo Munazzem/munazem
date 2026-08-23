@@ -1317,13 +1317,14 @@ export class AttendanceService {
             SessionModel.findOne({ _id: sessionId, teacherId })
                 .populate('groupId', 'name')
                 .lean(),
-            UserModel.findById(teacherId, { name: 1 }).lean(),
+            UserModel.findById(teacherId, { name: 1, features: 1 }).lean(),
         ]);
             
         if (!session) throw NotFoundException({ message: 'الحصة غير موجودة' });
 
         const groupName   = (session.groupId as any)?.name || 'مجموعة غير معروفة';
         const teacherName = teacher?.name || '';
+        const isHomeworkTrackingEnabled = Boolean(teacher?.features?.homeworkTracking);
 
         // 1. Get all students in the group — sorted alphabetically
         const allStudents = await StudentModel.find(
@@ -1354,11 +1355,18 @@ export class AttendanceService {
             const signature = teacherName ? `\n\nمع تحيات أ/ ${teacherName}` : '';
             if (isPresent) {
                 const timeStr = record?.scannedAt ? new Date(record.scannedAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : '';
+                let homeworkLine = '';
+                if (isHomeworkTrackingEnabled && typeof record?.homeworkDone === 'boolean') {
+                    homeworkLine = record.homeworkDone
+                        ? '\n📚 الواجب: تم تسليمه بنجاح ✅'
+                        : '\n⚠️ الواجب: لم يتم تسليمه ❌';
+                }
+
                 const PRESENT_TEMPLATES = [
-                    `السلام عليكم ورحمة الله،\nنحيطكم علمًا بحضور الطالب/ة: **${student.studentName}** لحصة [${groupName}] بتاريخ ${shortDate} (وقت الوصول: ${timeStr}).\n\n📌 **الرجاء الرد بـ (تم) للتأكيد والاستلام.**${signature}`,
-                    `أهلاً بحضرتك،\nتم بنجاح تسجيل حضور **${student.studentName}** لحصة اليوم [${groupName}].\n\n📌 **يرجى الرد بـ (تم) لتأكيد الاطلاع.**${signature}`,
-                    `تحية طيبة،\nنود إعلامكم بتواجد الطالب/ة **${student.studentName}** في مجموعة [${groupName}] بتاريخ ${shortDate}.\n\n📌 **الرجاء الرد بكلمة (تم) للتأكيد.**\nبالتوفيق دائمًا.${signature}`,
-                    `السلام عليكم،\nتم رصد حضور **${student.studentName}** في موعد الحصة اليوم [${groupName}].\n\n📌 **الرجاء الرد بـ (تم) للتأكيد.**${signature}`,
+                    `السلام عليكم ورحمة الله،\nنحيطكم علمًا بحضور الطالب/ة: **${student.studentName}** لحصة [${groupName}] بتاريخ ${shortDate} (وقت الوصول: ${timeStr}).${homeworkLine}\n\n📌 **الرجاء الرد بـ (تم) للتأكيد والاستلام.**${signature}`,
+                    `أهلاً بحضرتك،\nتم بنجاح تسجيل حضور **${student.studentName}** لحصة اليوم [${groupName}].${homeworkLine}\n\n📌 **يرجى الرد بـ (تم) لتأكيد الاطلاع.**${signature}`,
+                    `تحية طيبة،\nنود إعلامكم بتواجد الطالب/ة **${student.studentName}** في مجموعة [${groupName}] بتاريخ ${shortDate}.${homeworkLine}\n\n📌 **الرجاء الرد بكلمة (تم) للتأكيد.**\nبالتوفيق دائمًا.${signature}`,
+                    `السلام عليكم،\nتم رصد حضور **${student.studentName}** في موعد الحصة اليوم [${groupName}].${homeworkLine}\n\n📌 **الرجاء الرد بـ (تم) للتأكيد.**${signature}`,
                 ];
                 message = PRESENT_TEMPLATES[Math.floor(Math.random() * PRESENT_TEMPLATES.length)] as string;
             } else {
@@ -1379,6 +1387,7 @@ export class AttendanceService {
                 studentId: student._id,
                 studentName: student.studentName,
                 status: isPresent ? 'PRESENT' : 'ABSENT',
+                homeworkDone: isPresent && typeof record?.homeworkDone === 'boolean' ? record.homeworkDone : null,
                 whatsappLink: `https://wa.me/${waPhone}?text=${encodedMessage}`,
             };
         });

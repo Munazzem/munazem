@@ -16,7 +16,9 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { adjustCompletedAttendance, deleteStudentSessionAttendance } from '@/lib/api/attendance';
 import type { AttendanceStatus } from '@/types/session.types';
 import { toast } from 'sonner';
-import { Check, X, Clock, HelpCircle, Trash2, Calendar, Loader2 } from 'lucide-react';
+import { Check, X, Clock, HelpCircle, Trash2, Calendar, Loader2, BookCheck, BookX } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { useAuthStore } from '@/lib/store/auth.store';
 import { cn } from '@/lib/utils';
 
 interface AttendanceAdjustmentModalProps {
@@ -27,6 +29,7 @@ interface AttendanceAdjustmentModalProps {
     studentName?: string;
     sessionDate?: string | Date;
     currentStatus?: string;
+    currentHomeworkDone?: boolean | null;
     currentNotes?: string;
     canWrite?: boolean;
 }
@@ -39,20 +42,26 @@ export function AttendanceAdjustmentModal({
     studentName,
     sessionDate,
     currentStatus = 'PRESENT',
+    currentHomeworkDone,
     currentNotes = '',
     canWrite = true,
 }: AttendanceAdjustmentModalProps) {
     const queryClient = useQueryClient();
+    const user = useAuthStore((s) => s.user);
+    const isHomeworkTrackingEnabled = Boolean(user?.features?.homeworkTracking);
+
     const [status, setStatus] = useState<string>(currentStatus);
+    const [homeworkDone, setHomeworkDone] = useState<boolean>(currentHomeworkDone ?? true);
     const [notes, setNotes] = useState<string>(currentNotes);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
     useEffect(() => {
         if (open) {
             setStatus(currentStatus);
+            setHomeworkDone(currentHomeworkDone ?? true);
             setNotes(currentNotes || '');
         }
-    }, [open, currentStatus, currentNotes]);
+    }, [open, currentStatus, currentHomeworkDone, currentNotes]);
 
     const formattedDate = sessionDate
         ? new Date(sessionDate).toLocaleDateString('ar-EG', {
@@ -67,11 +76,13 @@ export function AttendanceAdjustmentModal({
     const adjustMutation = useMutation({
         mutationFn: async () => {
             if (!sessionId) throw new Error('رقم الحصة غير متوفر');
+            const isAttending = status === 'PRESENT' || status === 'LATE';
             return adjustCompletedAttendance(
                 sessionId,
                 studentId,
                 status as AttendanceStatus,
-                notes.trim() || undefined
+                notes.trim() || undefined,
+                isAttending && isHomeworkTrackingEnabled ? homeworkDone : undefined
             );
         },
         onSuccess: (data) => {
@@ -190,6 +201,33 @@ export function AttendanceAdjustmentModal({
                                     })}
                                 </div>
                             </div>
+
+                            {/* Homework Tracking Section */}
+                            {isHomeworkTrackingEnabled && (status === 'PRESENT' || status === 'LATE') && (
+                                <div className="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50/80 p-3">
+                                    <div className="flex items-center gap-2">
+                                        {homeworkDone ? (
+                                            <BookCheck className="h-4 w-4 text-emerald-600 shrink-0" />
+                                        ) : (
+                                            <BookX className="h-4 w-4 text-rose-600 shrink-0" />
+                                        )}
+                                        <div>
+                                            <label htmlFor="modal-hw-check" className="text-xs font-semibold text-gray-800 cursor-pointer block">
+                                                تسليم الواجب
+                                            </label>
+                                            <p className="text-[10px] text-gray-500">
+                                                {homeworkDone ? 'تم تسليم الواجب بنجاح' : 'لم يتم تسليم الواجب'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <Checkbox
+                                        id="modal-hw-check"
+                                        checked={homeworkDone}
+                                        disabled={!canWrite || isPending}
+                                        onCheckedChange={(checked) => setHomeworkDone(Boolean(checked))}
+                                    />
+                                </div>
+                            )}
 
                             {/* Notes Textarea */}
                             <div>

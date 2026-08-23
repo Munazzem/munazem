@@ -394,4 +394,69 @@ describe('Homework Tracking Features', () => {
         expect(record).not.toBeNull();
         expect(record?.homeworkDone).toBe(false);
     });
+
+    it('يولد روابط الواتساب مع حالة الواجب فقط عندما تكون الميزة مفعلة وللطلاب الحاضرين', async () => {
+        // Teacher with homeworkTracking: true
+        await seedTeacher({
+            features: { homeworkTracking: true } as any
+        });
+        const group = await seedGroup();
+        const session = await seedSession({ groupId: group._id as any });
+        const studentPresentDone = await seedStudent(group._id as any, { studentName: 'طالب تم الواجب', studentCode: 'HW-WA-1', parentPhone: '01011111111' });
+        const studentPresentUndone = await seedStudent(group._id as any, { studentName: 'طالب بلا واجب', studentCode: 'HW-WA-2', parentPhone: '01022222222' });
+        const studentAbsent = await seedStudent(group._id as any, { studentName: 'طالب غائب', studentCode: 'HW-WA-3', parentPhone: '01033333333' });
+
+        await seedAttendance(session._id as any, studentPresentDone._id as any, {
+            status: AttendanceStatus.PRESENT,
+            homeworkDone: true,
+        });
+
+        await seedAttendance(session._id as any, studentPresentUndone._id as any, {
+            status: AttendanceStatus.PRESENT,
+            homeworkDone: false,
+        });
+
+        const res = await app
+            .get(`/attendance/session/${session._id}/whatsapp-links`)
+            .set('Authorization', bearerHeader(makeTeacherToken()));
+
+        expect(res.status).toBe(200);
+        const links: any[] = res.body.data;
+        expect(links.length).toBe(3);
+
+        const doneLink = links.find(l => l.studentId === studentPresentDone._id.toString());
+        const undoneLink = links.find(l => l.studentId === studentPresentUndone._id.toString());
+        const absentLink = links.find(l => l.studentId === studentAbsent._id.toString());
+
+        expect(doneLink.homeworkDone).toBe(true);
+        expect(decodeURIComponent(doneLink.whatsappLink)).toContain('الواجب: تم تسليمه بنجاح ✅');
+
+        expect(undoneLink.homeworkDone).toBe(false);
+        expect(decodeURIComponent(undoneLink.whatsappLink)).toContain('الواجب: لم يتم تسليمه ❌');
+
+        expect(absentLink.homeworkDone).toBeNull();
+        expect(decodeURIComponent(absentLink.whatsappLink)).not.toContain('الواجب');
+    });
+
+    it('يولد كشف الـ PDF مع عمود الواجب عندما تكون الميزة مفعلة للمعلم', async () => {
+        await seedTeacher({
+            features: { homeworkTracking: true } as any
+        });
+        const group = await seedGroup();
+        const session = await seedSession({ groupId: group._id as any });
+        const student = await seedStudent(group._id as any, { studentName: 'طالب تجربة PDF' });
+
+        await seedAttendance(session._id as any, student._id as any, {
+            status: AttendanceStatus.PRESENT,
+            homeworkDone: true,
+        });
+
+        const res = await app
+            .get(`/attendance/session/${session._id}/pdf`)
+            .set('Authorization', bearerHeader(makeTeacherToken()));
+
+        expect(res.status).toBe(200);
+        expect(res.text).toContain('الواجب');
+        expect(res.text).toContain('تم');
+    });
 });

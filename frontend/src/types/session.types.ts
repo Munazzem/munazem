@@ -126,8 +126,9 @@ export interface PaginatedSessionsResponse {
 // ── WhatsApp ──────────────────────────────────────────────────────────
 
 export interface IWhatsAppLink {
-    studentId:    string;
-    studentName:  string;
-    status:       'PRESENT' | 'ABSENT';
-    whatsappLink: string;
+    studentId:     string;
+    studentName:   string;
+    status:        'PRESENT' | 'ABSENT';
+    homeworkDone?: boolean | null;
+    whatsappLink:  string;
 }

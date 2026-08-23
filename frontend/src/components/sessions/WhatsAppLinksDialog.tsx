@@ -19,6 +19,7 @@ import {
     ExternalLink,
     CheckCheck,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface WhatsAppLinksDialogProps {
     sessionId: string;
@@ -121,11 +122,21 @@ export function WhatsAppLinksDialog({
                                                 rel="noopener noreferrer"
                                                 className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border border-green-100 bg-green-50 hover:bg-green-100 transition-colors group"
                                             >
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex items-center gap-2 min-w-0">
                                                     <UserCheck className="h-4 w-4 text-green-500 shrink-0" />
-                                                    <span className="text-sm font-medium text-gray-800">{l.studentName}</span>
+                                                    <span className="text-sm font-medium text-gray-800 truncate">{l.studentName}</span>
+                                                    {typeof l.homeworkDone === 'boolean' && (
+                                                        <span className={cn(
+                                                            'text-[10px] font-bold px-1.5 py-0.2 rounded-full border shrink-0',
+                                                            l.homeworkDone
+                                                                ? 'bg-emerald-100/90 text-emerald-800 border-emerald-200'
+                                                                : 'bg-rose-100/90 text-rose-800 border-rose-200'
+                                                        )}>
+                                                            {l.homeworkDone ? 'واجب ✓' : 'بلا واجب ✗'}
+                                                        </span>
+                                                    )}
                                                 </div>
-                                                <div className="flex items-center gap-1.5 text-xs text-green-700 font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <div className="flex items-center gap-1.5 text-xs text-green-700 font-medium opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                                                     <Send className="h-3.5 w-3.5" />
                                                     فتح واتساب
                                                     <ExternalLink className="h-3 w-3" />

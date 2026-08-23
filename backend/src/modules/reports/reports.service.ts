@@ -46,7 +46,7 @@ export class ReportsService {
         }).sort({ date: -1 }).lean();
 
         // Map and deduplicate by date (priority: PRESENT/LATE (4) > GUEST (3) > EXCUSED (2) > ABSENT (1))
-        const dayMap = new Map<string, { sessionId?: any; date: Date; status: string; priority: number }>();
+        const dayMap = new Map<string, { sessionId?: any; date: Date; status: string; homeworkDone?: boolean | null; priority: number }>();
 
         for (const snap of snapshots) {
             const sid = studentId.toString();
@@ -56,6 +56,7 @@ export class ReportsService {
 
             let status = 'UNKNOWN';
             let priority = 0;
+            let homeworkDone: boolean | null = null;
 
             if (presentStudent) {
                 const s = presentStudent.status || AttendanceStatus.PRESENT;
@@ -65,10 +66,13 @@ export class ReportsService {
                 } else {
                     status = s; // PRESENT / LATE
                     priority = 4;
+                    homeworkDone = typeof presentStudent.homeworkDone === 'boolean' ? presentStudent.homeworkDone : null;
                 }
             } else if (isGuest) {
                 status = 'GUEST';
                 priority = 3;
+                const guestStudent = snap.guestStudents?.find((s: any) => s.studentId?.toString() === sid);
+                homeworkDone = typeof guestStudent?.homeworkDone === 'boolean' ? guestStudent.homeworkDone : null;
             } else if (isAbsent) {
                 status = 'ABSENT';
                 priority = 1;
@@ -78,7 +82,7 @@ export class ReportsService {
                 const dayKey = snap.date ? (new Date(snap.date).toISOString().split('T')[0] || 'unknown') : ((snap as any)._id?.toString() || 'unknown');
                 const existing = dayMap.get(dayKey);
                 if (!existing || priority > existing.priority) {
-                    dayMap.set(dayKey, { sessionId: snap.sessionId, date: snap.date, status, priority });
+                    dayMap.set(dayKey, { sessionId: snap.sessionId, date: snap.date, status, homeworkDone, priority });
                 }
             }
         }
@@ -91,7 +95,12 @@ export class ReportsService {
             e => e.status === AttendanceStatus.PRESENT || e.status === AttendanceStatus.LATE || e.status === 'GUEST' || e.status === AttendanceStatus.EXCUSED
         ).length;
         const absentCount  = deduplicatedEntries.filter(e => e.status === AttendanceStatus.ABSENT).length;
-        const attendanceHistory = deduplicatedEntries.slice(0, 30).map(e => ({ sessionId: e.sessionId, date: e.date, status: e.status }));
+        const attendanceHistory = deduplicatedEntries.slice(0, 30).map(e => ({
+            sessionId: e.sessionId,
+            date: e.date,
+            status: e.status,
+            homeworkDone: e.homeworkDone ?? null,
+        }));
 
         const totalSessions  = presentCount + absentCount;
         const attendanceRate = totalSessions > 0

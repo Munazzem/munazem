@@ -178,13 +178,25 @@ function StudentCard({ s }: { s: StudentSummary }) {
                                     {s.attendance.history.slice(0, 5).map((h, i) => (
                                         <div key={i} className="flex items-center justify-between py-2.5">
                                             <span className="text-sm text-gray-600">{formatDate(h.date)}</span>
-                                            <span className={cn(
-                                                'text-xs font-medium px-2 py-0.5 rounded-full',
-                                                h.status === 'PRESENT' ? 'bg-green-50 text-green-700' :
-                                                h.status === 'ABSENT'  ? 'bg-red-50 text-red-600'    : 'bg-amber-50 text-amber-700'
-                                            )}>
-                                                {h.status === 'PRESENT' ? 'حضر' : h.status === 'ABSENT' ? 'غاب' : 'ضيف'}
-                                            </span>
+                                            <div className="flex items-center gap-1.5 shrink-0">
+                                                {typeof (h as any).homeworkDone === 'boolean' && h.status === 'PRESENT' && (
+                                                    <span className={cn(
+                                                        'text-[10px] font-bold px-1.5 py-0.5 rounded-full border shrink-0',
+                                                        (h as any).homeworkDone
+                                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                            : 'bg-rose-50 text-rose-700 border-rose-200'
+                                                    )}>
+                                                        {(h as any).homeworkDone ? 'الواجب ✓' : 'لم يؤدِّ الواجب ✗'}
+                                                    </span>
+                                                )}
+                                                <span className={cn(
+                                                    'text-xs font-medium px-2 py-0.5 rounded-full',
+                                                    h.status === 'PRESENT' ? 'bg-green-50 text-green-700' :
+                                                    h.status === 'ABSENT'  ? 'bg-red-50 text-red-600'    : 'bg-amber-50 text-amber-700'
+                                                )}>
+                                                    {h.status === 'PRESENT' ? 'حضر' : h.status === 'ABSENT' ? 'غاب' : 'ضيف'}
+                                                </span>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
