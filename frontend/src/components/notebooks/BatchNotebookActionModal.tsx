@@ -5,11 +5,26 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchStudents } from '@/lib/api/students';
 import { fetchGroups } from '@/lib/api/groups';
 import { fetchNotebooks } from '@/lib/api/notebooks';
-import { recordBatchNotebookSale, recordBatchNotebookReservation, type IBatchNotebookSaleResult } from '@/lib/api/payments';
+import { recordBatchNotebookSale, recordBatchNotebookReservation } from '@/lib/api/payments';
+import type { INotebook } from '@/types/notebook.types';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { getAllowedGrades } from '@/lib/utils/grades';
 import { toast } from 'sonner';
-import { BookOpen, BookMarked, Check, X, Loader2, CheckSquare, Square, AlertTriangle, Search, Calendar } from 'lucide-react';
+import {
+    BookOpen,
+    BookMarked,
+    Check,
+    X,
+    Loader2,
+    CheckSquare,
+    Square,
+    AlertTriangle,
+    Search,
+    Calendar,
+    Layers,
+    Plus,
+    Minus
+} from 'lucide-react';
 import { QK } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 
@@ -49,6 +64,17 @@ interface Student {
     gradeLevel: string;
 }
 
+interface SelectedNotebookConfig {
+    notebookId: string;
+    notebookName: string;
+    price: number;
+    stock: number;
+    reservedCount: number;
+    quantity: number;
+    discount: number;
+    deposit: number;
+}
+
 interface BatchNotebookActionModalProps {
     open?: boolean;
     onOpenChange?: (open: boolean) => void;
@@ -68,18 +94,21 @@ export function BatchNotebookActionModal({
         else setInternalOpen(v);
     };
 
-    // Operation mode: 'sale' (بيع فوري) or 'reservation' (حجز مسبق)
+    // Mode: 'sale' (بيع فوري) or 'reservation' (حجز مسبق)
     const [mode, setMode] = useState<'sale' | 'reservation'>('sale');
     const [stageFilter, setStageFilter] = useState('');
     const [groupId, setGroupId] = useState('');
-    const [notebookId, setNotebookId] = useState('');
-    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-    const [quantity, setQuantity] = useState(1);
-    const [discount, setDiscount] = useState(0);
-    const [depositPaid, setDepositPaid] = useState<number | ''>('');
+    const [notebookSearch, setNotebookSearch] = useState('');
+    const [selectedNotebookConfigs, setSelectedNotebookConfigs] = useState<Map<string, SelectedNotebookConfig>>(new Map());
+    const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
     const [studentSearch, setStudentSearch] = useState('');
     const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]!);
-    const [results, setResults] = useState<IBatchNotebookSaleResult[] | null>(null);
+    const [results, setResults] = useState<{
+        notebookName: string;
+        successCount: number;
+        failCount: number;
+        totalPaid: number;
+    }[] | null>(null);
 
     const queryClient = useQueryClient();
     const user = useAuthStore((s) => s.user);
@@ -92,12 +121,12 @@ export function BatchNotebookActionModal({
     // Reset group & students when stage changes
     useEffect(() => {
         setGroupId('');
-        setSelectedIds(new Set());
+        setSelectedStudentIds(new Set());
     }, [stageFilter]);
 
     // Reset students when group changes
     useEffect(() => {
-        setSelectedIds(new Set());
+        setSelectedStudentIds(new Set());
     }, [groupId]);
 
     // Groups list
@@ -107,32 +136,41 @@ export function BatchNotebookActionModal({
         enabled: open,
         staleTime: 5 * 60 * 1000,
     });
-    const allGroups = groupsData?.data ?? [];
+    const allGroups = (groupsData as any)?.data ?? [];
 
     const filteredGroups = useMemo(() => {
         if (!stageFilter) return allGroups;
         const prefix = STAGE_TO_GRADE_PREFIX[stageFilter];
-        return allGroups.filter(g => g.gradeLevel.includes(prefix!));
+        return allGroups.filter((g: any) => g.gradeLevel?.includes(prefix!));
     }, [allGroups, stageFilter]);
 
-    // Notebooks list
-    const { data: notebooksData } = useQuery({
+    // Notebooks list with bulletproof normalization
+    const { data: notebooksData, isLoading: notebooksLoading } = useQuery({
         queryKey: ['notebooks', 'all-for-batch'],
-        queryFn: () => fetchNotebooks({ limit: 100 }),
+        queryFn: () => fetchNotebooks({ limit: 200 }),
         enabled: open,
     });
-    const notebooks = notebooksData?.data ?? [];
 
-    // Filter notebooks by grade level if stage is selected, or show all
+    const allNotebooks: INotebook[] = useMemo(() => {
+        const raw = notebooksData as any;
+        if (Array.isArray(raw?.data?.data)) return raw.data.data;
+        if (Array.isArray(raw?.data)) return raw.data;
+        if (Array.isArray(raw)) return raw;
+        return [];
+    }, [notebooksData]);
+
+    // Filter notebooks by grade level if stage is selected
     const filteredNotebooks = useMemo(() => {
-        if (!stageFilter) return notebooks;
-        const prefix = STAGE_TO_GRADE_PREFIX[stageFilter];
-        return notebooks.filter(nb => !nb.gradeLevel || nb.gradeLevel.includes(prefix!));
-    }, [notebooks, stageFilter]);
-
-    const selectedNotebook = useMemo(() => {
-        return notebooks.find(nb => nb._id === notebookId);
-    }, [notebooks, notebookId]);
+        let list = allNotebooks;
+        if (stageFilter) {
+            const prefix = STAGE_TO_GRADE_PREFIX[stageFilter];
+            list = list.filter(nb => !nb.gradeLevel || nb.gradeLevel.includes(prefix!));
+        }
+        if (notebookSearch.trim()) {
+            list = list.filter(nb => nb.name.toLowerCase().includes(notebookSearch.toLowerCase()));
+        }
+        return list;
+    }, [allNotebooks, stageFilter, notebookSearch]);
 
     // Students of selected group
     const { data: studentsData, isLoading: studentsLoading } = useQuery({
@@ -140,12 +178,12 @@ export function BatchNotebookActionModal({
         queryFn: () => fetchStudents({ groupId, limit: 300, isActive: true }),
         enabled: !!groupId,
     });
-    const students: Student[] = studentsData?.data ?? [];
+    const students: Student[] = (studentsData as any)?.data ?? [];
 
     // Auto-select all students when group loads
     useEffect(() => {
         if (students.length > 0) {
-            setSelectedIds(new Set(students.map(s => s._id)));
+            setSelectedStudentIds(new Set(students.map(s => s._id)));
         }
     }, [students.length, groupId]);
 
@@ -154,67 +192,58 @@ export function BatchNotebookActionModal({
         return students.filter(s => s.studentName.toLowerCase().includes(studentSearch.toLowerCase()));
     }, [students, studentSearch]);
 
-    const saleMutation = useMutation({
-        mutationFn: recordBatchNotebookSale,
-        onSuccess: (data) => {
-            setResults(data.results);
-            queryClient.invalidateQueries({ queryKey: ['notebooks'] });
-            queryClient.removeQueries({ queryKey: ['students'] });
-            queryClient.invalidateQueries({ queryKey: ['students'] });
-            queryClient.invalidateQueries({ queryKey: QK.payments.dailyLedgerBase });
-            queryClient.invalidateQueries({ queryKey: QK.payments.monthlyLedgerBase });
-            queryClient.invalidateQueries({ queryKey: QK.dashboard.summary });
-            if (data.failCount === 0) {
-                toast.success(`تم تسجيل بيع المذكرات لـ ${data.successCount} طالب بنجاح — إجمالي: ${data.totalPaid.toLocaleString()} ج`);
+    // Toggle Notebook Selection
+    const toggleNotebook = (nb: INotebook) => {
+        setSelectedNotebookConfigs(prev => {
+            const next = new Map(prev);
+            if (next.has(nb._id)) {
+                next.delete(nb._id);
             } else {
-                toast.warning(`${data.successCount} نجح — ${data.failCount} فشل`);
+                next.set(nb._id, {
+                    notebookId: nb._id,
+                    notebookName: nb.name,
+                    price: nb.price,
+                    stock: nb.stock,
+                    reservedCount: nb.reservedCount || 0,
+                    quantity: 1,
+                    discount: 0,
+                    deposit: 0,
+                });
             }
-        },
-        onError: (err: any) => {
-            toast.error(err?.response?.data?.message || 'حدث خطأ أثناء تسجيل بيع المذكرات');
-        },
-    });
+            return next;
+        });
+    };
 
-    const reservationMutation = useMutation({
-        mutationFn: recordBatchNotebookReservation,
-        onSuccess: (data) => {
-            setResults(data.results);
-            queryClient.invalidateQueries({ queryKey: ['notebooks'] });
-            queryClient.invalidateQueries({ queryKey: ['reservations'] });
-            queryClient.invalidateQueries({ queryKey: QK.payments.dailyLedgerBase });
-            queryClient.invalidateQueries({ queryKey: QK.payments.monthlyLedgerBase });
-            queryClient.invalidateQueries({ queryKey: QK.dashboard.summary });
-            if (data.failCount === 0) {
-                toast.success(`تم حجز المذكرات لـ ${data.successCount} طالب بنجاح — إجمالي العربون: ${data.totalPaid.toLocaleString()} ج`);
-            } else {
-                toast.warning(`${data.successCount} نجح — ${data.failCount} فشل`);
+    const updateNotebookConfig = (id: string, updates: Partial<SelectedNotebookConfig>) => {
+        setSelectedNotebookConfigs(prev => {
+            const next = new Map(prev);
+            const current = next.get(id);
+            if (current) {
+                next.set(id, { ...current, ...updates });
             }
-        },
-        onError: (err: any) => {
-            toast.error(err?.response?.data?.message || 'حدث خطأ أثناء حجز المذكرات');
-        },
-    });
+            return next;
+        });
+    };
 
-    const isPending = saleMutation.isPending || reservationMutation.isPending;
-
+    // Toggle Student Selection
     const toggleStudent = (id: string) => {
-        setSelectedIds((prev) => {
+        setSelectedStudentIds((prev) => {
             const next = new Set(prev);
             next.has(id) ? next.delete(id) : next.add(id);
             return next;
         });
     };
 
-    const allFilteredSelected = filteredStudents.length > 0 && filteredStudents.every(s => selectedIds.has(s._id));
-    const toggleAll = () => {
-        if (allFilteredSelected) {
-            setSelectedIds(prev => {
+    const allFilteredStudentsSelected = filteredStudents.length > 0 && filteredStudents.every(s => selectedStudentIds.has(s._id));
+    const toggleAllStudents = () => {
+        if (allFilteredStudentsSelected) {
+            setSelectedStudentIds(prev => {
                 const next = new Set(prev);
                 filteredStudents.forEach(s => next.delete(s._id));
                 return next;
             });
         } else {
-            setSelectedIds(prev => {
+            setSelectedStudentIds(prev => {
                 const next = new Set(prev);
                 filteredStudents.forEach(s => next.add(s._id));
                 return next;
@@ -222,47 +251,106 @@ export function BatchNotebookActionModal({
         }
     };
 
-    const totalRequiredStock = selectedIds.size * quantity;
-    const isStockInsufficient = mode === 'sale' && selectedNotebook ? totalRequiredStock > selectedNotebook.stock : false;
+    // Calculations & Validation
+    const selectedNotebooksList = Array.from(selectedNotebookConfigs.values());
 
-    const unitPrice = selectedNotebook?.price ?? 0;
-    const pricePerStudent = mode === 'sale'
-        ? Math.max(0, (unitPrice * quantity) - discount)
-        : (unitPrice * quantity);
-    const totalExpectedAmount = mode === 'sale'
-        ? pricePerStudent * selectedIds.size
-        : (Number(depositPaid) || 0) * selectedIds.size;
+    const stockDeficits = useMemo(() => {
+        if (mode !== 'sale') return [];
+        const studentCount = selectedStudentIds.size;
+        return selectedNotebooksList.filter(nb => {
+            const required = nb.quantity * studentCount;
+            return required > nb.stock;
+        });
+    }, [mode, selectedNotebooksList, selectedStudentIds.size]);
 
-    const handleSubmit = () => {
-        if (!notebookId) {
-            toast.error('يرجى اختيار المذكرة أولاً');
+    const isStockInsufficient = stockDeficits.length > 0;
+
+    const totalCostPerStudent = selectedNotebooksList.reduce((sum, nb) => {
+        if (mode === 'sale') {
+            const price = Math.max(0, (nb.price * nb.quantity) - nb.discount);
+            return sum + price;
+        } else {
+            return sum + (nb.deposit > 0 ? nb.deposit : 0);
+        }
+    }, 0);
+
+    const totalGrandExpected = totalCostPerStudent * selectedStudentIds.size;
+
+    // Mutation
+    const [isExecuting, setIsExecuting] = useState(false);
+
+    const handleExecute = async () => {
+        if (selectedNotebooksList.length === 0) {
+            toast.error('يرجى اختيار مذكرة واحدة على الأقل');
             return;
         }
-        if (selectedIds.size === 0) {
-            toast.error('اختر طالباً واحداً على الأقل');
+        if (selectedStudentIds.size === 0) {
+            toast.error('يرجى اختيار طالب واحد على الأقل');
             return;
         }
         if (isStockInsufficient) {
-            toast.error(`الكمية في المخزن (${selectedNotebook?.stock}) لا تكفي للطلاب المحددين (${totalRequiredStock})`);
+            toast.error('الكمية المطلوبة تتجاوز المخزون لبعض المذكرات المحددة');
             return;
         }
 
-        if (mode === 'sale') {
-            saleMutation.mutate({
-                notebookId,
-                studentIds: Array.from(selectedIds),
-                quantity,
-                discountAmount: discount > 0 ? discount : undefined,
-                date,
-            });
-        } else {
-            reservationMutation.mutate({
-                notebookId,
-                studentIds: Array.from(selectedIds),
-                quantity,
-                paidAmount: Number(depositPaid) > 0 ? Number(depositPaid) : undefined,
-                date,
-            });
+        setIsExecuting(true);
+        const studentIdsArray = Array.from(selectedStudentIds);
+        const batchResults: {
+            notebookName: string;
+            successCount: number;
+            failCount: number;
+            totalPaid: number;
+        }[] = [];
+
+        try {
+            for (const nb of selectedNotebooksList) {
+                if (mode === 'sale') {
+                    const res = await recordBatchNotebookSale({
+                        notebookId: nb.notebookId,
+                        studentIds: studentIdsArray,
+                        quantity: nb.quantity,
+                        discountAmount: nb.discount > 0 ? nb.discount : undefined,
+                        date,
+                    });
+                    batchResults.push({
+                        notebookName: nb.notebookName,
+                        successCount: res.successCount,
+                        failCount: res.failCount,
+                        totalPaid: res.totalPaid,
+                    });
+                } else {
+                    const res = await recordBatchNotebookReservation({
+                        notebookId: nb.notebookId,
+                        studentIds: studentIdsArray,
+                        quantity: nb.quantity,
+                        paidAmount: nb.deposit > 0 ? nb.deposit : undefined,
+                        date,
+                    });
+                    batchResults.push({
+                        notebookName: nb.notebookName,
+                        successCount: res.successCount,
+                        failCount: res.failCount,
+                        totalPaid: res.totalPaid,
+                    });
+                }
+            }
+
+            setResults(batchResults);
+            queryClient.invalidateQueries({ queryKey: ['notebooks'] });
+            queryClient.invalidateQueries({ queryKey: ['reservations'] });
+            queryClient.removeQueries({ queryKey: ['students'] });
+            queryClient.invalidateQueries({ queryKey: ['students'] });
+            queryClient.invalidateQueries({ queryKey: QK.payments.dailyLedgerBase });
+            queryClient.invalidateQueries({ queryKey: QK.payments.monthlyLedgerBase });
+            queryClient.invalidateQueries({ queryKey: QK.dashboard.summary });
+
+            const totalSuccess = batchResults.reduce((s, r) => s + r.successCount, 0);
+            const totalPaid = batchResults.reduce((s, r) => s + r.totalPaid, 0);
+            toast.success(`تم تسجيل العملية بنجاح — إجمالي: ${totalPaid.toLocaleString()} ج`);
+        } catch (err: any) {
+            toast.error(err?.response?.data?.message || err?.message || 'حدث خطأ أثناء تنفيذ العملية');
+        } finally {
+            setIsExecuting(false);
         }
     };
 
@@ -270,12 +358,10 @@ export function BatchNotebookActionModal({
         if (!val && results) {
             setStageFilter('');
             setGroupId('');
-            setNotebookId('');
-            setSelectedIds(new Set());
-            setQuantity(1);
-            setDiscount(0);
-            setDepositPaid('');
+            setSelectedNotebookConfigs(new Map());
+            setSelectedStudentIds(new Set());
             setStudentSearch('');
+            setNotebookSearch('');
             setDate(new Date().toISOString().split('T')[0]!);
             setResults(null);
         }
@@ -288,15 +374,15 @@ export function BatchNotebookActionModal({
                 <DialogTrigger asChild>
                     {trigger || (
                         <Button className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2 shadow-sm rounded-xl h-10 px-4">
-                            <BookOpen size={16} />
-                            <span>بيع / حجز جماعي</span>
+                            <Layers size={16} />
+                            <span>بيع / حجز مذكرات جماعي</span>
                         </Button>
                     )}
                 </DialogTrigger>
             )}
 
-            <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden" dir="rtl">
-                <DialogHeader className="p-5 pb-4 border-b border-gray-100 bg-gray-50/50">
+            <DialogContent className="max-w-3xl max-h-[92vh] flex flex-col p-0 gap-0 overflow-hidden" dir="rtl">
+                <DialogHeader className="p-5 pb-4 border-b border-gray-100 bg-gray-50/70">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
                             <div className={cn(
@@ -307,10 +393,10 @@ export function BatchNotebookActionModal({
                             </div>
                             <div>
                                 <DialogTitle className="text-lg font-bold text-gray-900">
-                                    {mode === 'sale' ? 'تسجيل بيع مذكرات جماعي' : 'تسجيل حجز مذكرات جماعي'}
+                                    {mode === 'sale' ? 'بيع مذكرات متعددة للطلاب' : 'حجز مذكرات متعددة للطلاب'}
                                 </DialogTitle>
                                 <p className="text-xs text-gray-500 mt-0.5">
-                                    {mode === 'sale' ? 'صرف وبيع المذكرة لطلاب مجموعة محددة فوراً مع خصم المخزون' : 'تسجيل حجز مسبق للمذكرة لطلاب مجموعة محددة مع إمكانية دفع عربون'}
+                                    {mode === 'sale' ? 'اختيار مذكرة أو أكثر وصرفها لطلاب مجموعة محددة دفعة واحدة' : 'تسجيل حجز مسبق لمذكرة أو أكثر لطلاب مجموعة محددة مع إمكانية تحصيل عربون'}
                                 </p>
                             </div>
                         </div>
@@ -322,23 +408,23 @@ export function BatchNotebookActionModal({
                             type="button"
                             onClick={() => setMode('sale')}
                             className={cn(
-                                'flex-1 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5',
+                                'flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5',
                                 mode === 'sale' ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'
                             )}
                         >
                             <BookOpen size={14} />
-                            بيع فوري (تسليم فوري)
+                            بيع وتسليم فوري
                         </button>
                         <button
                             type="button"
                             onClick={() => setMode('reservation')}
                             className={cn(
-                                'flex-1 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5',
+                                'flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5',
                                 mode === 'reservation' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'
                             )}
                         >
                             <BookMarked size={14} />
-                            حجز مسبق (تسجيل حجز)
+                            حجز مسبق (Pre-order)
                         </button>
                     </div>
                 </DialogHeader>
@@ -354,30 +440,32 @@ export function BatchNotebookActionModal({
                                 {mode === 'sale' ? 'تم تسجيل بيع المذكرات بنجاح' : 'تم تسجيل حجز المذكرات بنجاح'}
                             </h3>
                             <p className="text-sm text-gray-500 mt-1">
-                                نجح: <span className="font-bold text-green-600">{results.filter(r => r.status === 'success').length}</span>
-                                {results.some(r => r.status === 'error') && (
-                                    <> — فشل: <span className="font-bold text-red-600">{results.filter(r => r.status === 'error').length}</span></>
-                                )}
+                                إجمالي المبالغ المسجلة في الخزينة:{' '}
+                                <span className="font-bold text-green-600">
+                                    {results.reduce((s, r) => s + r.totalPaid, 0).toLocaleString()} ج.م
+                                </span>
                             </p>
                         </div>
 
                         <div className="flex-1 overflow-y-auto max-h-60 border border-gray-100 rounded-xl divide-y divide-gray-50">
                             {results.map((r, i) => (
-                                <div key={i} className="flex items-center justify-between p-3 text-sm">
-                                    <div className="flex items-center gap-2">
-                                        {r.status === 'success' ? (
-                                            <Check size={16} className="text-green-600" />
-                                        ) : (
-                                            <X size={16} className="text-red-600" />
-                                        )}
-                                        <span className="font-medium text-gray-800">{r.studentName || r.studentId}</span>
+                                <div key={i} className="flex items-center justify-between p-3.5 text-sm">
+                                    <div className="flex items-center gap-2.5">
+                                        <BookOpen size={16} className="text-indigo-600 shrink-0" />
+                                        <span className="font-bold text-gray-800">{r.notebookName}</span>
                                     </div>
-                                    <div className="text-left">
-                                        {r.status === 'success' ? (
-                                            <span className="font-bold text-gray-900">{r.paidAmount.toLocaleString()} ج</span>
-                                        ) : (
-                                            <span className="text-xs text-red-500">{r.error}</span>
+                                    <div className="flex items-center gap-3 text-left">
+                                        <span className="text-xs text-green-600 font-bold bg-green-50 px-2 py-0.5 rounded-md">
+                                            نجح: {r.successCount}
+                                        </span>
+                                        {r.failCount > 0 && (
+                                            <span className="text-xs text-red-600 font-bold bg-red-50 px-2 py-0.5 rounded-md">
+                                                فشل: {r.failCount}
+                                            </span>
                                         )}
+                                        <span className="font-bold text-gray-900 font-mono">
+                                            {r.totalPaid.toLocaleString()} ج
+                                        </span>
                                     </div>
                                 </div>
                             ))}
@@ -385,7 +473,7 @@ export function BatchNotebookActionModal({
 
                         <div className="flex gap-2 pt-2 border-t border-gray-100">
                             <Button
-                                className="flex-1 bg-gray-900 hover:bg-gray-800 text-white rounded-xl h-11"
+                                className="flex-1 bg-gray-900 hover:bg-gray-800 text-white rounded-xl h-11 font-bold"
                                 onClick={() => handleClose(false)}
                             >
                                 إغلاق
@@ -395,46 +483,131 @@ export function BatchNotebookActionModal({
                 ) : (
                     /* ── Form Screen ── */
                     <div className="flex flex-col flex-1 overflow-y-auto">
-                        <div className="p-5 space-y-4 flex-1">
-                            {/* Step 1: Select Notebook */}
-                            <div className={cn(
-                                "p-4 rounded-xl border space-y-3 transition-colors",
-                                mode === 'sale' ? "bg-indigo-50/50 border-indigo-100" : "bg-purple-50/50 border-purple-100"
-                            )}>
-                                <label className={cn(
-                                    "text-xs font-bold block",
-                                    mode === 'sale' ? "text-indigo-900" : "text-purple-900"
-                                )}>
-                                    ١. اختر المذكرة
-                                </label>
-                                <Select value={notebookId} onValueChange={setNotebookId} dir="rtl">
-                                    <SelectTrigger className="w-full bg-white">
-                                        <SelectValue placeholder="اختر المذكرة..." />
-                                    </SelectTrigger>
-                                    <SelectContent dir="rtl">
-                                        {filteredNotebooks.length === 0 ? (
-                                            <div className="p-3 text-center text-xs text-gray-400">لا توجد مذكرات مضافة</div>
-                                        ) : (
-                                            filteredNotebooks.map(nb => (
-                                                <SelectItem key={nb._id} value={nb._id}>
-                                                    {nb.name} — {nb.price} ج (المتاح: {nb.stock} نسخة · المحجوز: {nb.reservedCount || 0})
-                                                </SelectItem>
-                                            ))
-                                        )}
-                                    </SelectContent>
-                                </Select>
+                        <div className="p-5 space-y-5 flex-1">
+                            {/* Step 1: Select Multiple Notebooks */}
+                            <div className="space-y-2.5">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
+                                        <Layers size={14} className="text-indigo-600" />
+                                        ١. اختر المذكرات المطلوبة ({allNotebooks.length})
+                                    </label>
+                                    {selectedNotebooksList.length > 0 && (
+                                        <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-md">
+                                            محدد: {selectedNotebooksList.length} مذكرة
+                                        </span>
+                                    )}
+                                </div>
 
-                                {selectedNotebook && (
-                                    <div className="flex items-center justify-between text-xs text-gray-700 pt-1 border-t border-gray-200/60">
-                                        <span>سعر النسخة: <strong className="text-sm text-gray-900">{selectedNotebook.price} ج</strong></span>
-                                        <span>المخزون المتاح: <strong className="text-sm text-indigo-700">{selectedNotebook.stock} نسخة</strong></span>
-                                        <span>المحجوز مسبقاً: <strong className="text-sm text-purple-700">{selectedNotebook.reservedCount || 0} نسخة</strong></span>
+                                {/* Notebook Search Filter */}
+                                {allNotebooks.length > 4 && (
+                                    <div className="relative">
+                                        <Search className="absolute right-3 top-2.5 h-4 w-4 text-gray-400" />
+                                        <Input
+                                            placeholder="بحث باسم المذكرة..."
+                                            value={notebookSearch}
+                                            onChange={(e) => setNotebookSearch(e.target.value)}
+                                            className="pr-9 h-9 text-xs bg-white"
+                                        />
                                     </div>
                                 )}
+
+                                <div className="border border-gray-100 rounded-xl overflow-hidden max-h-56 overflow-y-auto divide-y divide-gray-50 bg-white">
+                                    {notebooksLoading ? (
+                                        <div className="p-8 text-center text-xs text-gray-400 flex items-center justify-center gap-2">
+                                            <Loader2 className="h-4 w-4 animate-spin text-indigo-600" /> جاري تحميل المذكرات...
+                                        </div>
+                                    ) : filteredNotebooks.length === 0 ? (
+                                        <div className="p-8 text-center text-xs text-gray-400">
+                                            لا توجد مذكرات مضافة
+                                        </div>
+                                    ) : (
+                                        filteredNotebooks.map((nb) => {
+                                            const isSelected = selectedNotebookConfigs.has(nb._id);
+                                            const config = selectedNotebookConfigs.get(nb._id);
+                                            return (
+                                                <div
+                                                    key={nb._id}
+                                                    className={cn(
+                                                        "p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors text-xs",
+                                                        isSelected ? "bg-indigo-50/40" : "hover:bg-gray-50/60"
+                                                    )}
+                                                >
+                                                    <div
+                                                        onClick={() => toggleNotebook(nb)}
+                                                        className="flex items-center gap-2.5 cursor-pointer flex-1 select-none"
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isSelected}
+                                                            onChange={() => {}}
+                                                            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-600 h-4 w-4 pointer-events-none"
+                                                        />
+                                                        <div>
+                                                            <p className={cn("font-bold", isSelected ? "text-indigo-950" : "text-gray-800")}>
+                                                                {nb.name}
+                                                            </p>
+                                                            <p className="text-[11px] text-gray-500 mt-0.5">
+                                                                السعر: <strong className="text-gray-800">{nb.price} ج</strong> · المتاح بالمخزن: <strong className="text-indigo-600">{nb.stock}</strong> · المحجوز: <strong className="text-purple-600">{nb.reservedCount || 0}</strong>
+                                                            </p>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Config inputs for selected notebook */}
+                                                    {isSelected && config && (
+                                                        <div className="flex items-center gap-2 shrink-0 bg-white p-1.5 rounded-lg border border-indigo-100 shadow-sm animate-in fade-in">
+                                                            <div className="flex items-center gap-1">
+                                                                <span className="text-[10px] text-gray-500">الكمية:</span>
+                                                                <Input
+                                                                    type="number"
+                                                                    min={1}
+                                                                    value={config.quantity}
+                                                                    onChange={(e) => updateNotebookConfig(nb._id, {
+                                                                        quantity: Math.max(1, parseInt(e.target.value) || 1)
+                                                                    })}
+                                                                    className="w-14 h-7 text-xs text-center p-1 font-bold"
+                                                                />
+                                                            </div>
+
+                                                            {mode === 'sale' ? (
+                                                                <div className="flex items-center gap-1">
+                                                                    <span className="text-[10px] text-gray-500">خصم:</span>
+                                                                    <Input
+                                                                        type="number"
+                                                                        min={0}
+                                                                        placeholder="0"
+                                                                        value={config.discount || ''}
+                                                                        onChange={(e) => updateNotebookConfig(nb._id, {
+                                                                            discount: Math.max(0, parseFloat(e.target.value) || 0)
+                                                                        })}
+                                                                        className="w-14 h-7 text-xs text-center p-1"
+                                                                    />
+                                                                </div>
+                                                            ) : (
+                                                                <div className="flex items-center gap-1">
+                                                                    <span className="text-[10px] text-gray-500">عربون:</span>
+                                                                    <Input
+                                                                        type="number"
+                                                                        min={0}
+                                                                        placeholder="0"
+                                                                        value={config.deposit || ''}
+                                                                        onChange={(e) => updateNotebookConfig(nb._id, {
+                                                                            deposit: Math.max(0, parseFloat(e.target.value) || 0)
+                                                                        })}
+                                                                        className="w-16 h-7 text-xs text-center p-1"
+                                                                    />
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })
+                                    )}
+                                </div>
                             </div>
 
-                            {/* Step 2: Filters */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {/* Step 2: Stage & Group Selection & Transaction Date */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                 <div className="space-y-1.5">
                                     <label className="text-xs font-semibold text-gray-700">المرحلة الدراسية</label>
                                     <Select value={stageFilter} onValueChange={setStageFilter} dir="rtl">
@@ -457,80 +630,40 @@ export function BatchNotebookActionModal({
                                             <SelectValue placeholder="اختر المجموعة..." />
                                         </SelectTrigger>
                                         <SelectContent dir="rtl">
-                                            {filteredGroups.map(g => (
+                                            {filteredGroups.map((g: any) => (
                                                 <SelectItem key={g._id} value={g._id}>{g.name} ({g.gradeLevel})</SelectItem>
                                             ))}
                                         </SelectContent>
                                     </Select>
                                 </div>
-                            </div>
-
-                            {/* Step 3: Quantity & Discount / Deposit & Date */}
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-semibold text-gray-700">الكمية لكل طالب</label>
-                                    <Input
-                                        type="number"
-                                        min={1}
-                                        value={quantity}
-                                        onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                                        className="bg-white"
-                                    />
-                                </div>
-
-                                {mode === 'sale' ? (
-                                    <div className="space-y-1.5">
-                                        <label className="text-xs font-semibold text-gray-700">خصم لكل طالب (ج.م)</label>
-                                        <Input
-                                            type="number"
-                                            min={0}
-                                            value={discount || ''}
-                                            onChange={(e) => setDiscount(Math.max(0, parseFloat(e.target.value) || 0))}
-                                            placeholder="0"
-                                            className="bg-white"
-                                        />
-                                    </div>
-                                ) : (
-                                    <div className="space-y-1.5">
-                                        <label className="text-xs font-semibold text-gray-700">عربون الحجز لكل طالب (اختياري)</label>
-                                        <Input
-                                            type="number"
-                                            min={0}
-                                            value={depositPaid}
-                                            onChange={(e) => setDepositPaid(e.target.value ? Math.max(0, parseFloat(e.target.value)) : '')}
-                                            placeholder="0 (بدون عربون)"
-                                            className="bg-white"
-                                        />
-                                    </div>
-                                )}
 
                                 <div className="space-y-1.5">
                                     <label className="text-xs font-semibold text-gray-700 flex items-center gap-1">
                                         <Calendar size={12} className="text-primary" />
-                                        تاريخ المعاملة (اليوم أو سابق)
+                                        تاريخ المعاملة
                                     </label>
                                     <Input
                                         type="date"
                                         value={date}
                                         onChange={(e) => setDate(e.target.value)}
-                                        className="bg-white"
+                                        className="bg-white text-xs h-10"
                                     />
                                 </div>
                             </div>
 
-                            {/* Step 4: Students Selection List */}
+                            {/* Step 3: Students Selection List */}
                             <div className="space-y-2">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2">
                                         <label className="text-xs font-bold text-gray-800">
                                             قائمة الطلاب ({students.length})
                                         </label>
-                                        {selectedIds.size > 0 && (
+                                        {selectedStudentIds.size > 0 && (
                                             <span className={cn(
                                                 "text-[11px] font-bold px-2 py-0.5 rounded-md",
                                                 mode === 'sale' ? "text-indigo-600 bg-indigo-50" : "text-purple-600 bg-purple-50"
                                             )}>
-                                                محدد: {selectedIds.size}
+                                                محدد: {selectedStudentIds.size}
                                             </span>
                                         )}
                                     </div>
@@ -539,11 +672,11 @@ export function BatchNotebookActionModal({
                                             type="button"
                                             variant="ghost"
                                             size="sm"
-                                            onClick={toggleAll}
+                                            onClick={toggleAllStudents}
                                             className="h-7 text-xs text-gray-600 hover:text-indigo-600 gap-1.5"
                                         >
-                                            {allFilteredSelected ? <Square size={14} /> : <CheckSquare size={14} />}
-                                            {allFilteredSelected ? 'إلغاء تحديد المعروض' : 'تحديد المعروض'}
+                                            {allFilteredStudentsSelected ? <Square size={14} /> : <CheckSquare size={14} />}
+                                            {allFilteredStudentsSelected ? 'إلغاء تحديد المعروض' : 'تحديد المعروض'}
                                         </Button>
                                     )}
                                 </div>
@@ -560,7 +693,7 @@ export function BatchNotebookActionModal({
                                     </div>
                                 )}
 
-                                <div className="border border-gray-100 rounded-xl overflow-hidden max-h-52 overflow-y-auto divide-y divide-gray-50 bg-white">
+                                <div className="border border-gray-100 rounded-xl overflow-hidden max-h-48 overflow-y-auto divide-y divide-gray-50 bg-white">
                                     {!groupId ? (
                                         <div className="p-8 text-center text-xs text-gray-400">
                                             اختر المجموعة لعرض قائمة الطلاب
@@ -575,7 +708,7 @@ export function BatchNotebookActionModal({
                                         </div>
                                     ) : (
                                         filteredStudents.map((s) => {
-                                            const isSelected = selectedIds.has(s._id);
+                                            const isSelected = selectedStudentIds.has(s._id);
                                             return (
                                                 <div
                                                     key={s._id}
@@ -589,7 +722,7 @@ export function BatchNotebookActionModal({
                                                         <input
                                                             type="checkbox"
                                                             checked={isSelected}
-                                                            onChange={() => {}} // Handled by div click
+                                                            onChange={() => {}}
                                                             className={cn(
                                                                 "rounded border-gray-300 h-4 w-4 pointer-events-none",
                                                                 mode === 'sale' ? "text-indigo-600 focus:ring-indigo-600" : "text-purple-600 focus:ring-purple-600"
@@ -610,12 +743,19 @@ export function BatchNotebookActionModal({
                             </div>
 
                             {/* Stock Warning Alert if insufficient in Sale mode */}
-                            {isStockInsufficient && selectedNotebook && (
-                                <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 text-xs text-red-700">
-                                    <AlertTriangle className="h-4 w-4 shrink-0 text-red-600" />
-                                    <span>
-                                        تحذير: الكمية المطلوبة (<strong>{totalRequiredStock}</strong> نسخة) تتجاوز المخزون المتاح في المخزن (<strong>{selectedNotebook.stock}</strong> نسخة).
-                                    </span>
+                            {isStockInsufficient && (
+                                <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2 text-xs text-red-700">
+                                    <AlertTriangle className="h-4 w-4 shrink-0 text-red-600 mt-0.5" />
+                                    <div>
+                                        <p className="font-bold">المخزون غير كافٍ لبعض المذكرات المحددة:</p>
+                                        <ul className="list-disc list-inside mt-1 space-y-0.5">
+                                            {stockDeficits.map(nb => (
+                                                <li key={nb.notebookId}>
+                                                    <strong>{nb.notebookName}</strong>: مطلوب {nb.quantity * selectedStudentIds.size} نسخة (المتاح: {nb.stock} نسخة).
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
                                 </div>
                             )}
                         </div>
@@ -624,13 +764,13 @@ export function BatchNotebookActionModal({
                         <div className="p-4 border-t border-gray-100 bg-gray-50/80 flex items-center justify-between">
                             <div>
                                 <p className="text-xs text-gray-500">
-                                    المحدد: <strong className="text-gray-900">{selectedIds.size}</strong> طالب
+                                    المحدد: <strong className="text-gray-900">{selectedStudentIds.size}</strong> طالب · <strong className="text-gray-900">{selectedNotebooksList.length}</strong> مذكرات
                                 </p>
                                 <p className={cn(
                                     "text-xs font-bold mt-0.5",
                                     mode === 'sale' ? "text-indigo-700" : "text-purple-700"
                                 )}>
-                                    {mode === 'sale' ? `إجمالي المبيعات: ${totalExpectedAmount.toLocaleString()} ج.م` : `إجمالي العربون المحصل: ${totalExpectedAmount.toLocaleString()} ج.م`}
+                                    {mode === 'sale' ? `إجمالي المبيعات: ${totalGrandExpected.toLocaleString()} ج.م` : `إجمالي العربون المحصل: ${totalGrandExpected.toLocaleString()} ج.م`}
                                 </p>
                             </div>
                             <div className="flex items-center gap-2">
@@ -638,24 +778,26 @@ export function BatchNotebookActionModal({
                                     type="button"
                                     variant="outline"
                                     onClick={() => handleClose(false)}
-                                    disabled={isPending}
+                                    disabled={isExecuting}
                                 >
                                     إلغاء
                                 </Button>
                                 <Button
-                                    onClick={handleSubmit}
-                                    disabled={isPending || selectedIds.size === 0 || !notebookId || isStockInsufficient}
+                                    onClick={handleExecute}
+                                    disabled={isExecuting || selectedStudentIds.size === 0 || selectedNotebooksList.length === 0 || isStockInsufficient}
                                     className={cn(
                                         "text-white font-bold gap-2",
                                         mode === 'sale' ? "bg-indigo-600 hover:bg-indigo-700" : "bg-purple-600 hover:bg-purple-700"
                                     )}
                                 >
-                                    {isPending ? (
+                                    {isExecuting ? (
                                         <>
                                             <Loader2 className="h-4 w-4 animate-spin" /> جاري التنفيذ...
                                         </>
                                     ) : (
-                                        mode === 'sale' ? `تسجيل البيع (${selectedIds.size})` : `تسجيل الحجز (${selectedIds.size})`
+                                        mode === 'sale'
+                                            ? `تسجيل بيع (${selectedNotebooksList.length} مذكرات لـ ${selectedStudentIds.size} طالب)`
+                                            : `تسجيل حجز (${selectedNotebooksList.length} مذكرات لـ ${selectedStudentIds.size} طالب)`
                                     )}
                                 </Button>
                             </div>
