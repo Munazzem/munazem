@@ -36,7 +36,10 @@ export const updateGroupSchema = z.object({
 
 export const updateGradeCycleSchema = z.object({
   body: z.object({
-    gradeLevel: gradeLevelEnum,
+    gradeLevel: z.string().refine(
+      (val) => val === 'ALL' || Object.values(GradeLevel).includes(val as GradeLevel),
+      { message: `المرحلة الدراسية غير صحيحة. القيم المسموح بها: جميع المراحل، ${Object.values(GradeLevel).join(', ')}` }
+    ),
     cycleCapacity: z.number().int().min(1, "عدد حصص الدورة يجب أن يكون 1 على الأقل"),
   })
 });

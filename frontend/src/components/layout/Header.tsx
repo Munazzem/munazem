@@ -86,17 +86,19 @@ export function Header() {
 
 
                 {/* User Profile Snippet */}
-                <div className="flex items-center gap-3 border-r border-gray-200/50 pr-4">
-                    <div className="flex flex-col items-end">
-                        <span className="text-sm font-bold text-gray-900">{user?.name || 'مستخدم'}</span>
-                        <span className="text-xs text-primary font-medium opacity-80">
+                <div className="flex items-center gap-2 sm:gap-3 sm:border-r sm:border-gray-200/50 sm:pr-4 min-w-0">
+                    <div className="flex flex-col items-end min-w-0 max-w-[130px] sm:max-w-none">
+                        <span className="text-xs sm:text-sm font-bold text-gray-900 truncate w-full text-right" title={user?.name}>
+                            {user?.name || 'مستخدم'}
+                        </span>
+                        <span className="text-[10px] sm:text-xs text-primary font-medium opacity-80 truncate w-full text-right">
                             {user?.role === 'superAdmin' ? 'مدير النظام' : user?.role === 'teacher' ? 'معلم' : user?.role === 'assistant' ? 'مساعد' : 'مستخدم'}
                         </span>
                     </div>
-                    <div className="relative">
+                    <div className="relative shrink-0">
                         <div className="absolute -inset-0.5 bg-gradient-to-r from-primary to-blue-400 rounded-full blur opacity-30"></div>
-                        <div className="relative h-9 w-9 rounded-full bg-white flex items-center justify-center border border-primary/20 shadow-sm">
-                            <span className="text-primary font-bold">{user?.name?.charAt(0) || 'م'}</span>
+                        <div className="relative h-8 w-8 sm:h-9 sm:w-9 rounded-full bg-white flex items-center justify-center border border-primary/20 shadow-sm">
+                            <span className="text-primary font-bold text-xs sm:text-sm">{user?.name?.charAt(0) || 'م'}</span>
                         </div>
                     </div>
                 </div>

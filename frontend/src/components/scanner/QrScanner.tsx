@@ -102,18 +102,19 @@ export function QrScanner({ onScanned, mode = 'actions' }: QrScannerProps) {
             )}
             
             {/* Manual input fallback */}
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2 w-full">
                 <Input
                     placeholder="أو أدخل رقم الكارت / الكود يدوياً..."
                     value={manualInput}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setManualInput(e.target.value)}
                     onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter' && manualInput.trim()) { onScanned(manualInput.trim()); setManualInput(''); }}}
-                    className="flex-1 text-sm bg-gray-50"
+                    className="flex-1 min-w-0 text-xs sm:text-sm bg-gray-50 h-10 rounded-xl"
                 />
                 <Button
                     onClick={() => { if (manualInput.trim()) { onScanned(manualInput.trim()); setManualInput(''); }}}
                     disabled={!manualInput.trim()}
                     size="sm"
+                    className="shrink-0 h-10 px-4 rounded-xl"
                 >
                     بحث
                 </Button>
