@@ -96,7 +96,7 @@ export function BatchNotebookActionModal({
 
     // Mode: 'sale' (بيع فوري) or 'reservation' (حجز مسبق)
     const [mode, setMode] = useState<'sale' | 'reservation'>('sale');
-    const [stageFilter, setStageFilter] = useState('');
+    const [stageFilter, setStageFilter] = useState('ALL');
     const [groupId, setGroupId] = useState('');
     const [notebookSearch, setNotebookSearch] = useState('');
     const [selectedNotebookConfigs, setSelectedNotebookConfigs] = useState<Map<string, SelectedNotebookConfig>>(new Map());
@@ -139,7 +139,7 @@ export function BatchNotebookActionModal({
     const allGroups = (groupsData as any)?.data ?? [];
 
     const filteredGroups = useMemo(() => {
-        if (!stageFilter) return allGroups;
+        if (!stageFilter || stageFilter === 'ALL') return allGroups;
         const prefix = STAGE_TO_GRADE_PREFIX[stageFilter];
         return allGroups.filter((g: any) => g.gradeLevel?.includes(prefix!));
     }, [allGroups, stageFilter]);
@@ -162,7 +162,7 @@ export function BatchNotebookActionModal({
     // Filter notebooks by grade level if stage is selected
     const filteredNotebooks = useMemo(() => {
         let list = allNotebooks;
-        if (stageFilter) {
+        if (stageFilter && stageFilter !== 'ALL') {
             const prefix = STAGE_TO_GRADE_PREFIX[stageFilter];
             list = list.filter(nb => !nb.gradeLevel || nb.gradeLevel.includes(prefix!));
         }
@@ -615,7 +615,7 @@ export function BatchNotebookActionModal({
                                             <SelectValue placeholder="كل المراحل" />
                                         </SelectTrigger>
                                         <SelectContent dir="rtl">
-                                            <SelectItem value="">كل المراحل</SelectItem>
+                                            <SelectItem value="ALL">كل المراحل</SelectItem>
                                             {allowedStages.map(s => (
                                                 <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
                                             ))}
