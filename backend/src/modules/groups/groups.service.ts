@@ -4,7 +4,7 @@ import { CycleEnrollmentModel } from '../../database/models/cycle-enrollment.mod
 import { NotFoundException, BadRequestException } from '../../common/utils/response/error.responce.js';
 import type { CreateGroupDTO, UpdateGroupDTO } from '../../types/dto.types.js';
 import { UserModel } from '../../database/models/user.model.js';
-import { STAGE_GRADES, GradeLevel, TeacherStage } from '../../common/enums/enum.service.js';
+import { STAGE_GRADES, GradeLevel, TeacherStage, CycleEnrollmentStatus } from '../../common/enums/enum.service.js';
 import { cache, CacheKeys, CacheTTL } from '../../infrastructure/cache/cache.service.js';
 
 export class GroupService {
@@ -172,44 +172,86 @@ export class GroupService {
         return group;
     }
 
-    // Update cycle capacity for ALL groups of a specific grade level
-    static async updateGradeCycleCapacity(teacherId: string, gradeLevel: GradeLevel, cycleCapacity: number) {
-        const groups = await GroupModel.find({ teacherId, gradeLevel }).lean();
+    // Update cycle capacity for ALL groups of a specific grade level (or all groups if ALL)
+    static async updateGradeCycleCapacity(teacherId: string, gradeLevel: GradeLevel | 'ALL', cycleCapacity: number) {
+        const query: any = { teacherId };
+        if (gradeLevel !== 'ALL') {
+            query.gradeLevel = gradeLevel;
+        }
+
+        const groups = await GroupModel.find(query).lean();
 
         if (groups.length === 0) {
-            throw NotFoundException({ message: 'لا توجد مجموعات لهذه المرحلة' });
+            throw NotFoundException({ message: 'لا توجد مجموعات مطابقة' });
         }
 
         const groupIds = groups.map(g => g._id);
 
-        // 1. Update all groups of this grade level
-        const result = await GroupModel.updateMany(
-            { _id: { $in: groupIds } },
-            { $set: { 'cycle.capacity': cycleCapacity } }
-        );
+        // 1. Update all groups matching & active students in parallel
+        const [result] = await Promise.all([
+            GroupModel.updateMany(
+                { _id: { $in: groupIds } },
+                { $set: { 'cycle.capacity': cycleCapacity } }
+            ),
+            StudentModel.updateMany(
+                { groupId: { $in: groupIds }, teacherId },
+                { $set: { monthlySessionsQuota: cycleCapacity, cycleCapacity: cycleCapacity } }
+            )
+        ]);
 
-        // 2. Update all active students in these groups
-        await StudentModel.updateMany(
-            { groupId: { $in: groupIds }, teacherId },
-            { $set: { monthlySessionsQuota: cycleCapacity, cycleCapacity: cycleCapacity } }
-        );
+        // 2. Update ongoing cycle enrollments using bulkWrite
+        const orConditions = groups.map(g => ({
+            groupId: g._id,
+            cycleNumber: (g as any)?.cycle?.currentCycleNumber || 1
+        }));
 
-        // 3. Update ongoing cycle enrollments for each group
-        for (const group of groups) {
-            const currentCycleNum = (group as any)?.cycle?.currentCycleNumber || 1;
-            await CycleEnrollmentModel.updateMany(
-                { groupId: group._id, cycleNumber: currentCycleNum },
-                {
-                    $set: {
-                        cycleCapacity: cycleCapacity,
-                        chargeableSessions: cycleCapacity,
+        if (orConditions.length > 0) {
+            const enrollments = await CycleEnrollmentModel.find({
+                $or: orConditions
+            }).lean();
+
+            if (enrollments.length > 0) {
+                const bulkOps = enrollments.map((enrollment: any) => {
+                    let newCycleCharge = enrollment.cycleCharge;
+                    let newRemaining = enrollment.remainingAmount;
+                    let newStatus = enrollment.status;
+                    let pricePerSession = enrollment.pricePerSession;
+
+                    if (enrollment.fullCyclePrice && enrollment.fullCyclePrice > 0) {
+                        pricePerSession = enrollment.fullCyclePrice / 8;
+                        newCycleCharge = Math.round(cycleCapacity * pricePerSession);
+                        newRemaining = Math.max(0, newCycleCharge - (enrollment.totalPaid || 0));
+                        newStatus = newRemaining <= 0
+                            ? CycleEnrollmentStatus.PAID
+                            : (enrollment.totalPaid || 0) > 0
+                                ? CycleEnrollmentStatus.PARTIALLY_PAID
+                                : CycleEnrollmentStatus.UNPAID;
                     }
-                }
-            );
+
+                    return {
+                        updateOne: {
+                            filter: { _id: enrollment._id },
+                            update: {
+                                $set: {
+                                    cycleCapacity,
+                                    chargeableSessions: cycleCapacity,
+                                    pricePerSession,
+                                    cycleCharge: newCycleCharge,
+                                    remainingAmount: newRemaining,
+                                    status: newStatus
+                                }
+                            }
+                        }
+                    };
+                });
+
+                await CycleEnrollmentModel.bulkWrite(bulkOps);
+            }
         }
 
         // Invalidate cache
-        await cache.invalidate(`t:${teacherId}:*`);
+        await cache.invalidate(CacheKeys.teacherAll(teacherId));
+        cache.del(CacheKeys.dashboard(teacherId));
 
         return { updatedCount: result.modifiedCount };
     }
