@@ -125,12 +125,16 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
         mutationFn: (txId: string) => deleteTransaction(txId),
         onSuccess: () => {
             toast.success('تم مسح المعاملة بنجاح وعكس أثرها على السجلات');
+            queryClient.removeQueries({ queryKey: ['students'] });
+            queryClient.invalidateQueries({ queryKey: ['students'] });
+            queryClient.invalidateQueries({ queryKey: ['reports'] });
+            queryClient.invalidateQueries({ queryKey: ['sessions'] });
+            queryClient.invalidateQueries({ queryKey: ['cycle-enrollment'] });
             queryClient.invalidateQueries({ queryKey: QK.payments.dailyLedgerBase });
             queryClient.invalidateQueries({ queryKey: QK.payments.monthlyLedgerBase });
             queryClient.invalidateQueries({ queryKey: QK.dashboard.summary });
             queryClient.invalidateQueries({ queryKey: QK.students.all });
             queryClient.invalidateQueries({ queryKey: QK.groups.all });
-            queryClient.invalidateQueries({ queryKey: QK.payments.all });
             setDeleteTxId(null);
         },
         onError: () => { setDeleteTxId(null); },
@@ -140,12 +144,16 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
         mutationFn: (txIds: string[]) => deleteBatchTransactions(txIds),
         onSuccess: (data) => {
             toast.success(`تم مسح ${data.deletedCount} معاملة بنجاح وعكس أثرها على السجلات`);
+            queryClient.removeQueries({ queryKey: ['students'] });
+            queryClient.invalidateQueries({ queryKey: ['students'] });
+            queryClient.invalidateQueries({ queryKey: ['reports'] });
+            queryClient.invalidateQueries({ queryKey: ['sessions'] });
+            queryClient.invalidateQueries({ queryKey: ['cycle-enrollment'] });
             queryClient.invalidateQueries({ queryKey: QK.payments.dailyLedgerBase });
             queryClient.invalidateQueries({ queryKey: QK.payments.monthlyLedgerBase });
             queryClient.invalidateQueries({ queryKey: QK.dashboard.summary });
             queryClient.invalidateQueries({ queryKey: QK.students.all });
             queryClient.invalidateQueries({ queryKey: QK.groups.all });
-            queryClient.invalidateQueries({ queryKey: QK.payments.all });
             setSelectedTxIds(new Set());
             setShowBatchDeleteConfirm(false);
         },
@@ -214,7 +222,7 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
     return (
         <div className="space-y-6">
             {/* Stats Summary Header */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {isLoading ? (
                     <>
                         <StatCardSkeleton />
@@ -371,6 +379,25 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                     <>
                         {/* Mobile Cards */}
                         <div className="sm:hidden divide-y divide-gray-50">
+                            {/* Mobile Select All Header */}
+                            {isTeacher && selectableTxs.length > 0 && (
+                                <div className="px-5 py-3 bg-gray-50/70 border-b border-gray-100 flex items-center justify-between">
+                                    <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-gray-700 select-none">
+                                        <input
+                                            type="checkbox"
+                                            checked={allSelectableSelected}
+                                            onChange={toggleSelectAll}
+                                            className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4 cursor-pointer"
+                                        />
+                                        <span>تحديد الكل ({selectableTxs.length})</span>
+                                    </label>
+                                    {selectedTxIds.size > 0 && (
+                                        <span className="text-xs font-bold text-red-600">
+                                            محدد: {selectedTxIds.size}
+                                        </span>
+                                    )}
+                                </div>
+                            )}
                             {txs.map((tx, i) => {
                                 const txId = (tx as any).transactionId;
                                 const isSelected = txId && selectedTxIds.has(txId);

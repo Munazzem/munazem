@@ -49,10 +49,33 @@ export const recordNotebookSaleSchema = z.object({
   }),
 });
 
+export const batchNotebookSaleSchema = z.object({
+  body: z.object({
+    notebookId:     objectId,
+    studentIds:     z.array(objectId).min(1, 'يجب اختيار طالب واحد على الأقل').max(100, 'الحد الأقصى 100 طالب'),
+    quantity:       z.number().int().positive('الكمية يجب أن تكون أكبر من صفر').optional(),
+    discountAmount: z.number().min(0).optional(),
+    paidAmount:     z.number().min(0).optional(),
+    description:    z.string().max(300).optional(),
+    date:           z.string().optional(),
+  }),
+});
+
 export const reserveNotebookSchema = z.object({
   body: z.object({
     notebookId:  objectId,
     studentId:   objectId,
+    quantity:    z.number().int().positive('الكمية يجب أن تكون أكبر من صفر').optional(),
+    paidAmount:  z.number().min(0).optional(),
+    description: z.string().max(300).optional(),
+    date:        z.string().optional(),
+  }),
+});
+
+export const batchReserveNotebookSchema = z.object({
+  body: z.object({
+    notebookId:  objectId,
+    studentIds:  z.array(objectId).min(1, 'يجب اختيار طالب واحد على الأقل').max(100, 'الحد الأقصى 100 طالب'),
     quantity:    z.number().int().positive('الكمية يجب أن تكون أكبر من صفر').optional(),
     paidAmount:  z.number().min(0).optional(),
     description: z.string().max(300).optional(),

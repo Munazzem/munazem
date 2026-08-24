@@ -7,7 +7,7 @@ import { ForbiddenException } from '../../common/utils/response/error.responce.j
 import { authenticate } from '../../middlewares/auth.middleware.js';
 import { authorizeRoles } from '../../middlewares/roles.middleware.js';
 import { validate } from '../../middlewares/validate.middleware.js';
-import { recordSubscriptionSchema, batchSubscriptionSchema, recordExpenseSchema, recordNotebookSaleSchema, upsertPriceSettingsSchema, reserveNotebookSchema, deliverNotebookSchema, updateTransactionSchema, payDebtSchema, batchDeleteTransactionsSchema, payCycleDebtSchema, payAllPastCyclesSchema } from '../../validation/payment.validation.js';
+import { recordSubscriptionSchema, batchSubscriptionSchema, recordExpenseSchema, recordNotebookSaleSchema, batchNotebookSaleSchema, reserveNotebookSchema, batchReserveNotebookSchema, upsertPriceSettingsSchema, deliverNotebookSchema, updateTransactionSchema, payDebtSchema, batchDeleteTransactionsSchema, payCycleDebtSchema, payAllPastCyclesSchema } from '../../validation/payment.validation.js';
 
 const paymentsRouter = Router();
 
@@ -96,6 +96,21 @@ paymentsRouter.post(
     }
 );
 
+// POST /payments/notebook/batch — Record batch notebook sales (Assistant + Teacher)
+paymentsRouter.post(
+    '/notebook/batch',
+    authorizeRoles(UserRole.assistant, UserRole.teacher),
+    validate(batchNotebookSaleSchema),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const user = (req as any).user;
+            const teacherId = resolveTeacherId(user);
+            const result = await PaymentsService.recordBatchNotebookSale(teacherId, user.userId, req.body);
+            return SuccessResponse({ res, data: result, message: `تم تسجيل بيع المذكرة لـ ${result.successCount} طالب بنجاح`, status: 201 });
+        } catch (error) { next(error); }
+    }
+);
+
 // POST /payments/notebook/reserve — Reserve notebook (Assistant + Teacher)
 paymentsRouter.post(
     '/notebook/reserve',
@@ -107,6 +122,21 @@ paymentsRouter.post(
             const teacherId = resolveTeacherId(user);
             const result = await PaymentsService.reserveNotebook(teacherId, user.userId, req.body);
             return SuccessResponse({ res, data: result, message: 'تم حجز المذكرة بنجاح', status: 201 });
+        } catch (error) { next(error); }
+    }
+);
+
+// POST /payments/notebook/reserve/batch — Batch reserve notebook (Assistant + Teacher)
+paymentsRouter.post(
+    '/notebook/reserve/batch',
+    authorizeRoles(UserRole.assistant, UserRole.teacher),
+    validate(batchReserveNotebookSchema),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const user = (req as any).user;
+            const teacherId = resolveTeacherId(user);
+            const result = await PaymentsService.recordBatchNotebookReservation(teacherId, user.userId, req.body);
+            return SuccessResponse({ res, data: result, message: `تم حجز المذكرة لـ ${result.successCount} طالب بنجاح`, status: 201 });
         } catch (error) { next(error); }
     }
 );

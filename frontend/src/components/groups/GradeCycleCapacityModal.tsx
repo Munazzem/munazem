@@ -29,8 +29,11 @@ export function GradeCycleCapacityModal({ allowedGrades }: Props) {
     const mutation = useMutation({
         mutationFn: updateGradeCycleCapacity,
         onSuccess: (res: any) => {
-            toast.success(res?.message || 'تم تحديث عدد الحصص بنجاح');
+            toast.success(res?.message || 'تم تحديث عدد الحصص وتعديل المبالغ المطلوبة بنجاح');
             queryClient.invalidateQueries({ queryKey: ['groups'] });
+            queryClient.invalidateQueries({ queryKey: ['students'] });
+            queryClient.invalidateQueries({ queryKey: ['cycle-enrollment'] });
+            queryClient.invalidateQueries({ queryKey: ['reports'] });
             setOpen(false);
             setGradeLevel('');
             setCycleCapacity('');
@@ -43,7 +46,7 @@ export function GradeCycleCapacityModal({ allowedGrades }: Props) {
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!gradeLevel) {
-            toast.error('يرجى اختيار المرحلة الدراسية');
+            toast.error('يرجى اختيار المرحلة الدراسية أو اختيار جميع المراحل');
             return;
         }
         if (!cycleCapacity || cycleCapacity < 1) {
@@ -65,7 +68,7 @@ export function GradeCycleCapacityModal({ allowedGrades }: Props) {
             <DialogContent className="sm:max-w-[425px]" dir="rtl">
                 <DialogHeader>
                     <DialogTitle className="text-xl font-bold text-gray-900 text-right">
-                        تخصيص حصص الدورة (للمرحلة بالكامل)
+                        تخصيص حصص الدورة
                     </DialogTitle>
                 </DialogHeader>
 
@@ -77,6 +80,9 @@ export function GradeCycleCapacityModal({ allowedGrades }: Props) {
                                 <SelectValue placeholder="اختر المرحلة" />
                             </SelectTrigger>
                             <SelectContent dir="rtl">
+                                <SelectItem value="ALL" className="font-bold text-primary">
+                                    ⭐ جميع المراحل والمجموعات
+                                </SelectItem>
                                 {allowedGrades.map((g) => (
                                     <SelectItem key={g} value={g}>
                                         {g}
@@ -91,13 +97,13 @@ export function GradeCycleCapacityModal({ allowedGrades }: Props) {
                         <Input
                             type="number"
                             min={1}
-                            placeholder="مثال: 8"
+                            placeholder="مثال: 4 أو 8"
                             value={cycleCapacity}
                             onChange={(e) => setCycleCapacity(e.target.value ? Number(e.target.value) : '')}
                             required
                         />
-                        <p className="text-xs text-gray-500">
-                            سيتم تحديث الحد الأقصى لحصص الدورة لجميع مجموعات هذه المرحلة لتطابق هذا الرقم.
+                        <p className="text-xs text-gray-500 leading-relaxed">
+                            سيتم تحديث عدد حصص الدورة لجميع المجموعات والطلاب، وتعديل سعر الاشتراك التلقائي المطلوب سداده بالتناسب (مثلاً 4 حصص = نصف شهر).
                         </p>
                     </div>
 

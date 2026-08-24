@@ -44,7 +44,7 @@ export default function LoginPage() {
                 toast.success('تم تسجيل الدخول بنجاح', {
                     description: `مرحباً بك، ${res.data.user.name || 'في منصة مُنظِّم'}`,
                 });
-                router.push('/dashboard');
+                window.location.href = '/dashboard';
             }
         } catch (error: { response?: { data?: { message?: string } } } | unknown) {
             const err = error as { response?: { data?: { message?: string } } };

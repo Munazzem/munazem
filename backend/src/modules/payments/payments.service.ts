@@ -529,11 +529,88 @@ export class PaymentsService {
         return transaction;
     }
 
+    // ── Record Batch Notebook Sales ─────────────────────────────────
+    static async recordBatchNotebookSale(
+        teacherId: string,
+        createdBy: string,
+        data: {
+            notebookId: string;
+            studentIds: string[];
+            quantity?: number;
+            discountAmount?: number;
+            paidAmount?: number;
+            description?: string;
+            date?: string;
+        }
+    ) {
+        if (!data.studentIds || data.studentIds.length === 0) {
+            throw BadRequestException({ message: 'يجب اختيار طالب واحد على الأقل' });
+        }
+
+        const notebook = await NotebookModel.findOne({ _id: data.notebookId, teacherId }).lean();
+        if (!notebook) throw NotFoundException({ message: 'المذكرة غير موجودة' });
+
+        const quantityPerStudent = data.quantity ?? 1;
+        const totalRequiredStock = quantityPerStudent * data.studentIds.length;
+        if (notebook.stock < totalRequiredStock) {
+            throw BadRequestException({
+                message: `الكمية المتاحة في المخزن (${notebook.stock}) غير كافية لعدد الطلاب المحدد (${totalRequiredStock})`
+            });
+        }
+
+        const results: { studentId: string; studentName: string; paidAmount: number; status: 'success' | 'error'; error?: string }[] = [];
+
+        for (const studentId of data.studentIds) {
+            try {
+                const tx = await PaymentsService.recordNotebookSale(teacherId, createdBy, {
+                    studentId,
+                    notebookId: data.notebookId,
+                    quantity: quantityPerStudent,
+                    ...(data.discountAmount !== undefined ? { discountAmount: data.discountAmount } : {}),
+                    ...(data.paidAmount !== undefined ? { paidAmount: data.paidAmount } : {}),
+                    ...(data.description !== undefined ? { description: data.description } : {}),
+                    ...(data.date !== undefined ? { date: data.date } : {}),
+                });
+
+                results.push({
+                    studentId,
+                    studentName: tx?.studentName ?? '',
+                    paidAmount: tx?.paidAmount ?? 0,
+                    status: 'success'
+                });
+            } catch (err: any) {
+                let studentName = '';
+                try {
+                    const student = await StudentModel.findById(studentId, { studentName: 1 }).lean();
+                    if (student) studentName = student.studentName;
+                } catch (e) {}
+
+                results.push({
+                    studentId,
+                    studentName,
+                    paidAmount: 0,
+                    status: 'error',
+                    error: err?.message ?? 'فشل في تسجيل بيع المذكرة'
+                });
+            }
+        }
+
+        const successCount = results.filter(r => r.status === 'success').length;
+        const totalPaid = results.filter(r => r.status === 'success').reduce((sum, r) => sum + r.paidAmount, 0);
+
+        if (successCount > 0) {
+            await cache.invalidate(CacheKeys.teacherAll(teacherId));
+            cache.del(CacheKeys.dashboard(teacherId));
+        }
+
+        return { results, successCount, failCount: results.length - successCount, totalPaid };
+    }
+
     // ── Reserve Notebook ────────────────────────────────────────────
     static async reserveNotebook(
         teacherId: string,
         createdBy: string,
-        data: { studentId: string; notebookId: string; quantity?: number; paidAmount?: number; description?: string }
+        data: { studentId: string; notebookId: string; quantity?: number; paidAmount?: number; description?: string; date?: string }
     ) {
         const student = await StudentModel.findById(data.studentId, { studentName: 1, teacherId: 1 }).lean();
         if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
@@ -545,14 +622,14 @@ export class PaymentsService {
         const quantity = data.quantity ?? 1;
         const totalPrice = notebook.price * quantity;
         const paidAmount = data.paidAmount ?? 0;
-        const txDate = new Date();
+        const txDate = resolveTransactionDate(data.date);
 
         if (paidAmount > totalPrice) throw BadRequestException({ message: 'المبلغ المدفوع أكبر من إجمالي السعر' });
 
         // ── All mutations wrapped in a transaction (all-or-nothing) ──
         const reservation = await withTransaction(async (session) => {
             // 1. Create Reservation
-            const [res] = await NotebookReservationModel.create([{
+            const [res]: any = await NotebookReservationModel.create([{
                 teacherId,
                 studentId: student._id,
                 notebookId: notebook._id,
@@ -560,6 +637,7 @@ export class PaymentsService {
                 totalPrice,
                 paidAmount,
                 status: ReservationStatus.PENDING,
+                reservedAt: txDate,
             }], { session });
 
             const promises: Promise<any>[] = [
@@ -602,6 +680,80 @@ export class PaymentsService {
         });
 
         return reservation;
+    }
+
+    // ── Record Batch Notebook Reservations ──────────────────────────
+    static async recordBatchNotebookReservation(
+        teacherId: string,
+        createdBy: string,
+        data: {
+            notebookId: string;
+            studentIds: string[];
+            quantity?: number;
+            paidAmount?: number;
+            description?: string;
+            date?: string;
+        }
+    ) {
+        if (!data.studentIds || data.studentIds.length === 0) {
+            throw BadRequestException({ message: 'يجب اختيار طالب واحد على الأقل' });
+        }
+
+        const notebook = await NotebookModel.findOne({ _id: data.notebookId, teacherId }).lean();
+        if (!notebook) throw NotFoundException({ message: 'المذكرة غير موجودة' });
+
+        const quantityPerStudent = data.quantity ?? 1;
+        const results: { studentId: string; studentName: string; paidAmount: number; status: 'success' | 'error'; error?: string }[] = [];
+
+        for (const studentId of data.studentIds) {
+            try {
+                await PaymentsService.reserveNotebook(teacherId, createdBy, {
+                    studentId,
+                    notebookId: data.notebookId,
+                    quantity: quantityPerStudent,
+                    ...(data.paidAmount !== undefined ? { paidAmount: data.paidAmount } : {}),
+                    ...(data.description !== undefined ? { description: data.description } : {}),
+                    ...(data.date !== undefined ? { date: data.date } : {}),
+                });
+
+                let studentName = '';
+                try {
+                    const student = await StudentModel.findById(studentId, { studentName: 1 }).lean();
+                    if (student) studentName = student.studentName;
+                } catch (e) {}
+
+                results.push({
+                    studentId,
+                    studentName: studentName || 'طالب',
+                    paidAmount: data.paidAmount ?? 0,
+                    status: 'success'
+                });
+            } catch (err: any) {
+                let studentName = '';
+                try {
+                    const student = await StudentModel.findById(studentId, { studentName: 1 }).lean();
+                    if (student) studentName = student.studentName;
+                } catch (e) {}
+
+                results.push({
+                    studentId,
+                    studentName,
+                    paidAmount: 0,
+                    status: 'error',
+                    error: err?.message ?? 'فشل في حجز المذكرة'
+                });
+            }
+        }
+
+        const successCount = results.filter(r => r.status === 'success').length;
+        const totalPaid = results.filter(r => r.status === 'success').reduce((sum, r) => sum + r.paidAmount, 0);
+
+        if (successCount > 0) {
+            await cache.invalidate(CacheKeys.teacherAll(teacherId));
+            cache.del(CacheKeys.dashboard(teacherId));
+        }
+
+        return { results, successCount, failCount: results.length - successCount, totalPaid };
     }
 
     // ── Deliver Notebook ────────────────────────────────────────────
@@ -1497,7 +1649,7 @@ export class PaymentsService {
             }
         });
 
-        // Invalidate dashboard cache
+        await cache.invalidate(CacheKeys.teacherAll(teacherId));
         cache.del(CacheKeys.dashboard(teacherId));
         return { deleted: true, transactionId };
     }
@@ -1647,25 +1799,41 @@ export class PaymentsService {
                     }).session(session);
 
                     if (enrollment) {
-                        const amountToRevert = tx.paidAmount + (tx.discountAmount || 0);
+                        const amountToRevert = (tx.paidAmount || 0) + (tx.discountAmount || 0);
                         enrollment.totalPaid = Math.max(0, enrollment.totalPaid - amountToRevert);
-                        enrollment.remainingAmount += amountToRevert;
+                        enrollment.remainingAmount = Math.min(
+                            enrollment.cycleCharge,
+                            enrollment.remainingAmount + amountToRevert
+                        );
 
-                        if (enrollment.remainingAmount >= enrollment.cycleCharge) {
-                            enrollment.remainingAmount = enrollment.cycleCharge;
-                            enrollment.status = CycleEnrollmentStatus.UNPAID;
-                        } else if (enrollment.remainingAmount <= 0) {
-                            enrollment.remainingAmount = 0;
-                            enrollment.status = CycleEnrollmentStatus.PAID;
+                        if (enrollment.totalPaid <= 0 && enrollment.remainingAmount >= enrollment.cycleCharge) {
+                            await CycleEnrollmentModel.deleteOne({ _id: enrollment._id }, { session });
+                            const netDebtAdded = tx.remainingAmount || 0;
+                            if (netDebtAdded > 0 && tx.studentId) {
+                                await StudentModel.findByIdAndUpdate(
+                                    tx.studentId,
+                                    { $inc: { totalDebt: -netDebtAdded } },
+                                    { session }
+                                );
+                            }
                         } else {
-                            enrollment.status = CycleEnrollmentStatus.PARTIALLY_PAID;
-                        }
-                        
-                        await enrollment.save({ session });
-                    }
-                }
+                            enrollment.status = enrollment.remainingAmount <= 0
+                                ? CycleEnrollmentStatus.PAID
+                                : enrollment.remainingAmount >= enrollment.cycleCharge
+                                    ? CycleEnrollmentStatus.UNPAID
+                                    : CycleEnrollmentStatus.PARTIALLY_PAID;
 
-                if (tx.remainingAmount && tx.remainingAmount > 0 && tx.studentId) {
+                            await enrollment.save({ session });
+
+                            await StudentModel.findByIdAndUpdate(
+                                tx.studentId,
+                                { $inc: { totalDebt: amountToRevert } },
+                                { session }
+                            );
+                        }
+                    }
+                } else if (tx.remainingAmount && tx.remainingAmount > 0 && tx.studentId) {
+                    // Non-subscription transactions (e.g., notebook sale): revert remainingAmount from debt
                     await StudentModel.findByIdAndUpdate(
                         tx.studentId,
                         { $inc: { totalDebt: -tx.remainingAmount } },
@@ -1683,6 +1851,7 @@ export class PaymentsService {
             }
         });
 
+        await cache.invalidate(CacheKeys.teacherAll(teacherId));
         cache.del(CacheKeys.dashboard(teacherId));
 
         return {

@@ -49,6 +49,7 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { AddNotebookModal } from '@/components/notebooks/AddNotebookModal';
+import { BatchNotebookActionModal } from '@/components/notebooks/BatchNotebookActionModal';
 import { PendingReservationsModal } from '@/components/notebooks/PendingReservationsModal';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
@@ -240,6 +241,7 @@ export default function NotebooksPage() {
                     </p>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                    {canManage && <BatchNotebookActionModal />}
                     <Button 
                         variant="outline" 
                         className="gap-2 border-purple-100 text-purple-700 hover:bg-purple-50 hover:text-purple-800"

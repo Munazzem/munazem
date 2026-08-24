@@ -50,21 +50,18 @@ export default function RootLayout({
   return (
     <html lang="ar" dir="rtl">
       <body className={`${cairo.variable} antialiased bg-slate-50 text-[#111111] overflow-x-hidden`}>
+        <Toaster
+            position="top-center"
+            richColors
+            theme="light"
+            dir="rtl"
+            closeButton
+        />
         <Providers>
             {children}
             <PWAEventListener />
             <CacheWarmer />
             <OfflineSyncWorker />
-            <Toaster
-                position="top-center"
-                richColors
-                theme="light"
-                dir="rtl"
-                toastOptions={{
-                    className: 'break-words max-w-[92vw] text-sm',
-                    style: { wordBreak: 'break-word', overflowWrap: 'break-word' }
-                }}
-            />
             <OfflineIndicator />
             <InstallPrompt />
         </Providers>

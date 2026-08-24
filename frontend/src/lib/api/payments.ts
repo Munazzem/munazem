@@ -95,6 +95,46 @@ export const recordBatchSubscription = async (data: {
     return (res as any).data;
 };
 
+export interface IBatchNotebookSaleResult {
+    studentId: string;
+    studentName: string;
+    paidAmount: number;
+    status: 'success' | 'error';
+    error?: string;
+}
+
+export interface IBatchNotebookSaleResponse {
+    results: IBatchNotebookSaleResult[];
+    successCount: number;
+    failCount: number;
+    totalPaid: number;
+}
+
+export const recordBatchNotebookSale = async (data: {
+    notebookId: string;
+    studentIds: string[];
+    quantity?: number;
+    discountAmount?: number;
+    paidAmount?: number;
+    description?: string;
+    date?: string;
+}): Promise<IBatchNotebookSaleResponse> => {
+    const res = await apiClient.post('/payments/notebook/batch', data);
+    return (res as any).data;
+};
+
+export const recordBatchNotebookReservation = async (data: {
+    notebookId: string;
+    studentIds: string[];
+    quantity?: number;
+    paidAmount?: number;
+    description?: string;
+    date?: string;
+}): Promise<IBatchNotebookSaleResponse> => {
+    const res = await apiClient.post('/payments/notebook/reserve/batch', data);
+    return (res as any).data;
+};
+
 export const recordExpense = async (data: {
     category: TransactionCategory;
     amount: number;

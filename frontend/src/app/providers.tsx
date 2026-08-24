@@ -25,16 +25,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
             })
     );
 
-    const [persister, setPersister] = useState<any>(null);
-
-    useEffect(() => {
+    const [persister] = useState<any>(() => {
         if (typeof window !== 'undefined') {
-            const storagePersister = createSyncStoragePersister({
+            return createSyncStoragePersister({
                 storage: window.localStorage,
             });
-            setPersister(storagePersister);
         }
-    }, []);
+        return null;
+    });
 
     // Fallback to standard QueryClientProvider during SSR or before persister is ready
     if (!persister) {
