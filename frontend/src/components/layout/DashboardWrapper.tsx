@@ -13,37 +13,89 @@ import { useQuery } from '@tanstack/react-query';
 import { fetchMe } from '@/lib/api/auth';
 
 export function DashboardWrapper({ children }: { children: ReactNode }) {
-    const { user, token, login: loginStore } = useAuthStore();
+    const { user, token, login: loginStore, logout } = useAuthStore();
     const [isMounted, setIsMounted] = useState(false);
 
     useEffect(() => {
         setIsMounted(true);
     }, []);
 
-    const { data: meData } = useQuery({
-        queryKey: ['me', user?.id],
+    // Redirect to login if mounted and no token exists
+    useEffect(() => {
+        if (isMounted && !token) {
+            logout();
+            window.location.href = '/login';
+        }
+    }, [isMounted, token, logout]);
+
+    // Self-healing user query: fetches user profile whenever token is present
+    const { data: meData, error: meError, isLoading: isMeLoading } = useQuery({
+        queryKey: ['me', token],
         queryFn: fetchMe,
-        enabled: isMounted && !!token && !!user?.id,
+        enabled: isMounted && !!token,
         staleTime: 5 * 60 * 1000,
+        retry: 1,
     });
 
+    // Sync user data to Zustand store upon receiving fresh backend profile
     useEffect(() => {
-        if (meData && user && token) {
-            // Safety check: ensure we don't sync data from a stale cache of another user
-            const meId = meData.id || meData._id;
-            const userId = user.id || (user as any)._id;
-            
-            if (meId && userId && meId === userId) {
-                // Background sync to ensure planTier and other fields are up to date
-                if (meData.planTier !== user.planTier || meData.name !== user.name) {
-                    loginStore({ ...user, ...meData }, token);
-                }
+        if (meData && token) {
+            const mappedUser = {
+                id: meData.id || meData._id,
+                _id: meData._id || meData.id,
+                name: meData.name,
+                role: meData.role,
+                stages: meData.stages ?? [],
+                teacherId: meData.teacherId ?? null,
+                teacherName: meData.teacherName ?? null,
+                centerName: meData.centerName,
+                logoUrl: meData.logoUrl,
+                assistantsAccessEnabled: meData.assistantsAccessEnabled,
+                planTier: meData.planTier ?? null,
+                features: meData.features ?? { homeworkTracking: false },
+            };
+
+            const userId = user?.id || (user as any)?._id;
+            const mappedId = mappedUser.id;
+
+            // Update store if user is missing or profile fields changed
+            if (
+                !user ||
+                userId !== mappedId ||
+                user.planTier !== mappedUser.planTier ||
+                user.name !== mappedUser.name ||
+                user.role !== mappedUser.role ||
+                user.centerName !== mappedUser.centerName ||
+                user.logoUrl !== mappedUser.logoUrl
+            ) {
+                loginStore(mappedUser as any, token);
             }
         }
-    }, [meData, user, token, loginStore]);
+    }, [meData, token, user, loginStore]);
 
-    // SSR fallback to prevent hydration mismatch or during logout redirect
-    if (!isMounted || !user) {
+    // Handle token error: cleanly logout and redirect to login
+    useEffect(() => {
+        if (meError) {
+            logout();
+            if (typeof window !== 'undefined') {
+                window.location.href = '/login';
+            }
+        }
+    }, [meError, logout]);
+
+    // Safety timeout: if token exists but user cannot be loaded, redirect to login
+    useEffect(() => {
+        if (isMounted && token && !user && !isMeLoading && !meData) {
+            const timer = setTimeout(() => {
+                logout();
+                window.location.href = '/login';
+            }, 3000);
+            return () => clearTimeout(timer);
+        }
+    }, [isMounted, token, user, isMeLoading, meData, logout]);
+
+    // SSR fallback and spinner while session is being loaded or recovered
+    if (!isMounted || !user || !token) {
         return (
             <div className="flex h-screen w-full items-center justify-center bg-[#f9f9fb]">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
