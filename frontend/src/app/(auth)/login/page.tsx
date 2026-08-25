@@ -39,12 +39,19 @@ export default function LoginPage() {
             const res = await apiClient.post('/auth/login', data);
             
             // Expected backend response: { success: true, data: { token, user } }
-            if (res.data?.token) {
-                login(res.data.user, res.data.token);
+            const responseData = (res as any)?.data || res;
+            if (responseData?.token && responseData?.user) {
+                const user = {
+                    ...responseData.user,
+                    id: responseData.user.id || responseData.user._id,
+                };
+                login(user, responseData.token);
                 toast.success('تم تسجيل الدخول بنجاح', {
-                    description: `مرحباً بك، ${res.data.user.name || 'في منصة مُنظِّم'}`,
+                    description: `مرحباً بك، ${user.name || 'في منصة مُنظِّم'}`,
                 });
                 window.location.href = '/dashboard';
+            } else {
+                toast.error('فشل في استلام بيانات الحساب، يرجى المحاولة مرة أخرى');
             }
         } catch (error: { response?: { data?: { message?: string } } } | unknown) {
             const err = error as { response?: { data?: { message?: string } } };

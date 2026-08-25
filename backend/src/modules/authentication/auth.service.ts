@@ -81,6 +81,7 @@ export const login = async (data: ILoginRequest): Promise<IAuthResponse> => {
     }).sort({ endDate: -1 }).lean();
     
     userObject.planTier = activeSubscription?.planTier || null;
+    userObject.id = user._id.toString();
 
     trackEvent('user_login', {
         tenantId: (user.teacherId || user._id).toString(),

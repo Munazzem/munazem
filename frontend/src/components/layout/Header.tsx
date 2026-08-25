@@ -4,41 +4,14 @@ import { useState, useEffect } from 'react';
 import { Menu, Bell, Sparkles } from 'lucide-react';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { useUIStore } from '@/lib/store/ui.store';
-import { apiClient } from '@/lib/api/axios';
 
 export function Header() {
     const user  = useAuthStore((state) => state.user);
-    const login = useAuthStore((state) => state.login);
-    const token = useAuthStore((state) => state.token);
     const toggleSidebar = useUIStore((state) => state.toggleSidebar);
     const [isMounted, setIsMounted] = useState(false);
 
     useEffect(() => {
         setIsMounted(true);
-
-        // Refresh user profile on every dashboard load so stage/role changes are reflected
-        if (token && user) {
-            apiClient.get('/auth/me').then((res: any) => {
-                const fresh = res?.data ?? res;
-                if (fresh?._id || fresh?.id) {
-                    // Map DB user to the User type used in the store
-                    const mapped = {
-                        id:         fresh._id ?? fresh.id,
-                        name:       fresh.name,
-                        role:       fresh.role,
-                        stages:     fresh.stages ?? [],
-                        teacherId:  fresh.teacherId ?? null,
-                        centerName: fresh.centerName,
-                        logoUrl:    fresh.logoUrl,
-                        assistantsAccessEnabled: fresh.assistantsAccessEnabled,
-                        planTier:   fresh.planTier ?? null,
-                        features:   fresh.features ?? { homeworkTracking: false },
-                    };
-                    login(mapped, token);
-                }
-            }).catch(() => { /* silent fail */ });
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     if (!isMounted) {
