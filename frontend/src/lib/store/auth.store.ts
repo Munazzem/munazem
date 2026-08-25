@@ -15,17 +15,26 @@ export const useAuthStore = create<AuthState>()(
             isAuthenticated: typeof window !== 'undefined' ? !!Cookies.get('token') : false,
             
             login: (user, token) => {
+                const normalizedUser = user ? {
+                    ...user,
+                    id: user.id || (user as any)._id,
+                } : null;
                 Cookies.set('token', token, {
                     expires: 1,
                     path: '/',
                     secure: process.env.NODE_ENV === 'production',
-                    sameSite: 'strict',
+                    sameSite: 'lax',
                 });
-                set({ user, token, isAuthenticated: true });
+                set({ user: normalizedUser, token, isAuthenticated: true });
             },
             
             logout: () => {
                 Cookies.remove('token', { path: '/' });
+                if (typeof window !== 'undefined') {
+                    try {
+                        localStorage.removeItem('auth-storage');
+                    } catch {}
+                }
                 set({ user: null, token: null, isAuthenticated: false });
             },
         }),
