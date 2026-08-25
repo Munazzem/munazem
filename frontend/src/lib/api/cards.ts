@@ -134,3 +134,20 @@ export const getCardBatchPrintUrl = (batchId: string): string => {
     const token = Cookies.get('token') || '';
     return `${API_BASE_URL}/cards/batch/${batchId}/print?token=${token}`;
 };
+
+export interface GroupCardTokenItem {
+    cardToken:    string;
+    cardNumber:   string;
+    studentId:    string;
+    studentName:  string;
+    studentCode:  string;
+    studentPhone: string;
+    barcode:      string | null;
+    groupId:      string;
+}
+
+/** Get linked card tokens for group students (offline cache) */
+export const getGroupCardTokens = async (groupId: string): Promise<GroupCardTokenItem[]> => {
+    const res = await apiClient.get(`/cards/by-group/${groupId}`);
+    return (res as any).data;
+};

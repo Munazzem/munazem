@@ -284,6 +284,44 @@ export class CardsService {
         return result;
     }
 
+    // ─── Get linked cards for students in a specific group (for offline scanning cache) ─
+    static async getLinkedCardsByGroup(groupId: string, teacherId: string) {
+        if (!groupId || !mongoose.Types.ObjectId.isValid(groupId)) return [];
+
+        // 1. Fetch group's active students
+        const students = await StudentModel.find(
+            { groupId: new mongoose.Types.ObjectId(groupId), teacherId: new mongoose.Types.ObjectId(teacherId), isActive: true },
+            { _id: 1, barcode: 1, studentCode: 1, studentName: 1, studentPhone: 1, groupId: 1 }
+        ).lean();
+
+        if (students.length === 0) return [];
+
+        const studentIds = students.map(s => s._id);
+        const studentMap = new Map(students.map(s => [s._id.toString(), s]));
+
+        // 2. Fetch linked cards for these students
+        const cards = await CardModel.find({
+            teacherId: new mongoose.Types.ObjectId(teacherId),
+            studentId: { $in: studentIds },
+            status: 'LINKED',
+        }, { cardToken: 1, cardNumber: 1, studentId: 1 }).lean();
+
+        // 3. Merge results
+        return cards.map(c => {
+            const student = studentMap.get(c.studentId!.toString());
+            return {
+                cardToken:    c.cardToken,
+                cardNumber:   c.cardNumber,
+                studentId:    c.studentId!.toString(),
+                studentName:  student?.studentName ?? '',
+                studentCode:  student?.studentCode ?? '',
+                studentPhone: student?.studentPhone ?? '',
+                barcode:      student?.barcode ?? null,
+                groupId:      student?.groupId?.toString() ?? '',
+            };
+        });
+    }
+
     // ─── Private: Build student quick summary ──────────────────────────────────
     private static async _buildStudentSummary(studentId: string, teacherId?: string): Promise<StudentQuickSummary> {
         const filter: any = { _id: studentId };
