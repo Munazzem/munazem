@@ -107,6 +107,13 @@ const STATUS_LABELS: Record<string, string> = {
     CANCELLED: 'ملغية',
 };
 
+/** استخراج معرف المجموعة كنص صريح سواء كان ObjectId أو كائن populated */
+function extractGroupId(gid: any): string {
+    if (!gid) return '';
+    if (typeof gid === 'object') return gid._id?.toString?.() ?? gid._id ?? '';
+    return gid.toString();
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function SessionDetailPage() {
     const { sessionId } = useParams<{ sessionId: string }>();
@@ -270,7 +277,7 @@ export default function SessionDetailPage() {
 
             const student = groupStudentsData?.data?.find(s => s._id === studentId);
             const clientMutationId = `mut-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-            const isGuest = student ? (student.groupId !== groupId) : false;
+            const isGuest = student ? (extractGroupId(student.groupId) !== groupId) : false;
 
             const studentInfo = student
                 ? {
@@ -312,7 +319,7 @@ export default function SessionDetailPage() {
                 const studentName = context.student?.studentName || 'الطالب';
                 const studentCode = context.student?.studentCode || '...';
                 const studentPhone = context.student?.studentPhone || '';
-                const isGuest = context.student ? (context.student.groupId !== groupId) : false;
+                const isGuest = context.student ? (extractGroupId(context.student.groupId) !== groupId) : false;
 
                 // Enqueue to IndexedDB Outbox
                 await OutboxService.enqueueAttendance({
@@ -565,7 +572,7 @@ export default function SessionDetailPage() {
                     return;
                 }
 
-                const isGuest = localStudent.groupId !== groupId;
+                const isGuest = extractGroupId(localStudent.groupId) !== groupId;
 
                 // Optimistic UI update
                 queryClient.setQueryData(QK.attendance.bySession(sessionId), (prev: IAttendanceRecord[] = []) => [
