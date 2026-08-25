@@ -61,6 +61,7 @@ router.get('/me', authenticate, async (req: Request, res: Response, next: NextFu
         }).sort({ endDate: -1 }).lean();
         
         userObject.planTier = activeSubscription?.planTier || null;
+        userObject.id = userObject._id?.toString() || userId;
 
         SuccessResponse({ res, message: 'تم جلب بيانات الحساب', data: userObject });
     } catch (error) {

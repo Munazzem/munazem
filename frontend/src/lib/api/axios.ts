@@ -1,6 +1,7 @@
 import axios from 'axios';
 import Cookies from 'js-cookie';
 import { toast } from 'sonner';
+import { useAuthStore } from '@/lib/store/auth.store';
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -35,29 +36,29 @@ apiClient.interceptors.response.use(
     (error) => {
         // Prevent showing toast from server side requests if applicable
         if (typeof window !== 'undefined') {
+            const url: string = error.config?.url || '';
+            const isLoginRequest = url.includes('/auth/login');
+
             if (error.response?.status === 401) {
-                Cookies.remove('token');
-                // Dynamically import to avoid circular dependency
-                import('@/lib/store/auth.store').then(({ useAuthStore }) => {
+                // If it is not the login request itself (which handles its own error UI)
+                if (!isLoginRequest) {
                     useAuthStore.getState().logout();
-                });
-                
-                if (window.location.pathname !== '/login') {
-                    window.location.href = '/login';
+                    
+                    if (window.location.pathname !== '/login') {
+                        window.location.href = '/login';
+                    }
                 }
             } else if (error.response?.status === 403) {
                 // Silently suppress 403s from superAdmin-only routes (/admin/*, /subscriptions)
                 // to avoid confusing teachers/assistants from stale background queries.
-                const url: string = error.config?.url || '';
                 const isSuperAdminRoute = url.startsWith('/admin') || url === '/subscriptions';
                 if (!isSuperAdminRoute && !error.config?.headers?.['x-skip-error-toast']) {
                     const errorMsg = error.response?.data?.message || 'ليس لديك الصلاحيات الكافية للوصول إلى هذا المسار';
                     toast.error(errorMsg);
                 }
-            } else if (!error.config?.headers?.['x-skip-error-toast']) {
-                // Determine error message safely
+            } else if (!isLoginRequest && !error.config?.headers?.['x-skip-error-toast']) {
+                // Determine error message safely (skip showing global toast for login which handles it locally)
                 const errorMsg = error.response?.data?.message || 'تعذر الاتصال بالخادم، حاول مرة أخرى لاحقاً';
-                // Show toast for other errors
                 toast.error(errorMsg);
             }
         }
