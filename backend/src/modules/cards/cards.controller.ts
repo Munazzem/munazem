@@ -136,6 +136,20 @@ cardsRouter.get(
     }
 );
 
+// ─── GET /cards/by-group/:groupId — Get linked card tokens for group students (offline cache) ─
+cardsRouter.get(
+    '/by-group/:groupId',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = resolveTeacherId((req as any).user);
+            const groupId   = req.params['groupId'] as string;
+            const result = await CardsService.getLinkedCardsByGroup(groupId, teacherId);
+            return SuccessResponse({ res, data: result, message: 'تم جلب كروت المجموعة بنجاح' });
+        } catch (error) { next(error); }
+    }
+);
+
 // ─── GET /cards/batch/:batchId/print — Printable HTML for a card batch ────────
 cardsRouter.get(
     '/batch/:batchId/print',

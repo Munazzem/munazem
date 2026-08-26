@@ -260,22 +260,15 @@ paymentsRouter.get(
     }
 );
 
-// PATCH /payments/:id — Update transaction (Teacher only)
+// PATCH /payments/:id — Update transaction (Teacher + Assistant)
 paymentsRouter.patch(
     '/:id',
-    (req: Request, _res: Response, next: NextFunction) => {
-        try {
-            const user = (req as any).user;
-            if (!user || user.role !== UserRole.teacher) {
-                throw ForbiddenException({ message: 'عفواً، المدرس فقط هو من يملك صلاحية تعديل البيانات المالية' });
-            }
-            next();
-        } catch (error) { next(error); }
-    },
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
     validate(updateTransactionSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const teacherId = (req as any).user.userId;
+            const user = (req as any).user;
+            const teacherId = resolveTeacherId(user);
             const updated = await PaymentsService.updateTransaction(teacherId, req.params['id'] as string, req.body);
             return SuccessResponse({ res, data: updated, message: 'تم تعديل المعاملة بنجاح' });
         } catch (error) { next(error); }
@@ -305,23 +298,16 @@ paymentsRouter.post(
 );
 
 // ════════════════════════════════════════════════════════════════
-// DELETE /payments/batch — Void (delete) multiple transactions (Teacher only)
+// DELETE /payments/batch — Void (delete) multiple transactions (Teacher + Assistant)
 // ════════════════════════════════════════════════════════════════
 paymentsRouter.delete(
     '/batch',
-    (req: Request, _res: Response, next: NextFunction) => {
-        try {
-            const user = (req as any).user;
-            if (!user || user.role !== UserRole.teacher) {
-                throw ForbiddenException({ message: 'حذف المعاملات متاح للمدرس فقط' });
-            }
-            next();
-        } catch (error) { next(error); }
-    },
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
     validate(batchDeleteTransactionsSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const teacherId = (req as any).user.userId;
+            const user = (req as any).user;
+            const teacherId = resolveTeacherId(user);
             const result = await PaymentsService.deleteBatchTransactions(teacherId, req.body.transactionIds);
             return SuccessResponse({ res, data: result, message: `تم مسح ${result.deletedCount} معاملة مالية بنجاح` });
         } catch (error) { next(error); }
@@ -331,19 +317,12 @@ paymentsRouter.delete(
 // POST alias for batch deletion (for clients or proxies that strip DELETE body)
 paymentsRouter.post(
     '/batch-delete',
-    (req: Request, _res: Response, next: NextFunction) => {
-        try {
-            const user = (req as any).user;
-            if (!user || user.role !== UserRole.teacher) {
-                throw ForbiddenException({ message: 'حذف المعاملات متاح للمدرس فقط' });
-            }
-            next();
-        } catch (error) { next(error); }
-    },
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
     validate(batchDeleteTransactionsSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const teacherId = (req as any).user.userId;
+            const user = (req as any).user;
+            const teacherId = resolveTeacherId(user);
             const result = await PaymentsService.deleteBatchTransactions(teacherId, req.body.transactionIds);
             return SuccessResponse({ res, data: result, message: `تم مسح ${result.deletedCount} معاملة مالية بنجاح` });
         } catch (error) { next(error); }
@@ -351,23 +330,16 @@ paymentsRouter.post(
 );
 
 // ════════════════════════════════════════════════════════════════
-// DELETE /payments/:id — Void (delete) a single transaction (Teacher only)
-// يمسح المعاملة المالية ويعكس أثرها على السجلات. متاح للمدرس فقط.
+// DELETE /payments/:id — Void (delete) a single transaction (Teacher + Assistant)
+// يمسح المعاملة المالية ويعكس أثرها على السجلات.
 // ════════════════════════════════════════════════════════════════
 paymentsRouter.delete(
     '/:id',
-    (req: Request, _res: Response, next: NextFunction) => {
-        try {
-            const user = (req as any).user;
-            if (!user || user.role !== UserRole.teacher) {
-                throw ForbiddenException({ message: 'حذف المعاملات متاح للمدرس فقط' });
-            }
-            next();
-        } catch (error) { next(error); }
-    },
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const teacherId = (req as any).user.userId;
+            const user = (req as any).user;
+            const teacherId = resolveTeacherId(user);
             const result = await PaymentsService.deleteTransaction(teacherId, req.params['id'] as string);
             return SuccessResponse({ res, data: result, message: 'تم مسح المعاملة المالية بنجاح' });
         } catch (error) { next(error); }

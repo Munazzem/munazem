@@ -49,10 +49,12 @@ export function Header() {
                 {/* Logo next to toggle on mobile */}
                 <img src="/logo.png" alt="Monazem" className="h-7 w-7 rounded-lg border border-white/50 sm:hidden ml-1" />
                 
-                <h2 className="text-lg font-bold text-gray-800 hidden sm:flex items-center gap-2">
-                    مرحباً بعودتك، {user?.name?.split(' ')[0] || 'أستاذ'}
-                    <Sparkles className="h-5 w-5 text-yellow-500" />
-                </h2>
+                {user?.role === 'assistant' && (
+                    <h2 className="text-lg font-bold text-gray-800 hidden sm:flex items-center gap-2">
+                        مرحباً بعودتك، {user?.name?.split(' ')[0] || 'مساعد'}
+                        <Sparkles className="h-5 w-5 text-yellow-500" />
+                    </h2>
+                )}
             </div>
 
             <div className="flex items-center gap-4">

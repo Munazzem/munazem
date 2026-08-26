@@ -279,7 +279,6 @@ export function AddTransactionModal({
             subscriptionMutation.mutate({
                 studentId: selectedStudentId,
                 discountAmount: discountAmount ? parseFloat(discountAmount) : undefined,
-                paidAmount: paidAmount ? parseFloat(paidAmount) : undefined,
                 description: description || undefined,
                 date,
                 customSessionsQuota: isCustomQuota && customSessionsQuota ? parseInt(customSessionsQuota) : undefined,
@@ -539,55 +538,57 @@ export function AddTransactionModal({
                         </div>
                     )}
 
-                    {/* Discount — add mode only, subscription & notebook */}
-                    {(mode === 'subscription' || mode === 'notebook') && !isEditMode && (
-                        <div className="grid grid-cols-2 gap-2">
-                            <div>
-                                <label className="text-sm font-medium text-gray-700 mb-1.5 block">
-                                    خصم (ج) <span className="text-gray-400 font-normal">— اختياري</span>
-                                </label>
-                                <div className="flex gap-2">
-                                    {centerDiscounts.length > 0 && mode === 'subscription' && (
-                                        <Select 
-                                            onValueChange={(val) => {
-                                                const center = centerDiscounts.find(c => c.centerName === val);
-                                                if (center) setDiscountAmount(center.discountAmount.toString());
-                                            }}
-                                        >
-                                            <SelectTrigger className="w-[80px] sm:w-[100px] px-2">
-                                                <SelectValue placeholder="سنتر" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {centerDiscounts.map(c => (
-                                                    <SelectItem key={c.centerName} value={c.centerName}>
-                                                        {c.centerName} ({c.discountAmount})
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    )}
-                                    <Input
-                                        type="number"
-                                        min="0"
-                                        placeholder="0"
-                                        value={discountAmount}
-                                        onChange={(e) => setDiscountAmount(e.target.value)}
-                                        className="flex-1"
-                                    />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="text-sm font-medium text-gray-700 mb-1.5 block">
-                                    دفع جزء من المصاريف (ج) <span className="text-gray-400 font-normal">— اختياري</span>
-                                </label>
+                    {/* Discount — add mode only, subscription */}
+                    {mode === 'subscription' && !isEditMode && (
+                        <div>
+                            <label className="text-sm font-medium text-gray-700 mb-1.5 block">
+                                خصم (ج) <span className="text-gray-400 font-normal">— اختياري</span>
+                            </label>
+                            <div className="flex gap-2">
+                                {centerDiscounts.length > 0 && (
+                                    <Select 
+                                        onValueChange={(val) => {
+                                            const center = centerDiscounts.find(c => c.centerName === val);
+                                            if (center) setDiscountAmount(center.discountAmount.toString());
+                                        }}
+                                    >
+                                        <SelectTrigger className="w-[110px] px-2">
+                                            <SelectValue placeholder="خصم سنتر" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {centerDiscounts.map(c => (
+                                                <SelectItem key={c.centerName} value={c.centerName}>
+                                                    {c.centerName} ({c.discountAmount} ج)
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                )}
                                 <Input
                                     type="number"
                                     min="0"
-                                    placeholder="المبلغ كاملاً"
-                                    value={paidAmount}
-                                    onChange={(e) => setPaidAmount(e.target.value)}
+                                    placeholder="0"
+                                    value={discountAmount}
+                                    onChange={(e) => setDiscountAmount(e.target.value)}
+                                    className="flex-1"
                                 />
                             </div>
+                        </div>
+                    )}
+
+                    {/* Discount — notebook */}
+                    {mode === 'notebook' && !isEditMode && (
+                        <div>
+                            <label className="text-sm font-medium text-gray-700 mb-1.5 block">
+                                خصم (ج) <span className="text-gray-400 font-normal">— اختياري</span>
+                            </label>
+                            <Input
+                                type="number"
+                                min="0"
+                                placeholder="0"
+                                value={discountAmount}
+                                onChange={(e) => setDiscountAmount(e.target.value)}
+                            />
                         </div>
                     )}
 

@@ -4,6 +4,35 @@ import Cookies from 'js-cookie';
 import type { AuthState } from '@/types/auth.types';
 
 /**
+ * Safe LocalStorage wrapper to prevent DOMExceptions / QuotaExceededError in restricted
+ * mobile browsers (e.g. Safari Private Mode, Android WebViews, disabled storage).
+ */
+const safeLocalStorage = {
+    getItem: (key: string): string | null => {
+        try {
+            if (typeof window !== 'undefined') {
+                return localStorage.getItem(key);
+            }
+        } catch {}
+        return null;
+    },
+    setItem: (key: string, value: string): void => {
+        try {
+            if (typeof window !== 'undefined') {
+                localStorage.setItem(key, value);
+            }
+        } catch {}
+    },
+    removeItem: (key: string): void => {
+        try {
+            if (typeof window !== 'undefined') {
+                localStorage.removeItem(key);
+            }
+        } catch {}
+    },
+};
+
+/**
  * Zustand Store for Global Authentication State.
  * Utilizes persist middleware to retain user data across page reloads.
  */
@@ -19,28 +48,34 @@ export const useAuthStore = create<AuthState>()(
                     ...user,
                     id: user.id || (user as any)._id,
                 } : null;
-                Cookies.set('token', token, {
-                    expires: 1,
-                    path: '/',
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: 'lax',
-                });
+                
+                try {
+                    Cookies.set('token', token, {
+                        expires: 1,
+                        path: '/',
+                        secure: process.env.NODE_ENV === 'production',
+                        sameSite: 'lax',
+                    });
+                } catch (cookieErr) {
+                    console.error('Failed to set auth cookie:', cookieErr);
+                }
+
                 set({ user: normalizedUser, token, isAuthenticated: true });
             },
             
             logout: () => {
-                Cookies.remove('token', { path: '/' });
+                try {
+                    Cookies.remove('token', { path: '/' });
+                } catch {}
                 if (typeof window !== 'undefined') {
-                    try {
-                        localStorage.removeItem('auth-storage');
-                    } catch {}
+                    safeLocalStorage.removeItem('auth-storage');
                 }
                 set({ user: null, token: null, isAuthenticated: false });
             },
         }),
         {
             name: 'auth-storage', // name of item in the storage (must be unique)
-            storage: createJSONStorage(() => localStorage), // (optional) by default the 'localStorage' is used
+            storage: createJSONStorage(() => safeLocalStorage),
             // We only need to persist the user object, as the token is managed by js-cookie for API requests
             partialize: (state) => ({ user: state.user }),
         }
