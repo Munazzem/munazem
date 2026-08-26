@@ -762,14 +762,32 @@ export default function SessionDetailPage() {
     }
 
     const presentCount = attendanceRecords.filter((r) => r.status === 'PRESENT' || r.status === 'LATE').length;
-    const excusedCount = attendanceRecords.filter((r) => r.status === 'EXCUSED').length;
+    const excusedCount = session.status === 'COMPLETED'
+        ? (snapshot?.presentStudents?.filter((s) => s.status === 'EXCUSED').length ?? attendanceRecords.filter((r) => r.status === 'EXCUSED').length)
+        : attendanceRecords.filter((r) => r.status === 'EXCUSED').length;
     
-    // Total absentees = Students in group who didn't show up + Students explicitly marked as ABSENT
-    // During active session, it's safer to calculate as: Total Group - (Present + Excused)
+    // Enrolled students present (excluding guests) for accurate dynamic absent calculation during active session
+    const groupStudentIds = new Set((groupStudentsData?.data ?? []).map((s) => s._id.toString()));
+    const enrolledPresentCount = attendanceRecords.filter((r) => {
+        if (r.status !== 'PRESENT' && r.status !== 'LATE') return false;
+        if ((r as any).isGuest === true) return false;
+        const sid = (r.studentId as any)?._id?.toString?.() ?? (r.studentId as any)?.toString?.() ?? '';
+        return groupStudentIds.has(sid);
+    }).length;
+
     const totalGroupStudents = groupStudentsData?.data?.length ?? 0;
+
+    // Total count display: prioritize snapshot.totalCount when completed, otherwise enrolled group count
+    const totalDisplay = session.status === 'COMPLETED'
+        ? (snapshot?.totalCount ?? (totalGroupStudents > 0 ? totalGroupStudents : attendanceRecords.length))
+        : (totalGroupStudents > 0 ? totalGroupStudents : attendanceRecords.length);
+
+    // Absent count:
+    // When completed: prioritize snapshot.absentCount, fallback to attendanceRecords.filter(ABSENT)
+    // When active: dynamically decrements as enrolled cards are scanned: totalGroupStudents - enrolledPresentCount - excusedCount
     const absentCount = session.status === 'COMPLETED' 
-        ? attendanceRecords.filter((r) => r.status === 'ABSENT').length
-        : Math.max(0, totalGroupStudents - presentCount - excusedCount);
+        ? (snapshot?.absentCount ?? attendanceRecords.filter((r) => r.status === 'ABSENT').length)
+        : Math.max(0, (totalGroupStudents > 0 ? totalGroupStudents : attendanceRecords.length) - enrolledPresentCount - excusedCount);
 
     return (
         <div className="min-h-screen bg-gray-50/30 p-3 sm:p-4 lg:p-6" dir="rtl">
@@ -811,7 +829,7 @@ export default function SessionDetailPage() {
                                     if (pendingCount > 0) {
                                         toast.error(`يوجد ${pendingCount} سجلات حضور معلقة محلياً. يرجى المزامنة أولاً قبل إنهاء الحصة لتجنب احتساب الطلاب كغائبين.`, {
                                             duration: 6000,
-                                        });
+                                         });
                                         return;
                                     }
                                     setShowCompleteConfirm(true);
@@ -887,7 +905,10 @@ export default function SessionDetailPage() {
             )}
 
             {/* Stats Bar */}
-            <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-4 sm:mb-5">
+            <div className={cn(
+                'grid gap-2 sm:gap-3 mb-4 sm:mb-5',
+                excusedCount > 0 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'
+            )}>
                 <div className="bg-white rounded-xl border border-gray-100 p-2 sm:p-3 shadow-sm text-center">
                     <p className="text-lg sm:text-xl font-bold text-green-700">{presentCount}</p>
                     <p className="text-[11px] sm:text-xs text-gray-500 mt-0.5">حاضر</p>
@@ -896,8 +917,14 @@ export default function SessionDetailPage() {
                     <p className="text-lg sm:text-xl font-bold text-red-600">{absentCount}</p>
                     <p className="text-[11px] sm:text-xs text-gray-500 mt-0.5">غائب</p>
                 </div>
+                {excusedCount > 0 && (
+                    <div className="bg-white rounded-xl border border-gray-100 p-2 sm:p-3 shadow-sm text-center">
+                        <p className="text-lg sm:text-xl font-bold text-blue-600">{excusedCount}</p>
+                        <p className="text-[11px] sm:text-xs text-gray-500 mt-0.5">بعذر</p>
+                    </div>
+                )}
                 <div className="bg-white rounded-xl border border-gray-100 p-2 sm:p-3 shadow-sm text-center">
-                    <p className="text-lg sm:text-xl font-bold text-blue-700">{attendanceRecords.length}</p>
+                    <p className="text-lg sm:text-xl font-bold text-blue-700">{totalDisplay}</p>
                     <p className="text-[11px] sm:text-xs text-gray-500 mt-0.5">إجمالي</p>
                 </div>
             </div>
@@ -1182,6 +1209,9 @@ export default function SessionDetailPage() {
                         <div className="mt-3 bg-gray-50 rounded-lg p-3 text-xs space-y-1">
                             <p>الحاضرون: <span className="font-semibold text-green-700">{presentCount}</span></p>
                             <p>الغائبون: <span className="font-semibold text-red-600">{absentCount}</span></p>
+                            {excusedCount > 0 && (
+                                <p>المستأذنون: <span className="font-semibold text-blue-600">{excusedCount}</span></p>
+                            )}
                         </div>
                     </div>
                     <DialogFooter className="gap-2">
