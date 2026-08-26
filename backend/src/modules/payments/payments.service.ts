@@ -299,14 +299,20 @@ export class PaymentsService {
         }
 
         const discountAmount = data.discountAmount ?? 0;
-        // Subscriptions are always fully paid (full cycle charge minus any discount)
-        const paidAmount = Math.max(0, enrollment.cycleCharge - discountAmount);
+        const paidAmount = data.paidAmount !== undefined
+            ? data.paidAmount
+            : Math.max(0, enrollment.remainingAmount - discountAmount);
 
         if (paidAmount < 0) throw BadRequestException({ message: 'المدفوع لا يمكن أن يكون سالباً' });
+        if (paidAmount + discountAmount > enrollment.remainingAmount) {
+            throw BadRequestException({ message: 'إجمالي الدفع والخصم لا يمكن أن يتجاوز المطلوب سداده المتبقي للدورة.' });
+        }
 
-        const newTotalPaid = enrollment.cycleCharge;
-        const newRemainingAmount = 0;
-        const newStatus = CycleEnrollmentStatus.PAID;
+        const newTotalPaid = enrollment.totalPaid + paidAmount + discountAmount;
+        const newRemainingAmount = enrollment.cycleCharge - newTotalPaid;
+        let newStatus = CycleEnrollmentStatus.PARTIALLY_PAID;
+        if (newRemainingAmount === 0) newStatus = CycleEnrollmentStatus.PAID;
+        if (newRemainingAmount === enrollment.cycleCharge) newStatus = CycleEnrollmentStatus.UNPAID;
 
         // ── All mutations wrapped in a transaction (all-or-nothing) ──
         const transaction = await withTransaction(async (session) => {
@@ -336,12 +342,29 @@ export class PaymentsService {
                 originalAmount: enrollment.cycleCharge,
                 discountAmount,
                 paidAmount,
-                remainingAmount: 0,
+                remainingAmount: newRemainingAmount,
                 date:           txDate,
                 cycleNumber,
                 ...(data.idempotencyKey ? { idempotencyKey: data.idempotencyKey } : {}),
                 ...(data.description ? { description: data.description } : {}),
             }], { session });
+
+            const studentUpdatePayload: any = {};
+            let debtChange = 0;
+
+            const wasAlreadyPartiallyPaid = !enrollmentCreatedNow && enrollment.totalPaid > 0;
+            if (wasAlreadyPartiallyPaid) {
+                debtChange = - (paidAmount + discountAmount);
+            } else {
+                if (newRemainingAmount > 0) {
+                    debtChange = newRemainingAmount;
+                }
+            }
+
+            if (debtChange !== 0) {
+                studentUpdatePayload.$inc = { totalDebt: debtChange };
+                await StudentModel.findByIdAndUpdate(student._id, studentUpdatePayload, { session });
+            }
 
             await Promise.all([
                 updateDailyLedger(teacherId, txDate, {
