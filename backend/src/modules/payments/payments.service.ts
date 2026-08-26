@@ -299,18 +299,14 @@ export class PaymentsService {
         }
 
         const discountAmount = data.discountAmount ?? 0;
-        const paidAmount = data.paidAmount ?? (enrollment.remainingAmount - discountAmount);
+        // Subscriptions are always fully paid (full cycle charge minus any discount)
+        const paidAmount = Math.max(0, enrollment.cycleCharge - discountAmount);
 
         if (paidAmount < 0) throw BadRequestException({ message: 'المدفوع لا يمكن أن يكون سالباً' });
-        if (paidAmount + discountAmount > enrollment.remainingAmount) {
-            throw BadRequestException({ message: 'إجمالي الدفع والخصم لا يمكن أن يتجاوز المطلوب سداده المتبقي للدورة.' });
-        }
 
-        const newTotalPaid = enrollment.totalPaid + paidAmount + discountAmount;
-        const newRemainingAmount = enrollment.cycleCharge - newTotalPaid;
-        let newStatus = CycleEnrollmentStatus.PARTIALLY_PAID;
-        if (newRemainingAmount === 0) newStatus = CycleEnrollmentStatus.PAID;
-        if (newRemainingAmount === enrollment.cycleCharge) newStatus = CycleEnrollmentStatus.UNPAID;
+        const newTotalPaid = enrollment.cycleCharge;
+        const newRemainingAmount = 0;
+        const newStatus = CycleEnrollmentStatus.PAID;
 
         // ── All mutations wrapped in a transaction (all-or-nothing) ──
         const transaction = await withTransaction(async (session) => {
@@ -340,7 +336,7 @@ export class PaymentsService {
                 originalAmount: enrollment.cycleCharge,
                 discountAmount,
                 paidAmount,
-                remainingAmount: newRemainingAmount,
+                remainingAmount: 0,
                 date:           txDate,
                 cycleNumber,
                 ...(data.idempotencyKey ? { idempotencyKey: data.idempotencyKey } : {}),
@@ -360,30 +356,6 @@ export class PaymentsService {
                 }, true, session),
                 updateMonthlyLedger(teacherId, txDate, paidAmount, true, session),
             ]);
-
-            // Update student debt:
-            // - If the payment is partial (leaving a remaining unpaid amount), record that remaining amount as debt.
-            // - If the student is paying off a previous remaining balance, reduce their debt by the paid amount.
-            // - If full payment is made initially, no debt is added.
-            const studentUpdatePayload: any = {};
-            let debtChange = 0;
-
-            const wasAlreadyPartiallyPaid = !enrollmentCreatedNow && enrollment.totalPaid > 0;
-            if (wasAlreadyPartiallyPaid) {
-                // Paying off part or all of previously recorded remaining debt
-                debtChange = - (paidAmount + discountAmount);
-            } else if (newRemainingAmount > 0) {
-                // First payment is partial -> add only the remaining balance to debt
-                debtChange = newRemainingAmount;
-            }
-
-            if (debtChange !== 0) {
-                studentUpdatePayload.$inc = { totalDebt: debtChange };
-            }
-
-            if (Object.keys(studentUpdatePayload).length > 0) {
-                await StudentModel.findByIdAndUpdate(student._id, studentUpdatePayload, { session });
-            }
 
             return tx;
         });
