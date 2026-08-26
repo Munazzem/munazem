@@ -371,7 +371,11 @@ export class StudentService {
         const orConditions = groups.map(g => ({
             groupId: g._id,
             cycleNumber: g.cycle?.currentCycleNumber || 1,
-            status: CycleEnrollmentStatus.PAID
+            $or: [
+                { status: CycleEnrollmentStatus.PAID },
+                { totalPaid: { $gt: 0 } },
+                { remainingAmount: { $lte: 0 } }
+            ]
         }));
 
         if (orConditions.length > 0) {
@@ -382,6 +386,22 @@ export class StudentService {
 
             for (const e of enrollments) {
                 paidIds.add(e.studentId.toString());
+            }
+        }
+
+        // Also check if any subscription transaction was recorded for the current cycle
+        const txConditions = groups.map(g => ({
+            cycleNumber: g.cycle?.currentCycleNumber || 1
+        }));
+        if (txConditions.length > 0) {
+            const txs = await TransactionModel.find({
+                teacherId,
+                category: TransactionCategory.SUBSCRIPTION,
+                $or: txConditions
+            }, { studentId: 1 }).lean();
+
+            for (const t of txs) {
+                if (t.studentId) paidIds.add(t.studentId.toString());
             }
         }
 
@@ -435,16 +455,13 @@ export class StudentService {
         if (queryFilters.isActive !== undefined) filter.isActive = queryFilters.isActive === 'true';
 
         // Student Affairs Filters
-        if (queryFilters.hasDebt === 'true') {
-            filter.totalDebt = { $gt: 0 };
+        if (queryFilters.hasDebt === 'true' || queryFilters.hasPastCycleDebt === 'true') {
+            const pastDebtIds = await StudentService.getStudentsWithPastCycleDebtIds(teacherId);
+            filter._id = { $in: pastDebtIds.map((id: string) => new mongoose.Types.ObjectId(id)) };
         }
         if (queryFilters.hasNoActiveSubscription === 'true') {
             const paidIds = await StudentService.getPaidStudentIds(teacherId);
             filter._id = { $nin: paidIds.map((id: string) => new mongoose.Types.ObjectId(id)) };
-        }
-        if (queryFilters.hasPastCycleDebt === 'true') {
-            const pastDebtIds = await StudentService.getStudentsWithPastCycleDebtIds(teacherId);
-            filter._id = { $in: pastDebtIds.map((id: string) => new mongoose.Types.ObjectId(id)) };
         }
         if (queryFilters.isDroppedOut === 'true') {
             filter.consecutiveAbsences = { $gte: 3 };
@@ -483,17 +500,34 @@ export class StudentService {
             StudentModel.countDocuments(filter)
         ]);
 
-        // Determine active subscription via cycle rules (dynamically)
+        // Determine active subscription and past debt status dynamically
         const studentIds = students.map((s: any) => s._id.toString());
         let paidIdsList: string[] = [];
+        let pastDebtIdsList: string[] = [];
         if (studentIds.length > 0) {
-            paidIdsList = await StudentService.getPaidStudentIds(teacherId);
+            [paidIdsList, pastDebtIdsList] = await Promise.all([
+                StudentService.getPaidStudentIds(teacherId),
+                StudentService.getStudentsWithPastCycleDebtIds(teacherId),
+            ]);
         }
         const paidSet = new Set(paidIdsList);
+        const pastDebtSet = new Set(pastDebtIdsList);
+
+        // Asynchronously clean up stale debts in database for students with no real past cycle debt
+        const staleDebtStudentIds = students
+            .filter((s: any) => (s.totalDebt || 0) > 0 && !pastDebtSet.has(s._id.toString()))
+            .map((s: any) => s._id);
+        if (staleDebtStudentIds.length > 0) {
+            StudentModel.updateMany(
+                { _id: { $in: staleDebtStudentIds } },
+                { $set: { totalDebt: 0 } }
+            ).exec().catch(() => {});
+        }
 
         const data = students.map((s: any) => ({
             ...s,
             hasActiveSubscription: paidSet.has(s._id.toString()),
+            totalDebt: pastDebtSet.has(s._id.toString()) ? (s.totalDebt || 0) : 0,
         }));
 
         return {
@@ -513,7 +547,7 @@ export class StudentService {
                         .lean();
         if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
 
-        // Auto-reconcile totalDebt with true past cycle debts
+        // Auto-reconcile totalDebt with true past cycle debts (strictly for cycles the student was enrolled in)
         const group = await GroupModel.findById(student.groupId, { 'cycle.currentCycleNumber': 1 }).lean();
         const currentCycleNumber = group?.cycle?.currentCycleNumber || 1;
         const pastEnrollments = await CycleEnrollmentModel.find({
@@ -521,7 +555,7 @@ export class StudentService {
             cycleNumber: { $lt: currentCycleNumber },
             status: { $in: [CycleEnrollmentStatus.UNPAID, CycleEnrollmentStatus.PARTIALLY_PAID] }
         }).lean();
-        const truePastDebt = pastEnrollments.reduce((sum, e) => sum + e.remainingAmount, 0);
+        const truePastDebt = pastEnrollments.reduce((sum, e) => sum + (e.remainingAmount || 0), 0);
 
         if (student.totalDebt !== truePastDebt) {
             await StudentModel.updateOne({ _id: student._id }, { $set: { totalDebt: truePastDebt } });

@@ -40,6 +40,7 @@ export const fetchStudents = async (params: {
     }
     if (params.search) query.append('search', params.search);
     if (params.hasDebt) query.append('hasDebt', 'true');
+    if (params.hasPastCycleDebt) query.append('hasPastCycleDebt', 'true');
     if (params.hasNoActiveSubscription) query.append('hasNoActiveSubscription', 'true');
     if (params.isDroppedOut) query.append('isDroppedOut', 'true');
 

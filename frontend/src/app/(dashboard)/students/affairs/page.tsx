@@ -3,16 +3,14 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchStudents } from '@/lib/api/students';
-import { recordSubscription, payDebt } from '@/lib/api/payments';
+import { recordSubscription } from '@/lib/api/payments';
 import { QK } from '@/lib/query-keys';
 import { toast } from 'sonner';
-import { Loader2, AlertTriangle, Wallet, BookOpen, UserX, Receipt, CreditCard, ArrowRight, Clock } from 'lucide-react';
+import { Loader2, AlertTriangle, BookOpen, UserX, Receipt, CreditCard, ArrowRight, Clock } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Badge } from '@/components/ui/badge';
 import type { StudentWithGroup } from '@/types/student.types';
@@ -24,11 +22,6 @@ export default function StudentAffairsPage() {
     const queryClient = useQueryClient();
 
     // ─── Queries (Fetching max 5000 to group locally) ───
-    const { data: debtsData, isLoading: debtsLoading } = useQuery({
-        queryKey: QK.students.list({ affairs: 'debts' }),
-        queryFn: () => fetchStudents({ limit: 5000, hasDebt: true }),
-    });
-
     const { data: lateData, isLoading: lateLoading } = useQuery({
         queryKey: QK.students.list({ affairs: 'late_subs' }),
         queryFn: () => fetchStudents({ limit: 5000, hasNoActiveSubscription: true }),
@@ -44,7 +37,6 @@ export default function StudentAffairsPage() {
         queryFn: () => fetchStudents({ limit: 5000, isDroppedOut: true }),
     });
 
-    const debtsStudents = Array.isArray(debtsData?.data) ? debtsData.data : [];
     const lateStudents = Array.isArray(lateData?.data) ? lateData.data : [];
     const pastCycleDebtsStudents = Array.isArray(pastCycleDebtsData?.data) ? pastCycleDebtsData.data : [];
     const dropoutsStudents = Array.isArray(dropoutsData?.data) ? dropoutsData.data : [];
@@ -65,44 +57,12 @@ export default function StudentAffairsPage() {
         return grouped;
     };
 
-    const debtsGrouped = useMemo(() => groupStudents(debtsStudents), [debtsStudents]);
     const lateGrouped = useMemo(() => groupStudents(lateStudents), [lateStudents]);
     const pastCycleDebtsGrouped = useMemo(() => groupStudents(pastCycleDebtsStudents), [pastCycleDebtsStudents]);
     const dropoutsGrouped = useMemo(() => groupStudents(dropoutsStudents), [dropoutsStudents]);
 
     // ─── Quick Actions State & Mutations ───
     const [selectedStudent, setSelectedStudent] = useState<StudentWithGroup | null>(null);
-
-    // Pay Debt Dialog
-    const [payDebtOpen, setPayDebtOpen] = useState(false);
-    const [payDebtAmount, setPayDebtAmount] = useState('');
-
-    const payDebtMutation = useMutation({
-        mutationFn: payDebt,
-        onSuccess: () => {
-            toast.success('تم سداد باقي المصاريف بنجاح');
-            setPayDebtOpen(false);
-            setPayDebtAmount('');
-            setSelectedStudent(null);
-            queryClient.invalidateQueries({ queryKey: QK.students.all });
-            queryClient.invalidateQueries({ queryKey: QK.payments.dailyLedgerBase });
-        },
-    });
-
-    const handlePayDebt = (student: StudentWithGroup) => {
-        setSelectedStudent(student);
-        setPayDebtAmount(String(student.totalDebt || 0));
-        setPayDebtOpen(true);
-    };
-
-    const submitPayDebt = () => {
-        if (!selectedStudent || !payDebtAmount) return;
-        payDebtMutation.mutate({
-            studentId: selectedStudent._id,
-            amount: parseFloat(payDebtAmount),
-            date: new Date().toISOString(),
-        });
-    };
 
     // Subscribe Dialog
     const [confirmSubscribeOpen, setConfirmSubscribeOpen] = useState(false);
@@ -118,6 +78,7 @@ export default function StudentAffairsPage() {
             setSelectedStudent(null);
             queryClient.invalidateQueries({ queryKey: QK.students.all });
             queryClient.invalidateQueries({ queryKey: QK.payments.dailyLedgerBase });
+            queryClient.invalidateQueries({ queryKey: QK.dashboard.summary });
         },
     });
 
@@ -191,42 +152,39 @@ export default function StudentAffairsPage() {
                         <AlertTriangle className="h-6 w-6 text-primary" />
                         شئون الطلاب
                     </h1>
-                    <p className="text-gray-500 text-sm mt-1">متابعة المديونيات، الاشتراكات المتأخرة، والطلاب المنقطعين.</p>
+                    <p className="text-gray-500 text-sm mt-1">متابعة الاشتراكات المتأخرة، مديونيات الدورات السابقة، والطلاب المنقطعين.</p>
                 </div>
             </div>
 
-            <Tabs defaultValue="debts" className="w-full">
+            <Tabs defaultValue="late_subs" className="w-full">
                 <TabsList className="mb-6 bg-white border border-gray-100 shadow-sm p-1 rounded-xl flex flex-wrap h-auto gap-1">
-                    <TabsTrigger value="debts" className="flex-1 min-w-[120px] rounded-lg data-[state=active]:bg-primary/10 data-[state=active]:text-primary font-bold py-2.5">
-                        <Wallet className="h-4 w-4 ml-2" /> المديونيات
+                    <TabsTrigger value="late_subs" className="flex-1 min-w-[140px] rounded-lg data-[state=active]:bg-primary/10 data-[state=active]:text-primary font-bold py-2.5">
+                        <BookOpen className="h-4 w-4 ml-2" /> اشتراكات متأخرة ({lateStudents.length})
                     </TabsTrigger>
-                    <TabsTrigger value="past_cycle_debts" className="flex-1 min-w-[120px] rounded-lg data-[state=active]:bg-amber-50 data-[state=active]:text-amber-800 font-bold py-2.5">
-                        <Clock className="h-4 w-4 ml-2 text-amber-600" /> مديونيات دورات سابقة
+                    <TabsTrigger value="past_cycle_debts" className="flex-1 min-w-[140px] rounded-lg data-[state=active]:bg-amber-50 data-[state=active]:text-amber-800 font-bold py-2.5">
+                        <Clock className="h-4 w-4 ml-2 text-amber-600" /> مديونيات دورات سابقة ({pastCycleDebtsStudents.length})
                     </TabsTrigger>
-                    <TabsTrigger value="late_subs" className="flex-1 min-w-[120px] rounded-lg data-[state=active]:bg-primary/10 data-[state=active]:text-primary font-bold py-2.5">
-                        <BookOpen className="h-4 w-4 ml-2" /> اشتراكات متأخرة
-                    </TabsTrigger>
-                    <TabsTrigger value="dropouts" className="flex-1 min-w-[120px] rounded-lg data-[state=active]:bg-red-50 data-[state=active]:text-red-700 font-bold py-2.5">
-                        <UserX className="h-4 w-4 ml-2" /> المنقطعين
+                    <TabsTrigger value="dropouts" className="flex-1 min-w-[140px] rounded-lg data-[state=active]:bg-red-50 data-[state=active]:text-red-700 font-bold py-2.5">
+                        <UserX className="h-4 w-4 ml-2" /> المنقطعين ({dropoutsStudents.length})
                     </TabsTrigger>
                 </TabsList>
 
-                {/* 1. Debts Tab */}
-                <TabsContent value="debts" className="mt-0 focus-visible:outline-none">
-                    {debtsLoading ? (
+                {/* 1. Late Subscriptions Tab */}
+                <TabsContent value="late_subs" className="mt-0 focus-visible:outline-none">
+                    {lateLoading ? (
                         <div className="flex justify-center p-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
                     ) : (
                         renderGroupedList(
-                            debtsGrouped,
-                            'لا يوجد طلاب لديهم مديونيات حالياً.',
+                            lateGrouped,
+                            'لا يوجد طلاب متأخرين عن سداد الدورة الحالية.',
                             (student) => (
-                                <Button size="sm" variant="outline" className="h-8 text-xs font-bold text-red-600 border-red-200 hover:bg-red-50 w-full" onClick={() => handlePayDebt(student)}>
-                                    <Receipt className="h-3.5 w-3.5 ml-1.5" /> سداد المديونية
+                                <Button size="sm" className="h-8 text-xs font-bold bg-[#0f4c81] hover:bg-[#0f4c81]/90 w-full" onClick={() => handleSubscribe(student)}>
+                                    <CreditCard className="h-3.5 w-3.5 ml-1.5" /> تسجيل اشتراك الشهر
                                 </Button>
                             ),
-                            (student) => (
-                                <Badge className="bg-red-100 text-red-700 hover:bg-red-100 border-0 shadow-sm px-2 text-[10px]">
-                                    عليه {student.totalDebt} ج
+                            () => (
+                                <Badge className="bg-red-50 text-red-600 border border-red-100 shadow-xs px-2 text-[10px]">
+                                    لم يسدد الدورة الحالية
                                 </Badge>
                             )
                         )
@@ -248,25 +206,8 @@ export default function StudentAffairsPage() {
                             ),
                             (student) => (
                                 <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 border-0 shadow-sm px-2 text-[10px]">
-                                    دورات سابقة
+                                    مستحق: {student.totalDebt} ج
                                 </Badge>
-                            )
-                        )
-                    )}
-                </TabsContent>
-
-                {/* 2. Late Subscriptions Tab */}
-                <TabsContent value="late_subs" className="mt-0 focus-visible:outline-none">
-                    {lateLoading ? (
-                        <div className="flex justify-center p-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
-                    ) : (
-                        renderGroupedList(
-                            lateGrouped,
-                            'لا يوجد طلاب متأخرين عن السداد حالياً.',
-                            (student) => (
-                                <Button size="sm" className="h-8 text-xs font-bold bg-[#0f4c81] hover:bg-[#0f4c81]/90 w-full" onClick={() => handleSubscribe(student)}>
-                                    <CreditCard className="h-3.5 w-3.5 ml-1.5" /> تسجيل اشتراك الشهر
-                                </Button>
                             )
                         )
                     )}
@@ -294,48 +235,6 @@ export default function StudentAffairsPage() {
                     )}
                 </TabsContent>
             </Tabs>
-
-            {/* Quick Action Dialogs */}
-            
-            {/* Pay Debt Dialog */}
-            <Dialog open={payDebtOpen} onOpenChange={(v) => { setPayDebtOpen(v); if(!v) setPayDebtAmount(''); }}>
-                <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-[400px]" dir="rtl">
-                    <DialogHeader>
-                        <DialogTitle>سداد باقي المصاريف</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4 pt-4">
-                        <div className="bg-red-50 text-red-700 p-3 rounded-xl text-sm font-semibold flex items-center justify-between">
-                            <span>المديونية الخاصة بـ {selectedStudent?.studentName}:</span>
-                            <span>{selectedStudent?.totalDebt} ج</span>
-                        </div>
-                        <div>
-                            <label className="text-sm font-medium text-gray-700 mb-1.5 block">المبلغ المراد سداده (ج)</label>
-                            <Input
-                                type="number"
-                                min="1"
-                                max={selectedStudent?.totalDebt}
-                                placeholder="المبلغ..."
-                                value={payDebtAmount}
-                                onChange={(e) => setPayDebtAmount(e.target.value)}
-                                autoFocus
-                            />
-                        </div>
-                        <div className="flex justify-end gap-2 pt-2">
-                            <Button type="button" variant="outline" onClick={() => setPayDebtOpen(false)} disabled={payDebtMutation.isPending}>
-                                إلغاء
-                            </Button>
-                            <Button 
-                                type="button" 
-                                disabled={!payDebtAmount || payDebtMutation.isPending || parseFloat(payDebtAmount) <= 0 || parseFloat(payDebtAmount) > (selectedStudent?.totalDebt || 0)}
-                                onClick={submitPayDebt}
-                                className="bg-primary hover:bg-primary/90"
-                            >
-                                {payDebtMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'تأكيد السداد'}
-                            </Button>
-                        </div>
-                    </div>
-                </DialogContent>
-            </Dialog>
 
             {/* Subscribe Dialog */}
             <ConfirmDialog
