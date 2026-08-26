@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchSessionById, updateSessionStatus, deleteSession } from '@/lib/api/sessions';
@@ -17,7 +17,7 @@ import {
 } from '@/lib/api/attendance';
 import { printHtmlContent } from '@/lib/utils/print';
 import { fetchStudents, updateStudent } from '@/lib/api/students';
-import { resolveCard } from '@/lib/api/cards';
+import { resolveCard, getGroupCardTokens } from '@/lib/api/cards';
 import { useAuthStore } from '@/lib/store/auth.store';
 import dynamic from 'next/dynamic';
 const QRScannerPanel = dynamic(
@@ -107,6 +107,13 @@ const STATUS_LABELS: Record<string, string> = {
     CANCELLED: 'ملغية',
 };
 
+/** استخراج معرف المجموعة كنص صريح سواء كان ObjectId أو كائن populated */
+function extractGroupId(gid: any): string {
+    if (!gid) return '';
+    if (typeof gid === 'object') return gid._id?.toString?.() ?? gid._id ?? '';
+    return gid.toString();
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function SessionDetailPage() {
     const { sessionId } = useParams<{ sessionId: string }>();
@@ -178,6 +185,24 @@ export default function SessionDetailPage() {
     const subscriptionMap = new Map<string, boolean>(
         (groupStudentsData?.data ?? []).map((s) => [s._id, s.hasActiveSubscription ?? true])
     );
+
+    // Fetch linked smart cards for group students (offline scanning cache)
+    const { data: groupCardTokens = [] } = useQuery({
+        queryKey: ['groupCardTokens', groupId],
+        queryFn: () => getGroupCardTokens(groupId),
+        enabled: !!groupId,
+        staleTime: 5 * 60 * 1000,
+    });
+
+    const cardTokenMap = useMemo(() => {
+        const map = new Map<string, (typeof groupCardTokens)[0]>();
+        for (const entry of groupCardTokens) {
+            if (entry.cardToken) {
+                map.set(entry.cardToken, entry);
+            }
+        }
+        return map;
+    }, [groupCardTokens]);
 
     const pendingCount = useOfflineSyncStore((s) => s.pendingCount);
     const isSyncing = useOfflineSyncStore((s) => s.isSyncing);
@@ -270,7 +295,7 @@ export default function SessionDetailPage() {
 
             const student = groupStudentsData?.data?.find(s => s._id === studentId);
             const clientMutationId = `mut-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-            const isGuest = student ? (student.groupId !== groupId) : false;
+            const isGuest = student ? (extractGroupId(student.groupId) !== groupId) : false;
 
             const studentInfo = student
                 ? {
@@ -312,7 +337,7 @@ export default function SessionDetailPage() {
                 const studentName = context.student?.studentName || 'الطالب';
                 const studentCode = context.student?.studentCode || '...';
                 const studentPhone = context.student?.studentPhone || '';
-                const isGuest = context.student ? (context.student.groupId !== groupId) : false;
+                const isGuest = context.student ? (extractGroupId(context.student.groupId) !== groupId) : false;
 
                 // Enqueue to IndexedDB Outbox
                 await OutboxService.enqueueAttendance({
@@ -555,17 +580,23 @@ export default function SessionDetailPage() {
                 s => s.barcode === scanInput || s.studentCode === scanInput
             );
 
+            // Also check Smart Card tokens cache for group students
+            const uuidRegex = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+            const uuidMatch = scanInput.match(uuidRegex);
+            const tokenKey = uuidMatch ? uuidMatch[0] : scanInput.trim();
+            const cardEntry = !localStudent ? (cardTokenMap.get(tokenKey) || cardTokenMap.get(scanInput.trim())) : null;
+
             const clientMutationId = `mut-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
             const scannedAt = new Date().toISOString();
 
             if (localStudent) {
-                // ── Cache HIT: student is a known group member ─────────────────
+                // ── Cache HIT: student is a known group member (by barcode / studentCode) ──
                 if (alreadyRecordedIds.has(localStudent._id)) {
                     toast.warning('تم تسجيل هذا الطالب مسبقاً');
                     return;
                 }
 
-                const isGuest = localStudent.groupId !== groupId;
+                const isGuest = extractGroupId(localStudent.groupId) !== groupId;
 
                 // Optimistic UI update
                 queryClient.setQueryData(QK.attendance.bySession(sessionId), (prev: IAttendanceRecord[] = []) => [
@@ -605,6 +636,56 @@ export default function SessionDetailPage() {
 
                 await refreshPendingCount(sessionId);
                 toast.info(`تم حفظ حضور ${localStudent.studentName} محلياً (⏳ سيتم رفعه عند الاتصال)`, {
+                    duration: 4000,
+                });
+
+            } else if (cardEntry) {
+                // ── Card Token HIT: student is a known group member (by Smart Card QR) ──
+                if (alreadyRecordedIds.has(cardEntry.studentId)) {
+                    toast.warning('تم تسجيل هذا الطالب مسبقاً');
+                    return;
+                }
+
+                const isGuest = extractGroupId(cardEntry.groupId) !== groupId;
+
+                // Optimistic UI update
+                queryClient.setQueryData(QK.attendance.bySession(sessionId), (prev: IAttendanceRecord[] = []) => [
+                    ...prev,
+                    {
+                        _id: `temp-${clientMutationId}`,
+                        studentId: {
+                            _id: cardEntry.studentId,
+                            studentName: cardEntry.studentName,
+                            studentCode: cardEntry.studentCode,
+                            studentPhone: cardEntry.studentPhone,
+                        },
+                        sessionId,
+                        status: 'PRESENT',
+                        isGuest,
+                        homeworkDone: true,
+                        scannedAt,
+                        _syncStatus: 'QUEUED',
+                    } as IAttendanceRecord,
+                ]);
+
+                await OutboxService.enqueueAttendance({
+                    clientMutationId,
+                    sessionId,
+                    studentId:    cardEntry.studentId,   // ObjectId — fast sync path
+                    studentName:  cardEntry.studentName,
+                    studentCode:  cardEntry.studentCode,
+                    studentPhone: cardEntry.studentPhone ?? '',
+                    status:       'PRESENT',
+                    isGuest,
+                    homeworkDone: true,
+                    scannedAt,
+                    createdAt:    Date.now(),
+                    syncStatus:   'QUEUED',
+                    retryCount:   0,
+                });
+
+                await refreshPendingCount(sessionId);
+                toast.info(`تم حفظ حضور ${cardEntry.studentName} محلياً (⏳ سيتم رفعه عند الاتصال)`, {
                     duration: 4000,
                 });
 
@@ -650,7 +731,7 @@ export default function SessionDetailPage() {
                 });
             }
         }
-    }, [alreadyRecordedIds, groupId, groupStudentsData, queryClient, recordMutation, refreshPendingCount, sessionId]);
+    }, [alreadyRecordedIds, cardTokenMap, groupId, groupStudentsData, queryClient, recordMutation, refreshPendingCount, sessionId]);
 
     const groupName =
         typeof session?.groupId === 'object'
