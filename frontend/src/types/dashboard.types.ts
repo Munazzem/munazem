@@ -5,8 +5,18 @@
 
 export interface DashboardData {
     totalStudents: number;
+    activeStudents?: number;
     totalGroups: number;
+    todaySessionsCount?: number;
     sessionsThisMonth: number;
+    notebooks?: {
+        totalQuantity: number;
+        totalRevenue: number;
+    };
+    subscriptions?: {
+        totalCount: number;
+        totalRevenue: number;
+    };
     financial?: {
         totalIncome: number;
         totalExpenses: number;
@@ -16,7 +26,7 @@ export interface DashboardData {
         incomeTrend: { month: string; income: number }[];
         studentsPerGroup: { groupName: string; studentCount: number }[];
         expensesBreakdown: { name: string; value: number }[];
-        attendanceTrend?: { date: string; rate: number }[];
+        attendanceTrend?: { date: string; present?: number; absent?: number; rate?: number }[];
     };
     recentActivities?: {
         type: string;

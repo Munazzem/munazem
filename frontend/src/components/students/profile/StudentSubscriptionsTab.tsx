@@ -259,7 +259,7 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
 
                                     <div className="text-left flex flex-col items-end gap-1">
                                         <Badge className={cn("text-[10px] font-bold border-0", isPaid ? "bg-green-100 text-green-700" : isPartial ? "bg-orange-100 text-orange-700" : "bg-red-100 text-red-700")}>
-                                            {isPaid ? "خالصة ✓" : isPartial ? `متبقي ${cycle.remainingAmount} ج` : "غير مسدد"}
+                                            {isPaid ? "خالصة ✓" : cycle.isCurrentCycle ? "لم يسدد بعد" : isPartial ? `متبقي ${cycle.remainingAmount} ج` : "غير مسدد"}
                                         </Badge>
                                         {!isPaid && canWrite && (
                                             <button

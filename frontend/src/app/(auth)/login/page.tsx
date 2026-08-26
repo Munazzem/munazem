@@ -20,6 +20,8 @@ import {
     FormMessage 
 } from '@/components/ui/form';
 
+import Cookies from 'js-cookie';
+
 export default function LoginPage() {
     const form = useForm({
         defaultValues: {
@@ -34,6 +36,7 @@ export default function LoginPage() {
     const [showPassword, setShowPassword] = useState(false);
 
     const onSubmit = async (data: { phone: string; password: string }) => {
+        if (isLoading) return;
         setIsLoading(true);
         try {
             const res = await apiClient.post('/auth/login', data);
@@ -45,17 +48,29 @@ export default function LoginPage() {
                     ...responseData.user,
                     id: responseData.user.id || responseData.user._id,
                 };
-                login(user, responseData.token);
+                
+                try {
+                    login(user, responseData.token);
+                } catch (storeErr) {
+                    console.warn('Store update warning:', storeErr);
+                    try {
+                        Cookies.set('token', responseData.token, { expires: 1, path: '/', sameSite: 'lax' });
+                    } catch {}
+                }
+
                 toast.success('تم تسجيل الدخول بنجاح', {
                     description: `مرحباً بك، ${user.name || 'في منصة مُنظِّم'}`,
                 });
-                window.location.href = '/dashboard';
+
+                window.location.replace('/dashboard');
+                return;
             } else {
                 toast.error('فشل في استلام بيانات الحساب، يرجى المحاولة مرة أخرى');
             }
         } catch (error: { response?: { data?: { message?: string } } } | unknown) {
             const err = error as { response?: { data?: { message?: string } } };
-            toast.error(err.response?.data?.message || 'فشل تسجيل الدخول. يرجى المحاولة مرة أخرى.');
+            const serverMsg = err.response?.data?.message;
+            toast.error(serverMsg || 'تعذر الاتصال بالخادم، يرجى التأكد من البيانات أو الاتصال بالإنترنت');
         } finally {
             setIsLoading(false);
         }

@@ -281,8 +281,8 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                 )}
             </div>
 
-            {/* Edit Modal — teacher only, controlled */}
-            {isTeacher && editTxId && editInitialData && (
+            {/* Edit Modal — teacher & assistant, controlled */}
+            {canWrite && editTxId && editInitialData && (
                 <AddTransactionModal
                     transactionId={editTxId}
                     initialData={editInitialData}
@@ -296,7 +296,7 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
             )}
 
             {/* Batch Selection Action Bar */}
-            {isTeacher && selectedTxIds.size > 0 && (
+            {canWrite && selectedTxIds.size > 0 && (
                 <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
                     <div className="flex items-center gap-2">
                         <span className="h-2.5 w-2.5 rounded-full bg-red-600 animate-pulse" />
@@ -380,7 +380,7 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                         {/* Mobile Cards */}
                         <div className="sm:hidden divide-y divide-gray-50">
                             {/* Mobile Select All Header */}
-                            {isTeacher && selectableTxs.length > 0 && (
+                            {canWrite && selectableTxs.length > 0 && (
                                 <div className="px-5 py-3 bg-gray-50/70 border-b border-gray-100 flex items-center justify-between">
                                     <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-gray-700 select-none">
                                         <input
@@ -405,7 +405,7 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                                     <div key={i} className={cn("px-5 py-4 transition-colors", isSelected ? "bg-red-50/50" : "hover:bg-gray-50/30")}>
                                         <div className="flex items-center justify-between mb-2">
                                             <div className="flex items-center gap-2">
-                                                {isTeacher && txId && (
+                                                {canWrite && txId && (
                                                     <input
                                                         type="checkbox"
                                                         checked={isSelected}
@@ -423,7 +423,7 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                                                 </span>
                                             </div>
                                             <div className="flex items-center gap-2">
-                                                {isTeacher && (
+                                                {canWrite && (
                                                     <div className="flex items-center gap-1">
                                                         <button
                                                             type="button"
@@ -472,7 +472,7 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                             <table className="w-full">
                                 <thead>
                                     <tr className="border-b border-gray-50 bg-gray-50/30">
-                                        {isTeacher && (
+                                        {canWrite && (
                                             <th className="px-4 py-4 text-center w-10">
                                                 <input
                                                     type="checkbox"
@@ -488,7 +488,7 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                                         <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">الطالب</th>
                                         <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">المبلغ</th>
                                         <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">الوقت</th>
-                                        {isTeacher && (
+                                        {canWrite && (
                                             <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">إجراء</th>
                                         )}
                                     </tr>
@@ -499,7 +499,7 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                                         const isSelected = txId && selectedTxIds.has(txId);
                                         return (
                                             <tr key={i} className={cn("group transition-colors", isSelected ? "bg-red-50/40" : "hover:bg-gray-50/50")}>
-                                                {isTeacher && (
+                                                {canWrite && (
                                                     <td className="px-4 py-4 text-center">
                                                         {txId ? (
                                                             <input
@@ -540,7 +540,7 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-4 text-gray-400 text-xs font-medium">{formatTime(tx.time)}</td>
-                                                {isTeacher && (
+                                                {canWrite && (
                                                     <td className="px-6 py-4">
                                                         <div className="flex items-center gap-1">
                                                             <button
