@@ -6,6 +6,7 @@ import { ExamStatus, ExamSource } from '../../common/enums/enum.service.js';
 import { NotFoundException, BadRequestException, ConflictException } from '../../common/utils/response/error.responce.js';
 import { enqueueWhatsApp } from '../../infrastructure/queues/whatsapp.queue.js';
 import type { IQuestion }  from '../../types/exam.types.js';
+import { ParentPushService } from '../parent/parent-push.service.js';
 
 // ── Grade letter calculator ───────────────────────────────────────
 function computeGrade(percentage: number): string {
@@ -147,6 +148,26 @@ export class ExamsService {
                 date:        exam.date,
             });
 
+            // ── Parent Push Notification (non-blocking) ─────────────────────────
+            UserModel.findById(teacherId, { name: 1, subject: 1 }).lean().then((teacherDoc) => {
+                const rawName   = (teacherDoc as any)?.name ?? '';
+                const subject   = (teacherDoc as any)?.subject;
+                const teacherName = subject ? `${rawName} (${subject})` : rawName;
+                ParentPushService.notifyExamResult({
+                    studentId:   student._id.toString(),
+                    studentName: student.studentName,
+                    teacherId,
+                    teacherName,
+                    examTitle:   exam.title,
+                    examId:      exam._id.toString(),
+                    score:       data.score,
+                    totalMarks:  exam.totalMarks,
+                    percentage,
+                    passed,
+                    grade,
+                    examDate:    exam.date,
+                });
+            }).catch(() => {/* ignore */});
 
             return newResult;
         } catch (err: any) {
@@ -197,7 +218,28 @@ export class ExamsService {
 
         const result = await ExamResultModel.insertMany(docs, { ordered: false });
 
-
+        // ── Parent Push Notifications for batch (non-blocking) ───────────────────
+        UserModel.findById(teacherId, { name: 1, subject: 1 }).lean().then((teacherDoc) => {
+            const rawName    = (teacherDoc as any)?.name ?? '';
+            const subject    = (teacherDoc as any)?.subject;
+            const teacherName = subject ? `${rawName} (${subject})` : rawName;
+            for (const doc of docs as any[]) {
+                ParentPushService.notifyExamResult({
+                    studentId:   doc.studentId.toString(),
+                    studentName: doc.studentName,
+                    teacherId,
+                    teacherName,
+                    examTitle:   exam.title,
+                    examId:      exam._id.toString(),
+                    score:       doc.score,
+                    totalMarks:  doc.totalMarks,
+                    percentage:  doc.percentage,
+                    passed:      doc.passed,
+                    grade:       doc.grade,
+                    examDate:    exam.date,
+                });
+            }
+        }).catch(() => {/* ignore */});
         return { total: data.results.length, inserted: result.length };
     }
 

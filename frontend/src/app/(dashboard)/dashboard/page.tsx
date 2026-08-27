@@ -155,14 +155,12 @@ export default function DashboardPage() {
 
     const currentHour = new Date().getHours();
     const isMorning = currentHour >= 4 && currentHour < 14;
-
-    const greetingHeadline = isTeacher
-        ? (isMorning ? `صباح الفل يا مستر ${firstName} ☀️` : `مساء الخير يا مستر ${firstName} 🌙`)
-        : `مرحباً، ${firstName} 👋`;
-
-    const greetingSubtitle = isTeacher
-        ? (isMorning ? 'كل شغلك جاهز ومُنظَّم !' : 'كل تقاريرك وحساباتك جاهزة ومتسجلة!')
-        : 'لوحة متابعة وإدارة الحصص والطلاب';
+    const greetingHeadline = isMorning
+        ? `صباح الفل يا مستر ${firstName} ☀️`
+        : `مساء الخير يا مستر ${firstName} 🌙`;
+    const greetingSubtitle = isMorning
+        ? 'كل شغلك جاهز ومُنظَّم !'
+        : 'كل تقاريرك وحساباتك جاهزة ومتسجلة!';
 
     return (
         <div className="space-y-5 sm:space-y-6 animate-in fade-in duration-500 pb-12" dir="rtl">
@@ -216,7 +214,7 @@ export default function DashboardPage() {
                             className="h-9 px-3.5 text-xs font-bold gap-1.5 rounded-xl border-purple-200 text-purple-700 hover:bg-purple-50 shadow-2xs"
                         >
                             <BookOpen className="h-3.5 w-3.5 text-purple-600" />
-                            حجز مذكرة
+                            بيع مذكرة
                         </Button>
 
                         <Link href="/students">

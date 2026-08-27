@@ -1,7 +1,7 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { I18nManager, View, ActivityIndicator, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, NavigationContainerRef, LinkingOptions } from '@react-navigation/native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   useFonts,
@@ -10,10 +10,38 @@ import {
   Cairo_700Bold,
   Cairo_800ExtraBold,
 } from '@expo-google-fonts/cairo';
+import * as Linking from 'expo-linking';
 import { RootNavigator } from './src/navigation/RootNavigator';
+import { NotificationService } from './src/services/notification.service';
 import { colors } from './src/theme/colors';
+import { RootStackParamList } from './src/navigation/types';
 
-// Create a persistent QueryClient for the app lifecycle
+// ── App scheme deep link prefix ────────────────────────────────────────────────
+const prefix = Linking.createURL('/');
+
+// ── Deep link config: maps monazem://child/:id?tab=xxx to ChildDetails screen ──
+const linking: LinkingOptions<RootStackParamList> = {
+  prefixes: [prefix, 'monazem://'],
+  config: {
+    screens: {
+      MainTabs: {
+        screens: {
+          HomeTab: 'home',
+          NotificationsTab: 'notifications',
+          AccountTab: 'account',
+        },
+      },
+      ChildDetails: {
+        path: 'child/:studentId',
+        parse: {
+          studentId: (id: string) => id,
+        },
+      },
+    },
+  },
+};
+
+// ── QueryClient: persisted for the full app lifecycle ─────────────────────────
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -25,6 +53,8 @@ const queryClient = new QueryClient({
 });
 
 export default function App() {
+  const navigationRef = useRef<NavigationContainerRef<RootStackParamList>>(null);
+
   // Enforce Arabic RTL direction
   useEffect(() => {
     if (!I18nManager.isRTL) {
@@ -35,6 +65,49 @@ export default function App() {
         console.warn('[RTL] Could not enforce RTL immediately:', e);
       }
     }
+  }, []);
+
+  // ── Push Notification Listeners ──────────────────────────────────────────────
+  useEffect(() => {
+    // 1. Handle notification tap — navigate to deep link destination
+    const tapSubscription = NotificationService.addNotificationResponseListener(
+      (deepLinkUrl?: string) => {
+        if (!deepLinkUrl || !navigationRef.current) return;
+
+        // Parse monazem://child/:studentId?tab=attendance
+        const parsed = Linking.parse(deepLinkUrl);
+        const path = parsed.path ?? '';
+
+        if (path.startsWith('child/')) {
+          const studentId = path.replace('child/', '').split('?')[0];
+          const tab = (parsed.queryParams?.tab as 'attendance' | 'exams' | 'financial') || 'attendance';
+
+          // Navigate to ChildDetails with proper tab
+          navigationRef.current.navigate('ChildDetails', {
+            studentId,
+            studentName: '', // will be loaded from API inside the screen
+            initialTab: tab,
+          });
+        } else if (path === 'notifications') {
+          // Navigate to notifications tab
+          navigationRef.current.navigate('MainTabs', {
+            screen: 'NotificationsTab',
+          } as any);
+        }
+      }
+    );
+
+    // 2. Foreground notification — just play sound/alert (already handled by setNotificationHandler)
+    const foregroundSubscription = NotificationService.addForegroundNotificationListener(
+      (_notificationContent: Record<string, any>) => {
+        // Could show an in-app banner here in a future enhancement
+      }
+    );
+
+    return () => {
+      tapSubscription.remove();
+      foregroundSubscription.remove();
+    };
   }, []);
 
   // Load Cairo Google Fonts
@@ -55,7 +128,7 @@ export default function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <NavigationContainer>
+      <NavigationContainer ref={navigationRef} linking={linking}>
         <StatusBar style="dark" backgroundColor={colors.background} />
         <RootNavigator />
       </NavigationContainer>

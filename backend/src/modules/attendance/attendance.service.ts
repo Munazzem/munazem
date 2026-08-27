@@ -16,6 +16,7 @@ import { cache, CacheKeys } from '../../infrastructure/cache/cache.service.js';
 import mongoose from 'mongoose';
 import { startOfDayEgyptMs } from '../../common/utils/date.util.js';
 import { CardsService } from '../cards/cards.service.js';
+import { ParentPushService } from '../parent/parent-push.service.js';
 
 // ─── Date helper ─────────────────────────────────────────────────────────────
 // Centralized in common/utils/date.util.ts — returns midnight Egypt time as ms
@@ -89,7 +90,21 @@ export class AttendanceService {
                 ...(data.notes ? { notes: data.notes } : {}),
             });
 
-            // ── Step 3: Retroactive Compensation ──────────────────────────────
+            // ── Step 3: Parent Push Notification ─────────────────────────────────
+            // Non-blocking: fetch teacher name and fire-and-forget push notification
+            UserModel.findById(teacherId, { name: 1 }).lean().then((teacherDoc) => {
+                const teacherName = (teacherDoc as any)?.name ?? '';
+                ParentPushService.notifyAttendance({
+                    studentId:   student._id.toString(),
+                    studentName: student.studentName,
+                    teacherId,
+                    teacherName,
+                    sessionDate: session.date,
+                    status:      data.status as 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED',
+                });
+            }).catch(() => {/* ignore */});
+
+            // ── Step 4: Retroactive Compensation ──────────────────────────────
             // If student was marked ABSENT in their own group earlier this week,
             // convert the previous ABSENT record to EXCUSED (compensated) and decrement consecutive absences.
             if (isGuest && (data.status === AttendanceStatus.PRESENT || data.status === AttendanceStatus.LATE)) {
@@ -285,6 +300,28 @@ export class AttendanceService {
                 }
             }
         }
+
+        // ── Parent Push Notifications for batch (non-blocking) ───────────────────
+        // Fetch teacher name once, then notify per student
+        UserModel.findById(teacherId, { name: 1 }).lean().then((teacherDoc) => {
+            const teacherName = (teacherDoc as any)?.name ?? '';
+            // Fetch student names for all records in the batch
+            const studentIds = data.records.map(r => r.studentId);
+            StudentModel.find({ _id: { $in: studentIds }, teacherId }, { _id: 1, studentName: 1 }).lean().then((students) => {
+                const nameMap = new Map(students.map(s => [s._id.toString(), s.studentName]));
+                for (const r of data.records) {
+                    const studentName = nameMap.get(r.studentId) ?? 'الطالب';
+                    ParentPushService.notifyAttendance({
+                        studentId:   r.studentId,
+                        studentName,
+                        teacherId,
+                        teacherName,
+                        sessionDate: session.date,
+                        status:      r.status as 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED',
+                    });
+                }
+            }).catch(() => {/* ignore */});
+        }).catch(() => {/* ignore */});
 
         return { inserted: totalInserted, total: docs.length };
     }
