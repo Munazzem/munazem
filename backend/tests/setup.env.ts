@@ -37,11 +37,15 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
-    // أغلق الاتصال بعد انتهاء الـ test file كله
+    // 1. Give any pending microtasks/promises time to resolve before shutting down DB
+    await new Promise((resolve) => setImmediate(resolve));
+
+    // 2. Close Mongoose connection
     if (mongoose.connection.readyState !== 0) {
         await mongoose.connection.close();
     }
 
+    // 3. Disconnect Cache
     try {
         const { cache } = await import('../src/infrastructure/cache/cache.service.js');
         await cache.disconnect();
@@ -49,7 +53,6 @@ afterAll(async () => {
         // Silently ignore if not initialized
     }
 
-    // drain: نخلي أي pending console.log callbacks تتنفذ قبل ما
-    // vitest worker يغلق الـ RPC channel، عشان نتجنب EnvironmentTeardownError
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // 4. Drain event loop to ensure any pending logging RPCs finish before worker teardown
+    await new Promise((resolve) => setTimeout(resolve, 50));
 });

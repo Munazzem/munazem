@@ -17,6 +17,11 @@ export function trackEvent(
         meta?: Record<string, unknown>;
     }
 ) {
+    // In test environment, skip background fire-and-forget activity logging to avoid unawaited floating DB operations
+    if (process.env['NODE_ENV'] === 'test' || process.env['MOOD'] === 'test') {
+        return;
+    }
+
     // 1. Structured log to stdout (for Render/grep)
     logger.info(event, { ...data });
 

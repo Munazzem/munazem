@@ -8,6 +8,7 @@ interface SnapshotSummaryProps {
 }
 
 export function SnapshotSummary({ snapshot }: SnapshotSummaryProps) {
+    const excusedStudents = snapshot.presentStudents?.filter((s) => s.status === 'EXCUSED') || [];
     const rate = snapshot.totalCount > 0
         ? Math.round((snapshot.presentCount / snapshot.totalCount) * 100)
         : 0;
@@ -33,14 +34,30 @@ export function SnapshotSummary({ snapshot }: SnapshotSummaryProps) {
                 </div>
             </div>
 
-            {snapshot.absentStudents.length > 0 && (
-                <div>
+            {snapshot.absentStudents?.length > 0 && (
+                <div className="mb-3">
                     <p className="text-xs font-medium text-gray-500 mb-2">الغائبون:</p>
                     <div className="flex flex-wrap gap-1.5">
                         {snapshot.absentStudents.map((s) => (
                             <span
                                 key={s.studentId}
                                 className="text-xs bg-red-50 text-red-600 px-2 py-0.5 rounded-full border border-red-100"
+                            >
+                                {s.studentName}
+                            </span>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {excusedStudents.length > 0 && (
+                <div className="pt-2 border-t border-gray-100">
+                    <p className="text-xs font-medium text-blue-600 mb-2">مستأذنون (بعذر):</p>
+                    <div className="flex flex-wrap gap-1.5">
+                        {excusedStudents.map((s) => (
+                            <span
+                                key={s.studentId}
+                                className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full border border-blue-100"
                             >
                                 {s.studentName}
                             </span>
