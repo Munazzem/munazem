@@ -36,7 +36,7 @@ const transactionSchema = new Schema<ITransactionDocument>({
         type: Date, required: true, index: true,  // transaction date
     },
     cycleNumber: { type: Number },
-    idempotencyKey: { type: String, sparse: true },
+    idempotencyKey: { type: String },
 }, {
     timestamps: true,
 });
