@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { ParentUser, DiscoveredStudent } from '../types/auth.types';
 import { StorageService } from '../services/storage.service';
+import { NotificationService } from '../services/notification.service';
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -90,6 +91,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   logout: async () => {
     await StorageService.clearSession();
+    await NotificationService.clearBadge();
     set({
       isAuthenticated: false,
       parent: null,

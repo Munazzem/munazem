@@ -11,6 +11,9 @@ import { useAuthStore } from '../store/auth.store';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 
+import { NotificationService } from '../services/notification.service';
+import { AuthApi } from '../api/auth.api';
+
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export const RootNavigator: React.FC = () => {
@@ -19,6 +22,16 @@ export const RootNavigator: React.FC = () => {
   useEffect(() => {
     hydrate();
   }, []);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      NotificationService.getPushToken().then((token) => {
+        if (token) {
+          AuthApi.registerDeviceToken(token).catch(() => {});
+        }
+      }).catch(() => {});
+    }
+  }, [isAuthenticated]);
 
   if (isLoading) {
     return (
