@@ -60,9 +60,12 @@ export const ManualBarcodeScreen: React.FC<Props> = ({ route, navigation }) => {
         });
       }
     } catch (err: any) {
-      const msg =
-        err?.response?.data?.message ||
-        'لم نتمكن من مطابقة الرمز. يرجى التأكد من الرمز والمحاولة مجدداً.';
+      let msg = 'لم نتمكن من مطابقة الرمز. يرجى التأكد من الرمز والمحاولة مجدداً.';
+      if (err?.response?.data?.message) {
+        msg = err.response.data.message;
+      } else if (!err?.response) {
+        msg = 'تعذر الاتصال بالخادم. يرجى التأكد من اتصالك بالإنترنت والمحاولة مجدداً.';
+      }
       Alert.alert('تعذر التحقق', msg);
     } finally {
       setLoading(false);
