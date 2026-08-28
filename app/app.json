@@ -28,9 +28,19 @@
       },
       "package": "app.monazem.parent",
       "permissions": [
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
         "CAMERA",
         "RECEIVE_BOOT_COMPLETED",
-        "VIBRATE"
+        "VIBRATE",
+        "POST_NOTIFICATIONS",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.VIBRATE",
+        "android.permission.RECEIVE_BOOT_COMPLETED"
       ]
     },
     "plugins": [
@@ -51,8 +61,9 @@
     ],
     "extra": {
       "eas": {
-        "projectId": ""
+        "projectId": "9aa64a08-2aad-4799-946c-4cb7a9bf4798"
       }
-    }
+    },
+    "owner": "aymans1"
   }
 }

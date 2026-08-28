@@ -53,9 +53,12 @@ export const PhoneEntryScreen: React.FC<Props> = ({ navigation }) => {
         discoveredStudents: response.discoveredStudents || [],
       });
     } catch (err: any) {
-      const message =
-        err?.response?.data?.message ||
-        'لم نتمكن من العثور على طالب مسجل بهذا الرقم. تأكد من صحة الرقم أو جرب مسح كارت الطالب.';
+      let message = 'لم نتمكن من العثور على طالب مسجل بهذا الرقم. تأكد من صحة الرقم أو جرب مسح كارت الطالب.';
+      if (err?.response?.data?.message) {
+        message = err.response.data.message;
+      } else if (!err?.response) {
+        message = 'تعذر الاتصال بالخادم. يرجى التأكد من اتصالك بالإنترنت والمحاولة مجدداً.';
+      }
       Alert.alert('تعذر تسجيل الدخول', message, [
         {
           text: 'مسح كارت الطالب',

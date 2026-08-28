@@ -1,28 +1,37 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
+const PRODUCTION_API_URL = 'https://munazzem.tech';
+
 function resolveApiBaseUrl(): string {
-  // 1. Explicit env var if set
-  if (process.env.EXPO_PUBLIC_API_URL) {
-    return process.env.EXPO_PUBLIC_API_URL;
+  // 1. If explicit URL is provided in env and it's not a localhost/lan IP
+  const explicitUrl = process.env.EXPO_PUBLIC_API_URL;
+  if (explicitUrl && !explicitUrl.includes('localhost') && !explicitUrl.includes('127.0.0.1') && !explicitUrl.includes('192.168.')) {
+    return explicitUrl.replace(/\/+$/, '');
   }
 
-  // 2. Running on Web inside browser
+  // 2. If running inside web browser
   if (Platform.OS === 'web') {
-    return 'http://localhost:5000';
+    return (explicitUrl || PRODUCTION_API_URL).replace(/\/+$/, '');
   }
 
-  // 3. Running on physical device or emulator via Expo Go / dev client:
-  // Extract host IP dynamically from Metro bundler hostUri (e.g. "192.168.1.6:8081" -> "http://192.168.1.6:5000")
-  const hostUri = Constants.expoConfig?.hostUri;
-  if (hostUri) {
-    const hostIp = hostUri.split(':')[0];
-    if (hostIp) {
-      return `http://${hostIp}:5000`;
+  // 3. In local dev mode with Metro bundler: dynamically use Metro host IP
+  if (__DEV__) {
+    const hostUri =
+      Constants.expoConfig?.hostUri ||
+      (Constants as any).manifest2?.extra?.expoGo?.debuggerHost ||
+      (Constants as any).manifest?.debuggerHost;
+
+    if (hostUri) {
+      const hostIp = hostUri.split(':')[0];
+      if (hostIp && hostIp !== 'localhost' && hostIp !== '127.0.0.1') {
+        return `http://${hostIp}:5000`;
+      }
     }
   }
 
-  return 'http://192.168.1.6:5000';
+  // 4. Default fallback for standalone APK / Production
+  return PRODUCTION_API_URL;
 }
 
 export const API_BASE_URL = resolveApiBaseUrl();

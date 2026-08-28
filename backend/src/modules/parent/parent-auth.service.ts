@@ -94,29 +94,46 @@ export class ParentAuthService {
     const candidateToken = uuidMatch ? uuidMatch[0] : trimmed;
 
     // 2. Check CardModel by cardToken (Smart Card QR)
-    const cardByToken = await CardModel.findOne({ cardToken: candidateToken }).lean();
+    const cardByToken = await CardModel.findOne({
+      $or: [
+        { cardToken: candidateToken },
+        { cardToken: trimmed },
+      ],
+    }).lean();
     if (cardByToken?.studentId) {
       const student = await StudentModel.findById(cardByToken.studentId).lean();
       if (student) return student;
     }
 
     // 3. Check CardModel by cardNumber
-    const cardByNumber = await CardModel.findOne({ cardNumber: trimmed }).lean();
+    const cardByNumber = await CardModel.findOne({
+      cardNumber: { $regex: new RegExp(`^${trimmed}$`, 'i') },
+    }).lean();
     if (cardByNumber?.studentId) {
       const student = await StudentModel.findById(cardByNumber.studentId).lean();
       if (student) return student;
     }
 
     // 4. Check StudentModel by barcode
-    let student = await StudentModel.findOne({ barcode: candidateToken }).lean();
+    let student = await StudentModel.findOne({
+      $or: [
+        { barcode: candidateToken },
+        { barcode: trimmed },
+      ],
+    }).lean();
     if (student) return student;
 
-    // 5. Check StudentModel by studentCode
-    student = await StudentModel.findOne({ studentCode: trimmed }).lean();
+    // 5. Check StudentModel by studentCode (exact & case-insensitive)
+    student = await StudentModel.findOne({
+      $or: [
+        { studentCode: trimmed },
+        { studentCode: { $regex: new RegExp(`^${trimmed}$`, 'i') } },
+      ],
+    }).lean();
     if (student) return student;
 
     // 6. Check StudentModel by _id (if valid ObjectId)
-    if (mongoose.Types.ObjectId.isValid(candidateToken)) {
+    if (mongoose.Types.ObjectId.isValid(candidateToken) && candidateToken.length === 24) {
       student = await StudentModel.findById(candidateToken).lean();
       if (student) return student;
     }

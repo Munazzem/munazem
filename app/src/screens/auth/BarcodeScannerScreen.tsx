@@ -68,9 +68,12 @@ export const BarcodeScannerScreen: React.FC<Props> = ({ route, navigation }) => 
         });
       }
     } catch (error: any) {
-      const message =
-        error?.response?.data?.message ||
-        'لم نتمكن من مطابقة الكارت. تأكد من مسح كارت صالح تابع لمنصة منظم.';
+      let message = 'لم نتمكن من مطابقة الكارت. تأكد من مسح كارت صالح تابع لمنصة منظم.';
+      if (error?.response?.data?.message) {
+        message = error.response.data.message;
+      } else if (!error?.response) {
+        message = 'تعذر الاتصال بالخادم. يرجى التأكد من اتصالك بالإنترنت والمحاولة مجدداً.';
+      }
       Alert.alert('تعذر التحقق', message, [
         { text: 'حاول مرة أخرى', onPress: () => setScanned(false) },
       ]);
