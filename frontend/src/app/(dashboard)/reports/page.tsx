@@ -410,45 +410,39 @@ function GroupReportCard({ report, onDownloadPdf, onDownloadSheet, pdfLoading, i
     return (
         <div className="space-y-4">
             {/* ── 3-Box Header ── */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
-                    {/* Right Info Box */}
-                    <div className="bg-gray-50/80 border border-gray-100 rounded-xl p-3.5 space-y-1 text-right">
-                        <p className="text-xs text-gray-500 font-semibold">المرحلة الدراسية: <span className="text-gray-900 font-bold">{group.gradeLevel || '—'}</span></p>
-                        <p className="text-xs text-gray-500 font-semibold">المواعيد: <span className="text-gray-900 font-bold">{scheduleText}</span></p>
-                        <p className="text-xs text-gray-500 font-semibold">السعة المقررة: <span className="text-gray-900 font-bold">{group.capacity || 50} طالب</span></p>
-                    </div>
-
-                    {/* Center Title Box */}
-                    <div className="text-center p-3.5 bg-primary/5 border border-primary/20 rounded-xl shadow-2xs">
-                        <h2 className="text-xl font-extrabold text-primary">تقرير مجموعة: {group.name || '—'}</h2>
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-5">
+                <div className="flex flex-col gap-3">
+                    {/* Title */}
+                    <div className="text-center p-3 sm:p-3.5 bg-primary/5 border border-primary/20 rounded-xl">
+                        <h2 className="text-lg sm:text-xl font-extrabold text-primary">تقرير مجموعة: {group.name || '—'}</h2>
                         <div className="flex items-center justify-center gap-2 mt-1">
                             <Badge className="bg-primary text-white text-[11px]">الدورة {group.currentCycleNumber || 1}</Badge>
-                            <span className="text-xs text-gray-500">منظومة مُنظِّم</span>
+                            <span className="text-xs text-gray-500">منظومة مُنظِّم</span>
                         </div>
                     </div>
-
-                    {/* Left Info Box + Actions */}
-                    <div className="bg-gray-50/80 border border-gray-100 rounded-xl p-3.5 flex flex-col justify-between gap-2 text-right">
-                        <div className="flex items-center justify-between text-xs text-gray-500 font-semibold">
-                            <span>تاريخ التقرير:</span>
-                            <span className="text-gray-900 font-bold" dir="ltr">{new Date().toLocaleDateString('ar-EG')}</span>
+                    {/* Info 2-col grid */}
+                    <div className="grid grid-cols-2 gap-2">
+                        <div className="bg-gray-50/80 border border-gray-100 rounded-xl p-2.5 space-y-1 text-right">
+                            <p className="text-xs text-gray-500 font-semibold">المرحلة: <span className="text-gray-900 font-bold">{group.gradeLevel || '—'}</span></p>
+                            <p className="text-xs text-gray-500 font-semibold">المواعيد: <span className="text-gray-900 font-bold">{scheduleText}</span></p>
+                            <p className="text-xs text-gray-500 font-semibold">السعة: <span className="text-gray-900 font-bold">{group.capacity || 50} طالب</span></p>
                         </div>
-                        <div className="flex items-center justify-between text-xs text-gray-500 font-semibold">
-                            <span>نسبة الحضور العامة:</span>
-                            <span className="text-emerald-700 font-bold">{attendance.avgAttendanceRate || '0%'}</span>
+                        <div className="bg-gray-50/80 border border-gray-100 rounded-xl p-2.5 space-y-1 text-right">
+                            <p className="text-xs text-gray-500 font-semibold">تاريخ التقرير: <span className="text-gray-900 font-bold" dir="ltr">{new Date().toLocaleDateString('ar-EG')}</span></p>
+                            <p className="text-xs text-gray-500 font-semibold">نسبة الحضور: <span className="text-emerald-700 font-bold">{attendance.avgAttendanceRate || '0%'}</span></p>
                         </div>
-                        {isTeacher && (
-                            <div className="flex gap-2 pt-1">
-                                <Button onClick={onDownloadSheet} disabled={pdfLoading} size="sm" variant="outline" className="flex-1 text-xs gap-1 h-8 border-primary text-primary hover:bg-primary hover:text-white">
-                                    <FileDown className="h-3.5 w-3.5" /> كشف الحضور
-                                </Button>
-                                <Button onClick={onDownloadPdf} disabled={pdfLoading} size="sm" className="flex-1 text-xs gap-1 h-8 bg-primary hover:bg-primary/90 text-white">
-                                    <Download className="h-3.5 w-3.5" /> طباعة PDF
-                                </Button>
-                            </div>
-                        )}
                     </div>
+                    {/* Actions */}
+                    {isTeacher && (
+                        <div className="flex gap-2">
+                            <Button onClick={onDownloadSheet} disabled={pdfLoading} size="sm" variant="outline" className="flex-1 text-xs gap-1 h-9 border-primary text-primary hover:bg-primary hover:text-white">
+                                <FileDown className="h-3.5 w-3.5" /> كشف الحضور
+                            </Button>
+                            <Button onClick={onDownloadPdf} disabled={pdfLoading} size="sm" className="flex-1 text-xs gap-1 h-9 bg-primary hover:bg-primary/90 text-white">
+                                <Download className="h-3.5 w-3.5" /> طباعة PDF
+                            </Button>
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -539,68 +533,85 @@ function GroupReportCard({ report, onDownloadPdf, onDownloadSheet, pdfLoading, i
             {/* ── Detailed Content Section ── */}
             {/* Table 1: Students Roster with Subscription & Attendance */}
             <SectionCard title={`كشف طلاب المجموعة وحالة الاشتراك للدورة الحالية (${students.length} طالب)`}>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                        <thead>
-                            <tr className="bg-gray-50/70 border-b border-gray-100">
-                                <th className="text-center px-3 py-2.5 text-xs font-semibold text-gray-500 w-12">م</th>
-                                <th className="text-right px-4 py-2.5 text-xs font-semibold text-gray-500">اسم الطالب</th>
-                                <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">الكود</th>
-                                <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">رقم الهاتف</th>
-                                <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">هاتف ولي الأمر</th>
-                                <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">حالة الاشتراك</th>
-                                <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">نسبة الحضور</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-50">
-                            {students.length === 0 ? (
-                                <tr>
-                                    <td colSpan={7} className="text-center py-8 text-gray-400 text-xs">
-                                        لا يوجد طلاب مسجلين في هذه المجموعة
-                                    </td>
-                                </tr>
-                            ) : (
-                                students.map((st: any, idx: number) => (
-                                    <tr key={st._id} className="hover:bg-gray-50/50 transition-colors">
-                                        <td className="px-3 py-2.5 text-center text-xs text-gray-400">{idx + 1}</td>
-                                        <td className="px-4 py-2.5 text-gray-900 font-semibold">{st.studentName}</td>
-                                        <td className="px-4 py-2.5 text-center text-xs text-gray-500">{st.studentCode || '—'}</td>
-                                        <td className="px-4 py-2.5 text-center text-xs text-gray-600" dir="ltr">{st.studentPhone || '—'}</td>
-                                        <td className="px-4 py-2.5 text-center text-xs text-gray-600" dir="ltr">{st.parentPhone || '—'}</td>
-                                        <td className="px-4 py-2.5 text-center">
-                                            {st.hasActiveSubscription ? (
-                                                <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs hover:bg-emerald-50">
-                                                    تم السداد ✓
-                                                </Badge>
-                                            ) : (
-                                                <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200 text-xs">
-                                                    لم يسدد بعد
-                                                </Badge>
-                                            )}
-                                        </td>
-                                        <td className="px-4 py-2.5 text-center text-xs font-bold text-gray-800">
-                                            {st.attendanceRate} <span className="text-gray-400 font-normal">({st.presentCount}ح / {st.absentCount}غ)</span>
-                                        </td>
+                {students.length === 0 ? (
+                    <p className="text-center py-8 text-gray-400 text-xs">لا يوجد طلاب مسجلين في هذه المجموعة</p>
+                ) : (
+                    <>
+                        {/* Desktop table */}
+                        <div className="hidden sm:block overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="bg-gray-50/70 border-b border-gray-100">
+                                        <th className="text-center px-3 py-2.5 text-xs font-semibold text-gray-500 w-12">م</th>
+                                        <th className="text-right px-4 py-2.5 text-xs font-semibold text-gray-500">اسم الطالب</th>
+                                        <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">الكود</th>
+                                        <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">رقم الهاتف</th>
+                                        <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">هاتف ولي الأمر</th>
+                                        <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">حالة الاشتراك</th>
+                                        <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">نسبة الحضور</th>
                                     </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
-                </div>
+                                </thead>
+                                <tbody className="divide-y divide-gray-50">
+                                    {students.map((st: any, idx: number) => (
+                                        <tr key={st._id} className="hover:bg-gray-50/50 transition-colors">
+                                            <td className="px-3 py-2.5 text-center text-xs text-gray-400">{idx + 1}</td>
+                                            <td className="px-4 py-2.5 text-gray-900 font-semibold">{st.studentName}</td>
+                                            <td className="px-4 py-2.5 text-center text-xs text-gray-500">{st.studentCode || '—'}</td>
+                                            <td className="px-4 py-2.5 text-center text-xs text-gray-600" dir="ltr">{st.studentPhone || '—'}</td>
+                                            <td className="px-4 py-2.5 text-center text-xs text-gray-600" dir="ltr">{st.parentPhone || '—'}</td>
+                                            <td className="px-4 py-2.5 text-center">
+                                                {st.hasActiveSubscription ? (
+                                                    <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs hover:bg-emerald-50">تم السداد ✓</Badge>
+                                                ) : (
+                                                    <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200 text-xs">لم يسدد بعد</Badge>
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-2.5 text-center text-xs font-bold text-gray-800">
+                                                {st.attendanceRate} <span className="text-gray-400 font-normal">({st.presentCount}ح / {st.absentCount}غ)</span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        {/* Mobile cards */}
+                        <div className="sm:hidden divide-y divide-gray-50">
+                            {students.map((st: any, idx: number) => (
+                                <div key={st._id} className="p-3 space-y-1.5">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs text-gray-400 shrink-0">#{idx + 1}</span>
+                                        <span className="font-bold text-gray-900 flex-1">{st.studentName}</span>
+                                        {st.hasActiveSubscription ? (
+                                            <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] shrink-0">سدّد ✓</Badge>
+                                        ) : (
+                                            <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200 text-[10px] shrink-0">لم يسدد</Badge>
+                                        )}
+                                    </div>
+                                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-gray-500 pr-4">
+                                        {st.studentCode && <span>كود: <b className="text-gray-700">{st.studentCode}</b></span>}
+                                        {st.studentPhone && <span dir="ltr">📞 {st.studentPhone}</span>}
+                                        {st.parentPhone && <span dir="ltr">👨‍👦 {st.parentPhone}</span>}
+                                        <span>حضور: <b className="text-gray-700">{st.attendanceRate}</b> ({st.presentCount}ح/{st.absentCount}غ)</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </>
+                )}
             </SectionCard>
 
             {/* Table 2: Sessions History */}
             {sessionsHistory.length > 0 && (
                 <SectionCard title={`سجل الحصص المنعقدة (${sessionsHistory.length} حصة)`}>
                     <div className="overflow-x-auto max-h-72 overflow-y-auto">
-                        <table className="w-full text-sm">
+                        <table className="w-full text-sm min-w-[360px]">
                             <thead>
                                 <tr className="bg-gray-50/70 border-b border-gray-100 sticky top-0">
-                                    <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500 w-16">حصة #</th>
-                                    <th className="text-right px-5 py-2.5 text-xs font-semibold text-gray-500">تاريخ الحصة</th>
-                                    <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">حضور</th>
-                                    <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">غياب</th>
-                                    <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">نسبة الحضور</th>
+                                    <th className="text-center px-3 py-2.5 text-xs font-semibold text-gray-500 w-10">#</th>
+                                    <th className="text-right px-3 py-2.5 text-xs font-semibold text-gray-500">تاريخ الحصة</th>
+                                    <th className="text-center px-3 py-2.5 text-xs font-semibold text-gray-500">حضور</th>
+                                    <th className="text-center px-3 py-2.5 text-xs font-semibold text-gray-500">غياب</th>
+                                    <th className="text-center px-3 py-2.5 text-xs font-semibold text-gray-500">%</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
