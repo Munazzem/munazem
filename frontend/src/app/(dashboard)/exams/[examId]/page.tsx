@@ -335,29 +335,37 @@ export default function ExamDetailPage() {
                                         <p className="text-gray-900 font-medium leading-relaxed">{q.text}</p>
 
                                         {/* MCQ options */}
-                                        {q.type === 'MCQ' && q.options && q.options.length > 0 && (
-                                            <div className="mt-3 space-y-1.5">
-                                                {q.options.map((opt, oi) => (
-                                                    <div
-                                                        key={oi}
-                                                        className={cn(
-                                                            'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm',
-                                                            opt === q.correctAnswer
-                                                                ? 'bg-green-50 text-green-800 font-medium'
-                                                                : 'bg-gray-50 text-gray-600'
-                                                        )}
-                                                    >
-                                                        <span className="w-5 h-5 rounded-full border border-current flex items-center justify-center text-xs font-bold shrink-0">
-                                                            {String.fromCharCode(65 + oi)}
-                                                        </span>
-                                                        {opt}
-                                                        {opt === q.correctAnswer && (
-                                                            <CheckCircle2 className="h-4 w-4 mr-auto text-green-600" />
-                                                        )}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
+                                        {q.type === 'MCQ' && q.options && q.options.length > 0 && (() => {
+                                            const correctIndex = q.options.findIndex(
+                                                (opt) => opt.trim().toLowerCase() === String(q.correctAnswer || '').trim().toLowerCase()
+                                            );
+                                            return (
+                                                <div className="mt-3 space-y-1.5">
+                                                    {q.options.map((opt, oi) => {
+                                                        const isCorrect = oi === correctIndex;
+                                                        return (
+                                                            <div
+                                                                key={oi}
+                                                                className={cn(
+                                                                    'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm',
+                                                                    isCorrect
+                                                                        ? 'bg-green-50 text-green-800 font-medium'
+                                                                        : 'bg-gray-50 text-gray-600'
+                                                                )}
+                                                            >
+                                                                <span className="w-5 h-5 rounded-full border border-current flex items-center justify-center text-xs font-bold shrink-0">
+                                                                    {String.fromCharCode(65 + oi)}
+                                                                </span>
+                                                                {opt}
+                                                                {isCorrect && (
+                                                                    <CheckCircle2 className="h-4 w-4 mr-auto text-green-600" />
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            );
+                                        })()}
 
                                         {/* TRUE/FALSE */}
                                         {q.type === 'TRUE_FALSE' && q.correctAnswer && (
