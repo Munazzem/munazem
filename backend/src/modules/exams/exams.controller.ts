@@ -260,19 +260,37 @@ aiProxyRouter.post(
 
             const groq = new Groq({ apiKey });
 
-            const completion = await groq.chat.completions.create({
-                model:       'llama-3.3-70b-versatile',
-                messages: [
-                    {
-                        role:    'system',
-                        content: 'أنت مساعد تعليمي. أجب بـ JSON صالح فقط بدون أي نص إضافي.',
-                    },
-                    { role: 'user', content: prompt },
-                ],
-                temperature:     0.7,
-                max_tokens:      4096,
-                response_format: { type: 'json_object' },
-            });
+            const modelsToTry = ['openai/gpt-oss-120b', 'qwen/qwen3.8-27b', 'allam-2-7b'];
+            let completion: any = null;
+            let lastErr: any = null;
+
+            for (const model of modelsToTry) {
+                try {
+                    completion = await groq.chat.completions.create({
+                        model,
+                        messages: [
+                            {
+                                role:    'system',
+                                content: 'أنت خبير واضع اختبارات تربوي أول. تصمم أسئلة امتحانية ذكية ومحكمة تقيس الفهم العميق والتحليل ومستويات التفكير العليا، وتتجنب التكرار والأسئلة السطحية المباشرة، مع صياغة خيارات متقاربة ومشتتات ذكية ومدروسة بعناية تحاكي امتحانات الثانوية العامة والشهادات الدولية. أجب بـ JSON صالح فقط بدون أي نصوص إضافية.',
+                            },
+                            { role: 'user', content: prompt },
+                        ],
+                        temperature:     0.7,
+                        max_tokens:      4096,
+                        response_format: { type: 'json_object' },
+                    });
+                    if (completion?.choices?.[0]?.message?.content) {
+                        break;
+                    }
+                } catch (mErr: any) {
+                    lastErr = mErr;
+                    continue;
+                }
+            }
+
+            if (!completion?.choices?.[0]?.message?.content) {
+                throw lastErr || new Error('فشل توليد الامتحان من نماذج الذكاء الاصطناعي');
+            }
 
             const text = completion.choices[0]?.message?.content ?? '';
             return SuccessResponse({ res, data: { text }, message: 'تم توليد الأسئلة بنجاح' });

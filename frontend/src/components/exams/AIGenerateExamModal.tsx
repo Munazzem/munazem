@@ -61,32 +61,66 @@ function buildPrompt(content: string, options: {
 
     let difficultyInstruction = '';
     if (options.difficulty === 'hard') {
-        difficultyInstruction = '- تأكد أن الأسئلة صعبة جداً، تعتمد على الفهم العميق والاستنتاج والتفكير النقدي، وتجنب الأسئلة المباشرة.';
+        difficultyInstruction = `
+- مستوى الصعوبة: أسئلة صعبة ومستويات تفكير عليا (High-Order Thinking Skills).
+- تجنب تماماً الأسئلة المباشرة أو أسئلة الحفظ والتسميع السطحي (مثل: "في أي عام..." أو "ما هو تعريف...").
+- ركز على الأسئلة "اللافّة" وغير المباشرة التي تختبر الفهم العميق، الاستنتاج، التحليل، المقارنة بين المفاهيم، والربط بين أجزاء الدرس.
+- اجعل خيارات الإجابة (المشتتات / Distractors) متقاربة جداً وذكية ومنطقية بحيث تحاكي الأخطاء المفاهيمية الشائعة للطلاب وتتطلب تركيزاً دقيقاً للتمييز بينها.
+- استخدم صيغاً ذكية مثل: "أي العبارات الآتية تفسر بدقة..."، "النتيجة المترتبة على..."، "الرابط الأساسي بين... و..."، "كل ما يلي صحيح ما عدا...".
+`.trim();
+    } else if (options.difficulty === 'mixed') {
+        difficultyInstruction = `
+- مستوى الصعوبة: متدرج ومختلط (مستويات تفكير متعددة تحاكي نظام الامتحانات الحديثة):
+  1. 30% من الأسئلة: أسئلة فهم وتطبيق مباشر للمفاهيم الأساسية.
+  2. 40% من الأسئلة: أسئلة متوسطة تعتمد على التحليل والربط بين نقاط الدرس واستيعاب العلاقات والنتائج.
+  3. 30% من الأسئلة: أسئلة ذكاء ومستويات تفكير عليا وأسئلة "لافّة" غير مباشرة (تعتمد على الاستنتاج، قراءة ما بين السطور، واستبعاد الخيارات المتقاربة جداً).
+- اجعل خيارات الإجابة (المشتتات) ذكية ومنطقية ومتقاربة ومرتبطة بالمحتوى، وتجنب الخيارات الساذجة أو الواضحة البطلان فوراً.
+`.trim();
+    } else if (options.difficulty === 'medium') {
+        difficultyInstruction = `
+- مستوى الصعوبة: متوسط ومتوازن (فهم واستيعاب وتطبيق).
+- تجنب الأسئلة التافهة أو المباشرة جداً، وركز على فهم العلاقات، أسباب الظواهر، وتطبيق القواعد أو المعلومات على أمثلة وحالات واقعية.
+- اجعل الخيارات المتاحة في الاختياري مقنعة ومنطقية.
+`.trim();
     } else if (options.difficulty === 'easy') {
-        difficultyInstruction = '- اجعل الأسئلة سهلة ومباشرة وتعتمد على التذكر الأساسي.';
+        difficultyInstruction = `
+- مستوى الصعوبة: سهل ومباشر.
+- يركز على تذكر المفاهيم والتعريفات الأساسية والحقائق الواضحة المذكورة في النص بشكل مباشر وميسر.
+`.trim();
     }
 
     return `
-أنت مساعد تعليمي متخصص في إنشاء اختبارات أكاديمية.
+أنت خبير تربوي أول ومتخصص في وضع امتحانات دقيقة ومحكمة تقيس نواتج التعلم ومستويات التفكير العليا (مثل امتحانات الثانوية العامة والشهادات الدولية).
 
-بناءً على المحتوى التعليمي التالي، أنشئ امتحاناً يحتوي على بالضبط ${options.questionCount} سؤال.
+بناءً على المحتوى التعليمي التالي، أنشئ امتحاناً احترافياً يحتوي على بالضبط ${options.questionCount} سؤال.
 
 # المحتوى التعليمي:
 ${content.slice(0, 8000)}
 
 # متطلبات الامتحان:
 - عدد الأسئلة المطلوب بالضبط: ${options.questionCount} سؤال (لا أقل ولا أكثر)
-- مستوى الصعوبة: ${options.difficulty}
+- تعليمات الصعوبة والعمق:
 ${difficultyInstruction}
 - أنواع الأسئلة المطلوبة:
   - ${typesText}
 - درجة كل سؤال: ${options.marksPerQuestion}
 
-# تعليمات مهمة جداً:
+# معايير جودة الأسئلة والخيارات:
+1. الأسئلة الاختيارية (MCQ):
+   - يجب أن يحتوي كل سؤال على بالضبط 4 خيارات حقيقية ومدروسة.
+   - شرط أساسي صارم جداً: يجب أن تكون جميع الخيارات الأربعة فريدة ومختلفة تماماً عن بعضها البعض! يُمنع منعاً باتاً تكرار نفس الخيار أو نفس نص الإجابة مرتين في نفس السؤال تحت أي ظرف (All options MUST be strictly unique and distinct; NEVER repeat the same text in options).
+   - يجب أن تكون هناك إجابة صحيحة واحدة فقط لا غير، وتحديد نصها بدقة متناهية في حقل "correctAnswer" بحيث يطابق نص ذلك الخيار بالحرف الواحد.
+   - المشتتات (الخيارات الخاطئة) يجب أن تكون قوية ومقنعة ومبنية على التفكير الخاطئ الشائع للطلاب، بحيث يضطر الطالب للتفكير والتحليل قبل الاختيار، وتجنب الخيارات السطحية.
+2. أسئلة صح أم خطأ (إن طُلبت):
+   - تجنب العبارات البديهية جداً، واجعل العبارات تختبر الفروق الدقيقة والمفاهيم التي قد تلتبس على الطالب.
+3. التنوع والعمق:
+   - ابتعد عن الأسئلة النمطية التافهة، وركز على الربط والاستنتاج والتفكير النقدي.
+
+# تعليمات الإخراج:
 1. ${languageInstruction}
-2. أعد الإجابة كـ JSON صالح فقط — بدون أي نص إضافي قبله أو بعده.
+2. أعد الإجابة كـ JSON صالح فقط — بدون أي نص إضافي أو شروحات قبله أو بعده.
 3. يجب أن يحتوي مصفوفة "questions" على ${options.questionCount} عنصر بالضبط.
-4. الصيغة المطلوبة (هذا مثال فقط، لا تعده كسؤال):
+4. الصيغة المطلوبة (هذا هيكل توضيحي فقط):
 {
   "questions": [
     {
@@ -160,12 +194,61 @@ export function AIGenerateExamModal({ open, onOpenChange }: Props) {
     const [passingMarksOverride, setPassingMarksOverride] = useState('');
     const [gradeLevel,       setGradeLevel]       = useState('');
     const [selectedGroups,   setSelectedGroups]   = useState<string[]>([]);
-    const [questionCount,    setQuestionCount]    = useState(10);
-    const [difficulty,       setDifficulty]       = useState('mixed');
+    const [questionCount,    setQuestionCount]    = useState<string>('');
+    const [difficulty,       setDifficulty]       = useState('');
     const [language,         setLanguage]         = useState('Arabic');
-    const [selectedTypes,    setSelectedTypes]    = useState<string[]>(['MCQ']);
-    const [marksPerQuestion, setMarksPerQuestion] = useState(2);
+    const [selectedTypes,    setSelectedTypes]    = useState<string[]>([]);
+    const [marksPerQuestion, setMarksPerQuestion] = useState<string>('');
+    const [totalMarksInput,  setTotalMarksInput]  = useState<string>('');
     const [statusText,       setStatusText]       = useState('');
+
+    const resetForm = () => {
+        setFile(null);
+        setTitle('');
+        setDate('');
+        setPassingMarksOverride('');
+        setGradeLevel('');
+        setSelectedGroups([]);
+        setQuestionCount('');
+        setDifficulty('');
+        setLanguage('Arabic');
+        setSelectedTypes([]);
+        setMarksPerQuestion('');
+        setTotalMarksInput('');
+        setStatusText('');
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+
+    const handleQuestionCountChange = (val: string) => {
+        setQuestionCount(val);
+        const qNum = Number(val);
+        const mNum = Number(marksPerQuestion);
+        const tNum = Number(totalMarksInput);
+        if (qNum > 0 && mNum > 0) {
+            setTotalMarksInput(String(qNum * mNum));
+        } else if (qNum > 0 && tNum > 0) {
+            setMarksPerQuestion(String(Math.max(1, Math.round(tNum / qNum))));
+        }
+    };
+
+    const handleMarksPerQuestionChange = (val: string) => {
+        setMarksPerQuestion(val);
+        const mNum = Number(val);
+        const qNum = Number(questionCount);
+        if (mNum > 0 && qNum > 0) {
+            setTotalMarksInput(String(qNum * mNum));
+        }
+    };
+
+    const handleTotalMarksChange = (val: string) => {
+        setTotalMarksInput(val);
+        const tNum = Number(val);
+        const qNum = Number(questionCount);
+        if (tNum > 0 && qNum > 0) {
+            const perQ = Math.max(1, Math.round(tNum / qNum));
+            setMarksPerQuestion(String(perQ));
+        }
+    };
 
     const { data: groupsData } = useQuery({
         queryKey: ['groups'],
@@ -175,9 +258,19 @@ export function AIGenerateExamModal({ open, onOpenChange }: Props) {
 
     const mutation = useMutation({
         mutationFn: async () => {
-            if (!file)  throw new Error('اختر ملف PDF أولاً');
-            if (!title) throw new Error('أدخل عنوان الامتحان');
-            if (!date)  throw new Error('أدخل التاريخ');
+            if (!file) throw new Error('اختر ملف PDF أولاً');
+            if (!title.trim()) throw new Error('أدخل عنوان الامتحان');
+            if (!date) throw new Error('أدخل التاريخ');
+            if (!difficulty) throw new Error('اختر مستوى الصعوبة');
+            if (selectedTypes.length === 0) throw new Error('اختر نوعاً واحداً على الأقل من أنواع الأسئلة');
+
+            const qCount = Number(questionCount);
+            if (!qCount || qCount < 1) throw new Error('أدخل عدد الأسئلة المطلوب');
+
+            const totalMarksNum = Number(totalMarksInput);
+            if (!totalMarksNum || totalMarksNum < 1) throw new Error('أدخل الدرجة الكلية للامتحان');
+
+            const mPerQ = Number(marksPerQuestion) || Math.max(1, Math.round(totalMarksNum / qCount));
 
             // Step 1: Parse PDF on the client
             setStatusText('جاري قراءة ملف الـ PDF...');
@@ -201,10 +294,10 @@ export function AIGenerateExamModal({ open, onOpenChange }: Props) {
             // Step 2: Build prompt and send to proxy
             setStatusText('جاري توليد الأسئلة بالذكاء الاصطناعي...');
             const prompt = buildPrompt(fullText, {
-                questionCount,
+                questionCount: qCount,
                 difficulty,
                 questionTypes: selectedTypes,
-                marksPerQuestion,
+                marksPerQuestion: mPerQ,
                 language,
             });
 
@@ -224,23 +317,53 @@ export function AIGenerateExamModal({ open, onOpenChange }: Props) {
                 throw new Error('لم يُولِّد الذكاء الاصطناعي أسئلة — حاول مجدداً');
             }
 
-            // Normalize types
-            parsed.questions = parsed.questions.map((q: any) => ({
-                ...q,
-                type: normalizeType(q.type),
-            }));
+            // Normalize types and ensure unique options without duplicate text
+            parsed.questions = parsed.questions.map((q: any) => {
+                const type = normalizeType(q.type);
+                if (type === 'MCQ' && Array.isArray(q.options)) {
+                    const seen = new Set<string>();
+                    const uniqueOptions: string[] = [];
+                    for (const raw of q.options) {
+                        const opt = String(raw ?? '').trim();
+                        if (!opt) continue;
+                        const key = opt.toLowerCase();
+                        if (!seen.has(key)) {
+                            seen.add(key);
+                            uniqueOptions.push(opt);
+                        }
+                    }
+
+                    let correctAnswer = String(q.correctAnswer ?? '').trim();
+                    const matched = uniqueOptions.find(o => o.toLowerCase() === correctAnswer.toLowerCase());
+                    if (matched) {
+                        correctAnswer = matched;
+                    } else if (uniqueOptions.length > 0) {
+                        correctAnswer = uniqueOptions[0];
+                    }
+
+                    return {
+                        ...q,
+                        type,
+                        options: uniqueOptions,
+                        correctAnswer,
+                    };
+                }
+                return {
+                    ...q,
+                    type,
+                };
+            });
 
             // Step 4: Create exam via existing API
             setStatusText('جاري حفظ الامتحان...');
-            const totalMarks = parsed.questions.reduce((sum: number, q: any) => sum + (q.marks ?? marksPerQuestion), 0);
-            const autoPassingMarks = passingMarksOverride
+            const autoPassingMarks = passingMarksOverride.trim()
                 ? Number(passingMarksOverride)
-                : Math.round(totalMarks * 0.5);
+                : Math.round(totalMarksNum * 0.5);
 
             const exam = await createExam({
                 title,
                 date,
-                totalMarks,
+                totalMarks:   totalMarksNum,
                 passingMarks: autoPassingMarks,
                 questions:    parsed.questions,
                 source:       'AI_GENERATED' as any,
@@ -280,8 +403,13 @@ export function AIGenerateExamModal({ open, onOpenChange }: Props) {
         setFile(f);
     };
 
+    const handleDialogChange = (v: boolean) => {
+        if (!v) resetForm();
+        onOpenChange(v);
+    };
+
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
+        <Dialog open={open} onOpenChange={handleDialogChange}>
             <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-2xl max-h-[90vh] overflow-y-auto bg-white rounded-2xl" dir="rtl">
                 <DialogHeader>
                     <DialogTitle className="text-xl font-bold border-b pb-3 flex items-center gap-2">
@@ -309,8 +437,8 @@ export function AIGenerateExamModal({ open, onOpenChange }: Props) {
                                 className="w-full border-2 border-dashed border-gray-200 rounded-xl p-8 flex flex-col items-center gap-2 text-gray-400 hover:border-primary hover:text-primary transition-colors"
                             >
                                 <Upload className="h-8 w-8" />
-                                <span className="text-sm font-medium">اضغط لرفع ملف PDF</span>
-                                <span className="text-xs">الحد الأقصى 10 MB</span>
+                                <span className="text-sm font-medium">اضغط لرفع ملف PDF للمحتوى التعليمي</span>
+                                <span className="text-xs text-gray-300">الحد الأقصى 10 ميجابايت</span>
                             </button>
                         )}
                         <input
@@ -333,18 +461,6 @@ export function AIGenerateExamModal({ open, onOpenChange }: Props) {
                             <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} dir="ltr" />
                         </div>
                         <div>
-                            <label className="text-sm font-medium text-gray-700 block mb-1">
-                                درجة النجاح
-                                <span className="text-xs text-gray-400 mr-1">(50% تلقائياً)</span>
-                            </label>
-                            <Input
-                                type="number" min={1} dir="ltr"
-                                value={passingMarksOverride}
-                                onChange={(e) => setPassingMarksOverride(e.target.value)}
-                                placeholder={`${Math.round(questionCount * marksPerQuestion * 0.5)} (تلقائي)`}
-                            />
-                        </div>
-                        <div>
                             <label className="text-sm font-medium text-gray-700 block mb-1">المرحلة الدراسية</label>
                             <Select onValueChange={(v) => setGradeLevel(v === 'ALL' ? '' : v)} dir="rtl">
                                 <SelectTrigger className="bg-gray-50 border-gray-200">
@@ -355,6 +471,36 @@ export function AIGenerateExamModal({ open, onOpenChange }: Props) {
                                     {allowedGrades.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
                                 </SelectContent>
                             </Select>
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium text-gray-700 block mb-1">
+                                الدرجة الكلية للامتحان *
+                                {questionCount && marksPerQuestion ? (
+                                    <span className="text-xs text-gray-400 mr-1 font-normal">({questionCount} أسئلة × {marksPerQuestion} درجات)</span>
+                                ) : null}
+                            </label>
+                            <Input
+                                type="number"
+                                min={1}
+                                dir="ltr"
+                                value={totalMarksInput}
+                                onChange={(e) => handleTotalMarksChange(e.target.value)}
+                                placeholder="مثال: 20"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium text-gray-700 block mb-1">
+                                درجة النجاح
+                                <span className="text-xs text-gray-400 mr-1 font-normal">(اختياري)</span>
+                            </label>
+                            <Input
+                                type="number"
+                                min={1}
+                                dir="ltr"
+                                value={passingMarksOverride}
+                                onChange={(e) => setPassingMarksOverride(e.target.value)}
+                                placeholder={totalMarksInput ? `${Math.round(Number(totalMarksInput) * 0.5)} (تلقائي)` : '50% تلقائياً'}
+                            />
                         </div>
                     </div>
 
@@ -403,7 +549,8 @@ export function AIGenerateExamModal({ open, onOpenChange }: Props) {
                                 <Input
                                     type="number" min={1} max={50} dir="ltr"
                                     value={questionCount}
-                                    onChange={(e) => setQuestionCount(Number(e.target.value))}
+                                    placeholder="مثال: 10"
+                                    onChange={(e) => handleQuestionCountChange(e.target.value)}
                                 />
                             </div>
                             <div>
@@ -411,14 +558,15 @@ export function AIGenerateExamModal({ open, onOpenChange }: Props) {
                                 <Input
                                     type="number" min={1} dir="ltr"
                                     value={marksPerQuestion}
-                                    onChange={(e) => setMarksPerQuestion(Number(e.target.value))}
+                                    placeholder="مثال: 2"
+                                    onChange={(e) => handleMarksPerQuestionChange(e.target.value)}
                                 />
                             </div>
                             <div>
                                 <label className="text-xs font-medium text-gray-600 block mb-1">مستوى الصعوبة</label>
                                 <Select value={difficulty} onValueChange={setDifficulty} dir="rtl">
                                     <SelectTrigger className="bg-white border-gray-200">
-                                        <SelectValue />
+                                        <SelectValue placeholder="اختر مستوى الصعوبة" />
                                     </SelectTrigger>
                                     <SelectContent dir="rtl">
                                         {DIFFICULTIES.map((d) => <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>)}
