@@ -8,6 +8,7 @@ import { SessionModel }            from '../../database/models/session.model.js'
 import { DailyLedgerModel, MonthlyLedgerModel } from '../../database/models/ledger.model.js';
 import { ExamResultModel }         from '../../database/models/exam-result.model.js';
 import { ExamModel }               from '../../database/models/exam.model.js';
+import { UserModel }               from '../../database/models/user.model.js';
 import mongoose from 'mongoose';
 import { TransactionType, TransactionCategory, SessionStatus, UserRole, AttendanceStatus, CycleEnrollmentStatus } from '../../common/enums/enum.service.js';
 import { NotFoundException } from '../../common/utils/response/error.responce.js';
@@ -21,13 +22,20 @@ export class ReportsService {
     // ══════════════════════════════════════════════════════════════
     // 1. Student Report — full picture of one student
     // ══════════════════════════════════════════════════════════════
-    static async getStudentReport(studentId: string, teacherId: string) {
+    static async getStudentReport(
+        studentId: string,
+        teacherId: string,
+        teacherDoc?: { features?: { homeworkTracking?: boolean } } | null,
+    ) {
         const student = await StudentModel.findOne({ _id: studentId, teacherId }, {
             studentName: 1, parentName: 1, studentPhone: 1, parentPhone: 1,
             gradeLevel:  1, groupId: 1, isActive: 1, studentCode: 1,
             monthlySessionsQuota: 1, remainingSessions: 1,
         }).lean();
         if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
+
+        const resolvedTeacher = teacherDoc ?? await UserModel.findById(teacherId, { features: 1 }).lean();
+        const isHomeworkEnabled = Boolean(resolvedTeacher?.features?.homeworkTracking);
 
         // Get group name and cycle — scoped to same teacher for safety
         const group = await GroupModel.findOne({ _id: student.groupId, teacherId }, { name: 1, cycle: 1 }).lean();
@@ -114,7 +122,7 @@ export class ReportsService {
             sessionId: e.sessionId,
             date: e.date,
             status: e.status,
-            homeworkDone: e.homeworkDone ?? null,
+            homeworkDone: isHomeworkEnabled ? (e.homeworkDone ?? null) : null,
         }));
 
         const totalSessions  = presentCount + absentCount;

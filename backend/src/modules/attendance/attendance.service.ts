@@ -1425,7 +1425,7 @@ export class AttendanceService {
                 studentId: student._id,
                 studentName: student.studentName,
                 status: isPresent ? 'PRESENT' : 'ABSENT',
-                homeworkDone: isPresent && typeof record?.homeworkDone === 'boolean' ? record.homeworkDone : null,
+                homeworkDone: isHomeworkTrackingEnabled && isPresent && typeof record?.homeworkDone === 'boolean' ? record.homeworkDone : null,
                 whatsappLink: `https://wa.me/${waPhone}?text=${encodedMessage}`,
             };
         });
