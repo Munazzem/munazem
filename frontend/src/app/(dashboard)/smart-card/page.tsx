@@ -376,7 +376,7 @@ export default function SmartCardPage() {
     });
 
     return (
-        <div className="max-w-xl mx-auto px-4 sm:px-0 space-y-5 animate-in fade-in duration-500 pb-10" dir="rtl">
+        <div className="w-full max-w-xl mx-auto px-4 sm:px-0 space-y-5 animate-in fade-in duration-500 pb-10 min-w-0" dir="rtl">
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>

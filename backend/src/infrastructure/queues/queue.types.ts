@@ -15,6 +15,7 @@ export interface SessionAbsentPayload {
     groupName:   string;
     sessionDate: string;   // ISO string — formatted inside the processor
     teacherName: string;
+    subject?:    string;
 }
 
 /** Payload for a student's exam result */
@@ -31,6 +32,7 @@ export interface ExamResultPayload {
     passed:      boolean;
     examDate:    string;   // ISO string
     teacherName: string;
+    subject?:    string;
 }
 
 export type WhatsAppJobData = SessionAbsentPayload | ExamResultPayload;

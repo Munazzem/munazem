@@ -7,6 +7,9 @@ export interface IStudentEntry {
     scannedAt?:  Date;              // only for present/late
     status?:     AttendanceStatus;
     homeworkDone?: boolean | null;
+    relatedSessionId?: Types.ObjectId;
+    relatedGroupName?: string;
+    relatedDate?:      Date;
 }
 
 export interface IAttendanceSnapshot {
@@ -14,14 +17,16 @@ export interface IAttendanceSnapshot {
     groupId:         Types.ObjectId;
     teacherId:       Types.ObjectId;
     date:            Date;
-    presentStudents: IStudentEntry[];
-    absentStudents:  IStudentEntry[];
-    guestStudents:   IStudentEntry[];
-    presentCount:    number;
-    absentCount:     number;
-    totalCount:      number;
-    createdAt?:      Date;
-    updatedAt?:      Date;
+    presentStudents:     IStudentEntry[];
+    absentStudents:      IStudentEntry[];
+    guestStudents:       IStudentEntry[];
+    compensatedStudents: IStudentEntry[];
+    presentCount:        number;
+    absentCount:         number;
+    compensatedCount:    number;
+    totalCount:          number;
+    createdAt?:          Date;
+    updatedAt?:          Date;
 }
 
 export interface IAttendanceSnapshotDocument extends IAttendanceSnapshot, Document {}

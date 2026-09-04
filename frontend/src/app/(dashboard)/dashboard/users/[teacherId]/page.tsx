@@ -78,10 +78,25 @@ export default function TeacherDetailPage() {
         );
     }
 
+    const handleBack = () => {
+        if (typeof window !== 'undefined' && window.history.length > 1) {
+            router.back();
+        } else {
+            router.push('/dashboard/users');
+        }
+    };
+
     if (!teacher) {
         return (
-            <div className="bg-amber-50 text-amber-700 p-6 rounded-xl border border-amber-100 text-center font-bold">
-                المعلم غير موجود.
+            <div className="bg-amber-50 text-amber-700 p-6 rounded-xl border border-amber-100 text-center font-bold" dir="rtl">
+                <p>المعلم غير موجود.</p>
+                <button
+                    onClick={handleBack}
+                    className="mt-3 inline-flex items-center gap-2 text-sm text-amber-900 bg-amber-200/60 hover:bg-amber-200 px-4 py-2 rounded-lg transition-colors font-medium"
+                >
+                    <ArrowRight className="h-4 w-4" />
+                    عودة
+                </button>
             </div>
         );
     }
@@ -90,7 +105,7 @@ export default function TeacherDetailPage() {
         <div className="space-y-6 animate-in fade-in duration-500" dir="rtl">
             {/* Back */}
             <button
-                onClick={() => router.back()}
+                onClick={handleBack}
                 className="flex items-center gap-2 text-sm text-gray-500 hover:text-primary transition-colors"
             >
                 <ArrowRight className="h-4 w-4" />

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchSessionById, updateSessionStatus, deleteSession } from '@/lib/api/sessions';
@@ -749,22 +750,40 @@ export default function SessionDetailPage() {
     const sessionDateStr = session ? new Date(session.date).toLocaleDateString('en-CA') : '';
     const isFutureSession = sessionDateStr > todayStr;
 
+    const handleBack = () => {
+        if (typeof window !== 'undefined' && window.history.length > 1) {
+            router.back();
+        } else {
+            router.push('/sessions');
+        }
+    };
+
     if (!session) {
         return (
             <div className="flex flex-col items-center justify-center min-h-screen gap-3" dir="rtl">
                 <XCircle className="h-10 w-10 text-gray-300" />
                 <p className="text-gray-500">الحصة غير موجودة</p>
-                <Button variant="outline" onClick={() => router.push('/sessions')}>
-                    العودة للحصص
+                <Button variant="outline" onClick={handleBack}>
+                    العودة
                 </Button>
             </div>
         );
     }
 
-    const presentCount = attendanceRecords.filter((r) => r.status === 'PRESENT' || r.status === 'LATE').length;
+    const guestCount = attendanceRecords.filter((r) => r.isGuest).length;
+    const regularPresentCount = attendanceRecords.filter(
+        (r) => (r.status === 'PRESENT' || r.status === 'LATE') && !r.isGuest
+    ).length;
+    const presentCount = regularPresentCount + guestCount;
+    const compCount = attendanceRecords.filter(
+        (r) => (r as any).isCompensated || (r.status === 'EXCUSED' && (r.notes?.includes('معوّض') || r.notes?.includes('معوض')))
+    ).length;
+    const excusedOtherCount = attendanceRecords.filter(
+        (r) => r.status === 'EXCUSED' && !(r as any).isCompensated && !r.notes?.includes('معوّض') && !r.notes?.includes('معوض')
+    ).length;
     const excusedCount = session.status === 'COMPLETED'
-        ? (snapshot?.presentStudents?.filter((s) => s.status === 'EXCUSED').length ?? attendanceRecords.filter((r) => r.status === 'EXCUSED').length)
-        : attendanceRecords.filter((r) => r.status === 'EXCUSED').length;
+        ? (snapshot?.presentStudents?.filter((s) => s.status === 'EXCUSED').length ?? excusedOtherCount)
+        : excusedOtherCount;
     
     // Enrolled students present (excluding guests) for accurate dynamic absent calculation during active session
     const groupStudentIds = new Set((groupStudentsData?.data ?? []).map((s) => s._id.toString()));
@@ -784,21 +803,21 @@ export default function SessionDetailPage() {
 
     // Absent count:
     // When completed: prioritize snapshot.absentCount, fallback to attendanceRecords.filter(ABSENT)
-    // When active: dynamically decrements as enrolled cards are scanned: totalGroupStudents - enrolledPresentCount - excusedCount
+    // When active: dynamically decrements as enrolled cards are scanned: totalGroupStudents - enrolledPresentCount - compCount - excusedOtherCount
     const absentCount = session.status === 'COMPLETED' 
         ? (snapshot?.absentCount ?? attendanceRecords.filter((r) => r.status === 'ABSENT').length)
-        : Math.max(0, (totalGroupStudents > 0 ? totalGroupStudents : attendanceRecords.length) - enrolledPresentCount - excusedCount);
+        : Math.max(0, (totalGroupStudents > 0 ? totalGroupStudents : attendanceRecords.length) - enrolledPresentCount - compCount - excusedOtherCount);
 
     return (
         <div className="min-h-screen bg-gray-50/30 p-3 sm:p-4 lg:p-6" dir="rtl">
             {/* Header */}
             <div className="mb-4 sm:mb-5">
                 <button
-                    onClick={() => router.push('/sessions')}
+                    onClick={handleBack}
                     className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-3 transition-colors"
                 >
                     <ArrowRight className="h-4 w-4" />
-                    الرجوع للحصص
+                    رجوع
                 </button>
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                     <div>
@@ -907,12 +926,28 @@ export default function SessionDetailPage() {
             {/* Stats Bar */}
             <div className={cn(
                 'grid gap-2 sm:gap-3 mb-4 sm:mb-5',
-                excusedCount > 0 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'
+                (guestCount > 0 && compCount > 0)
+                    ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5'
+                    : (guestCount > 0 || compCount > 0 || excusedCount > 0)
+                        ? 'grid-cols-2 sm:grid-cols-4'
+                        : 'grid-cols-3'
             )}>
                 <div className="bg-white rounded-xl border border-gray-100 p-2 sm:p-3 shadow-sm text-center">
-                    <p className="text-lg sm:text-xl font-bold text-green-700">{presentCount}</p>
+                    <p className="text-lg sm:text-xl font-bold text-green-700">{regularPresentCount}</p>
                     <p className="text-[11px] sm:text-xs text-gray-500 mt-0.5">حاضر</p>
                 </div>
+                {guestCount > 0 && (
+                    <div className="bg-white rounded-xl border border-indigo-100 bg-indigo-50/20 p-2 sm:p-3 shadow-sm text-center">
+                        <p className="text-lg sm:text-xl font-bold text-indigo-700">{guestCount}</p>
+                        <p className="text-[11px] sm:text-xs text-indigo-600 font-medium mt-0.5">زائر</p>
+                    </div>
+                )}
+                {compCount > 0 && (
+                    <div className="bg-white rounded-xl border border-purple-100 bg-purple-50/20 p-2 sm:p-3 shadow-sm text-center">
+                        <p className="text-lg sm:text-xl font-bold text-purple-700">{compCount}</p>
+                        <p className="text-[11px] sm:text-xs text-purple-600 font-medium mt-0.5">معوّض</p>
+                    </div>
+                )}
                 <div className="bg-white rounded-xl border border-gray-100 p-2 sm:p-3 shadow-sm text-center">
                     <p className="text-lg sm:text-xl font-bold text-red-600">{absentCount}</p>
                     <p className="text-[11px] sm:text-xs text-gray-500 mt-0.5">غائب</p>
@@ -1017,12 +1052,27 @@ export default function SessionDetailPage() {
                                             </div>
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center gap-2">
-                                                    <p className="text-sm font-medium text-gray-800 truncate">
-                                                        {student?.studentName ?? '—'}
-                                                    </p>
+                                                    {student?._id ? (
+                                                        <Link
+                                                            href={`/students/${student._id}`}
+                                                            className="text-sm font-medium text-gray-800 hover:text-primary transition-colors truncate hover:underline"
+                                                            title="عرض ملف الطالب"
+                                                        >
+                                                            {student?.studentName ?? '—'}
+                                                        </Link>
+                                                    ) : (
+                                                        <p className="text-sm font-medium text-gray-800 truncate">
+                                                            {student?.studentName ?? '—'}
+                                                        </p>
+                                                    )}
                                                     {(record as any).isGuest && (
-                                                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-purple-300 text-purple-700 bg-purple-50 shrink-0">
+                                                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-indigo-300 text-indigo-700 bg-indigo-50 shrink-0">
                                                             زائر
+                                                        </Badge>
+                                                    )}
+                                                    {((record as any).isCompensated || record.notes?.includes('معوّض')) && (
+                                                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-purple-300 text-purple-700 bg-purple-50 shrink-0">
+                                                            معوّض
                                                         </Badge>
                                                     )}
                                                     {subscriptionMap.get(student?._id ?? '') === false && (
@@ -1041,6 +1091,30 @@ export default function SessionDetailPage() {
                                                         hour: '2-digit',
                                                         minute: '2-digit',
                                                     })}
+                                                    {record.notes ? (
+                                                        <span className="text-gray-500 mr-1.5 text-[11px]">
+                                                            ({record.notes})
+                                                            {(record as any).relatedSessionId && (
+                                                                <Link
+                                                                    href={`/sessions/${(record as any).relatedSessionId}`}
+                                                                    className="text-primary hover:underline font-semibold mr-1 inline-flex items-center gap-0.5"
+                                                                    title="الانتقال للحصة المرتبطة"
+                                                                >
+                                                                    [عرض الحصة ↗]
+                                                                </Link>
+                                                            )}
+                                                        </span>
+                                                    ) : (record as any).relatedSessionId ? (
+                                                        <span className="text-gray-500 mr-1.5 text-[11px]">
+                                                            <Link
+                                                                href={`/sessions/${(record as any).relatedSessionId}`}
+                                                                className="text-primary hover:underline font-semibold inline-flex items-center gap-0.5"
+                                                                title="الانتقال للحصة المرتبطة"
+                                                            >
+                                                                [عرض الحصة المرتبطة: {(record as any).relatedGroupName || ''} ↗]
+                                                            </Link>
+                                                        </span>
+                                                    ) : null}
                                                     {record._syncStatus === 'QUEUED' || record._id.toString().startsWith('temp-') ? (
                                                         <span className="inline-flex items-center gap-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-medium shrink-0 mr-2">
                                                             <Clock className="h-2.5 w-2.5 text-amber-600 animate-pulse" />
@@ -1065,12 +1139,22 @@ export default function SessionDetailPage() {
                                                         onToggle={(newVal) => handleToggleHomework(record, newVal)}
                                                     />
                                                 )}
-                                                <span className={cn(
-                                                    'text-xs px-2 py-0.5 rounded-full border font-medium shrink-0',
-                                                    ATTENDANCE_COLORS[record.status]
-                                                )}>
-                                                    {ATTENDANCE_LABELS[record.status]}
-                                                </span>
+                                                {((record as any).isCompensated || record.notes?.includes('معوّض')) ? (
+                                                    <span className="text-xs px-2 py-0.5 rounded-full border font-medium shrink-0 bg-purple-50 text-purple-700 border-purple-200">
+                                                        معوّض
+                                                    </span>
+                                                ) : (record as any).isGuest ? (
+                                                    <span className="text-xs px-2 py-0.5 rounded-full border font-medium shrink-0 bg-indigo-50 text-indigo-700 border-indigo-200">
+                                                        زائر
+                                                    </span>
+                                                ) : (
+                                                    <span className={cn(
+                                                        'text-xs px-2 py-0.5 rounded-full border font-medium shrink-0',
+                                                        ATTENDANCE_COLORS[record.status]
+                                                    )}>
+                                                        {ATTENDANCE_LABELS[record.status]}
+                                                    </span>
+                                                )}
                                                 {canWrite && (
                                                     <Button
                                                         variant="ghost"
@@ -1207,7 +1291,13 @@ export default function SessionDetailPage() {
                         <p>هل أنت متأكد من إنهاء الحصة؟</p>
                         <p className="mt-1 text-gray-500">سيتم حفظ سجل الحضور ولن تتمكن من تعديله لاحقاً.</p>
                         <div className="mt-3 bg-gray-50 rounded-lg p-3 text-xs space-y-1">
-                            <p>الحاضرون: <span className="font-semibold text-green-700">{presentCount}</span></p>
+                            <p>الحاضرون: <span className="font-semibold text-green-700">{regularPresentCount}</span></p>
+                            {guestCount > 0 && (
+                                <p>الطلاب الزوار: <span className="font-semibold text-indigo-700">{guestCount}</span></p>
+                            )}
+                            {compCount > 0 && (
+                                <p>المعوضون: <span className="font-semibold text-purple-700">{compCount}</span></p>
+                            )}
                             <p>الغائبون: <span className="font-semibold text-red-600">{absentCount}</span></p>
                             {excusedCount > 0 && (
                                 <p>المستأذنون: <span className="font-semibold text-blue-600">{excusedCount}</span></p>

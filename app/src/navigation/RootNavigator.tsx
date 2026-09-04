@@ -5,9 +5,12 @@ import { RootStackParamList } from './types';
 import { AuthNavigator } from './AuthNavigator';
 import { AppTabsNavigator } from './AppTabsNavigator';
 import { ChildDetailsScreen } from '../screens/child/ChildDetailsScreen';
+import { SelectChildScreen } from '../screens/child/SelectChildScreen';
+import { FinanceScreen } from '../screens/finance/FinanceScreen';
 import { BarcodeScannerScreen } from '../screens/auth/BarcodeScannerScreen';
 import { ManualBarcodeScreen } from '../screens/auth/ManualBarcodeScreen';
 import { useAuthStore } from '../store/auth.store';
+import { useChildStore } from '../store/child.store';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 
@@ -18,9 +21,11 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export const RootNavigator: React.FC = () => {
   const { isAuthenticated, isLoading, hydrate } = useAuthStore();
+  const { hydrateSelectedChild } = useChildStore();
 
   useEffect(() => {
     hydrate();
+    hydrateSelectedChild();
   }, []);
 
   useEffect(() => {
@@ -54,17 +59,32 @@ export const RootNavigator: React.FC = () => {
         <>
           <Stack.Screen name="MainTabs" component={AppTabsNavigator} />
           <Stack.Screen
+            name="SelectChild"
+            component={SelectChildScreen}
+            options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+          />
+          <Stack.Screen
             name="ChildDetails"
             component={ChildDetailsScreen}
             options={({ route }) => ({
               headerShown: true,
               title: route.params.studentName || 'تفاصيل الطالب',
               headerTintColor: colors.primary,
-              headerTitleStyle: {
-                fontFamily: typography.fontFamily.bold,
-              },
+              headerTitleStyle: { fontFamily: typography.fontFamily.bold },
               headerShadowVisible: false,
               headerStyle: { backgroundColor: colors.background },
+            })}
+          />
+          <Stack.Screen
+            name="FinanceDetail"
+            component={FinanceScreen}
+            options={({ route }) => ({
+              headerShown: true,
+              title: `المالية — ${route.params.studentName}`,
+              headerTintColor: colors.textInverse,
+              headerTitleStyle: { fontFamily: typography.fontFamily.bold, color: colors.textInverse },
+              headerShadowVisible: false,
+              headerStyle: { backgroundColor: colors.navy },
             })}
           />
           <Stack.Screen

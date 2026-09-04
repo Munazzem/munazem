@@ -12,3 +12,6 @@ npm-debug.*
 .env.local
 .env.*.local
 !.env.example
+*-firebase-adminsdk-*.json
+service-account*.json
+

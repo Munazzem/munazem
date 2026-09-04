@@ -130,6 +130,11 @@ export class ParentAppService {
         groupName: group.name || '',
         studentCode: student.studentCode,
         barcode: student.barcode,
+        financialSummary: {
+          hasOutstandingDebt: (student.totalDebt || 0) > 0,
+          remainingAmount: student.totalDebt || 0,
+          hasActiveSubscription: !(student.totalDebt && student.totalDebt > 0),
+        },
       });
 
       if (student.totalDebt && student.totalDebt > 0) {
@@ -144,70 +149,152 @@ export class ParentAppService {
 
     await Promise.all(
       childrenList.map(async (child) => {
-        const childStudentIds = child.subjects.map(
-          (s: any) => new mongoose.Types.ObjectId(s.studentId)
-        );
+        // Enrich each subject with its own teacher-specific stats
+        await Promise.all(
+          child.subjects.map(async (subj: any) => {
+            const sid = new mongoose.Types.ObjectId(subj.studentId);
 
-        // 1. Attendance counts and latest attendance in parallel
-        const [totalAttendances, presentAttendances, latestAttendanceRecord, latestExamResult] =
-          await Promise.all([
-            AttendanceModel.countDocuments({
-              studentId: { $in: childStudentIds },
-            }),
-            AttendanceModel.countDocuments({
-              studentId: { $in: childStudentIds },
-              status: { $in: ['PRESENT', 'LATE'] },
-            }),
-            AttendanceModel.findOne({
-              studentId: { $in: childStudentIds },
-            })
-              .sort({ createdAt: -1 })
-              .populate({
-                path: 'studentId',
-                populate: { path: 'teacherId', select: 'name subject' },
-              })
+            // ── Same priority logic as ReportsService & getChildAttendance ────
+            // Read from both AttendanceModel (live) AND AttendanceSnapshot (completed)
+            // so counts match the dashboard system exactly.
+            type Entry = { date: Date; status: string; priority: number; isGuest?: boolean };
+            const sessionMap = new Map<string, Entry>();
+
+            // 1. Direct attendance records (in-progress / live sessions)
+            const rawAtts = await AttendanceModel.find({ studentId: sid })
               .populate('sessionId', 'date')
-              .lean() as any,
-            ExamResultModel.findOne({
-              studentId: { $in: childStudentIds },
-            })
+              .lean() as any[];
+
+            for (const r of rawAtts) {
+              let status = r.status as string;
+              let priority = 1;
+              if (r.isGuest && r.status === 'PRESENT') { status = 'GUEST'; priority = 3; }
+              else if (r.status === 'PRESENT' || r.status === 'LATE') { status = 'PRESENT'; priority = 4; }
+              else if (r.status === 'EXCUSED') { status = 'EXCUSED'; priority = 2; }
+              else { status = 'ABSENT'; priority = 1; }
+
+              const recordDate = r.sessionId?.date || r.scannedAt || r.createdAt;
+              const key = r.sessionId
+                ? (r.sessionId._id?.toString() ?? r.sessionId.toString())
+                : r._id.toString();
+
+              const ex = sessionMap.get(key);
+              if (!ex || priority > ex.priority) {
+                sessionMap.set(key, { date: recordDate, status, priority, isGuest: !!r.isGuest });
+              }
+            }
+
+            // 2. AttendanceSnapshots (completed sessions)
+            const snaps = await AttendanceSnapshotModel.find({
+              $or: [
+                { 'presentStudents.studentId': sid },
+                { 'absentStudents.studentId': sid },
+                { 'guestStudents.studentId': sid },
+                { 'compensatedStudents.studentId': sid },
+              ],
+            }, {
+              date: 1, sessionId: 1,
+              presentStudents: 1, absentStudents: 1,
+              guestStudents: 1, compensatedStudents: 1,
+            }).lean() as any[];
+
+            const sidStr = sid.toString();
+            for (const snap of snaps) {
+              const presentEntry = snap.presentStudents?.find((s: any) => s.studentId?.toString() === sidStr);
+              const isAbsent = snap.absentStudents?.some((s: any) => s.studentId?.toString() === sidStr);
+              const isGuest = snap.guestStudents?.some((s: any) => s.studentId?.toString() === sidStr);
+              const isCompensated = snap.compensatedStudents?.some((s: any) => s.studentId?.toString() === sidStr);
+
+              let status = 'UNKNOWN';
+              let priority = 0;
+              if (isCompensated || presentEntry?.status === 'EXCUSED') { status = 'EXCUSED'; priority = 2; }
+              else if (presentEntry) { status = 'PRESENT'; priority = 4; }
+              else if (isGuest) { status = 'GUEST'; priority = 3; }
+              else if (isAbsent) { status = 'ABSENT'; priority = 1; }
+
+              if (status !== 'UNKNOWN' && snap.date) {
+                const key = snap.sessionId ? snap.sessionId.toString() : snap._id?.toString() || 'snap';
+                const ex = sessionMap.get(key);
+                if (!ex || priority > ex.priority) {
+                  sessionMap.set(key, { date: snap.date, status, priority, isGuest: ex?.isGuest || !!isGuest || status === 'GUEST' });
+                }
+              }
+            }
+
+            // 3. Build counts from deduplicated entries (faithful to dashboard ReportsService)
+            const allEntries = Array.from(sessionMap.values());
+            const guestCount = allEntries.filter(e => e.status === 'GUEST' || (e as any).isGuest).length;
+            let availableGuestCredits = guestCount;
+            const effectiveEntries = allEntries.filter(e => {
+              if (e.status === 'EXCUSED') {
+                if (availableGuestCredits > 0) {
+                  availableGuestCredits--;
+                  return false; // Suppress phantom compensated absence card
+                }
+              }
+              return true;
+            });
+
+            const presAtt  = effectiveEntries.filter(e => e.status === 'PRESENT').length;
+            const absAtt   = effectiveEntries.filter(e => e.status === 'ABSENT').length;
+            const excAtt   = effectiveEntries.filter(e => e.status === 'EXCUSED').length;
+            const guestAtt = effectiveEntries.filter(e => e.status === 'GUEST').length;
+            const totalAtt = effectiveEntries.length;
+
+            const attendedCount = presAtt + guestAtt + excAtt; // معوض = حضر تعويضاً → يُعدّ حاضراً
+            subj.attendanceRate = totalAtt > 0 ? Math.round((attendedCount / totalAtt) * 100) : 0;
+            subj.presentCount = presAtt;
+            subj.absentCount = absAtt;
+            subj.excusedCount = excAtt;
+            subj.guestCount = guestAtt;
+            subj.totalSessions = totalAtt;
+
+            // Latest attendance — pick most recent from rawAtts
+            const latestAtt = rawAtts.sort((a: any, b: any) =>
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            )[0] as any | null;
+
+            // Latest exam result
+            const latestEx = await ExamResultModel.findOne({ studentId: sid })
               .sort({ createdAt: -1 })
               .populate('examId', 'title totalMarks')
-              .populate('teacherId', 'subject name')
-              .lean() as any,
-          ]);
+              .lean() as any;
 
-        if (totalAttendances > 0) {
-          child.attendanceRate = Math.round(
-            (presentAttendances / totalAttendances) * 100
-          );
-        }
+            if (latestAtt) {
+              if (latestAtt.status === 'ABSENT') {
+                anyAbsenceToday = true;
+              }
+              subj.latestAttendance = {
+                date: latestAtt.sessionId?.date?.toISOString() || latestAtt.createdAt?.toISOString(),
+                status: latestAtt.status,
+                subject: subj.subject,
+                teacherName: subj.teacherName,
+              };
+            } else {
+              subj.latestAttendance = null;
+            }
 
-        if (latestAttendanceRecord) {
-          const attStudent = latestAttendanceRecord.studentId || {};
-          const attTeacher = attStudent.teacherId || {};
-          if (latestAttendanceRecord.status === 'ABSENT') {
-            anyAbsenceToday = true;
-          }
-          child.latestAttendance = {
-            date:
-              latestAttendanceRecord.sessionId?.date?.toISOString() ||
-              latestAttendanceRecord.createdAt?.toISOString(),
-            status: latestAttendanceRecord.status,
-            subject: attTeacher.subject || 'حصة دراسية',
-            teacherName: attTeacher.name || '',
-          };
-        }
+            if (latestEx && latestEx.examId) {
+              subj.latestExam = {
+                title: latestEx.examId.title,
+                score: latestEx.score,
+                totalMarks: latestEx.examId.totalMarks,
+                date: latestEx.createdAt?.toISOString(),
+                subject: subj.subject,
+                teacherName: subj.teacherName,
+              };
+            } else {
+              subj.latestExam = null;
+            }
+          })
+        );
 
-        if (latestExamResult && latestExamResult.examId) {
-          child.latestExam = {
-            title: latestExamResult.examId.title,
-            score: latestExamResult.score,
-            totalMarks: latestExamResult.examId.totalMarks,
-            date: latestExamResult.createdAt?.toISOString(),
-            subject: latestExamResult.teacherId?.subject || 'امتحان',
-            teacherName: latestExamResult.teacherId?.name || '',
-          };
+        // Fallback for default display (first subject or primary)
+        if (child.subjects.length > 0) {
+          const primary = child.subjects[0];
+          child.attendanceRate = primary.attendanceRate;
+          child.latestAttendance = primary.latestAttendance;
+          child.latestExam = primary.latestExam;
         }
       })
     );
@@ -334,37 +421,43 @@ export class ParentAppService {
 
   /**
    * Child Details: Attendance History
+   * Uses identical priority logic to ReportsService so counts match the dashboard system exactly.
+   * Priority: PRESENT/LATE (4) > GUEST (3) > EXCUSED (2) > ABSENT (1)
    */
-  static async getChildAttendance(parentId: string, studentId: string, params?: { subjectId?: string }) {
+  static async getChildAttendance(parentId: string, studentId: string, params?: { subjectId?: string; all?: string }) {
     await assertParentStudentAccess(parentId, studentId);
 
     const baseStudent = await StudentModel.findById(studentId).lean();
     if (!baseStudent) throw NotFoundException({ message: 'الطالب غير موجود' });
 
-    // Find all sibling student IDs for this child across subjects
-    const links = await ParentStudentModel.find({
-      parentId: new mongoose.Types.ObjectId(parentId),
-      status: 'ACTIVE',
-    }).populate('studentId', 'studentName').lean();
+    // Build the set of studentIds to query
+    let targetStudentIds: mongoose.Types.ObjectId[] = [baseStudent._id as any];
 
-    const childStudentIds = links
-      .map(l => l.studentId as any)
-      .filter(s => s && s.studentName === baseStudent.studentName)
-      .map(s => s._id);
+    if (params?.all === 'true') {
+      const links = await ParentStudentModel.find({
+        parentId: new mongoose.Types.ObjectId(parentId),
+        status: 'ACTIVE',
+      }).populate('studentId', 'studentName').lean();
 
-    const query: any = { studentId: { $in: childStudentIds } };
-
-    if (params?.subjectId && params.subjectId !== 'ALL') {
-      if (mongoose.Types.ObjectId.isValid(params.subjectId)) {
-        query.$or = [
-          { studentId: new mongoose.Types.ObjectId(params.subjectId) },
-        ];
-      }
+      targetStudentIds = links
+        .map(l => l.studentId as any)
+        .filter(s => s && s.studentName === baseStudent.studentName)
+        .map(s => s._id);
+    } else if (params?.subjectId && params.subjectId !== 'ALL' && mongoose.Types.ObjectId.isValid(params.subjectId)) {
+      targetStudentIds = [new mongoose.Types.ObjectId(params.subjectId)];
     }
 
-    const records = await AttendanceModel.find(query)
+    // ── Same priority dedup logic as ReportsService.getStudentReport ─────────
+    const sessionMap = new Map<string, {
+      sessionId?: any; date: Date; status: string; priority: number;
+      subject: string; teacherName: string; groupName: string; notes: string;
+      isGuest?: boolean;
+    }>();
+
+    // 1. Direct attendance records
+    const rawRecords = await AttendanceModel.find({ studentId: { $in: targetStudentIds } })
       .sort({ createdAt: -1 })
-      .limit(100)
+      .limit(200)
       .populate({
         path: 'studentId',
         populate: [
@@ -375,51 +468,150 @@ export class ParentAppService {
       .populate('sessionId', 'date')
       .lean();
 
-    return records.map((r: any) => {
+    for (const r of rawRecords as any[]) {
       const student = r.studentId || {};
       const teacher = student.teacherId || {};
       const group = student.groupId || {};
 
-      return {
-        id: r._id.toString(),
-        date: r.sessionId?.date?.toISOString() || r.scannedAt?.toISOString() || r.createdAt?.toISOString(),
-        status: r.status,
-        subject: teacher.subject || 'مادة',
-        teacherName: teacher.name || 'المعلم',
-        groupName: group.name || 'مجموعة',
-        notes: r.notes || '',
-      };
+      let status: string = r.status;
+      let priority = 1;
+      if (r.isGuest && r.status === 'PRESENT') { status = 'GUEST'; priority = 3; }
+      else if (r.status === 'PRESENT' || r.status === 'LATE') { status = 'PRESENT'; priority = 4; }
+      else if (r.status === 'EXCUSED') { status = 'EXCUSED'; priority = 2; }
+      else { status = 'ABSENT'; priority = 1; }
+
+      const recordDate = r.sessionId?.date || r.scannedAt || r.createdAt;
+      const sessionKey = r.sessionId
+        ? (r.sessionId._id?.toString() ?? r.sessionId.toString())
+        : r._id.toString();
+
+      const existing = sessionMap.get(sessionKey);
+      if (!existing || priority > existing.priority) {
+        sessionMap.set(sessionKey, {
+          sessionId: r.sessionId,
+          date: recordDate,
+          status, priority,
+          subject: teacher.subject || 'مادة',
+          teacherName: teacher.name || 'المعلم',
+          groupName: group.name || 'مجموعة',
+          notes: r.notes || '',
+          isGuest: !!r.isGuest,
+        });
+      }
+    }
+
+    // 2. AttendanceSnapshots (completed sessions — same as ReportsService)
+    const snapshots = await AttendanceSnapshotModel.find({
+      $or: targetStudentIds.map(sid => ({
+        $or: [
+          { 'presentStudents.studentId': sid },
+          { 'absentStudents.studentId': sid },
+          { 'guestStudents.studentId': sid },
+          { 'compensatedStudents.studentId': sid },
+        ]
+      }))
+    }, {
+      date: 1, sessionId: 1, presentStudents: 1, absentStudents: 1,
+      guestStudents: 1, compensatedStudents: 1,
+    }).sort({ date: -1 }).lean() as any[];
+
+    for (const snap of snapshots) {
+      for (const sid of targetStudentIds) {
+        const sidStr = sid.toString();
+        const presentEntry = snap.presentStudents?.find((s: any) => s.studentId?.toString() === sidStr);
+        const isAbsent = snap.absentStudents?.some((s: any) => s.studentId?.toString() === sidStr);
+        const guestEntry = snap.guestStudents?.find((s: any) => s.studentId?.toString() === sidStr);
+        const isCompensated = snap.compensatedStudents?.some((s: any) => s.studentId?.toString() === sidStr);
+
+        let status = 'UNKNOWN';
+        let priority = 0;
+        if (isCompensated || presentEntry?.status === 'EXCUSED') { status = 'EXCUSED'; priority = 2; }
+        else if (presentEntry) { status = 'PRESENT'; priority = 4; }
+        else if (guestEntry) { status = 'GUEST'; priority = 3; }
+        else if (isAbsent) { status = 'ABSENT'; priority = 1; }
+
+        if (status !== 'UNKNOWN' && snap.date) {
+          const sessionKey = snap.sessionId ? snap.sessionId.toString() : (snap._id?.toString() || 'snap');
+          const existing = sessionMap.get(sessionKey);
+          if (!existing || priority > existing.priority) {
+            sessionMap.set(sessionKey, {
+              sessionId: snap.sessionId,
+              date: snap.date,
+              status, priority,
+              subject: existing?.subject || 'مادة',
+              teacherName: existing?.teacherName || 'المعلم',
+              groupName: existing?.groupName || 'مجموعة',
+              notes: existing?.notes || '',
+              isGuest: existing?.isGuest || !!guestEntry || status === 'GUEST',
+            });
+          }
+        }
+      }
+    }
+
+    // 3. Filter out redundant EXCUSED entries if compensated by a GUEST session (exact same as ReportsService.getStudentReport)
+    const deduplicatedEntries = Array.from(sessionMap.values())
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    const guestCount = deduplicatedEntries.filter(
+      e => e.status === 'GUEST' || (e as any).isGuest || e.notes?.includes('زائر')
+    ).length;
+    let availableGuestCredits = guestCount;
+
+    const effectiveEntries = deduplicatedEntries.filter(e => {
+      if (e.status === 'EXCUSED') {
+        if (availableGuestCredits > 0) {
+          availableGuestCredits--;
+          return false; // Suppress phantom compensated absence card
+        }
+      }
+      return true;
     });
+
+    return effectiveEntries.map((e, i) => ({
+      id: e.sessionId?.toString() || `entry-${i}`,
+      date: new Date(e.date).toISOString(),
+      status: e.status,
+      subject: e.subject,
+      teacherName: e.teacherName,
+      groupName: e.groupName,
+      notes: e.notes,
+    }));
   }
 
   /**
    * Child Details: Exam Results
    */
-  static async getChildExams(parentId: string, studentId: string, params?: { subjectId?: string }) {
+  static async getChildExams(parentId: string, studentId: string, params?: { subjectId?: string; all?: string }) {
     await assertParentStudentAccess(parentId, studentId);
 
     const baseStudent = await StudentModel.findById(studentId).lean();
     if (!baseStudent) throw NotFoundException({ message: 'الطالب غير موجود' });
 
-    const links = await ParentStudentModel.find({
-      parentId: new mongoose.Types.ObjectId(parentId),
-      status: 'ACTIVE',
-    }).populate('studentId', 'studentName').lean();
+    let query: any = {};
 
-    const childStudentIds = links
-      .map(l => l.studentId as any)
-      .filter(s => s && s.studentName === baseStudent.studentName)
-      .map(s => s._id);
+    if (params?.all === 'true') {
+      const links = await ParentStudentModel.find({
+        parentId: new mongoose.Types.ObjectId(parentId),
+        status: 'ACTIVE',
+      }).populate('studentId', 'studentName').lean();
 
-    const query: any = { studentId: { $in: childStudentIds } };
+      const childStudentIds = links
+        .map(l => l.studentId as any)
+        .filter(s => s && s.studentName === baseStudent.studentName)
+        .map(s => s._id);
 
-    if (params?.subjectId && params.subjectId !== 'ALL') {
-      if (mongoose.Types.ObjectId.isValid(params.subjectId)) {
-        query.$or = [
+      query = { studentId: { $in: childStudentIds } };
+    } else if (params?.subjectId && params.subjectId !== 'ALL' && mongoose.Types.ObjectId.isValid(params.subjectId)) {
+      query = {
+        $or: [
           { teacherId: new mongoose.Types.ObjectId(params.subjectId) },
           { studentId: new mongoose.Types.ObjectId(params.subjectId) },
-        ];
-      }
+        ],
+      };
+    } else {
+      // Isolated to this teacher's student document
+      query = { studentId: baseStudent._id };
     }
 
     const results = await ExamResultModel.find(query)
@@ -453,27 +645,41 @@ export class ParentAppService {
   /**
    * Child Details: Financial & Cycle Breakdown
    */
-  static async getChildFinancial(parentId: string, studentId: string) {
+  static async getChildFinancial(parentId: string, studentId: string, params?: { subjectId?: string; all?: string }) {
     await assertParentStudentAccess(parentId, studentId);
 
     const baseStudent = await StudentModel.findById(studentId).lean();
     if (!baseStudent) throw NotFoundException({ message: 'الطالب غير موجود' });
 
-    const links = await ParentStudentModel.find({
-      parentId: new mongoose.Types.ObjectId(parentId),
-      status: 'ACTIVE',
-    }).populate({
-      path: 'studentId',
-      populate: { path: 'teacherId', select: 'name subject' },
-    }).lean();
+    let targetStudents: any[] = [];
 
-    const matchingStudents = links
-      .map(l => l.studentId as any)
-      .filter(s => s && s.studentName === baseStudent.studentName);
+    if (params?.all === 'true') {
+      const links = await ParentStudentModel.find({
+        parentId: new mongoose.Types.ObjectId(parentId),
+        status: 'ACTIVE',
+      }).populate({
+        path: 'studentId',
+        populate: { path: 'teacherId', select: 'name subject' },
+      }).lean();
+
+      targetStudents = links
+        .map(l => l.studentId as any)
+        .filter(s => s && s.studentName === baseStudent.studentName);
+    } else if (params?.subjectId && params.subjectId !== 'ALL' && mongoose.Types.ObjectId.isValid(params.subjectId)) {
+      const specific = await StudentModel.findById(params.subjectId)
+        .populate('teacherId', 'name subject')
+        .lean();
+      if (specific) targetStudents = [specific];
+    } else {
+      const specific = await StudentModel.findById(baseStudent._id)
+        .populate('teacherId', 'name subject')
+        .lean();
+      if (specific) targetStudents = [specific];
+    }
 
     const results: any[] = [];
 
-    for (const student of matchingStudents) {
+    for (const student of targetStudents) {
       const enrollments = await CycleEnrollmentModel.find({
         studentId: student._id,
       })

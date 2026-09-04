@@ -21,6 +21,7 @@ export interface IStudent {
     cycleNumber?: number;          // رقم الدورة (يزداد مع كل دورة مكتملة)
     totalDebt?: number; // إجمالي المبالغ المتبقية غير المسددة
     consecutiveAbsences?: number; // عدد مرات الغياب المتتالي
+    groupAssignedAt?: Date; // تاريخ الانضمام للمجموعة الحالية (لتفادي احتساب غيابات سابقة من المجموعة الجديدة)
     createdAt?: Date;
     updatedAt?: Date;
 }

@@ -173,11 +173,22 @@ export default function StudentProfilePage() {
         );
     }
 
+    const handleBack = () => {
+        if (typeof window !== 'undefined' && window.history.length > 1) {
+            router.back();
+        } else {
+            const gId = typeof student?.groupId === 'object' && student?.groupId !== null
+                ? (student.groupId as any)._id
+                : student?.groupId;
+            router.push(gId ? `/students?groupId=${gId}` : '/students');
+        }
+    };
+
     if (!student) {
         return (
             <div className="min-h-screen bg-gray-50/30 p-4 sm:p-6 flex flex-col items-center justify-center gap-4">
                 <p className="text-gray-500 font-medium">الطالب غير موجود.</p>
-                <Button variant="outline" onClick={() => router.push('/students')}>العودة للطلاب</Button>
+                <Button variant="outline" onClick={handleBack}>العودة للطلاب</Button>
             </div>
         );
     }
@@ -195,7 +206,7 @@ export default function StudentProfilePage() {
     return (
         <div className="min-h-screen bg-gray-50/30 p-3 sm:p-4 lg:p-6" dir="rtl">
             <div className="mb-4 sm:mb-6 max-w-4xl mx-auto flex items-center gap-3">
-                <Button variant="outline" size="icon" onClick={() => router.push('/students')} className="shrink-0">
+                <Button variant="outline" size="icon" onClick={handleBack} className="shrink-0" title="رجوع">
                     <ArrowRight className="h-4 w-4" />
                 </Button>
                 <div>

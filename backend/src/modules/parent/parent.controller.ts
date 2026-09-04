@@ -313,7 +313,8 @@ parentRouter.get(
       const { studentId } = req.params;
       const data = await ParentAppService.getChildFinancial(
         parentReq.parent.parentId,
-        studentId as string
+        studentId as string,
+        req.query as any
       );
       return SuccessResponse({
         res,

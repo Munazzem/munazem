@@ -18,17 +18,29 @@ backend/src/**/*.d.ts.map
 walkthrough
 README_AR.md
 CHANGES.md
-# Test & dev scripts
+# Temporary dev & load test scripts (Unit & Integration tests are tracked)
 backend/test-*.ts
 backend/test-*.js
 backend/tests/load/
+
+# Scripts & Maintenance
+backend/src/scripts/
+**/scripts/
+backend/delete-students-by-phone.ts
+backend/fix-data.ts
+backend/retry-failed.*
+backend/reset_finances*.js
+backend/generate-postman.js
+backend/monazem_postman_collection.json
+frontend/replace.js
+reports_backup.txt
+*_backup.*
+*.backup.*
+*_backup.txt
+
 # Internal docs (not for repo)
 backend/docs/BACKEND_FLOW_GUIDE_AR.md
 backend/docs/PRODUCTION.md
 # WhatsApp Session Cache (Hidden everywhere)
 **/.wwebjs_auth/
 **/.wwebjs_cache/
-
-# Maintenance & Scratch Scripts
-backend/reset_finances*.js
-frontend/replace.js

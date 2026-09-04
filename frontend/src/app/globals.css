@@ -203,3 +203,29 @@ body {
   direction: rtl !important;
   text-align: right !important;
 }
+
+/* ── HTML5 QR Scanner Mobile Containment ── */
+[id^="qr-reader"],
+[id^="qr-scanner"] {
+  max-width: 100% !important;
+  width: 100% !important;
+  overflow: hidden !important;
+}
+
+[id^="qr-reader"] video,
+[id^="qr-scanner"] video {
+  max-width: 100% !important;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}
+
+[id^="qr-reader"] canvas,
+[id^="qr-scanner"] canvas {
+  max-width: 100% !important;
+}
+
+[id^="qr-reader"] div,
+[id^="qr-scanner"] div {
+  max-width: 100% !important;
+}

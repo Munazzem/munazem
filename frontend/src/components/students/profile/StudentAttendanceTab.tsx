@@ -74,7 +74,147 @@ export function StudentAttendanceTab({
                 </div>
             </div>
             
-            {report.attendance.history?.length > 0 && (
+            {/* Cycles History Sections */}
+            {report.attendance.cycles && report.attendance.cycles.length > 0 ? (
+                <div className="space-y-4">
+                    {report.attendance.cycles.map((cycle: any) => (
+                        <div
+                            key={`cycle-${cycle.cycleNumber}`}
+                            className={cn(
+                                "bg-white p-4 sm:p-5 rounded-2xl border shadow-xs space-y-4 transition-all",
+                                cycle.isCurrent ? "border-blue-200/90 ring-1 ring-blue-100" : "border-gray-100"
+                            )}
+                        >
+                            <div className="flex items-center justify-between pb-3 border-b border-gray-100/80">
+                                <div className="flex items-center gap-2.5">
+                                    <div className={cn(
+                                        "h-7 w-7 rounded-xl flex items-center justify-center font-bold text-xs",
+                                        cycle.isCurrent ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-700"
+                                    )}>
+                                        {cycle.cycleNumber}
+                                    </div>
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <h4 className="text-sm font-bold text-gray-800">
+                                                الدورة {cycle.cycleNumber}
+                                            </h4>
+                                            {cycle.isCurrent && (
+                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                                                    الدورة الحالية
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className="text-[11px] text-gray-400 mt-0.5">
+                                            إجمالي الحصص المسجلة بالدورة: {cycle.sessions.length} حصة
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {cycle.sessions.length === 0 ? (
+                                <div className="text-center py-5 text-gray-400 text-xs">
+                                    لا توجد حصص مسجلة في هذه الدورة بعد
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2.5 sm:gap-3">
+                                    {cycle.sessions.map((h: any, i: number) => {
+                                        const isPresent = h.status === 'PRESENT' || h.status === 'LATE';
+                                        const isAbsent = h.status === 'ABSENT';
+                                        const isExcused = h.status === 'EXCUSED';
+                                        const isGuest = h.status === 'GUEST';
+                                        const { dayName, dateFormatted, fullDate } = formatSessionDate(h.date);
+                                        const hasHomework = typeof h.homeworkDone === 'boolean' && isPresent;
+
+                                        return (
+                                            <div
+                                                key={`session-${cycle.cycleNumber}-${i}`}
+                                                title={`${fullDate} — ${isPresent ? (hasHomework ? (h.homeworkDone ? 'حاضر (تم الواجب)' : 'حاضر (لم يتم الواجب)') : 'حاضر') : isExcused ? 'معوض' : isGuest ? 'زائر' : isAbsent ? 'غائب' : '—'} (انقر للتعديل أو الحذف)`}
+                                                onClick={() => canWrite && h.sessionId && setSelectedSessionForAdjustment({
+                                                    sessionId: h.sessionId,
+                                                    date: h.date,
+                                                    status: h.status,
+                                                    homeworkDone: typeof h.homeworkDone === 'boolean' ? h.homeworkDone : null,
+                                                })}
+                                                className={cn(
+                                                    'flex flex-col items-center justify-center p-2.5 rounded-2xl border transition-all duration-200 select-none',
+                                                    canWrite && h.sessionId && 'cursor-pointer hover:scale-[1.04] hover:shadow-md active:scale-95',
+                                                    isPresent ? 'bg-emerald-50/80 border-emerald-200 text-emerald-800 hover:bg-emerald-100/80' :
+                                                    isAbsent  ? 'bg-red-50/80 border-red-200 text-red-800 hover:bg-red-100/80' :
+                                                    isExcused ? 'bg-blue-50/80 border-blue-200 text-blue-800 hover:bg-blue-100/80' :
+                                                    isGuest   ? 'bg-amber-50/80 border-amber-200 text-amber-800 hover:bg-amber-100/80' :
+                                                    'bg-gray-50 border-gray-200 text-gray-700'
+                                                )}
+                                            >
+                                                {/* Status Badge */}
+                                                <div className="flex items-center gap-1.5 mb-1.5">
+                                                    <div className={cn(
+                                                        "w-5 h-5 rounded-full flex items-center justify-center shrink-0 shadow-2xs",
+                                                        isPresent ? "bg-emerald-500 text-white" :
+                                                        isAbsent  ? "bg-red-500 text-white" :
+                                                        isExcused ? "bg-blue-500 text-white" :
+                                                        isGuest   ? "bg-amber-500 text-white" :
+                                                        "bg-gray-400 text-white"
+                                                    )}>
+                                                        {isPresent ? <Check className="h-3 w-3 stroke-[3]" /> :
+                                                         isAbsent  ? <X className="h-3 w-3 stroke-[3]" /> :
+                                                         isExcused ? <Clock className="h-3 w-3" /> :
+                                                         isGuest   ? <UserCheck className="h-3 w-3" /> : null}
+                                                    </div>
+                                                    <span className="text-[11px] font-bold">
+                                                        {isPresent ? 'حاضر' : isAbsent ? 'غائب' : isExcused ? 'معوض' : isGuest ? 'زائر' : '—'}
+                                                    </span>
+                                                </div>
+
+                                                {/* Homework Badge if applicable */}
+                                                {hasHomework && (
+                                                    <span className={cn(
+                                                        "text-[9px] font-bold px-1.5 py-0.5 rounded-full border mb-1.5 leading-none shrink-0",
+                                                        h.homeworkDone
+                                                            ? "bg-emerald-100/90 text-emerald-800 border-emerald-300"
+                                                            : "bg-rose-100/90 text-rose-800 border-rose-300"
+                                                    )}>
+                                                        {h.homeworkDone ? 'واجب ✓' : 'بلا واجب ✗'}
+                                                    </span>
+                                                )}
+
+                                                {/* Divider */}
+                                                <div className={cn(
+                                                    "w-full h-px mb-1.5 opacity-60",
+                                                    isPresent ? "bg-emerald-200" :
+                                                    isAbsent  ? "bg-red-200" :
+                                                    isExcused ? "bg-blue-200" :
+                                                    isGuest   ? "bg-amber-200" :
+                                                    "bg-gray-200"
+                                                )} />
+
+                                                {/* Day & Date */}
+                                                <span className="text-[10px] font-semibold opacity-75 leading-none mb-0.5">{dayName}</span>
+                                                <span className="text-xs font-black tracking-tight">{dateFormatted}</span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    ))}
+
+                    {/* Legend */}
+                    <div className="flex items-center gap-4 pt-3 pb-1 flex-wrap text-xs text-gray-600 font-semibold justify-center">
+                        <span className="flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> حاضر
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span> غائب
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span> معوض
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span> زائر
+                        </span>
+                    </div>
+                </div>
+            ) : report.attendance.history?.length > 0 ? (
                 <div className="bg-white p-4 sm:p-6 rounded-2xl border border-gray-100 shadow-sm">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-5">
                         <div className="flex items-center gap-2">
@@ -100,7 +240,7 @@ export function StudentAttendanceTab({
                             return (
                                 <div
                                     key={i}
-                                    title={`${fullDate} — ${isPresent ? (hasHomework ? (h.homeworkDone ? 'حاضر (تم الواجب)' : 'حاضر (لم يتم الواجب)') : 'حاضر') : isExcused ? 'بعذر' : isGuest ? 'زائر' : isAbsent ? 'غائب' : '—'} (انقر للتعديل أو الحذف)`}
+                                    title={`${fullDate} — ${isPresent ? (hasHomework ? (h.homeworkDone ? 'حاضر (تم الواجب)' : 'حاضر (لم يتم الواجب)') : 'حاضر') : isExcused ? 'معوض' : isGuest ? 'زائر' : isAbsent ? 'غائب' : '—'} (انقر للتعديل أو الحذف)`}
                                     onClick={() => canWrite && h.sessionId && setSelectedSessionForAdjustment({
                                         sessionId: h.sessionId,
                                         date: h.date,
@@ -133,7 +273,7 @@ export function StudentAttendanceTab({
                                              isGuest   ? <UserCheck className="h-3 w-3" /> : null}
                                         </div>
                                         <span className="text-[11px] font-bold">
-                                            {isPresent ? 'حاضر' : isAbsent ? 'غائب' : isExcused ? 'بعذر' : isGuest ? 'زائر' : '—'}
+                                            {isPresent ? 'حاضر' : isAbsent ? 'غائب' : isExcused ? 'معوض' : isGuest ? 'زائر' : '—'}
                                         </span>
                                     </div>
 
@@ -176,14 +316,14 @@ export function StudentAttendanceTab({
                             <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span> غائب
                         </span>
                         <span className="flex items-center gap-1.5">
-                            <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span> بعذر
+                            <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span> معوض
                         </span>
                         <span className="flex items-center gap-1.5">
                             <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span> زائر
                         </span>
                     </div>
                 </div>
-            )}
+            ) : null}
 
             {/* Modal for adjusting or deleting session attendance */}
             {studentId && (

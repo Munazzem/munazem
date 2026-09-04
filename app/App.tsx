@@ -13,6 +13,7 @@ import {
 import * as Linking from 'expo-linking';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { NotificationService } from './src/services/notification.service';
+import { UpdateService } from './src/services/update.service';
 import { colors } from './src/theme/colors';
 import { RootStackParamList } from './src/navigation/types';
 
@@ -28,7 +29,9 @@ const linking: LinkingOptions<RootStackParamList> = {
         screens: {
           HomeTab: 'home',
           NotificationsTab: 'notifications',
-          AccountTab: 'account',
+          AttendanceTab: 'attendance',
+          GradesTab: 'grades',
+          SettingsTab: 'settings',
         },
       },
       ChildDetails: {
@@ -54,6 +57,13 @@ const queryClient = new QueryClient({
 
 export default function App() {
   const navigationRef = useRef<NavigationContainerRef<RootStackParamList>>(null);
+
+  // ── Auto-Update Check (OTA) ──────────────────────────────────────────────────
+  useEffect(() => {
+    UpdateService.checkAndApplyUpdate().catch(() => {});
+    const removeForegroundListener = UpdateService.initForegroundUpdateListener();
+    return () => removeForegroundListener();
+  }, []);
 
   // Enforce Arabic RTL direction
   useEffect(() => {
@@ -85,7 +95,7 @@ export default function App() {
           // Navigate to ChildDetails with proper tab
           navigationRef.current.navigate('ChildDetails', {
             studentId,
-            studentName: '', // will be loaded from API inside the screen
+            studentName: '',
             initialTab: tab,
           });
         } else if (path === 'notifications') {
