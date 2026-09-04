@@ -260,7 +260,8 @@ export class PdfService {
      */
     static async generateStudentReportPdf(studentId: string, teacherId: string): Promise<string> {
         const teacher = await UserModel.findById(teacherId).lean();
-        const reportData = await ReportsService.getStudentReport(studentId, teacherId);
+        const isHomeworkEnabled = Boolean(teacher?.features?.homeworkTracking);
+        const reportData = await ReportsService.getStudentReport(studentId, teacherId, teacher);
         if (!reportData) {
             throw NotFoundException({ message: 'بيانات الطالب غير متوفرة لطباعة التقرير' });
         }
@@ -331,9 +332,9 @@ export class PdfService {
                 <thead>
                     <tr>
                         <th style="width: 10%;">حصة #</th>
-                        <th style="width: 40%;">تاريخ الحصة</th>
-                        <th style="width: 25%;">حالة الحضور</th>
-                        <th style="width: 25%;">تسليم الواجب</th>
+                        <th style="width: ${isHomeworkEnabled ? '40%' : '50%'};">تاريخ الحصة</th>
+                        <th style="width: ${isHomeworkEnabled ? '25%' : '40%'};">حالة الحضور</th>
+                        ${isHomeworkEnabled ? '<th style="width: 25%;">تسليم الواجب</th>' : ''}
                     </tr>
                 </thead>
                 <tbody>
@@ -342,7 +343,7 @@ export class PdfService {
                             <td>${attendance.history.length - idx}</td>
                             <td dir="ltr">${h.date ? this.fmtDate(h.date, { weekday: 'long', year: 'numeric', month: 'numeric', day: 'numeric' }) : '—'}</td>
                             <td>${h.status === 'PRESENT' ? '<span class="badge-paid">حاضر</span>' : h.status === 'ABSENT' ? '<span class="badge-unpaid">غائب</span>' : '<span style="color:#0284c7; font-weight:bold;">عذر / زائر</span>'}</td>
-                            <td>${h.homeworkDone === true ? '<span style="color:#15803d; font-weight:bold;">تم التسليم ✓</span>' : h.homeworkDone === false ? '<span style="color:#b91c1c; font-weight:bold;">لم يسلم ✗</span>' : '—'}</td>
+                            ${isHomeworkEnabled ? `<td>${h.homeworkDone === true ? '<span style="color:#15803d; font-weight:bold;">تم التسليم ✓</span>' : h.homeworkDone === false ? '<span style="color:#b91c1c; font-weight:bold;">لم يسلم ✗</span>' : '—'}</td>` : ''}
                         </tr>
                     `).join('')}
                 </tbody>
