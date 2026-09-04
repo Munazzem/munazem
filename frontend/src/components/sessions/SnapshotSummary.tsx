@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { CalendarCheck, ChevronDown, ChevronUp, UserCheck, UserX, Users } from 'lucide-react';
+import { CalendarCheck, ChevronDown, ChevronUp, UserCheck } from 'lucide-react';
 import type { IAttendanceSnapshot } from '@/types/session.types';
 
 interface SnapshotSummaryProps {
@@ -16,6 +16,7 @@ export function SnapshotSummary({ snapshot }: SnapshotSummaryProps) {
     const guestList = snapshot.guestStudents ?? [];
     const absentList = snapshot.absentStudents ?? [];
     const compList = snapshot.compensatedStudents ?? [];
+    const excusedStudents = snapshot.presentStudents?.filter((s) => s.status === 'EXCUSED') || [];
 
     const rate = snapshot.totalCount > 0
         ? Math.round(((snapshot.presentCount + compCount) / snapshot.totalCount) * 100)
@@ -96,6 +97,25 @@ export function SnapshotSummary({ snapshot }: SnapshotSummaryProps) {
                                 key={s.studentId}
                                 href={`/students/${s.studentId}`}
                                 className="text-xs bg-red-50 hover:bg-red-100 hover:text-red-900 text-red-600 px-2.5 py-1 rounded-full border border-red-200 transition-all hover:shadow-sm inline-flex items-center gap-1 cursor-pointer"
+                                title="عرض ملف الطالب"
+                            >
+                                {s.studentName}
+                            </Link>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Excused Students */}
+            {excusedStudents.length > 0 && (
+                <div className="mb-3 pt-2 border-t border-gray-100">
+                    <p className="text-xs font-medium text-blue-600 mb-2">مستأذنون (بعذر):</p>
+                    <div className="flex flex-wrap gap-1.5">
+                        {excusedStudents.map((s) => (
+                            <Link
+                                key={s.studentId}
+                                href={`/students/${s.studentId}`}
+                                className="text-xs bg-blue-50 hover:bg-blue-100 hover:text-blue-900 text-blue-600 px-2 py-0.5 rounded-full border border-blue-100 transition-all inline-flex items-center gap-1 cursor-pointer"
                                 title="عرض ملف الطالب"
                             >
                                 {s.studentName}

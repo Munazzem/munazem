@@ -45,7 +45,4 @@ const PromoCodeSchema: Schema = new Schema({
     timestamps: true
 });
 
-// Index for fast lookup by code
-PromoCodeSchema.index({ code: 1 });
-
 export const PromoCodeModel = mongoose.model<IPromoCode>('PromoCode', PromoCodeSchema);

@@ -617,7 +617,8 @@ export class AttendanceService {
             // Grade-level enforcement
             if (sessionGroup && student.gradeLevel !== sessionGroup.gradeLevel) continue;
 
-            const isGuest = rec.isGuest ?? (student.groupId?.toString() !== session.groupId?.toString());
+            // Always compute isGuest server-side from the database — never trust the client value
+            const isGuest = student.groupId?.toString() !== session.groupId?.toString();
             const status  = rec.status;
 
             // ── Completed-session handling ───────────────────────────────────────
@@ -2021,8 +2022,8 @@ export class AttendanceService {
                 studentId: student._id,
                 studentName: student.studentName,
                 status: isPresent ? 'PRESENT' : 'ABSENT',
-                homeworkDone: isPresent && typeof record?.homeworkDone === 'boolean' ? record.homeworkDone : null,
-                whatsappLink: waPhone ? `https://wa.me/${waPhone}?text=${encodedMessage}` : '',
+                homeworkDone: isHomeworkTrackingEnabled && isPresent && typeof record?.homeworkDone === 'boolean' ? record.homeworkDone : null,
+                whatsappLink: `https://wa.me/${waPhone}?text=${encodedMessage}`,
             };
         });
     }

@@ -19,7 +19,7 @@ export async function nextSequence(key: string): Promise<number> {
     const doc = await CounterModel.findOneAndUpdate(
         { key },
         { $inc: { count: 1 } },
-        { new: true, upsert: true }
+        { returnDocument: 'after', upsert: true }
     ).lean();
     return doc!.count;
 }
@@ -31,7 +31,7 @@ export async function nextSequenceBulk(key: string, count: number): Promise<numb
     const doc = await CounterModel.findOneAndUpdate(
         { key },
         { $inc: { count } },
-        { new: true, upsert: true }
+        { returnDocument: 'after', upsert: true }
     ).lean();
     return doc!.count - count + 1;
 }

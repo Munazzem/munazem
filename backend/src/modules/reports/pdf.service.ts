@@ -15,6 +15,24 @@ import { startOfDayEgypt } from '../../common/utils/date.util.js';
 
 export class PdfService {
 
+    // Cairo timezone helpers — ensures all PDF dates/times use Egypt local time
+    private static fmtDate(d: Date | string | number, opts?: Intl.DateTimeFormatOptions): string {
+        return new Date(d).toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo', ...opts });
+    }
+
+    private static fmtTime(d: Date | string | number, opts?: Intl.DateTimeFormatOptions): string {
+        return new Date(d).toLocaleTimeString('ar-EG', { timeZone: 'Africa/Cairo', hour: '2-digit', minute: '2-digit', ...opts });
+    }
+
+    private static fmtDateTime(d: Date | string | number): string {
+        return new Date(d).toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' });
+    }
+
+    /** Wrap LTR content (student codes, IDs) with <bdi> for proper BiDi isolation */
+    private static bdi(text: string): string {
+        return `<bdi dir="ltr">${text}</bdi>`;
+    }
+
     // Common HTML wrapper helper to avoid repetitive CSS
     private static wrapHtmlContent(title: string, content: string, centerName?: string, logoUrl?: string): string {
         return `
@@ -222,7 +240,7 @@ export class PdfService {
         <body>
             ${content}
             <div class="footer">
-                <p>تم استخراج هذا التقرير آلياً من منصة "مُنظِّم" التعليمية - ${new Date().toLocaleString('ar-EG')}</p>
+                <p>تم استخراج هذا التقرير آلياً من منصة "مُنظِّم" التعليمية - ${this.fmtDateTime(new Date())}</p>
             </div>
             <script>
                 // Auto-print when loaded
@@ -242,7 +260,8 @@ export class PdfService {
      */
     static async generateStudentReportPdf(studentId: string, teacherId: string): Promise<string> {
         const teacher = await UserModel.findById(teacherId).lean();
-        const reportData = await ReportsService.getStudentReport(studentId, teacherId);
+        const isHomeworkEnabled = Boolean(teacher?.features?.homeworkTracking);
+        const reportData = await ReportsService.getStudentReport(studentId, teacherId, teacher);
         if (!reportData) {
             throw NotFoundException({ message: 'بيانات الطالب غير متوفرة لطباعة التقرير' });
         }
@@ -263,14 +282,14 @@ export class PdfService {
                 <div class="header-box-title">
                     ${teacher?.logoUrl ? `<img src="${teacher.logoUrl}" alt="Logo" style="max-height: 45px; margin-bottom: 5px; border-radius: 4px;" />` : ''}
                     <h1>تقرير الطالب: ${student.studentName}</h1>
-                    <div class="subtitle">كود الطالب: ${(student as any).studentCode || '—'} · ${teacher?.centerName || 'منظومة مُنظِّم'}</div>
+                    <div class="subtitle">كود الطالب: ${this.bdi((student as any).studentCode || '—')} · ${teacher?.centerName || 'منظومة مُنظِّم'}</div>
                 </div>
 
                 <!-- Left Box: Meta Info -->
                 <div class="header-box">
                     <p><strong>رقم الطالب:</strong> <span dir="ltr">${student.studentPhone || '—'}</span></p>
                     <p><strong>رقم ولي الأمر:</strong> <span dir="ltr">${(student as any).parentPhone || '—'}</span></p>
-                    <p><strong>تاريخ التقرير:</strong> <span dir="ltr">${new Date().toLocaleDateString('ar-EG')}</span></p>
+                    <p><strong>تاريخ التقرير:</strong> <span dir="ltr">${this.fmtDate(new Date())}</span></p>
                 </div>
             </div>
 
@@ -313,18 +332,18 @@ export class PdfService {
                 <thead>
                     <tr>
                         <th style="width: 10%;">حصة #</th>
-                        <th style="width: 40%;">تاريخ الحصة</th>
-                        <th style="width: 25%;">حالة الحضور</th>
-                        <th style="width: 25%;">تسليم الواجب</th>
+                        <th style="width: ${isHomeworkEnabled ? '40%' : '50%'};">تاريخ الحصة</th>
+                        <th style="width: ${isHomeworkEnabled ? '25%' : '40%'};">حالة الحضور</th>
+                        ${isHomeworkEnabled ? '<th style="width: 25%;">تسليم الواجب</th>' : ''}
                     </tr>
                 </thead>
                 <tbody>
                     ${attendance.history.map((h: any, idx: number) => `
                         <tr>
                             <td>${attendance.history.length - idx}</td>
-                            <td dir="ltr">${h.date ? new Date(h.date).toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'numeric', day: 'numeric' }) : '—'}</td>
+                            <td dir="ltr">${h.date ? this.fmtDate(h.date, { weekday: 'long', year: 'numeric', month: 'numeric', day: 'numeric' }) : '—'}</td>
                             <td>${h.status === 'PRESENT' ? '<span class="badge-paid">حاضر</span>' : h.status === 'ABSENT' ? '<span class="badge-unpaid">غائب</span>' : '<span style="color:#0284c7; font-weight:bold;">عذر / زائر</span>'}</td>
-                            <td>${h.homeworkDone === true ? '<span style="color:#15803d; font-weight:bold;">تم التسليم ✓</span>' : h.homeworkDone === false ? '<span style="color:#b91c1c; font-weight:bold;">لم يسلم ✗</span>' : '—'}</td>
+                            ${isHomeworkEnabled ? `<td>${h.homeworkDone === true ? '<span style="color:#15803d; font-weight:bold;">تم التسليم ✓</span>' : h.homeworkDone === false ? '<span style="color:#b91c1c; font-weight:bold;">لم يسلم ✗</span>' : '—'}</td>` : ''}
                         </tr>
                     `).join('')}
                 </tbody>
@@ -347,7 +366,7 @@ export class PdfService {
                 <tbody>
                     ${payments.history.map((p: any) => `
                         <tr>
-                            <td dir="ltr">${p.date ? new Date(p.date).toLocaleDateString('ar-EG') : '—'}</td>
+                            <td dir="ltr">${p.date ? this.fmtDate(p.date) : '—'}</td>
                             <td>${p.category === 'SUBSCRIPTION' ? 'اشتراك دورة' : p.category === 'NOTEBOOK_SALE' ? 'شراء مذكرة' : 'معاملة مالية'}</td>
                             <td>${p.description || '—'}</td>
                             <td style="color:#64748b;">${(p.discountAmount || 0).toLocaleString()} ج</td>
@@ -375,7 +394,7 @@ export class PdfService {
                     ${grades.history.map((g: any) => `
                         <tr>
                             <td style="font-weight:600;">${g.examTitle}</td>
-                            <td dir="ltr">${g.date ? new Date(g.date).toLocaleDateString('ar-EG') : '—'}</td>
+                            <td dir="ltr">${g.date ? this.fmtDate(g.date) : '—'}</td>
                             <td style="font-weight:bold;">${g.score} / ${g.totalMarks}</td>
                             <td style="font-weight:bold; color:${g.passed ? '#15803d' : '#b91c1c'}">${g.percentage}%</td>
                             <td>${g.passed ? '<span class="badge-paid">ناجح</span>' : '<span class="badge-unpaid">راسب</span>'}</td>
@@ -418,7 +437,7 @@ export class PdfService {
 
                 <!-- Left Box: Meta Info -->
                 <div class="header-box">
-                    <p><strong>تاريخ التقرير:</strong> <span dir="ltr">${new Date().toLocaleDateString('ar-EG')}</span></p>
+                    <p><strong>تاريخ التقرير:</strong> <span dir="ltr">${this.fmtDate(new Date())}</span></p>
                     <p><strong>صافي الأرباح:</strong> <span style="color:#15803d; font-weight:bold;">${(report.netBalance || 0).toLocaleString()} ج</span></p>
                     <p><strong>المعلم:</strong> ${teacher?.name || '—'}</p>
                 </div>
@@ -498,7 +517,7 @@ export class PdfService {
                         const net = inc - exp;
                         return `
                         <tr>
-                            <td dir="ltr" style="font-weight:600;">${day.date ? new Date(day.date).toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'numeric', day: 'numeric' }) : '—'}</td>
+                            <td dir="ltr" style="font-weight:600;">${day.date ? this.fmtDate(day.date, { weekday: 'long', year: 'numeric', month: 'numeric', day: 'numeric' }) : '—'}</td>
                             <td style="color: #15803d; font-weight:bold;">${inc.toLocaleString()} ج</td>
                             <td style="color: #b91c1c; font-weight:bold;">${exp.toLocaleString()} ج</td>
                             <td style="font-weight:bold; color:${net >= 0 ? '#2563eb' : '#b91c1c'}">${net.toLocaleString()} ج</td>
@@ -540,7 +559,7 @@ export class PdfService {
                 <div class="header-box">
                     <p><strong>صافي اليوم:</strong> <span style="color:#15803d; font-weight:bold;">${(report.financial.netBalance || 0).toLocaleString()} ج</span></p>
                     <p><strong>المعلم:</strong> ${teacher?.name || '—'}</p>
-                    <p><strong>وقت الطباعة:</strong> <span dir="ltr">${new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</span></p>
+                    <p><strong>وقت الطباعة:</strong> <span dir="ltr">${this.fmtTime(new Date())}</span></p>
                 </div>
             </div>
 
@@ -660,7 +679,7 @@ export class PdfService {
 
                 <!-- Left Box: Meta Info -->
                 <div class="header-box">
-                    <p><strong>تاريخ التقرير:</strong> <span dir="ltr">${new Date().toLocaleDateString('ar-EG')}</span></p>
+                    <p><strong>تاريخ التقرير:</strong> <span dir="ltr">${this.fmtDate(new Date())}</span></p>
                     <p><strong>نسبة الحضور العامة:</strong> <span style="color:#15803d; font-weight:bold;">${report.attendance.avgAttendanceRate || '0%'}</span></p>
                     <p><strong>إجمالي الحصص المنعقدة:</strong> ${report.attendance.totalSessions} حصة</p>
                 </div>
@@ -718,7 +737,7 @@ export class PdfService {
                         <tr>
                             <td>${idx + 1}</td>
                             <td style="text-align: right; font-weight: 600;">${st.studentName}</td>
-                            <td>${st.studentCode || '—'}</td>
+                            <td>${this.bdi(st.studentCode || '—')}</td>
                             <td dir="ltr">${st.studentPhone || '—'}</td>
                             <td dir="ltr">${st.parentPhone || '—'}</td>
                             <td>${st.hasActiveSubscription ? '<span class="badge-paid">تم السداد</span>' : '<span class="badge-unpaid">لم يسدد بعد</span>'}</td>
@@ -748,7 +767,7 @@ export class PdfService {
                         return `
                         <tr>
                             <td>${report.attendance.sessionsHistory.length - idx}</td>
-                            <td dir="ltr">${s.date ? new Date(s.date).toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'numeric', day: 'numeric' }) : '—'}</td>
+                            <td dir="ltr">${s.date ? this.fmtDate(s.date, { weekday: 'long', year: 'numeric', month: 'numeric', day: 'numeric' }) : '—'}</td>
                             <td style="color:#15803d; font-weight:bold;">${s.presentCount || 0}</td>
                             <td style="color:#b91c1c; font-weight:bold;">${s.absentCount || 0}</td>
                             <td style="font-weight:bold;">${rate}%</td>
@@ -774,7 +793,7 @@ export class PdfService {
 
         const content = `
             <div style="background: #f9f9f9; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                <p><strong>تاريخ الحصة:</strong> <span dir="ltr">${new Date(session.date).toLocaleDateString('ar-EG')}</span></p>
+                <p><strong>تاريخ الحصة:</strong> <span dir="ltr">${this.fmtDate(session.date)}</span></p>
                 <p><strong>وقت البدء:</strong> ${session.startTime}</p>
                 <p><strong>حالة الحصة:</strong> ${session.status === 'COMPLETED' ? 'مكتملة' : 'قيد الإجراء'}</p>
                 <p><strong>عدد المسجلين في الكشف:</strong> ${attendanceList.length} طالب</p>
@@ -822,12 +841,12 @@ export class PdfService {
                         return `
                         <tr>
                             <td style="text-align: center;">${index + 1}</td>
-                            <td>${record.studentId?.studentCode || '—'}</td>
+                            <td>${this.bdi(record.studentId?.studentCode || '—')}</td>
                             <td style="font-weight: 600;">${record.studentId?.studentName || '—'}</td>
                             <td dir="ltr" style="text-align: right;">${record.studentId?.studentPhone || '—'}</td>
                             <td style="color: ${statusColor}; font-weight: bold; text-align: center;">${statusText}</td>
                             ${hwColumn}
-                            <td dir="ltr" style="text-align: center;">${time ? new Date(time).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                            <td dir="ltr" style="text-align: center;">${isAttended && time ? this.fmtTime(time) : '—'}</td>
                         </tr>
                         `;
                     }).join('')}
@@ -1037,7 +1056,7 @@ export class PdfService {
                             <th style="width: 5%">اشتراك</th>
                             ${Array.from({ length: cycleCapacity }).map((_, i) => {
                                 const s = sessions[i];
-                                const dateStr = s ? new Date(s.date).toLocaleDateString('ar-EG', { day: 'numeric', month: 'numeric' }) : '-';
+                                const dateStr = s ? this.fmtDate(s.date, { day: 'numeric', month: 'numeric' }) : '-';
                                 return `<th class="session-col">ح${i + 1}<br><span style="font-size:9px; font-weight:normal;">${dateStr}</span></th>`;
                             }).join('')}
                             <th style="width: 8%">ملاحظات</th>
@@ -1097,7 +1116,7 @@ export class PdfService {
                     </tbody>
                 </table>
                 <div style="text-align:center; font-size:10px; color:#555; margin-top:20px;">
-                    تم الاستخراج آلياً من منصة "مُنظِّم" التعليمية - ${new Date().toLocaleString('ar-EG')}
+                    تم الاستخراج آلياً من منصة "مُنظِّم" التعليمية - ${this.fmtDateTime(new Date())}
                 </div>
             </body>
             </html>

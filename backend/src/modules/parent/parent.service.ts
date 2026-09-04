@@ -40,8 +40,9 @@ export class ParentService {
             { name: 1, cycle: 1 }
         ).lean();
 
-        // Teacher name & subject
-        const teacher = await UserModel.findById(teacherId, { name: 1, subject: 1 }).lean();
+        // Teacher name, subject & features
+        const teacher = await UserModel.findById(teacherId, { name: 1, subject: 1, features: 1 }).lean();
+        const isHomeworkEnabled = Boolean((teacher as any)?.features?.homeworkTracking);
 
         // Attendance snapshots
         const snapshots = await AttendanceSnapshotModel.find({
@@ -122,7 +123,7 @@ export class ParentService {
         const attendanceHistory = effectiveEntries.slice(0, 20).map(e => ({
             date: e.date,
             status: e.status,
-            homeworkDone: e.homeworkDone ?? null,
+            homeworkDone: isHomeworkEnabled ? (e.homeworkDone ?? null) : null,
         }));
 
         const totalSessions  = presentCount + absentCount;

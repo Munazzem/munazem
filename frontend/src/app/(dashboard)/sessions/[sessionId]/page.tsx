@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -18,7 +18,7 @@ import {
 } from '@/lib/api/attendance';
 import { printHtmlContent } from '@/lib/utils/print';
 import { fetchStudents, updateStudent } from '@/lib/api/students';
-import { resolveCard } from '@/lib/api/cards';
+import { resolveCard, getGroupCardTokens } from '@/lib/api/cards';
 import { useAuthStore } from '@/lib/store/auth.store';
 import dynamic from 'next/dynamic';
 const QRScannerPanel = dynamic(
@@ -108,6 +108,13 @@ const STATUS_LABELS: Record<string, string> = {
     CANCELLED: 'ملغية',
 };
 
+/** استخراج معرف المجموعة كنص صريح سواء كان ObjectId أو كائن populated */
+function extractGroupId(gid: any): string {
+    if (!gid) return '';
+    if (typeof gid === 'object') return gid._id?.toString?.() ?? gid._id ?? '';
+    return gid.toString();
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function SessionDetailPage() {
     const { sessionId } = useParams<{ sessionId: string }>();
@@ -179,6 +186,24 @@ export default function SessionDetailPage() {
     const subscriptionMap = new Map<string, boolean>(
         (groupStudentsData?.data ?? []).map((s) => [s._id, s.hasActiveSubscription ?? true])
     );
+
+    // Fetch linked smart cards for group students (offline scanning cache)
+    const { data: groupCardTokens = [] } = useQuery({
+        queryKey: ['groupCardTokens', groupId],
+        queryFn: () => getGroupCardTokens(groupId),
+        enabled: !!groupId,
+        staleTime: 5 * 60 * 1000,
+    });
+
+    const cardTokenMap = useMemo(() => {
+        const map = new Map<string, (typeof groupCardTokens)[0]>();
+        for (const entry of groupCardTokens) {
+            if (entry.cardToken) {
+                map.set(entry.cardToken, entry);
+            }
+        }
+        return map;
+    }, [groupCardTokens]);
 
     const pendingCount = useOfflineSyncStore((s) => s.pendingCount);
     const isSyncing = useOfflineSyncStore((s) => s.isSyncing);
@@ -271,7 +296,7 @@ export default function SessionDetailPage() {
 
             const student = groupStudentsData?.data?.find(s => s._id === studentId);
             const clientMutationId = `mut-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-            const isGuest = student ? (student.groupId !== groupId) : false;
+            const isGuest = student ? (extractGroupId(student.groupId) !== groupId) : false;
 
             const studentInfo = student
                 ? {
@@ -313,7 +338,7 @@ export default function SessionDetailPage() {
                 const studentName = context.student?.studentName || 'الطالب';
                 const studentCode = context.student?.studentCode || '...';
                 const studentPhone = context.student?.studentPhone || '';
-                const isGuest = context.student ? (context.student.groupId !== groupId) : false;
+                const isGuest = context.student ? (extractGroupId(context.student.groupId) !== groupId) : false;
 
                 // Enqueue to IndexedDB Outbox
                 await OutboxService.enqueueAttendance({
@@ -556,17 +581,23 @@ export default function SessionDetailPage() {
                 s => s.barcode === scanInput || s.studentCode === scanInput
             );
 
+            // Also check Smart Card tokens cache for group students
+            const uuidRegex = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+            const uuidMatch = scanInput.match(uuidRegex);
+            const tokenKey = uuidMatch ? uuidMatch[0] : scanInput.trim();
+            const cardEntry = !localStudent ? (cardTokenMap.get(tokenKey) || cardTokenMap.get(scanInput.trim())) : null;
+
             const clientMutationId = `mut-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
             const scannedAt = new Date().toISOString();
 
             if (localStudent) {
-                // ── Cache HIT: student is a known group member ─────────────────
+                // ── Cache HIT: student is a known group member (by barcode / studentCode) ──
                 if (alreadyRecordedIds.has(localStudent._id)) {
                     toast.warning('تم تسجيل هذا الطالب مسبقاً');
                     return;
                 }
 
-                const isGuest = localStudent.groupId !== groupId;
+                const isGuest = extractGroupId(localStudent.groupId) !== groupId;
 
                 // Optimistic UI update
                 queryClient.setQueryData(QK.attendance.bySession(sessionId), (prev: IAttendanceRecord[] = []) => [
@@ -606,6 +637,56 @@ export default function SessionDetailPage() {
 
                 await refreshPendingCount(sessionId);
                 toast.info(`تم حفظ حضور ${localStudent.studentName} محلياً (⏳ سيتم رفعه عند الاتصال)`, {
+                    duration: 4000,
+                });
+
+            } else if (cardEntry) {
+                // ── Card Token HIT: student is a known group member (by Smart Card QR) ──
+                if (alreadyRecordedIds.has(cardEntry.studentId)) {
+                    toast.warning('تم تسجيل هذا الطالب مسبقاً');
+                    return;
+                }
+
+                const isGuest = extractGroupId(cardEntry.groupId) !== groupId;
+
+                // Optimistic UI update
+                queryClient.setQueryData(QK.attendance.bySession(sessionId), (prev: IAttendanceRecord[] = []) => [
+                    ...prev,
+                    {
+                        _id: `temp-${clientMutationId}`,
+                        studentId: {
+                            _id: cardEntry.studentId,
+                            studentName: cardEntry.studentName,
+                            studentCode: cardEntry.studentCode,
+                            studentPhone: cardEntry.studentPhone,
+                        },
+                        sessionId,
+                        status: 'PRESENT',
+                        isGuest,
+                        homeworkDone: true,
+                        scannedAt,
+                        _syncStatus: 'QUEUED',
+                    } as IAttendanceRecord,
+                ]);
+
+                await OutboxService.enqueueAttendance({
+                    clientMutationId,
+                    sessionId,
+                    studentId:    cardEntry.studentId,   // ObjectId — fast sync path
+                    studentName:  cardEntry.studentName,
+                    studentCode:  cardEntry.studentCode,
+                    studentPhone: cardEntry.studentPhone ?? '',
+                    status:       'PRESENT',
+                    isGuest,
+                    homeworkDone: true,
+                    scannedAt,
+                    createdAt:    Date.now(),
+                    syncStatus:   'QUEUED',
+                    retryCount:   0,
+                });
+
+                await refreshPendingCount(sessionId);
+                toast.info(`تم حفظ حضور ${cardEntry.studentName} محلياً (⏳ سيتم رفعه عند الاتصال)`, {
                     duration: 4000,
                 });
 
@@ -651,7 +732,7 @@ export default function SessionDetailPage() {
                 });
             }
         }
-    }, [alreadyRecordedIds, groupId, groupStudentsData, queryClient, recordMutation, refreshPendingCount, sessionId]);
+    }, [alreadyRecordedIds, cardTokenMap, groupId, groupStudentsData, queryClient, recordMutation, refreshPendingCount, sessionId]);
 
     const groupName =
         typeof session?.groupId === 'object'
@@ -700,12 +781,32 @@ export default function SessionDetailPage() {
     const excusedOtherCount = attendanceRecords.filter(
         (r) => r.status === 'EXCUSED' && !(r as any).isCompensated && !r.notes?.includes('معوّض') && !r.notes?.includes('معوض')
     ).length;
+    const excusedCount = session.status === 'COMPLETED'
+        ? (snapshot?.presentStudents?.filter((s) => s.status === 'EXCUSED').length ?? excusedOtherCount)
+        : excusedOtherCount;
     
-    // Total absentees = Students in group who didn't show up + Students explicitly marked as ABSENT
+    // Enrolled students present (excluding guests) for accurate dynamic absent calculation during active session
+    const groupStudentIds = new Set((groupStudentsData?.data ?? []).map((s) => s._id.toString()));
+    const enrolledPresentCount = attendanceRecords.filter((r) => {
+        if (r.status !== 'PRESENT' && r.status !== 'LATE') return false;
+        if ((r as any).isGuest === true) return false;
+        const sid = (r.studentId as any)?._id?.toString?.() ?? (r.studentId as any)?.toString?.() ?? '';
+        return groupStudentIds.has(sid);
+    }).length;
+
     const totalGroupStudents = groupStudentsData?.data?.length ?? 0;
+
+    // Total count display: prioritize snapshot.totalCount when completed, otherwise enrolled group count
+    const totalDisplay = session.status === 'COMPLETED'
+        ? (snapshot?.totalCount ?? (totalGroupStudents > 0 ? totalGroupStudents : attendanceRecords.length))
+        : (totalGroupStudents > 0 ? totalGroupStudents : attendanceRecords.length);
+
+    // Absent count:
+    // When completed: prioritize snapshot.absentCount, fallback to attendanceRecords.filter(ABSENT)
+    // When active: dynamically decrements as enrolled cards are scanned: totalGroupStudents - enrolledPresentCount - compCount - excusedOtherCount
     const absentCount = session.status === 'COMPLETED' 
-        ? attendanceRecords.filter((r) => r.status === 'ABSENT').length
-        : Math.max(0, totalGroupStudents - regularPresentCount - compCount - excusedOtherCount);
+        ? (snapshot?.absentCount ?? attendanceRecords.filter((r) => r.status === 'ABSENT').length)
+        : Math.max(0, (totalGroupStudents > 0 ? totalGroupStudents : attendanceRecords.length) - enrolledPresentCount - compCount - excusedOtherCount);
 
     return (
         <div className="min-h-screen bg-gray-50/30 p-3 sm:p-4 lg:p-6" dir="rtl">
@@ -747,7 +848,7 @@ export default function SessionDetailPage() {
                                     if (pendingCount > 0) {
                                         toast.error(`يوجد ${pendingCount} سجلات حضور معلقة محلياً. يرجى المزامنة أولاً قبل إنهاء الحصة لتجنب احتساب الطلاب كغائبين.`, {
                                             duration: 6000,
-                                        });
+                                         });
                                         return;
                                     }
                                     setShowCompleteConfirm(true);
@@ -827,7 +928,7 @@ export default function SessionDetailPage() {
                 'grid gap-2 sm:gap-3 mb-4 sm:mb-5',
                 (guestCount > 0 && compCount > 0)
                     ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5'
-                    : (guestCount > 0 || compCount > 0)
+                    : (guestCount > 0 || compCount > 0 || excusedCount > 0)
                         ? 'grid-cols-2 sm:grid-cols-4'
                         : 'grid-cols-3'
             )}>
@@ -851,8 +952,14 @@ export default function SessionDetailPage() {
                     <p className="text-lg sm:text-xl font-bold text-red-600">{absentCount}</p>
                     <p className="text-[11px] sm:text-xs text-gray-500 mt-0.5">غائب</p>
                 </div>
+                {excusedCount > 0 && (
+                    <div className="bg-white rounded-xl border border-gray-100 p-2 sm:p-3 shadow-sm text-center">
+                        <p className="text-lg sm:text-xl font-bold text-blue-600">{excusedCount}</p>
+                        <p className="text-[11px] sm:text-xs text-gray-500 mt-0.5">بعذر</p>
+                    </div>
+                )}
                 <div className="bg-white rounded-xl border border-gray-100 p-2 sm:p-3 shadow-sm text-center">
-                    <p className="text-lg sm:text-xl font-bold text-blue-700">{attendanceRecords.length}</p>
+                    <p className="text-lg sm:text-xl font-bold text-blue-700">{totalDisplay}</p>
                     <p className="text-[11px] sm:text-xs text-gray-500 mt-0.5">إجمالي</p>
                 </div>
             </div>
@@ -1192,6 +1299,9 @@ export default function SessionDetailPage() {
                                 <p>المعوضون: <span className="font-semibold text-purple-700">{compCount}</span></p>
                             )}
                             <p>الغائبون: <span className="font-semibold text-red-600">{absentCount}</span></p>
+                            {excusedCount > 0 && (
+                                <p>المستأذنون: <span className="font-semibold text-blue-600">{excusedCount}</span></p>
+                            )}
                         </div>
                     </div>
                     <DialogFooter className="gap-2">
