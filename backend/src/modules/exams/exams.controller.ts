@@ -10,7 +10,7 @@ import { envVars } from '../../../config/env.service.js';
 import { authenticate }    from '../../middlewares/auth.middleware.js';
 import { authorizeRoles }  from '../../middlewares/roles.middleware.js';
 import { validate } from '../../middlewares/validate.middleware.js';
-import { createExamSchema, recordResultSchema, batchResultsSchema } from '../../validation/exam.validation.js';
+import { createExamSchema, recordResultSchema, batchResultsSchema, updateExamSchema, updateResultSchema } from '../../validation/exam.validation.js';
 import multer from 'multer';
 import type { IJwtPayload } from '../../types/auth.types.js';
 
@@ -81,10 +81,11 @@ examsRouter.get(
     }
 );
 
-// PUT /exams/:id — Update exam (Teacher + Assistant, DRAFT only)
+// PUT /exams/:id — Update exam (Teacher + Assistant, DRAFT / PUBLISHED / COMPLETED)
 examsRouter.put(
     '/:id',
     authorizeRoles(UserRole.teacher, UserRole.assistant),
+    validate(updateExamSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const teacherId = resolveTeacherId(req.user);
@@ -170,6 +171,45 @@ examsRouter.get(
             const teacherId = resolveTeacherId(req.user);
             const data = await ExamsService.getExamResults(req.params['id'] as string, teacherId);
             return SuccessResponse({ res, data, message: 'تم جلب نتائج الامتحان بنجاح' });
+        } catch (error) { next(error); }
+    }
+);
+
+// PUT /exams/:id/results/:resultId — Update single student result (Teacher + Assistant)
+examsRouter.put(
+    '/:id/results/:resultId',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    validate(updateResultSchema),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const user = req.user;
+            if (!user) return next(BadRequestException({ message: 'المستخدم غير موجود' }));
+            const teacherId = resolveTeacherId(user);
+            const result = await ExamsService.updateResult(
+                teacherId,
+                user.userId,
+                req.params['id'] as string,
+                req.params['resultId'] as string,
+                Number(req.body.score)
+            );
+            return SuccessResponse({ res, data: result, message: 'تم تعديل درجة الطالب بنجاح' });
+        } catch (error) { next(error); }
+    }
+);
+
+// DELETE /exams/:id/results/:resultId — Delete single student result (Teacher + Assistant)
+examsRouter.delete(
+    '/:id/results/:resultId',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = resolveTeacherId(req.user);
+            await ExamsService.deleteResult(
+                teacherId,
+                req.params['id'] as string,
+                req.params['resultId'] as string
+            );
+            return SuccessResponse({ res, data: null, message: 'تم حذف درجة الطالب بنجاح' });
         } catch (error) { next(error); }
     }
 );

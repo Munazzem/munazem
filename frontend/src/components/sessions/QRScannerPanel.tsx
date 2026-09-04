@@ -1,11 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Camera, CameraOff, Search, UserCheck, Loader2 } from 'lucide-react';
+import { Camera, CameraOff, Search, UserCheck, Loader2, QrCode } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
 interface QRScannerPanelProps {
@@ -21,8 +20,7 @@ export function QRScannerPanel({
     onManualSearch,
     disabled = false,
 }: QRScannerPanelProps) {
-    const scannerRef = useRef<any>(null);
-    const containerRef = useRef<HTMLDivElement>(null);
+    const scannerRef = useRef<Html5Qrcode | null>(null);
     const [isCameraActive, setIsCameraActive] = useState(false);
     const [isCameraLoading, setIsCameraLoading] = useState(false);
     const [cameraError, setCameraError] = useState<string | null>(null);
@@ -31,15 +29,42 @@ export function QRScannerPanel({
     const [searchQuery, setSearchQuery] = useState('');
     const lastScannedRef = useRef<string | null>(null);
 
-    const SCANNER_ID = `qr-scanner-${sessionId}`;
+    // Use consistent ID pattern matching QrScanner
+    const SCANNER_ID = `qr-reader-session-${sessionId}`;
+
+    const stopCamera = useCallback(async () => {
+        if (scannerRef.current) {
+            try {
+                await scannerRef.current.stop();
+                scannerRef.current.clear();
+            } catch {
+                /* ignore */
+            }
+            scannerRef.current = null;
+        }
+        setIsCameraActive(false);
+        setLastScanned(null);
+        lastScannedRef.current = null;
+    }, []);
 
     const startCamera = useCallback(async () => {
-        if (isCameraActive || isCameraLoading) return;
+        if (scannerRef.current || isCameraLoading) return;
         setIsCameraLoading(true);
         setCameraError(null);
 
+        // 1. Activate camera view FIRST so DOM has computed aspect ratio & dimensions on iOS Safari
+        setIsCameraActive(true);
+
+        // 2. Wait a tick for React commit and Safari layout calculation
+        await new Promise((r) => setTimeout(r, 80));
+
         try {
-            const scanner = new Html5Qrcode(SCANNER_ID);
+            const scanner = new Html5Qrcode(SCANNER_ID, {
+                experimentalFeatures: {
+                    useBarCodeDetectorIfSupported: true,
+                },
+                verbose: false,
+            });
             scannerRef.current = scanner;
 
             await scanner.start(
@@ -47,19 +72,21 @@ export function QRScannerPanel({
                 {
                     fps: 24,
                     qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-                        const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-                        const isPortrait = viewfinderHeight >= viewfinderWidth;
-                        const boxWidth = Math.floor(viewfinderWidth * (isPortrait ? 0.92 : 0.88));
-                        const boxHeight = Math.floor(viewfinderHeight * (isPortrait ? 0.65 : 0.80));
+                        const vw = viewfinderWidth > 0 ? viewfinderWidth : 320;
+                        const vh = viewfinderHeight > 50 ? viewfinderHeight : Math.floor(vw * 0.75);
+                        const minEdge = Math.min(vw, vh);
+                        const isPortrait = vh >= vw;
+                        const boxWidth = Math.floor(vw * (isPortrait ? 0.92 : 0.88));
+                        const boxHeight = Math.floor(vh * (isPortrait ? 0.65 : 0.80));
                         return {
-                            width: Math.max(boxWidth, Math.floor(minEdge * 0.90)),
-                            height: Math.max(boxHeight, Math.floor(minEdge * 0.70)),
+                            width: Math.max(boxWidth, Math.floor(minEdge * 0.90), 200),
+                            height: Math.max(boxHeight, Math.floor(minEdge * 0.70), 180),
                         };
                     },
                     videoConstraints: {
                         facingMode: 'environment',
-                        width: { min: 640, ideal: 1920 },
-                        height: { min: 480, ideal: 1080 },
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
                     },
                 },
                 async (decodedText: string) => {
@@ -67,6 +94,11 @@ export function QRScannerPanel({
                     if (lastScannedRef.current === decodedText) return;
                     lastScannedRef.current = decodedText;
                     setTimeout(() => { lastScannedRef.current = null; }, 3000);
+
+                    // Haptic feedback on mobile if supported
+                    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+                        try { navigator.vibrate(80); } catch {}
+                    }
 
                     setLastScanned(decodedText);
                     setIsProcessing(true);
@@ -78,30 +110,17 @@ export function QRScannerPanel({
                 },
                 () => {}
             );
-            setIsCameraActive(true);
         } catch (err: any) {
+            await stopCamera();
             const msg =
                 err?.message?.includes('Permission')
                     ? 'لم يتم منح صلاحية الكاميرا. برجاء السماح للمتصفح بالوصول إلى الكاميرا.'
-                    : 'تعذر تشغيل الكاميرا. تأكد من وجود كاميرا متصلة.';
+                    : 'تعذر تشغيل الكاميرا — تأكد من منح الإذن ووجود كاميرا متصلة.';
             setCameraError(msg);
         } finally {
             setIsCameraLoading(false);
         }
-    }, [isCameraActive, isCameraLoading, onScan, SCANNER_ID]);
-
-    const stopCamera = useCallback(async () => {
-        if (scannerRef.current) {
-            try {
-                await scannerRef.current.stop();
-                scannerRef.current.clear();
-            } catch {}
-            scannerRef.current = null;
-        }
-        setIsCameraActive(false);
-        setLastScanned(null);
-        lastScannedRef.current = null;
-    }, []);
+    }, [isCameraLoading, onScan, SCANNER_ID, stopCamera]);
 
     // Cleanup on unmount
     useEffect(() => {
@@ -145,17 +164,42 @@ export function QRScannerPanel({
                 </Button>
             </div>
 
-            {/* Camera Viewport */}
-            <div
-                className={cn(
-                    'relative rounded-2xl overflow-hidden bg-gray-950 transition-all shadow-inner',
-                    isCameraActive ? 'w-full aspect-[4/3] sm:aspect-video min-h-[300px] max-h-[75vh]' : 'h-0'
+            {/* Camera Viewport (Direct aspect-ratio container to prevent iOS Safari 0-height bug) */}
+            <div className="relative w-full max-w-full overflow-hidden">
+                <div
+                    id={SCANNER_ID}
+                    className={cn(
+                        'w-full max-w-full rounded-2xl overflow-hidden border-2 border-dashed transition-all bg-gray-950',
+                        '[&_video]:!w-full [&_video]:!h-full [&_video]:!object-cover [&_video]:!max-w-full',
+                        '[&_div]:!max-w-full [&_canvas]:!max-w-full',
+                        isCameraActive ? 'border-primary aspect-[4/3] sm:aspect-video w-full' : 'border-gray-200 h-0 border-none'
+                    )}
+                />
+
+                {!isCameraActive && (
+                    <button
+                        type="button"
+                        onClick={startCamera}
+                        disabled={disabled || isCameraLoading}
+                        className="w-full flex flex-col items-center justify-center gap-3 p-8 rounded-2xl bg-gradient-to-br from-primary/5 to-primary/10 border-2 border-dashed border-primary/30 hover:border-primary/60 transition-all group cursor-pointer disabled:opacity-50"
+                    >
+                        <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+                            {isCameraLoading ? (
+                                <Loader2 className="h-7 w-7 text-primary animate-spin" />
+                            ) : (
+                                <QrCode className="h-7 w-7 text-primary" />
+                            )}
+                        </div>
+                        <span className="text-sm font-semibold text-primary">
+                            {isCameraLoading ? 'جارٍ تشغيل الكاميرا...' : 'اضغط لتشغيل كاميرا الحضور'}
+                        </span>
+                        <span className="text-xs text-gray-400">مسح كروت الطلاب و QR Code تلقائياً</span>
+                    </button>
                 )}
-            >
-                <div id={SCANNER_ID} ref={containerRef} className="w-full h-full [&>video]:w-full [&>video]:h-full [&>video]:object-cover" />
+
                 {isProcessing && (
-                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                        <div className="bg-white rounded-lg px-4 py-2 flex items-center gap-2 text-sm font-medium">
+                    <div className="absolute inset-0 rounded-2xl bg-black/50 flex items-center justify-center z-10">
+                        <div className="bg-white rounded-lg px-4 py-2 flex items-center gap-2 text-sm font-medium shadow-lg">
                             <Loader2 className="h-4 w-4 animate-spin text-primary" />
                             جارٍ التسجيل...
                         </div>

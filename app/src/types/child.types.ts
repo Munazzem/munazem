@@ -25,16 +25,42 @@ export interface ChildCardSummary {
   subjectsCount: number;
   subjects: Array<{
     studentId: string;
+    teacherId?: string;
     teacherName: string;
     subject: string;
     centerName?: string;
     groupName?: string;
     studentCode?: string;
     barcode?: string;
+    attendanceRate?: number;
+    presentCount?: number;
+    absentCount?: number;
+    excusedCount?: number;
+    guestCount?: number;
+    totalSessions?: number;
+    latestAttendance?: {
+      date: string;
+      status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED' | 'GUEST';
+      subject: string;
+      teacherName?: string;
+    } | null;
+    latestExam?: {
+      title: string;
+      score: number;
+      totalMarks: number;
+      date: string;
+      subject: string;
+      teacherName?: string;
+    } | null;
+    financialSummary?: {
+      hasOutstandingDebt: boolean;
+      remainingAmount: number;
+      hasActiveSubscription: boolean;
+    };
   }>;
   latestAttendance?: {
     date: string;
-    status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED';
+    status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED' | 'GUEST';
     subject: string;
     teacherName?: string;
   };
@@ -71,7 +97,7 @@ export interface StudentCardData {
 export interface AttendanceRecord {
   id: string;
   date: string;
-  status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED';
+  status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED' | 'GUEST';
   subject: string;
   teacherName: string;
   groupName: string;

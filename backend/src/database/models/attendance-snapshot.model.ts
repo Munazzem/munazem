@@ -8,6 +8,9 @@ const studentEntrySchema = new Schema({
     scannedAt:   { type: Date },                    // only for present/late
     status:      { type: String, enum: Object.values(AttendanceStatus) },
     homeworkDone: { type: Boolean, default: null },
+    relatedSessionId: { type: Schema.Types.ObjectId, ref: 'Session' },
+    relatedGroupName: { type: String },
+    relatedDate:      { type: Date },
 }, { _id: false });
 
 const attendanceSnapshotSchema = new Schema<IAttendanceSnapshotDocument>({
@@ -35,13 +38,15 @@ const attendanceSnapshotSchema = new Schema<IAttendanceSnapshotDocument>({
         required: true,
     },
     // ⚡ Embedded arrays — no populate, no joins, instant reads
-    presentStudents: { type: [studentEntrySchema], default: [] },
-    absentStudents:  { type: [studentEntrySchema], default: [] },
-    guestStudents:   { type: [studentEntrySchema], default: [] },
+    presentStudents:     { type: [studentEntrySchema], default: [] },
+    absentStudents:      { type: [studentEntrySchema], default: [] },
+    guestStudents:       { type: [studentEntrySchema], default: [] },
+    compensatedStudents: { type: [studentEntrySchema], default: [] },
     // Pre-computed counters for fast dashboard stats
-    presentCount: { type: Number, default: 0 },
-    absentCount:  { type: Number, default: 0 },
-    totalCount:   { type: Number, default: 0 },
+    presentCount:     { type: Number, default: 0 },
+    absentCount:      { type: Number, default: 0 },
+    compensatedCount: { type: Number, default: 0 },
+    totalCount:       { type: Number, default: 0 },
 }, {
     timestamps: true,
 });

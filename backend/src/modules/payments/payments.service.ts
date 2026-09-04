@@ -178,7 +178,7 @@ export class PaymentsService {
     static async recordSubscription(
         teacherId: string,
         createdBy: string,
-        data: { studentId: string; discountAmount?: number; paidAmount?: number; description?: string; date?: string; customSessionsQuota?: number; idempotencyKey?: string }
+        data: { studentId: string; discountAmount?: number; paidAmount?: number; customAmount?: number; description?: string; date?: string; customSessionsQuota?: number; idempotencyKey?: string }
     ) {
         if (data.idempotencyKey) {
             const existingTx = await TransactionModel.findOne({ idempotencyKey: data.idempotencyKey }).lean();
@@ -249,7 +249,8 @@ export class PaymentsService {
             if (capacity <= 0) {
                 throw BadRequestException({ message: 'سعة الدورة يجب أن تكون أكبر من صفر — لا يمكن حساب سعر الحصة' });
             }
-            const pricePerSession = fullMonthPrice / capacity;
+            const standardFullCapacity = (group.schedule?.length || 2) * 4 || 8;
+            const pricePerSession = fullMonthPrice / standardFullCapacity;
             
             // If student joined before the cycle started, they start from session 1; otherwise start from next session
             const studentCreatedAt = (student as any).createdAt;
@@ -272,16 +273,26 @@ export class PaymentsService {
                 ? data.customSessionsQuota 
                 : capacity;
                 
-            const cycleCharge = data.customSessionsQuota !== undefined && capacity > 0
-                ? Math.round(data.customSessionsQuota * pricePerSession)
-                : fullMonthPrice;
+            let cycleCharge: number;
+            if (data.customAmount !== undefined && data.customAmount > 0) {
+                cycleCharge = data.customAmount;
+            } else if (data.customSessionsQuota !== undefined) {
+                // Proportional: (quota / groupCapacity) × fullMonthPrice
+                // e.g. 3 sessions out of 6 = 50% of 600 EGP = 300 EGP
+                cycleCharge = Math.round((data.customSessionsQuota / capacity) * fullMonthPrice);
+            } else if (capacity < standardFullCapacity) {
+                // Proportional to customized group capacity (e.g. 4 sessions out of 8 = 50% price)
+                cycleCharge = Math.round((capacity / standardFullCapacity) * fullMonthPrice);
+            } else {
+                cycleCharge = fullMonthPrice;
+            }
 
             enrollment = new CycleEnrollmentModel({
                 studentId: student._id,
                 groupId: group._id,
                 teacherId: teacherId,
                 cycleNumber,
-                cycleCapacity: capacity,
+                cycleCapacity: chargeableSessions,
                 pricePerSession,
                 fullCyclePrice: fullMonthPrice,
                 startSession: wasRegisteredBeforeCycle ? 1 : defaultStartSession,
@@ -292,16 +303,41 @@ export class PaymentsService {
                 status: CycleEnrollmentStatus.UNPAID
             });
             enrollmentCreatedNow = true;
+        } else if (data.customAmount !== undefined || data.customSessionsQuota !== undefined) {
+            // Update existing enrollment if custom quota or amount was provided during payment
+            const standardFullCapacity = (group.schedule?.length || 2) * 4 || 8;
+            const pricePerSession = enrollment.fullCyclePrice / standardFullCapacity;
+            if (data.customAmount !== undefined && data.customAmount > 0) {
+                enrollment.cycleCharge = data.customAmount;
+            } else if (data.customSessionsQuota !== undefined) {
+                // Proportional: (quota / enrollmentCycleCapacity) × fullCyclePrice
+                const groupCapacity = enrollment.cycleCapacity > 0 ? enrollment.cycleCapacity : standardFullCapacity;
+                enrollment.cycleCharge = Math.round((data.customSessionsQuota / groupCapacity) * enrollment.fullCyclePrice);
+            }
+            if (data.customSessionsQuota !== undefined) {
+                enrollment.chargeableSessions = data.customSessionsQuota;
+                enrollment.cycleCapacity = data.customSessionsQuota;
+            }
+            enrollment.remainingAmount = Math.max(0, enrollment.cycleCharge - enrollment.totalPaid);
+            if (enrollment.remainingAmount === 0 && enrollment.totalPaid > 0) {
+                enrollment.status = CycleEnrollmentStatus.PAID;
+            } else if (enrollment.totalPaid > 0) {
+                enrollment.status = CycleEnrollmentStatus.PARTIALLY_PAID;
+            } else {
+                enrollment.status = CycleEnrollmentStatus.UNPAID;
+            }
         }
 
-        if (enrollment.status === CycleEnrollmentStatus.PAID) {
+        if (enrollment.status === CycleEnrollmentStatus.PAID && !enrollmentCreatedNow && data.customAmount === undefined && data.customSessionsQuota === undefined) {
             throw BadRequestException({ message: 'لقد تم دفع اشتراك هذه الدورة بالكامل مسبقاً.' });
         }
 
         const discountAmount = data.discountAmount ?? 0;
         const paidAmount = data.paidAmount !== undefined
             ? data.paidAmount
-            : Math.max(0, enrollment.remainingAmount - discountAmount);
+            : (data.customAmount !== undefined 
+                ? data.customAmount 
+                : Math.max(0, enrollment.remainingAmount - discountAmount));
 
         if (paidAmount < 0) throw BadRequestException({ message: 'المدفوع لا يمكن أن يكون سالباً' });
         if (paidAmount + discountAmount > enrollment.remainingAmount) {
@@ -415,7 +451,7 @@ export class PaymentsService {
                 const tx = await PaymentsService.recordSubscription(teacherId, createdBy, {
                     studentId,
                     ...(data.discountAmount !== undefined ? { discountAmount: data.discountAmount } : {}),
-                    ...(data.customAmount !== undefined ? { paidAmount: data.customAmount } : {}),
+                    ...(data.customAmount !== undefined ? { paidAmount: data.customAmount, customAmount: data.customAmount } : {}),
                     ...(data.description !== undefined ? { description: data.description } : {}),
                     date: txDate.toISOString(),
                     ...(data.customSessionsQuota !== undefined ? { customSessionsQuota: data.customSessionsQuota } : {}),
@@ -1122,6 +1158,30 @@ export class PaymentsService {
                         { session }
                     ),
                 ]);
+
+                // ── Sync CycleEnrollment if subscription transaction ─────────────
+                if (transaction.category === TransactionCategory.SUBSCRIPTION && transaction.studentId && (transaction as any).cycleNumber !== undefined) {
+                    const enrollment = await CycleEnrollmentModel.findOne({
+                        studentId: transaction.studentId,
+                        cycleNumber: (transaction as any).cycleNumber
+                    }).session(session);
+
+                    if (enrollment) {
+                        const newTotalPaid = Math.max(0, enrollment.totalPaid + delta);
+                        const newRemaining = Math.max(0, enrollment.cycleCharge - newTotalPaid);
+                        let newStatus = CycleEnrollmentStatus.PARTIALLY_PAID;
+                        if (newRemaining === 0 && newTotalPaid > 0) newStatus = CycleEnrollmentStatus.PAID;
+                        if (newRemaining === enrollment.cycleCharge) newStatus = CycleEnrollmentStatus.UNPAID;
+
+                        await CycleEnrollmentModel.findByIdAndUpdate(enrollment._id, {
+                            $set: {
+                                totalPaid: newTotalPaid,
+                                remainingAmount: newRemaining,
+                                status: newStatus
+                            }
+                        }, { session });
+                    }
+                }
             }
 
             return result;

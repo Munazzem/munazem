@@ -33,6 +33,9 @@ export interface IAttendanceRecord {
     scannedAt: string;
     scannedBy?: string;
     notes?: string;
+    relatedSessionId?: string;
+    relatedGroupName?: string;
+    relatedDate?: string;
     _syncStatus?: MutationSyncStatus;
 }
 
@@ -81,6 +84,9 @@ export interface IAttendanceSnapshotStudent {
     scannedAt?: string;
     status?: AttendanceStatus;
     homeworkDone?: boolean | null;
+    relatedSessionId?: string;
+    relatedGroupName?: string;
+    relatedDate?: string;
 }
 
 export interface IAttendanceSnapshot {
@@ -92,8 +98,10 @@ export interface IAttendanceSnapshot {
     presentStudents: IAttendanceSnapshotStudent[];
     absentStudents: IAttendanceSnapshotStudent[];
     guestStudents: IAttendanceSnapshotStudent[];
+    compensatedStudents?: IAttendanceSnapshotStudent[];
     presentCount: number;
     absentCount: number;
+    compensatedCount?: number;
     totalCount: number;
     createdAt: string;
 }
@@ -128,7 +136,7 @@ export interface PaginatedSessionsResponse {
 export interface IWhatsAppLink {
     studentId:     string;
     studentName:   string;
-    status:        'PRESENT' | 'ABSENT';
+    status:        'PRESENT' | 'ABSENT' | 'COMPENSATED';
     homeworkDone?: boolean | null;
     whatsappLink:  string;
 }

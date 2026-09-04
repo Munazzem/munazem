@@ -8,6 +8,7 @@ import { SessionModel }            from '../../database/models/session.model.js'
 import { DailyLedgerModel, MonthlyLedgerModel } from '../../database/models/ledger.model.js';
 import { ExamResultModel }         from '../../database/models/exam-result.model.js';
 import { ExamModel }               from '../../database/models/exam.model.js';
+import { UserModel }               from '../../database/models/user.model.js';
 import mongoose from 'mongoose';
 import { TransactionType, TransactionCategory, SessionStatus, UserRole, AttendanceStatus, CycleEnrollmentStatus } from '../../common/enums/enum.service.js';
 import { NotFoundException } from '../../common/utils/response/error.responce.js';
@@ -21,33 +22,95 @@ export class ReportsService {
     // ══════════════════════════════════════════════════════════════
     // 1. Student Report — full picture of one student
     // ══════════════════════════════════════════════════════════════
-    static async getStudentReport(studentId: string, teacherId: string) {
+    static async getStudentReport(
+        studentId: string,
+        teacherId: string,
+        teacherDoc?: { features?: { homeworkTracking?: boolean } } | null,
+    ) {
         const student = await StudentModel.findOne({ _id: studentId, teacherId }, {
             studentName: 1, parentName: 1, studentPhone: 1, parentPhone: 1,
             gradeLevel:  1, groupId: 1, isActive: 1, studentCode: 1,
-            monthlySessionsQuota: 1, remainingSessions: 1,
+            monthlySessionsQuota: 1, remainingSessions: 1, groupAssignedAt: 1, createdAt: 1,
         }).lean();
         if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
+
+        const resolvedTeacher = teacherDoc ?? await UserModel.findById(teacherId, { features: 1 }).lean();
+        const isHomeworkEnabled = Boolean(resolvedTeacher?.features?.homeworkTracking);
 
         // Get group name and cycle — scoped to same teacher for safety
         const group = await GroupModel.findOne({ _id: student.groupId, teacherId }, { name: 1, cycle: 1 }).lean();
 
-        // Attendance history & counts from snapshots
-        // We fetch snapshots and deduplicate per date so same-day guest/absent/compensation entries count accurately as 1 session
-        const snapshots = await AttendanceSnapshotModel.find({
-            teacherId,
-            $or: [
-                { 'presentStudents.studentId': student._id },
-                { 'absentStudents.studentId':  student._id },
-                { 'guestStudents.studentId':   student._id },
-            ],
-        }, {
-            date: 1, sessionId: 1, presentStudents: 1, absentStudents: 1, guestStudents: 1,
-        }).sort({ date: -1 }).lean();
+        // Attendance history & counts from AttendanceModel, Snapshots, and Group Sessions
+        // Combines live/in-progress attendance, completed snapshots, and guest cross-group sessions
+        const [snapshots, attendances, groupSessionsAll, allGroupSnapshots] = await Promise.all([
+            AttendanceSnapshotModel.find({
+                teacherId,
+                $or: [
+                    { 'presentStudents.studentId': student._id },
+                    { 'absentStudents.studentId':  student._id },
+                    { 'guestStudents.studentId':   student._id },
+                    { 'compensatedStudents.studentId': student._id },
+                ],
+            }, {
+                date: 1, sessionId: 1, presentStudents: 1, absentStudents: 1, guestStudents: 1, compensatedStudents: 1,
+            }).sort({ date: -1 }).lean(),
+            AttendanceModel.find({
+                studentId: student._id,
+            }).sort({ scannedAt: -1 }).lean(),
+            SessionModel.find({
+                groupId: student.groupId,
+                teacherId,
+                status: { $ne: SessionStatus.CANCELLED }
+            }).sort({ date: -1 }).lean(),
+            AttendanceSnapshotModel.find({
+                groupId: student.groupId,
+                teacherId,
+            }, { sessionId: 1, presentStudents: 1, absentStudents: 1, guestStudents: 1, compensatedStudents: 1 }).lean(),
+        ]);
 
-        // Map and deduplicate by date (priority: PRESENT/LATE (4) > GUEST (3) > EXCUSED (2) > ABSENT (1))
-        const dayMap = new Map<string, { sessionId?: any; date: Date; status: string; homeworkDone?: boolean | null; priority: number }>();
+        const sessionDateMap = new Map<string, Date>();
+        groupSessionsAll.forEach(s => {
+            if (s.date) sessionDateMap.set(s._id.toString(), s.date);
+        });
 
+        // Map sessions (priority: PRESENT/LATE (4) > GUEST (3) > EXCUSED (2) > ABSENT (1))
+        // Keyed by sessionId so that each conducted session is counted and displayed on its own, even if on the same day
+        const sessionAttendanceMap = new Map<string, { sessionId?: any; date: Date; status: string; homeworkDone?: boolean | null; priority: number }>();
+
+        // 1. Direct attendance records
+        for (const att of attendances) {
+            let status = att.status as string;
+            let priority = 1;
+            if (att.isGuest) {
+                status = 'GUEST';
+                priority = 3;
+            } else if (att.status === AttendanceStatus.PRESENT || att.status === AttendanceStatus.LATE) {
+                status = AttendanceStatus.PRESENT;
+                priority = 4;
+            } else if (att.status === AttendanceStatus.EXCUSED) {
+                status = AttendanceStatus.EXCUSED;
+                priority = 2;
+            } else if (att.status === AttendanceStatus.ABSENT) {
+                status = AttendanceStatus.ABSENT;
+                priority = 1;
+            }
+
+            const recordDate = (att.sessionId ? sessionDateMap.get(att.sessionId.toString()) : null) || att.scannedAt || (att as any).createdAt;
+            const sessionKey = att.sessionId ? ((att.sessionId as any)._id ? (att.sessionId as any)._id.toString() : (att.sessionId as any).toString()) : ((att._id as any)?.toString() || 'unknown');
+
+            const existing = sessionAttendanceMap.get(sessionKey);
+            if (!existing || priority > existing.priority) {
+                sessionAttendanceMap.set(sessionKey, {
+                    sessionId: att.sessionId,
+                    date: recordDate,
+                    status,
+                    homeworkDone: typeof att.homeworkDone === 'boolean' ? att.homeworkDone : null,
+                    priority
+                });
+            }
+        }
+
+        // 2. Attendance snapshots
         for (const snap of snapshots) {
             const sid = studentId.toString();
             const presentStudent = snap.presentStudents?.find((s: any) => s.studentId?.toString() === sid);
@@ -74,25 +137,64 @@ export class ReportsService {
                 const guestStudent = snap.guestStudents?.find((s: any) => s.studentId?.toString() === sid);
                 homeworkDone = typeof guestStudent?.homeworkDone === 'boolean' ? guestStudent.homeworkDone : null;
             } else if (isAbsent) {
-                status = 'ABSENT';
+                status = AttendanceStatus.ABSENT;
                 priority = 1;
             }
 
             if (status !== 'UNKNOWN') {
-                const dayKey = snap.date ? (new Date(snap.date).toISOString().split('T')[0] || 'unknown') : ((snap as any)._id?.toString() || 'unknown');
-                const existing = dayMap.get(dayKey);
+                const sessionKey = snap.sessionId ? snap.sessionId.toString() : ((snap as any)._id?.toString() || 'unknown');
+                const existing = sessionAttendanceMap.get(sessionKey);
                 if (!existing || priority > existing.priority) {
-                    dayMap.set(dayKey, { sessionId: snap.sessionId, date: snap.date, status, homeworkDone, priority });
+                    sessionAttendanceMap.set(sessionKey, { sessionId: snap.sessionId, date: snap.date, status, homeworkDone, priority });
                 }
             }
         }
 
-        const deduplicatedEntries = Array.from(dayMap.values()).sort(
+        // 3. Any group sessions that were conducted while the student was enrolled in this group where student has no attendance -> ABSENT
+        const groupSnapshotMap = new Map(allGroupSnapshots.map(s => [s.sessionId.toString(), s]));
+        const sid = student._id.toString();
+        const joinedGroupDate = (student as any).groupAssignedAt || (student as any).createdAt;
+
+        for (const s of groupSessionsAll) {
+            if (!s.date) continue;
+            const sessionKey = s._id.toString();
+            if (!sessionAttendanceMap.has(sessionKey)) {
+                // If a snapshot exists for this session, verify if the student was part of the group
+                const snap = groupSnapshotMap.get(sessionKey);
+                if (snap) {
+                    const wasInGroup = snap.presentStudents?.some((p: any) => p.studentId?.toString() === sid)
+                        || snap.absentStudents?.some((a: any) => a.studentId?.toString() === sid)
+                        || snap.guestStudents?.some((g: any) => g.studentId?.toString() === sid)
+                        || (snap as any).compensatedStudents?.some((c: any) => c.studentId?.toString() === sid);
+                    if (!wasInGroup) {
+                        // Student was NOT enrolled in this group when this session was conducted
+                        continue;
+                    }
+                }
+
+                // If session occurred before student joined this group, skip it
+                if (joinedGroupDate && new Date(s.date) < new Date(joinedGroupDate)) {
+                    continue;
+                }
+
+                // Only completed sessions where student was genuinely absent
+                if (s.status === SessionStatus.COMPLETED) {
+                    sessionAttendanceMap.set(sessionKey, {
+                        sessionId: s._id,
+                        date: s.date,
+                        status: AttendanceStatus.ABSENT,
+                        homeworkDone: null,
+                        priority: 1
+                    });
+                }
+            }
+        }
+
+        const deduplicatedEntries = Array.from(sessionAttendanceMap.values()).sort(
             (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
         );
 
-        // When a student attended as a GUEST in another group, that GUEST session is already listed in history as their attendance.
-        // Therefore, we do not show redundant phantom EXCUSED entries for their home group's session that was compensated.
+        // Filter out redundant EXCUSED entries if compensated by a GUEST session
         const guestCount = deduplicatedEntries.filter(e => e.status === 'GUEST').length;
         let availableGuestCredits = guestCount;
 
@@ -100,7 +202,7 @@ export class ReportsService {
             if (e.status === AttendanceStatus.EXCUSED) {
                 if (availableGuestCredits > 0) {
                     availableGuestCredits--;
-                    return false; // Suppress phantom compensated absence card from student profile
+                    return false; // Suppress phantom compensated absence card
                 }
             }
             return true;
@@ -110,11 +212,11 @@ export class ReportsService {
             e => e.status === AttendanceStatus.PRESENT || e.status === AttendanceStatus.LATE || e.status === 'GUEST' || e.status === AttendanceStatus.EXCUSED
         ).length;
         const absentCount  = effectiveEntries.filter(e => e.status === AttendanceStatus.ABSENT).length;
-        const attendanceHistory = effectiveEntries.slice(0, 30).map(e => ({
+        const attendanceHistory = effectiveEntries.map(e => ({
             sessionId: e.sessionId,
             date: e.date,
             status: e.status,
-            homeworkDone: e.homeworkDone ?? null,
+            homeworkDone: isHomeworkEnabled ? (e.homeworkDone ?? null) : null,
         }));
 
         const totalSessions  = presentCount + absentCount;
@@ -182,82 +284,191 @@ export class ReportsService {
         const rawCycleStartedAt = (group as any)?.cycle?.startedAt;
         const cycleStartedAt = startOfDayEgypt(rawCycleStartedAt);
 
-        // 1. Get all non-cancelled sessions for the group in the current cycle
-        const groupSessions = await SessionModel.find({
-            groupId: student.groupId,
-            teacherId,
-            date: { $gte: cycleStartedAt },
-            status: { $ne: SessionStatus.CANCELLED }
-        }).sort({ date: 1, startTime: 1 }).lean();
-
-        const sessionIds = groupSessions.map(s => s._id);
-
-        // 2. Get attendance records and snapshots for these group sessions + any guest attendances in the cycle
-        const [attendedRecords, sessionSnapshots, guestRecords] = await Promise.all([
+        // 1. Fetch all attendance records and snapshots for this student in the current cycle across ALL groups
+        const [cycleAttendances, cycleSnapshots, groupSessions] = await Promise.all([
             AttendanceModel.find({
                 studentId,
-                sessionId: { $in: sessionIds as any },
-            }).lean(),
+                $or: [
+                    { scannedAt: { $gte: cycleStartedAt } },
+                    { createdAt: { $gte: cycleStartedAt } },
+                ]
+            }).populate('sessionId', 'date status groupId').lean(),
             AttendanceSnapshotModel.find({
-                sessionId: { $in: sessionIds as any },
+                teacherId,
+                date: { $gte: cycleStartedAt },
+                $or: [
+                    { 'presentStudents.studentId': student._id },
+                    { 'absentStudents.studentId':  student._id },
+                    { 'guestStudents.studentId':   student._id },
+                    { 'compensatedStudents.studentId': student._id },
+                ]
             }).lean(),
-            AttendanceModel.find({
-                studentId,
-                isGuest: true,
-                status: { $in: [AttendanceStatus.PRESENT, AttendanceStatus.LATE] },
-                scannedAt: { $gte: cycleStartedAt },
-            }).lean(),
+            SessionModel.find({
+                groupId: student.groupId,
+                teacherId,
+                date: { $gte: cycleStartedAt },
+                status: { $ne: SessionStatus.CANCELLED }
+            }).sort({ date: 1, startTime: 1 }).lean(),
         ]);
 
-        const attendedMap = new Map<string, AttendanceStatus>();
-        attendedRecords.forEach(a => {
-            if (a.sessionId) attendedMap.set(a.sessionId.toString(), a.status as AttendanceStatus);
-        });
+        // Map all sessions in this cycle for this student by sessionId / dateKey
+        // Priority: PRESENT (4) > GUEST (3) > EXCUSED (2) > ABSENT (1)
+        const cycleSessionMap = new Map<string, { sessionId: any; date: Date; status: string; priority: number }>();
 
-        // Complement with snapshots (in case snapshot exists but AttendanceModel wasn't persisted individually)
-        sessionSnapshots.forEach(snap => {
-            const sid = snap.sessionId.toString();
-            if (!attendedMap.has(sid)) {
-                if (snap.presentStudents?.some(p => p.studentId.toString() === studentId && p.status !== AttendanceStatus.EXCUSED)) {
-                    attendedMap.set(sid, AttendanceStatus.PRESENT);
-                } else if (snap.presentStudents?.some(p => p.studentId.toString() === studentId && p.status === AttendanceStatus.EXCUSED)) {
-                    attendedMap.set(sid, AttendanceStatus.EXCUSED);
-                } else if (snap.guestStudents?.some(g => g.studentId.toString() === studentId)) {
-                    attendedMap.set(sid, AttendanceStatus.PRESENT);
-                } else if (snap.absentStudents?.some(a => a.studentId.toString() === studentId)) {
-                    attendedMap.set(sid, AttendanceStatus.ABSENT);
+        // 1. Add records from cycleSnapshots (completed sessions where student was evaluated in ANY group)
+        cycleSnapshots.forEach(snap => {
+            const sidStr = studentId.toString();
+            let status = '';
+            let priority = 1;
+
+            const isCompensated = (snap as any).compensatedStudents?.some((c: any) => c.studentId?.toString() === sidStr);
+            const presentEntry = snap.presentStudents?.find((p: any) => p.studentId?.toString() === sidStr);
+            const guestEntry = snap.guestStudents?.find((g: any) => g.studentId?.toString() === sidStr);
+            const isAbsent = snap.absentStudents?.some((a: any) => a.studentId?.toString() === sidStr);
+
+            if (isCompensated || presentEntry?.status === AttendanceStatus.EXCUSED) {
+                status = AttendanceStatus.EXCUSED;
+                priority = 2;
+            } else if (presentEntry) {
+                status = presentEntry.status || AttendanceStatus.PRESENT;
+                priority = 4;
+            } else if (guestEntry) {
+                status = 'GUEST';
+                priority = 3;
+            } else if (isAbsent) {
+                status = AttendanceStatus.ABSENT;
+                priority = 1;
+            }
+
+            if (status && snap.date) {
+                const key = snap.sessionId ? (snap.sessionId as any).toString() : (new Date(snap.date).toISOString().split('T')[0] || 'unknown');
+                const existing = cycleSessionMap.get(key);
+                if (!existing || priority > existing.priority) {
+                    cycleSessionMap.set(key, {
+                        sessionId: snap.sessionId,
+                        date: snap.date,
+                        status,
+                        priority
+                    });
                 }
             }
         });
 
-        // 3. Map sessions with cross-date guest compensation
-        const matchedGuestIds = new Set<string>();
-
-        const monthlySessions = groupSessions.map(s => {
-            let status = attendedMap.get(s._id.toString());
-            const sessionDateKey = s.date ? new Date(s.date).toISOString().split('T')[0] : '';
-
-            if (status === AttendanceStatus.PRESENT || status === AttendanceStatus.LATE || status === AttendanceStatus.EXCUSED) {
-                return { sessionId: s._id, date: s.date, status };
-            }
-
-            // Check if there is a guest record on the exact same date
-            const exactGuest = guestRecords.find(g => {
-                const gd = g.scannedAt ? new Date(g.scannedAt).toISOString().split('T')[0] : '';
-                return gd === sessionDateKey && !matchedGuestIds.has(g._id.toString());
-            });
-
-            if (exactGuest) {
-                matchedGuestIds.add(exactGuest._id.toString());
+        // 2. Add records from cycleAttendances (in-progress scans or direct attendances)
+        cycleAttendances.forEach(att => {
+            let status = att.status as string;
+            let priority = 1;
+            if (att.isGuest) {
+                status = 'GUEST';
+                priority = 3;
+            } else if (att.status === AttendanceStatus.PRESENT || att.status === AttendanceStatus.LATE) {
+                status = AttendanceStatus.PRESENT;
+                priority = 4;
+            } else if (att.status === AttendanceStatus.EXCUSED) {
                 status = AttendanceStatus.EXCUSED;
+                priority = 2;
+            } else if (att.status === AttendanceStatus.ABSENT) {
+                status = AttendanceStatus.ABSENT;
+                priority = 1;
             }
 
-            return {
-                sessionId: s._id,
-                date:      s.date,
-                status:    status || AttendanceStatus.ABSENT,
-            };
+            const recordDate = (att.sessionId as any)?.date || att.scannedAt || (att as any).createdAt;
+            if (!recordDate) return;
+
+            const sidStr = att.sessionId ? ((att.sessionId as any)._id ? (att.sessionId as any)._id.toString() : (att.sessionId as any).toString()) : null;
+            const key = sidStr || (new Date(recordDate).toISOString().split('T')[0] || 'unknown');
+
+            const existing = cycleSessionMap.get(key);
+            if (!existing || priority > existing.priority) {
+                cycleSessionMap.set(key, {
+                    sessionId: sidStr || att._id,
+                    date: recordDate,
+                    status,
+                    priority
+                });
+            }
         });
+
+        // 3. Check sessions of the CURRENT group (student.groupId)
+        // Only include completed sessions where student was ACTUALLY enrolled in the group and was absent
+        const studentJoinedGroup = (student as any).groupAssignedAt || (student as any).createdAt;
+        for (const s of groupSessions) {
+            if (!s.date) continue;
+            const sidStr = s._id.toString();
+            const dateKey = new Date(s.date).toISOString().split('T')[0] || 'unknown';
+
+            // Already evaluated via snapshot or attendance
+            if (cycleSessionMap.has(sidStr) || cycleSessionMap.has(dateKey)) {
+                continue;
+            }
+
+            // If a snapshot exists for this group session, did the student belong to it?
+            const snap = groupSnapshotMap.get(sidStr);
+            if (snap) {
+                const wasInGroup = snap.presentStudents?.some((p: any) => p.studentId?.toString() === sid)
+                    || snap.absentStudents?.some((a: any) => a.studentId?.toString() === sid)
+                    || snap.guestStudents?.some((g: any) => g.studentId?.toString() === sid)
+                    || (snap as any).compensatedStudents?.some((c: any) => c.studentId?.toString() === sid);
+                if (!wasInGroup) {
+                    // Student was NOT enrolled in this group when this session occurred! Skip!
+                    continue;
+                }
+            }
+
+            // If session occurred before student joined this group, skip!
+            if (studentJoinedGroup && new Date(s.date) < new Date(studentJoinedGroup)) {
+                continue;
+            }
+
+            // If completed and student was genuinely absent
+            if (s.status === SessionStatus.COMPLETED) {
+                cycleSessionMap.set(sidStr, {
+                    sessionId: s._id,
+                    date: s.date,
+                    status: AttendanceStatus.ABSENT,
+                    priority: 1
+                });
+            }
+        }
+
+        // Deduplicate by sessionId so that each conducted session is counted on its own
+        const cycleSessionMapFinal = new Map<string, { sessionId: any; date: Date; status: string }>();
+        const sortedSessions = Array.from(cycleSessionMap.values()).sort(
+            (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+        );
+
+        sortedSessions.forEach(s => {
+            const sessionKey = s.sessionId ? (typeof s.sessionId === 'object' ? (s.sessionId._id ? s.sessionId._id.toString() : s.sessionId.toString()) : s.sessionId.toString()) : (s.date ? new Date(s.date).toISOString() : 'unknown');
+            if (!cycleSessionMapFinal.has(sessionKey)) {
+                cycleSessionMapFinal.set(sessionKey, {
+                    sessionId: s.sessionId,
+                    date: s.date,
+                    status: s.status,
+                });
+            }
+        });
+
+        const rawMonthlySessions = Array.from(cycleSessionMapFinal.values());
+
+        // Option 1 (استبدال الحصة في الحساب):
+        // Filter out redundant EXCUSED entries if compensated by a GUEST session in this cycle,
+        // so that the compensation session replaces the missed session rather than adding an extra session.
+        const cycleGuestCount = rawMonthlySessions.filter(s => (s as any).status === 'GUEST').length;
+        let availableCycleGuestCredits = cycleGuestCount;
+
+        const monthlySessions = rawMonthlySessions.filter(s => {
+            if (s.status === AttendanceStatus.EXCUSED) {
+                if (availableCycleGuestCredits > 0) {
+                    availableCycleGuestCredits--;
+                    return false; // Suppress phantom compensated absence session
+                }
+            }
+            return true;
+        }).map(s => ({
+            sessionId: s.sessionId,
+            date: s.date,
+            status: s.status,
+        }));
 
         // 4. Manual records in the cycle (not linked to group sessions)
         const manualRecordsCount = await AttendanceModel.countDocuments({
@@ -269,10 +480,80 @@ export class ReportsService {
         });
 
         const activeAttendedCount = monthlySessions.filter(
-            s => s.status === AttendanceStatus.PRESENT || s.status === AttendanceStatus.LATE || s.status === AttendanceStatus.EXCUSED
+            s => s.status === AttendanceStatus.PRESENT || s.status === AttendanceStatus.LATE || s.status === AttendanceStatus.EXCUSED || s.status === AttendanceStatus.ABSENT || (s as any).status === 'GUEST'
         ).length;
 
         const usedSessionsThisMonth = activeAttendedCount + manualRecordsCount;
+
+        // Group attendance into cycles using the ACTUAL cycleNumber recorded on each session
+        const cyclesMap = new Map<number, { cycleNumber: number; isCurrent: boolean; sessions: any[] }>();
+        const rawGroupStartedAt = (group as any)?.cycle?.startedAt;
+        const cycleStartedAtDate = rawGroupStartedAt ? startOfDayEgypt(rawGroupStartedAt) : null;
+
+        // Map session to cycleContext / date
+        const sessionDocMap = new Map<string, any>();
+        groupSessionsAll.forEach(s => sessionDocMap.set(s._id.toString(), s));
+
+        // Fetch any sessions not in groupSessionsAll (e.g. from previous groups or guest sessions)
+        const missingSessionIds = effectiveEntries
+            .map(e => e.sessionId ? (typeof e.sessionId === 'object' ? (e.sessionId as any)._id?.toString() || (e.sessionId as any).toString() : e.sessionId.toString()) : null)
+            .filter((id): id is string => !!id && !sessionDocMap.has(id));
+
+        if (missingSessionIds.length > 0) {
+            const extraSessions = await SessionModel.find(
+                { _id: { $in: missingSessionIds } },
+                { cycleContext: 1, date: 1 }
+            ).lean();
+            extraSessions.forEach(s => sessionDocMap.set(s._id.toString(), s));
+        }
+
+        const chronologicalEntries = [...effectiveEntries].sort(
+            (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+        );
+
+        chronologicalEntries.forEach(entry => {
+            const sid = entry.sessionId ? (typeof entry.sessionId === 'object' ? (entry.sessionId as any)._id?.toString() || (entry.sessionId as any).toString() : entry.sessionId.toString()) : null;
+            const sessionDoc = sid ? sessionDocMap.get(sid) : null;
+
+            let targetCycle: number;
+            if (sessionDoc?.cycleContext?.cycleNumber) {
+                // Use the true, verified cycle number recorded at the time of the session
+                targetCycle = sessionDoc.cycleContext.cycleNumber;
+            } else if (cycleStartedAtDate && new Date(entry.date) >= cycleStartedAtDate) {
+                targetCycle = currentCycleNumber;
+            } else {
+                targetCycle = currentCycleNumber > 1 ? currentCycleNumber - 1 : 1;
+            }
+
+            if (!cyclesMap.has(targetCycle)) {
+                cyclesMap.set(targetCycle, {
+                    cycleNumber: targetCycle,
+                    isCurrent: targetCycle === currentCycleNumber,
+                    sessions: []
+                });
+            }
+            cyclesMap.get(targetCycle)!.sessions.push({
+                sessionId: entry.sessionId,
+                date: entry.date,
+                status: entry.status,
+                homeworkDone: entry.homeworkDone ?? null
+            });
+        });
+
+        if (!cyclesMap.has(currentCycleNumber)) {
+            cyclesMap.set(currentCycleNumber, {
+                cycleNumber: currentCycleNumber,
+                isCurrent: true,
+                sessions: []
+            });
+        }
+
+        const attendanceCycles = Array.from(cyclesMap.values())
+            .sort((a, b) => b.cycleNumber - a.cycleNumber)
+            .map(c => ({
+                ...c,
+                sessions: c.sessions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+            }));
 
         // Remaining sessions is deprecated
         const remainingSessions = 0;
@@ -301,6 +582,7 @@ export class ReportsService {
         const examTitleMap = new Map(exams.map(e => [e._id.toString(), e.title]));
 
         const gradesHistory = examResults.map(r => ({
+            _id:         r._id,
             examId:      r.examId,
             examTitle:   examTitleMap.get(r.examId.toString()) ?? 'امتحان',
             score:       r.score,
@@ -334,6 +616,7 @@ export class ReportsService {
                 absentCount,
                 attendanceRate: `${attendanceRate}%`,
                 history: attendanceHistory,
+                cycles: attendanceCycles,
             },
             payments: {
                 totalPaid,

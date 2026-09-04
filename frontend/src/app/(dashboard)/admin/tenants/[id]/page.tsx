@@ -76,10 +76,18 @@ export default function TenantDetailPage() {
         );
     }
 
+    const handleBack = () => {
+        if (typeof window !== 'undefined' && window.history.length > 1) {
+            router.back();
+        } else {
+            router.push('/admin/tenants');
+        }
+    };
+
     if (!data) return (
         <div className="p-6 text-center text-gray-400" dir="rtl">
             <p>معلم غير موجود</p>
-            <Button variant="outline" className="mt-4" onClick={() => router.push('/admin/tenants')}>
+            <Button variant="outline" className="mt-4" onClick={handleBack}>
                 العودة
             </Button>
         </div>
@@ -92,7 +100,7 @@ export default function TenantDetailPage() {
         <div className="space-y-5 p-4 sm:p-6 max-w-4xl mx-auto" dir="rtl">
             {/* Back */}
             <button
-                onClick={() => router.back()}
+                onClick={handleBack}
                 className="flex items-center gap-2 text-sm text-gray-500 hover:text-primary transition-colors"
             >
                 <ArrowRight className="h-4 w-4" />

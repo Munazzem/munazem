@@ -93,6 +93,22 @@ export const batchRecordResults = async (
     return (res as any).data ?? res;
 };
 
+export const updateResult = async (
+    examId: string,
+    resultId: string,
+    data: { score: number }
+): Promise<IExamResult> => {
+    const res = await apiClient.put(`/exams/${examId}/results/${resultId}`, data);
+    return (res as any).data ?? res;
+};
+
+export const deleteResult = async (
+    examId: string,
+    resultId: string
+): Promise<void> => {
+    await apiClient.delete(`/exams/${examId}/results/${resultId}`);
+};
+
 export const sendExamResultsWhatsApp = async (examId: string): Promise<{ sentCount: number }> => {
     const res = await apiClient.post(`/exams/${examId}/results/send`);
     return (res as any).data ?? res;

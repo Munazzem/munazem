@@ -89,6 +89,10 @@ const studentSchema = new Schema<IStudent>({
     consecutiveAbsences: {
         type: Number,
         default: 0
+    },
+    groupAssignedAt: {
+        type: Date,
+        default: Date.now
     }
 }, {
     timestamps: true

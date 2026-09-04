@@ -46,6 +46,16 @@ const attendanceSchema = new Schema<IAttendanceDocument>({
     notes: {
         type: String,
     },
+    relatedSessionId: {
+        type: Schema.Types.ObjectId,
+        ref: 'Session',
+    },
+    relatedGroupName: {
+        type: String,
+    },
+    relatedDate: {
+        type: Date,
+    },
     isConsumed: {
         type: Boolean,
     },

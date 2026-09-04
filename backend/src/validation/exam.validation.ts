@@ -43,3 +43,22 @@ export const batchResultsSchema = z.object({
     })).min(1, 'يجب إدخال نتيجة طالب واحد على الأقل'),
   }),
 });
+
+export const updateExamSchema = z.object({
+  body: z.object({
+    title:        z.string().min(1, 'عنوان الامتحان مطلوب').max(200).optional(),
+    date:         z.string().min(1, 'تاريخ الامتحان مطلوب').optional(),
+    gradeLevel:   z.nativeEnum(GradeLevel).optional(),
+    groupIds:     z.array(objectId).optional(),
+    passingMarks: z.number().min(0, 'درجة النجاح لا يمكن أن تكون سالبة').optional(),
+    questions:    z.array(questionSchema).optional(),
+    totalMarks:   z.number().positive('الدرجة الكلية يجب أن تكون أكبر من صفر').optional(),
+  }),
+});
+
+export const updateResultSchema = z.object({
+  body: z.object({
+    score: z.number().min(0, 'الدرجة لا يمكن أن تكون سالبة'),
+  }),
+});
+

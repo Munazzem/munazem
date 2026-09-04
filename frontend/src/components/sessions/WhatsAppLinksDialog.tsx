@@ -38,8 +38,9 @@ export function WhatsAppLinksDialog({
         enabled: open,
     });
 
-    const present = links.filter((l) => l.status === 'PRESENT');
-    const absent  = links.filter((l) => l.status === 'ABSENT');
+    const present     = links.filter((l) => l.status === 'PRESENT');
+    const absent      = links.filter((l) => l.status === 'ABSENT');
+    const compensated = links.filter((l) => l.status === 'COMPENSATED');
 
     return (
         <Dialog open={open} onOpenChange={onClose}>
@@ -59,18 +60,22 @@ export function WhatsAppLinksDialog({
                 ) : (
                     <div className="overflow-y-auto flex-1 -mx-6 px-6">
                         {/* Summary */}
-                        <div className="flex gap-3 mb-4">
-                            <div className="flex-1 bg-green-50 rounded-lg p-3 text-center border border-green-100">
-                                <p className="text-lg font-bold text-green-700">{present.length}</p>
-                                <p className="text-xs text-green-600">حاضر</p>
+                        <div className="grid grid-cols-4 gap-2 sm:gap-3 mb-4 text-center">
+                            <div className="bg-green-50 rounded-lg p-2.5 border border-green-100">
+                                <p className="text-base sm:text-lg font-bold text-green-700">{present.length}</p>
+                                <p className="text-[11px] text-green-600">حاضر</p>
                             </div>
-                            <div className="flex-1 bg-red-50 rounded-lg p-3 text-center border border-red-100">
-                                <p className="text-lg font-bold text-red-600">{absent.length}</p>
-                                <p className="text-xs text-red-500">غائب</p>
+                            <div className="bg-purple-50 rounded-lg p-2.5 border border-purple-100">
+                                <p className="text-base sm:text-lg font-bold text-purple-700">{compensated.length}</p>
+                                <p className="text-[11px] text-purple-600">معوّض</p>
                             </div>
-                            <div className="flex-1 bg-gray-50 rounded-lg p-3 text-center border border-gray-100">
-                                <p className="text-lg font-bold text-gray-700">{links.length}</p>
-                                <p className="text-xs text-gray-500">إجمالي</p>
+                            <div className="bg-red-50 rounded-lg p-2.5 border border-red-100">
+                                <p className="text-base sm:text-lg font-bold text-red-600">{absent.length}</p>
+                                <p className="text-[11px] text-red-500">غائب</p>
+                            </div>
+                            <div className="bg-gray-50 rounded-lg p-2.5 border border-gray-100">
+                                <p className="text-base sm:text-lg font-bold text-gray-700">{links.length}</p>
+                                <p className="text-[11px] text-gray-500">إجمالي</p>
                             </div>
                         </div>
 
@@ -79,7 +84,7 @@ export function WhatsAppLinksDialog({
                             <div className="mb-4">
                                 <div className="flex items-center justify-between mb-2">
                                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                                        الغائبون — {absent.length}
+                                        الغائبون الفعليون — {absent.length}
                                     </p>
                                 </div>
                                 <ul className="space-y-1.5">
@@ -98,6 +103,40 @@ export function WhatsAppLinksDialog({
                                                 <div className="flex items-center gap-1.5 text-xs text-green-700 font-medium opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <Send className="h-3.5 w-3.5" />
                                                     فتح واتساب
+                                                    <ExternalLink className="h-3 w-3" />
+                                                </div>
+                                            </a>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
+
+                        {/* Compensated (Advance) */}
+                        {compensated.length > 0 && (
+                            <div className="mb-4">
+                                <div className="flex items-center justify-between mb-2">
+                                    <p className="text-xs font-semibold text-purple-700 uppercase tracking-wide">
+                                        المعوضون مسبقاً — {compensated.length}
+                                    </p>
+                                </div>
+                                <ul className="space-y-1.5">
+                                    {compensated.map((l) => (
+                                        <li key={l.studentId}>
+                                            <a
+                                                href={l.whatsappLink}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border border-purple-100 bg-purple-50 hover:bg-purple-100 transition-colors group"
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    <CheckCheck className="h-4 w-4 text-purple-600 shrink-0" />
+                                                    <span className="text-sm font-medium text-gray-800">{l.studentName}</span>
+                                                    <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-md font-bold">معوض</span>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 text-xs text-purple-700 font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <Send className="h-3.5 w-3.5" />
+                                                    إشعار تعويض
                                                     <ExternalLink className="h-3 w-3" />
                                                 </div>
                                             </a>

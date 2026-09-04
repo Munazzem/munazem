@@ -76,25 +76,28 @@ export function BatchResultsModal({ exam, open, onOpenChange, onSuccess }: Props
             ? raw
             : [];
 
-        const done: Set<string> = new Set(
-            ((resultsData as any)?.results ?? []).map((r: any) =>
-                typeof r.studentId === 'string' ? r.studentId : r.studentId?._id
-            )
+        const doneResults = new Map<string, number>(
+            ((resultsData as any)?.results ?? []).map((r: any) => [
+                String(typeof r.studentId === 'string' ? r.studentId : r.studentId?._id),
+                Number(r.score)
+            ])
         );
 
         setRows(
             students
                 .filter((s) => s?._id && (s?.studentName || s?.fullName))
                 .map((s) => {
+                    const sid = String(s._id);
                     const name = s.fullName
                         ?? (s.studentName && s.parentName
                             ? `${s.studentName} ${s.parentName}`
                             : s.studentName ?? '—');
+                    const hasDone = doneResults.has(sid);
                     return {
-                        studentId:   String(s._id),
+                        studentId:   sid,
                         studentName: String(name),
-                        score:       '',
-                        alreadyDone: done.has(String(s._id)),
+                        score:       hasDone ? doneResults.get(sid)! : '',
+                        alreadyDone: hasDone,
                     };
                 })
         );
@@ -103,7 +106,7 @@ export function BatchResultsModal({ exam, open, onOpenChange, onSuccess }: Props
     const mutation = useMutation({
         mutationFn: () => {
             const valid = rows
-                .filter((r) => !r.alreadyDone && r.score !== '')
+                .filter((r) => r.score !== '')
                 .map((r) => ({ studentId: r.studentId, score: Number(r.score) }));
             if (valid.length === 0) throw new Error('أدخل درجة طالب واحد على الأقل');
             return batchRecordResults(exam._id, valid);
@@ -111,7 +114,7 @@ export function BatchResultsModal({ exam, open, onOpenChange, onSuccess }: Props
         onSuccess: (res) => {
             setResult(res);
             setSubmitted(true);
-            toast.success(`تم إدخال ${res.inserted} نتيجة من ${res.total}`);
+            toast.success(`تم حفظ ${res.inserted} نتيجة`);
             onSuccess?.();
         },
         
@@ -206,22 +209,21 @@ export function BatchResultsModal({ exam, open, onOpenChange, onSuccess }: Props
                                             </div>
                                             <span className="text-sm font-medium text-gray-800 truncate">{row.studentName}</span>
                                         </div>
-                                        <div className="col-span-5 flex items-center justify-center">
-                                            {row.alreadyDone ? (
-                                                <span className="text-xs text-green-600 font-medium flex items-center gap-1">
-                                                    <CheckCircle2 className="h-3.5 w-3.5" /> مُدخَل
+                                        <div className="col-span-5 flex items-center justify-center gap-1.5">
+                                            <Input
+                                                type="number"
+                                                min={0}
+                                                max={exam.totalMarks}
+                                                value={row.score}
+                                                onChange={(e) => updateScore(idx, e.target.value)}
+                                                placeholder={`0 – ${exam.totalMarks}`}
+                                                dir="ltr"
+                                                className={`text-center text-sm h-8 w-24 ${row.alreadyDone ? 'border-green-300 bg-white font-semibold text-green-800' : ''}`}
+                                            />
+                                            {row.alreadyDone && (
+                                                <span title="درجة مسجلة مسبقاً — يمكنك تعديلها">
+                                                    <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
                                                 </span>
-                                            ) : (
-                                                <Input
-                                                    type="number"
-                                                    min={0}
-                                                    max={exam.totalMarks}
-                                                    value={row.score}
-                                                    onChange={(e) => updateScore(idx, e.target.value)}
-                                                    placeholder={`0 – ${exam.totalMarks}`}
-                                                    dir="ltr"
-                                                    className="text-center text-sm h-8 w-24"
-                                                />
                                             )}
                                         </div>
                                     </div>
