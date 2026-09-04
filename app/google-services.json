@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "826654641032",
+    "project_id": "munazem",
+    "storage_bucket": "munazem.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:826654641032:android:68a244c0f986dde29a883d",
+        "android_client_info": {
+          "package_name": "app.monazem.parent"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAaCbbVTagBm-WrmO6aUB71ZR36HgThQic"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

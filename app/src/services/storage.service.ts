@@ -94,4 +94,15 @@ export const StorageService = {
       deleteItem(STORAGE_KEYS.USER_DATA),
     ]);
   },
+
+  // Generic key-value access (for child.store etc.)
+  async getItem(key: string): Promise<string | null> {
+    return getItem(key);
+  },
+  async setItem(key: string, value: string): Promise<void> {
+    return setItem(key, value);
+  },
+  async deleteItem(key: string): Promise<void> {
+    return deleteItem(key);
+  },
 };
