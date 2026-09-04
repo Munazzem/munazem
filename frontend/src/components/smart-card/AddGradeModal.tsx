@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchExams, recordResult } from '@/lib/api/exams';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,6 +17,7 @@ interface Props {
 }
 
 export function AddGradeModal({ open, onClose, studentId, studentName }: Props) {
+    const queryClient = useQueryClient();
     const [selectedExamId, setSelectedExamId] = useState('');
     const [score, setScore] = useState<number | ''>('');
 
@@ -32,6 +33,10 @@ export function AddGradeModal({ open, onClose, studentId, studentName }: Props) 
         mutationFn: () => recordResult(selectedExamId, { studentId, score: Number(score) }),
         onSuccess: () => {
             toast.success(`✅ تم تسجيل درجة ${studentName}`);
+            if (selectedExamId) {
+                queryClient.invalidateQueries({ queryKey: ['exam-results', selectedExamId] });
+            }
+            queryClient.invalidateQueries({ queryKey: ['student-report', studentId] });
             onClose();
             setSelectedExamId('');
             setScore('');

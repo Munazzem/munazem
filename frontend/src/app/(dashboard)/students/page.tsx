@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { fetchStudents, deleteStudent } from '@/lib/api/students';
 import { fetchGroups } from '@/lib/api/groups';
@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { TableSkeleton } from '@/components/layout/skeletons/TableSkeleton';
 import { CardSkeleton } from '@/components/layout/skeletons/CardSkeleton';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -47,7 +47,7 @@ import { generateIdCardsHtml } from '@/lib/utils/printIdCard';
 import { QK } from '@/lib/query-keys';
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
-export default function StudentsPage() {
+function StudentsPageContent() {
     const user = useAuthStore(state => state.user);
     const canWrite = user?.role === 'assistant' || user?.role === 'teacher';
 
@@ -57,13 +57,33 @@ export default function StudentsPage() {
     // Which group is selected (null = show group cards)
     const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
 
+    const router = useRouter();
+    const searchParams = useSearchParams();
+    const urlGroupId = searchParams.get('groupId');
+
+    const { data: groupsData } = useQuery({
+        queryKey: QK.groups.list({ limit: 100 }),
+        queryFn: () => fetchGroups({ limit: 100 }),
+    });
+    const allGroups = groupsData?.data ?? [];
+
+    useEffect(() => {
+        if (urlGroupId && allGroups.length > 0) {
+            const found = allGroups.find(g => g._id === urlGroupId);
+            if (found && selectedGroup?._id !== urlGroupId) {
+                setSelectedGroup(found);
+            }
+        } else if (!urlGroupId && selectedGroup) {
+            setSelectedGroup(null);
+        }
+    }, [urlGroupId, allGroups, selectedGroup]);
+
     const [selectedStudent, setSelectedStudent] = useState<StudentWithGroup | null>(null);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     // Confirm delete dialog state
     const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
     const [pendingDeleteStudent, setPendingDeleteStudent] = useState<{ id: string; name: string } | null>(null);
 
-    const router = useRouter();
 
     // Bulk selection
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -214,11 +234,13 @@ export default function StudentsPage() {
     const handleSelectGroup = (group: Group) => {
         setSelectedGroup(group);
         setSelectedIds(new Set()); // clear selection on group change
+        router.push(`/students?groupId=${group._id}`, { scroll: false });
     };
 
     const handleBack = () => {
         setSelectedGroup(null);
         setSelectedIds(new Set()); // clear selection on back
+        router.push('/students', { scroll: false });
     };
 
     const students = data?.pages.flatMap(page => page.data) || [];
@@ -440,5 +462,17 @@ export default function StudentsPage() {
                 }}
             />
         </div>
+    );
+}
+
+export default function StudentsPage() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-[60vh] flex items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+        }>
+            <StudentsPageContent />
+        </Suspense>
     );
 }

@@ -17,6 +17,7 @@ import {
     Clock,
     BookOpen,
     ArrowRight,
+    Pencil,
 } from 'lucide-react';
 import { TableSkeleton } from '@/components/layout/skeletons/TableSkeleton';
 import { Button } from '@/components/ui/button';
@@ -29,6 +30,7 @@ import { useAuthStore } from '@/lib/store/auth.store';
 import { getAllowedGrades } from '@/lib/utils/grades';
 import dynamic from 'next/dynamic';
 import { CreateExamModal } from '@/components/exams/CreateExamModal';
+import { EditExamModal } from '@/components/exams/EditExamModal';
 const AIGenerateExamModal = dynamic(
     () => import('@/components/exams/AIGenerateExamModal').then(m => m.AIGenerateExamModal),
     { ssr: false }
@@ -68,6 +70,7 @@ export default function ExamsPage() {
     const [showCreate,    setShowCreate]    = useState(false);
     const [showAI,        setShowAI]        = useState(false);
     const [confirmDeleteExam, setConfirmDeleteExam] = useState<IExam | null>(null);
+    const [editingExam,   setEditingExam]   = useState<IExam | null>(null);
     const limit = 20;
 
     const { data, isLoading, isError } = useQuery({
@@ -246,15 +249,28 @@ export default function ExamsPage() {
                                                         size="sm"
                                                         className="h-8 px-2 text-gray-400 hover:text-primary"
                                                         onClick={() => router.push(`/exams/${exam._id}`)}
+                                                        title="عرض التفاصيل"
                                                     >
                                                         <ChevronLeft className="h-4 w-4" />
                                                     </Button>
+                                                    {isTeacher && (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="h-8 px-2 text-gray-400 hover:text-primary"
+                                                            onClick={() => setEditingExam(exam)}
+                                                            title="تعديل الامتحان"
+                                                        >
+                                                            <Pencil className="h-4 w-4" />
+                                                        </Button>
+                                                    )}
                                                     {isTeacher && exam.status === 'DRAFT' && (
                                                         <Button
                                                             variant="ghost"
                                                             size="sm"
                                                             className="h-8 px-2 text-gray-400 hover:text-red-500"
                                                             onClick={() => setConfirmDeleteExam(exam)}
+                                                            title="حذف"
                                                         >
                                                             <Trash2 className="h-4 w-4" />
                                                         </Button>
@@ -289,8 +305,19 @@ export default function ExamsPage() {
                                                         </span>
                                                     )}
                                                 </div>
-                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                                                     <StatusBadge status={exam.status} />
+                                                    {isTeacher && (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="h-7 w-7 p-0 text-gray-400 hover:text-primary"
+                                                            onClick={() => setEditingExam(exam)}
+                                                            title="تعديل الامتحان"
+                                                        >
+                                                            <Pencil className="h-3.5 w-3.5" />
+                                                        </Button>
+                                                    )}
                                                     <ChevronLeft className="h-4 w-4 text-gray-300" />
                                                 </div>
                                             </div>
@@ -326,6 +353,11 @@ export default function ExamsPage() {
             {/* Modals */}
             <CreateExamModal   open={showCreate} onOpenChange={setShowCreate} />
             <AIGenerateExamModal open={showAI}  onOpenChange={setShowAI} />
+            <EditExamModal
+                exam={editingExam}
+                open={editingExam !== null}
+                onOpenChange={(v) => { if (!v) setEditingExam(null); }}
+            />
             <ConfirmDialog
                 open={confirmDeleteExam !== null}
                 onOpenChange={(v) => { if (!v) setConfirmDeleteExam(null); }}

@@ -45,8 +45,8 @@ export function QrScanner({ onScanned, mode = 'actions' }: QrScannerProps) {
                     },
                     videoConstraints: {
                         facingMode: 'environment',
-                        width: { min: 640, ideal: 1920 },
-                        height: { min: 480, ideal: 1080 },
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
                     },
                 },
                 (decoded) => {
@@ -74,12 +74,14 @@ export function QrScanner({ onScanned, mode = 'actions' }: QrScannerProps) {
     useEffect(() => () => { stopScanner(); }, [stopScanner]);
 
     return (
-        <div className="space-y-4 w-full">
+        <div className="space-y-4 w-full max-w-full overflow-hidden">
             <div
                 id={scannerId}
                 className={cn(
-                    'w-full rounded-2xl overflow-hidden border-2 border-dashed transition-all bg-gray-950 [&>video]:w-full [&>video]:h-full [&>video]:object-cover',
-                    active ? 'border-primary aspect-[4/3] sm:aspect-video min-h-[300px] max-h-[75vh]' : 'border-gray-200 h-0 border-none'
+                    'w-full max-w-full rounded-2xl overflow-hidden border-2 border-dashed transition-all bg-gray-950',
+                    '[&_video]:!w-full [&_video]:!h-full [&_video]:!object-cover [&_video]:!max-w-full',
+                    '[&_div]:!max-w-full [&_canvas]:!max-w-full',
+                    active ? 'border-primary aspect-[4/3] sm:aspect-video w-full' : 'border-gray-200 h-0 border-none'
                 )}
             />
             {!active ? (

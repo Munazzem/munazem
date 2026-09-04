@@ -1,7 +1,11 @@
 'use client';
 
-import { Loader2, GraduationCap, Trophy, XCircle, CheckCircle2 } from 'lucide-react';
+import { useState } from 'react';
+import { Loader2, GraduationCap, Trophy, XCircle, CheckCircle2, Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { useAuthStore } from '@/lib/store/auth.store';
+import { EditGradeModal } from '@/components/exams/EditGradeModal';
 
 interface Props {
     reportLoading: boolean;
@@ -18,6 +22,10 @@ const GRADE_COLORS: Record<string, string> = {
 };
 
 export function StudentGradesTab({ reportLoading, report }: Props) {
+    const user = useAuthStore((s) => s.user);
+    const canWrite = user?.role === 'assistant' || user?.role === 'teacher';
+    const [editingGrade, setEditingGrade] = useState<any | null>(null);
+
     if (reportLoading) {
         return (
             <div className="flex flex-col items-center justify-center py-16 text-gray-400">
@@ -28,6 +36,8 @@ export function StudentGradesTab({ reportLoading, report }: Props) {
 
     const grades: any[] = report?.grades?.history ?? [];
     const total          = report?.grades?.total ?? 0;
+    const studentName    = report?.student?.studentName ?? '';
+    const studentId      = report?.student?._id ?? '';
 
     if (grades.length === 0) {
         return (
@@ -42,13 +52,9 @@ export function StudentGradesTab({ reportLoading, report }: Props) {
     // Summary stats
     const passedCount  = grades.filter((g) => g.passed).length;
     const failedCount  = grades.length - passedCount;
-    const avgPercentage = grades.length > 0
-        ? Math.round(grades.reduce((sum, g) => sum + g.percentage, 0) / grades.length)
-        : 0;
 
     return (
         <div className="space-y-5">
-
             {/* ── Summary Cards ── */}
             <div className="grid grid-cols-3 gap-3">
                 {/* Exams Count */}
@@ -56,18 +62,15 @@ export function StudentGradesTab({ reportLoading, report }: Props) {
                     <p className="text-xl sm:text-2xl font-extrabold text-blue-700">{total}</p>
                     <p className="text-[10px] font-bold text-blue-800/50 mt-0.5">عدد الامتحانات</p>
                 </div>
-                {/* Average */}
-                <div className="bg-gradient-to-br from-indigo-50 to-indigo-100/40 rounded-2xl p-3 sm:p-4 border border-indigo-100 text-center">
-                    <p className="text-xl sm:text-2xl font-extrabold text-indigo-700">{avgPercentage}%</p>
-                    <p className="text-[10px] font-bold text-indigo-800/50 mt-0.5">المتوسط</p>
-                </div>
-                {/* Passed / Failed */}
+                {/* Passed */}
                 <div className="bg-gradient-to-br from-green-50 to-green-100/40 rounded-2xl p-3 sm:p-4 border border-green-100 text-center">
-                    <p className="text-xl sm:text-2xl font-extrabold text-green-700">
-                        {passedCount}
-                        <span className="text-xs font-bold text-red-400 mr-1">/ {failedCount} رسوب</span>
-                    </p>
-                    <p className="text-[10px] font-bold text-green-800/50 mt-0.5">نجح / رسب</p>
+                    <p className="text-xl sm:text-2xl font-extrabold text-green-700">{passedCount}</p>
+                    <p className="text-[10px] font-bold text-green-800/50 mt-0.5">ناجح</p>
+                </div>
+                {/* Failed */}
+                <div className="bg-gradient-to-br from-red-50 to-red-100/40 rounded-2xl p-3 sm:p-4 border border-red-100 text-center">
+                    <p className="text-xl sm:text-2xl font-extrabold text-red-600">{failedCount}</p>
+                    <p className="text-[10px] font-bold text-red-800/50 mt-0.5">راسب</p>
                 </div>
             </div>
 
@@ -75,11 +78,11 @@ export function StudentGradesTab({ reportLoading, report }: Props) {
             <div className="grid gap-3">
                 {grades.map((g: any, i: number) => {
                     const gradeColor = GRADE_COLORS[g.grade] ?? 'bg-gray-50 text-gray-600 border-gray-200';
-                    const percentage = g.percentage ?? Math.round((g.score / g.totalMarks) * 100);
+                    const scoreRatio = g.totalMarks > 0 ? (g.score / g.totalMarks) * 100 : 0;
 
                     return (
                         <div
-                            key={i}
+                            key={g._id || i}
                             className="bg-white border border-gray-100 rounded-2xl px-4 py-3.5 shadow-sm hover:shadow-md transition-shadow"
                         >
                             <div className="flex items-start justify-between gap-3">
@@ -98,9 +101,20 @@ export function StudentGradesTab({ reportLoading, report }: Props) {
                                     </div>
                                 </div>
 
-                                {/* Right: Score + Grade badge */}
+                                {/* Right: Score + Grade badge + Edit button */}
                                 <div className="flex flex-col items-end gap-1.5 shrink-0">
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-1.5">
+                                        {canWrite && g._id && (
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-7 w-7 p-0 text-gray-400 hover:text-primary rounded-full"
+                                                onClick={() => setEditingGrade(g)}
+                                                title="تعديل الدرجة"
+                                            >
+                                                <Pencil className="h-3.5 w-3.5" />
+                                            </Button>
+                                        )}
                                         {g.passed
                                             ? <CheckCircle2 className="h-4 w-4 text-green-500" />
                                             : <XCircle className="h-4 w-4 text-red-400" />
@@ -125,7 +139,6 @@ export function StudentGradesTab({ reportLoading, report }: Props) {
                                     <span className="text-[10px] text-gray-400 font-medium">
                                         {g.passed ? 'ناجح' : 'راسب'} — درجة النجاح: {g.passingMarks}
                                     </span>
-                                    <span className="text-[10px] font-bold text-gray-600">{percentage}%</span>
                                 </div>
                                 <div className="w-full bg-gray-100 rounded-full h-1.5">
                                     <div
@@ -133,7 +146,7 @@ export function StudentGradesTab({ reportLoading, report }: Props) {
                                             'h-1.5 rounded-full transition-all',
                                             g.passed ? 'bg-green-500' : 'bg-red-400'
                                         )}
-                                        style={{ width: `${Math.min(100, percentage)}%` }}
+                                        style={{ width: `${Math.min(100, Math.max(0, scoreRatio))}%` }}
                                     />
                                 </div>
                             </div>
@@ -141,6 +154,22 @@ export function StudentGradesTab({ reportLoading, report }: Props) {
                     );
                 })}
             </div>
+
+            {/* Edit Grade Modal */}
+            {editingGrade && (
+                <EditGradeModal
+                    open={editingGrade !== null}
+                    onOpenChange={(v) => { if (!v) setEditingGrade(null); }}
+                    examId={editingGrade.examId}
+                    examTitle={editingGrade.examTitle}
+                    resultId={editingGrade._id}
+                    studentName={studentName}
+                    studentId={studentId}
+                    totalMarks={editingGrade.totalMarks}
+                    passingMarks={editingGrade.passingMarks}
+                    initialScore={editingGrade.score}
+                />
+            )}
         </div>
     );
 }

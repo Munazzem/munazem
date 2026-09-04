@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -19,6 +19,7 @@ import {
     AlertTriangle,
     MessageCircle,
     Printer,
+    Pencil,
 } from 'lucide-react';
 import { ReportCardSkeleton } from '@/components/layout/skeletons/ReportCardSkeleton';
 import { TableSkeleton } from '@/components/layout/skeletons/TableSkeleton';
@@ -31,6 +32,8 @@ const BatchResultsModal = dynamic(
     () => import('@/components/exams/BatchResultsModal').then(m => m.BatchResultsModal),
     { ssr: false }
 );
+import { EditExamModal } from '@/components/exams/EditExamModal';
+import { EditGradeModal } from '@/components/exams/EditGradeModal';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { cn } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -85,15 +88,28 @@ const buildExamWhatsAppMessage = (
     examTitle: string,
     score: number,
     totalMarks: number,
-    percentage: number,
-    teacherName: string
+    teacherName: string,
+    subject?: string
 ) => {
-    const signature = teacherName ? `\nمع تحيات: أ/ ${teacherName}` : '';
+    let cleanTeacher = (teacherName || '').trim();
+    let cleanSubject = (subject || '').trim();
+
+    const match = cleanTeacher.match(/^(.*?)\s*\((.*?)\)$/);
+    if (match) {
+        cleanTeacher = match[1].trim();
+        if (!cleanSubject) cleanSubject = match[2].trim();
+    }
+    cleanTeacher = cleanTeacher.replace(/^(أ\/|أ\.|الأستاذ\/|الأستاذ\s+)/, '').trim();
+
+    const teacherSig = cleanTeacher
+        ? (cleanSubject ? `أ/ ${cleanTeacher} (${cleanSubject})` : `أ/ ${cleanTeacher}`)
+        : '';
+    const signature = teacherSig ? `\nمع تحيات: ${teacherSig}` : '';
     const templates = [
-        `السلام عليكم ورحمة الله،\nتقرير نتيجة اختبار [**${examTitle}**] للطالب/ة: **${studentName}**\n📊 الدرجة: **${score} من ${totalMarks}** (${percentage}%)\n\n📌 **الرجاء الرد بـ (تم) لتأكيد الاطلاع على النتيجة.**${signature}`,
-        `أهلاً بحضرتك يا فندم،\nتم رصد درجات اختبار **${examTitle}**، وحصل **${studentName}** على: **${score} من ${totalMarks}** (${percentage}%).\nشاكرين لكم حرصكم ومتابعتكم المستمرة لمستوى الطالب.\n\n📌 **يرجى الرد بكلمة (تم) لتأكيد الاستلام.**${signature}`,
-        `📈 **إشعار نتيجة اختبار**:\nالطالب/ة: **${studentName}** | الاختبار: **${examTitle}**\n🎯 النتيجة المحققة: **${score} من ${totalMarks}** (${percentage}%)\n\n📌 **الرجاء الرد بـ (تم) للتأكيد.**${signature}`,
-        `تحية طيبة،\nنود إحاطتكم علمًا بنتيجة **${studentName}** في اختبار **${examTitle}**:\n📊 الدرجة: **${score} من ${totalMarks}** (${percentage}%).\nمع تمنياتنا للطالب بدوام التوفيق والتقدم.\n\n📌 **الرجاء الرد بـ (تم) للاطلاع.**${signature}`,
+        `السلام عليكم ورحمة الله،\nتقرير نتيجة اختبار [**${examTitle}**] للطالب/ة: **${studentName}**\n📊 الدرجة: **${score} من ${totalMarks}**\n\n📌 **الرجاء الرد بـ (تم) لتأكيد الاطلاع على النتيجة.**${signature}`,
+        `أهلاً بحضرتك يا فندم،\nتم رصد درجات اختبار **${examTitle}**، وحصل **${studentName}** على: **${score} من ${totalMarks}**.\nشاكرين لكم حرصكم ومتابعتكم المستمرة لمستوى الطالب.\n\n📌 **يرجى الرد بكلمة (تم) لتأكيد الاستلام.**${signature}`,
+        `📈 **إشعار نتيجة اختبار**:\nالطالب/ة: **${studentName}** | الاختبار: **${examTitle}**\n🎯 النتيجة المحققة: **${score} من ${totalMarks}**\n\n📌 **الرجاء الرد بـ (تم) للتأكيد.**${signature}`,
+        `تحية طيبة،\nنود إحاطتكم علمًا بنتيجة **${studentName}** في اختبار **${examTitle}**:\n📊 الدرجة: **${score} من ${totalMarks}**.\nمع تمنياتنا للطالب بدوام التوفيق والتقدم.\n\n📌 **الرجاء الرد بـ (تم) للاطلاع.**${signature}`,
     ];
 
     const hash = studentName.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
@@ -110,12 +126,20 @@ export default function ExamDetailPage() {
 
     const [activeTab,       setActiveTab]       = useState<Tab>('questions');
     const [showBatchModal,  setShowBatchModal]  = useState(false);
+    const [showEditModal,   setShowEditModal]   = useState(false);
+    const [editingResult,   setEditingResult]   = useState<any | null>(null);
     const [confirmDelete,   setConfirmDelete]   = useState(false);
 
     const { data: exam, isLoading: examLoading, isError: examError } = useQuery({
         queryKey: ['exam', examId],
         queryFn:  () => fetchExamById(examId),
     });
+
+    useEffect(() => {
+        if (exam && (!exam.questions || exam.questions.length === 0)) {
+            setActiveTab('results');
+        }
+    }, [exam]);
 
     const { data: resultsData, isLoading: resultsLoading } = useQuery({
         queryKey: ['exam-results', examId],
@@ -167,6 +191,14 @@ export default function ExamDetailPage() {
         },
     });
 
+    const handleBack = () => {
+        if (typeof window !== 'undefined' && window.history.length > 1) {
+            router.back();
+        } else {
+            router.push('/exams');
+        }
+    };
+
     if (examLoading) {
         return <div className="p-6"><ReportCardSkeleton /></div>;
     }
@@ -176,7 +208,7 @@ export default function ExamDetailPage() {
             <div className="p-8 text-center" dir="rtl">
                 <AlertTriangle className="h-12 w-12 text-red-300 mx-auto mb-3" />
                 <p className="text-red-500 font-bold">لم يتم العثور على الامتحان.</p>
-                <Button variant="outline" className="mt-4" onClick={() => router.push('/exams')}>عودة</Button>
+                <Button variant="outline" className="mt-4" onClick={handleBack}>عودة</Button>
             </div>
         );
     }
@@ -193,7 +225,7 @@ export default function ExamDetailPage() {
                 <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => router.push('/exams')}
+                    onClick={handleBack}
                     className="shrink-0 mt-0.5 h-8 w-8 p-0"
                 >
                     <ArrowRight className="h-4 w-4" />
@@ -221,6 +253,14 @@ export default function ExamDetailPage() {
             {/* Teacher action buttons */}
             {isTeacher && (
                 <div className="flex flex-wrap gap-2">
+                    <Button
+                        variant="outline"
+                        onClick={() => setShowEditModal(true)}
+                        className="gap-2 flex-1 sm:flex-none border-gray-300 text-gray-700 hover:bg-gray-50"
+                    >
+                        <Pencil className="h-4 w-4" />
+                        تعديل الامتحان
+                    </Button>
                     <Button
                         variant="outline"
                         onClick={() => printMutation.mutate()}
@@ -335,29 +375,37 @@ export default function ExamDetailPage() {
                                         <p className="text-gray-900 font-medium leading-relaxed">{q.text}</p>
 
                                         {/* MCQ options */}
-                                        {q.type === 'MCQ' && q.options && q.options.length > 0 && (
-                                            <div className="mt-3 space-y-1.5">
-                                                {q.options.map((opt, oi) => (
-                                                    <div
-                                                        key={oi}
-                                                        className={cn(
-                                                            'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm',
-                                                            opt === q.correctAnswer
-                                                                ? 'bg-green-50 text-green-800 font-medium'
-                                                                : 'bg-gray-50 text-gray-600'
-                                                        )}
-                                                    >
-                                                        <span className="w-5 h-5 rounded-full border border-current flex items-center justify-center text-xs font-bold shrink-0">
-                                                            {String.fromCharCode(65 + oi)}
-                                                        </span>
-                                                        {opt}
-                                                        {opt === q.correctAnswer && (
-                                                            <CheckCircle2 className="h-4 w-4 mr-auto text-green-600" />
-                                                        )}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
+                                        {q.type === 'MCQ' && q.options && q.options.length > 0 && (() => {
+                                            const correctIndex = q.options.findIndex(
+                                                (opt) => opt.trim().toLowerCase() === String(q.correctAnswer || '').trim().toLowerCase()
+                                            );
+                                            return (
+                                                <div className="mt-3 space-y-1.5">
+                                                    {q.options.map((opt, oi) => {
+                                                        const isCorrect = oi === correctIndex;
+                                                        return (
+                                                            <div
+                                                                key={oi}
+                                                                className={cn(
+                                                                    'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm',
+                                                                    isCorrect
+                                                                        ? 'bg-green-50 text-green-800 font-medium'
+                                                                        : 'bg-gray-50 text-gray-600'
+                                                                )}
+                                                            >
+                                                                <span className="w-5 h-5 rounded-full border border-current flex items-center justify-center text-xs font-bold shrink-0">
+                                                                    {String.fromCharCode(65 + oi)}
+                                                                </span>
+                                                                {opt}
+                                                                {isCorrect && (
+                                                                    <CheckCircle2 className="h-4 w-4 mr-auto text-green-600" />
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            );
+                                        })()}
 
                                         {/* TRUE/FALSE */}
                                         {q.type === 'TRUE_FALSE' && q.correctAnswer && (
@@ -426,10 +474,12 @@ export default function ExamDetailPage() {
                                                     <tr className="border-b border-gray-50 bg-gray-50/50">
                                                         <th className="text-right font-semibold text-gray-500 px-6 py-3">الطالب</th>
                                                         <th className="text-center font-semibold text-gray-500 px-4 py-3">الدرجة</th>
-                                                        <th className="text-center font-semibold text-gray-500 px-4 py-3">النسبة</th>
                                                         <th className="text-center font-semibold text-gray-500 px-4 py-3">التقدير</th>
                                                         <th className="text-center font-semibold text-gray-500 px-4 py-3">الحالة</th>
                                                         <th className="text-center font-semibold text-gray-500 px-4 py-3 w-12">واتساب</th>
+                                                        {isTeacher && (
+                                                            <th className="text-center font-semibold text-gray-500 px-4 py-3 w-12">تعديل</th>
+                                                        )}
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-gray-50">
@@ -439,6 +489,11 @@ export default function ExamDetailPage() {
                                                             user?.teacherName ||
                                                             (user?.role === 'teacher' ? user?.name : '') ||
                                                             '';
+                                                        const effectiveSubject =
+                                                            (resultsData as any)?.subject ||
+                                                            (examData as any)?.subject ||
+                                                            (user as any)?.subject ||
+                                                            '';
 
                                                         return results.map((r: any) => {
                                                             const name = r.studentName ?? '—';
@@ -447,8 +502,8 @@ export default function ExamDetailPage() {
                                                                 examData.title,
                                                                 r.score,
                                                                 examData.totalMarks,
-                                                                r.percentage,
-                                                                effectiveTeacherName
+                                                                effectiveTeacherName,
+                                                                effectiveSubject
                                                             );
                                                             return (
                                                                 <tr key={r._id} className="hover:bg-gray-50/50">
@@ -456,7 +511,6 @@ export default function ExamDetailPage() {
                                                                     <td className="px-4 py-3 text-center font-bold text-gray-800">
                                                                         {r.score} / {examData.totalMarks}
                                                                     </td>
-                                                                    <td className="px-4 py-3 text-center text-gray-600">{r.percentage}%</td>
                                                                     <td className="px-4 py-3 text-center">
                                                                         <span className={cn(
                                                                             'inline-block w-10 text-center text-sm font-bold px-1.5 py-0.5 rounded',
@@ -484,6 +538,19 @@ export default function ExamDetailPage() {
                                                                             <MessageCircle className="h-3.5 w-3.5" />
                                                                         </a>
                                                                     </td>
+                                                                    {isTeacher && (
+                                                                        <td className="px-4 py-3 text-center">
+                                                                            <Button
+                                                                                variant="ghost"
+                                                                                size="sm"
+                                                                                className="h-8 w-8 p-0 text-gray-400 hover:text-primary hover:bg-primary/5 rounded-full"
+                                                                                onClick={() => setEditingResult(r)}
+                                                                                title="تعديل الدرجة"
+                                                                            >
+                                                                                <Pencil className="h-3.5 w-3.5" />
+                                                                            </Button>
+                                                                        </td>
+                                                                    )}
                                                                 </tr>
                                                             );
                                                         });
@@ -500,6 +567,11 @@ export default function ExamDetailPage() {
                                                     user?.teacherName ||
                                                     (user?.role === 'teacher' ? user?.name : '') ||
                                                     '';
+                                                const effectiveSubject =
+                                                    (resultsData as any)?.subject ||
+                                                    (examData as any)?.subject ||
+                                                    (user as any)?.subject ||
+                                                    '';
 
                                                 return results.map((r: any) => {
                                                     const name = r.studentName ?? '—';
@@ -508,14 +580,14 @@ export default function ExamDetailPage() {
                                                         examData.title,
                                                         r.score,
                                                         examData.totalMarks,
-                                                        r.percentage,
-                                                        effectiveTeacherName
+                                                        effectiveTeacherName,
+                                                        effectiveSubject
                                                     );
                                                     return (
                                                         <div key={r._id} className="p-4">
                                                             <div className="flex items-center justify-between">
                                                                 <span className="font-medium text-gray-900">{name}</span>
-                                                                <div className="flex items-center gap-2">
+                                                                <div className="flex items-center gap-1.5">
                                                                     <span className={cn(
                                                                         'text-xs font-medium px-2 py-0.5 rounded-full',
                                                                         r.passed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
@@ -530,11 +602,21 @@ export default function ExamDetailPage() {
                                                                     >
                                                                         <MessageCircle className="h-3.5 w-3.5" />
                                                                     </a>
+                                                                    {isTeacher && (
+                                                                        <Button
+                                                                            variant="ghost"
+                                                                            size="sm"
+                                                                            className="h-7 w-7 p-0 text-gray-400 hover:text-primary rounded-full"
+                                                                            onClick={() => setEditingResult(r)}
+                                                                            title="تعديل الدرجة"
+                                                                        >
+                                                                            <Pencil className="h-3.5 w-3.5" />
+                                                                        </Button>
+                                                                    )}
                                                                 </div>
                                                             </div>
                                                             <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-sm text-gray-500">
-                                                                <span>الدرجة: <strong className="text-gray-800">{r.score}</strong></span>
-                                                                <span>النسبة: <strong className="text-gray-800">{r.percentage}%</strong></span>
+                                                                <span>الدرجة: <strong className="text-gray-800">{r.score} / {examData.totalMarks}</strong></span>
                                                                 <span>التقدير: <strong className={GRADE_COLORS[r.grade] ? 'font-bold' : ''}>{r.grade}</strong></span>
                                                             </div>
                                                         </div>
@@ -559,6 +641,31 @@ export default function ExamDetailPage() {
                     onSuccess={() => {
                         queryClient.invalidateQueries({ queryKey: ['exam-results', examId] });
                     }}
+                />
+            )}
+
+            {/* Edit Exam Modal */}
+            {showEditModal && (
+                <EditExamModal
+                    exam={examData}
+                    open={showEditModal}
+                    onOpenChange={setShowEditModal}
+                />
+            )}
+
+            {/* Edit Grade Modal */}
+            {editingResult && (
+                <EditGradeModal
+                    open={editingResult !== null}
+                    onOpenChange={(v) => { if (!v) setEditingResult(null); }}
+                    examId={examId}
+                    examTitle={examData?.title}
+                    resultId={editingResult._id}
+                    studentName={editingResult.studentName}
+                    studentId={typeof editingResult.studentId === 'string' ? editingResult.studentId : editingResult.studentId?._id}
+                    totalMarks={examData?.totalMarks ?? 20}
+                    passingMarks={examData?.passingMarks ?? 10}
+                    initialScore={editingResult.score}
                 />
             )}
 
