@@ -35,6 +35,7 @@ async function buildMessage(data: WhatsAppJobData): Promise<{ message: string; t
             sessionTitle: data.groupName,
             date: date,
             teacherName: data.teacherName || '',
+            subject: data.subject || '',
         };
         const { text, templateIdx } = await pickTemplate('session_absent', replacements);
         return { message: text, templateIdx };
@@ -52,6 +53,7 @@ async function buildMessage(data: WhatsAppJobData): Promise<{ message: string; t
         examTotal: String(data.totalMarks),
         percentage: String(data.percentage),
         teacherName: data.teacherName || '',
+        subject: data.subject || '',
     };
     const { text, templateIdx } = await pickTemplate('exam_result', replacements);
     return { message: text, templateIdx };

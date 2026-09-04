@@ -10,7 +10,7 @@ import { envVars } from '../../../config/env.service.js';
 import { authenticate }    from '../../middlewares/auth.middleware.js';
 import { authorizeRoles }  from '../../middlewares/roles.middleware.js';
 import { validate } from '../../middlewares/validate.middleware.js';
-import { createExamSchema, recordResultSchema, batchResultsSchema } from '../../validation/exam.validation.js';
+import { createExamSchema, recordResultSchema, batchResultsSchema, updateExamSchema, updateResultSchema } from '../../validation/exam.validation.js';
 import multer from 'multer';
 import type { IJwtPayload } from '../../types/auth.types.js';
 
@@ -81,10 +81,11 @@ examsRouter.get(
     }
 );
 
-// PUT /exams/:id — Update exam (Teacher + Assistant, DRAFT only)
+// PUT /exams/:id — Update exam (Teacher + Assistant, DRAFT / PUBLISHED / COMPLETED)
 examsRouter.put(
     '/:id',
     authorizeRoles(UserRole.teacher, UserRole.assistant),
+    validate(updateExamSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const teacherId = resolveTeacherId(req.user);
@@ -170,6 +171,45 @@ examsRouter.get(
             const teacherId = resolveTeacherId(req.user);
             const data = await ExamsService.getExamResults(req.params['id'] as string, teacherId);
             return SuccessResponse({ res, data, message: 'تم جلب نتائج الامتحان بنجاح' });
+        } catch (error) { next(error); }
+    }
+);
+
+// PUT /exams/:id/results/:resultId — Update single student result (Teacher + Assistant)
+examsRouter.put(
+    '/:id/results/:resultId',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    validate(updateResultSchema),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const user = req.user;
+            if (!user) return next(BadRequestException({ message: 'المستخدم غير موجود' }));
+            const teacherId = resolveTeacherId(user);
+            const result = await ExamsService.updateResult(
+                teacherId,
+                user.userId,
+                req.params['id'] as string,
+                req.params['resultId'] as string,
+                Number(req.body.score)
+            );
+            return SuccessResponse({ res, data: result, message: 'تم تعديل درجة الطالب بنجاح' });
+        } catch (error) { next(error); }
+    }
+);
+
+// DELETE /exams/:id/results/:resultId — Delete single student result (Teacher + Assistant)
+examsRouter.delete(
+    '/:id/results/:resultId',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = resolveTeacherId(req.user);
+            await ExamsService.deleteResult(
+                teacherId,
+                req.params['id'] as string,
+                req.params['resultId'] as string
+            );
+            return SuccessResponse({ res, data: null, message: 'تم حذف درجة الطالب بنجاح' });
         } catch (error) { next(error); }
     }
 );
@@ -260,19 +300,37 @@ aiProxyRouter.post(
 
             const groq = new Groq({ apiKey });
 
-            const completion = await groq.chat.completions.create({
-                model:       'llama-3.3-70b-versatile',
-                messages: [
-                    {
-                        role:    'system',
-                        content: 'أنت مساعد تعليمي. أجب بـ JSON صالح فقط بدون أي نص إضافي.',
-                    },
-                    { role: 'user', content: prompt },
-                ],
-                temperature:     0.7,
-                max_tokens:      4096,
-                response_format: { type: 'json_object' },
-            });
+            const modelsToTry = ['openai/gpt-oss-120b', 'qwen/qwen3.8-27b', 'allam-2-7b'];
+            let completion: any = null;
+            let lastErr: any = null;
+
+            for (const model of modelsToTry) {
+                try {
+                    completion = await groq.chat.completions.create({
+                        model,
+                        messages: [
+                            {
+                                role:    'system',
+                                content: 'أنت خبير واضع اختبارات تربوي أول. تصمم أسئلة امتحانية ذكية ومحكمة تقيس الفهم العميق والتحليل ومستويات التفكير العليا، وتتجنب التكرار والأسئلة السطحية المباشرة، مع صياغة خيارات متقاربة ومشتتات ذكية ومدروسة بعناية تحاكي امتحانات الثانوية العامة والشهادات الدولية. أجب بـ JSON صالح فقط بدون أي نصوص إضافية.',
+                            },
+                            { role: 'user', content: prompt },
+                        ],
+                        temperature:     0.7,
+                        max_tokens:      4096,
+                        response_format: { type: 'json_object' },
+                    });
+                    if (completion?.choices?.[0]?.message?.content) {
+                        break;
+                    }
+                } catch (mErr: any) {
+                    lastErr = mErr;
+                    continue;
+                }
+            }
+
+            if (!completion?.choices?.[0]?.message?.content) {
+                throw lastErr || new Error('فشل توليد الامتحان من نماذج الذكاء الاصطناعي');
+            }
 
             const text = completion.choices[0]?.message?.content ?? '';
             return SuccessResponse({ res, data: { text }, message: 'تم توليد الأسئلة بنجاح' });

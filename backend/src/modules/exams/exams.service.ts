@@ -69,22 +69,66 @@ export class ExamsService {
         return exam;
     }
 
-    // ── Update exam (allowed only in DRAFT status) ───────────────────
+    // ── Update exam (allowed in DRAFT, PUBLISHED, or COMPLETED) ─────
     static async updateExam(examId: string, teacherId: string, data: Partial<{
         title: string; date: string; totalMarks: number;
         passingMarks: number; questions: IQuestion[]; gradeLevel: string; groupIds: string[];
     }>) {
         const exam = await ExamModel.findOne({ _id: examId, teacherId }).lean();
         if (!exam) throw NotFoundException({ message: 'الامتحان غير موجود' });
-        if (exam.status !== ExamStatus.DRAFT) {
-            throw BadRequestException({ message: 'لا يمكن تعديل امتحان منشور أو مكتمل' });
+
+        // If totalMarks is changed, verify it is not lower than any existing student score
+        if (data.totalMarks !== undefined) {
+            const maxScoreResult = await ExamResultModel.findOne({ examId, teacherId }).sort({ score: -1 }).lean();
+            if (maxScoreResult && maxScoreResult.score > data.totalMarks) {
+                throw BadRequestException({
+                    message: `لا يمكن تقليل الدرجة الكلية عن أعلى درجة حصل عليها الطلاب (${maxScoreResult.score})`,
+                });
+            }
         }
+
         // Use findOneAndUpdate with teacherId — never trust just examId
-        return await ExamModel.findOneAndUpdate(
+        const updatedExam = await ExamModel.findOneAndUpdate(
             { _id: examId, teacherId },
             data,
             { new: true, runValidators: true }
         ).lean();
+
+        if (!updatedExam) throw NotFoundException({ message: 'الامتحان غير موجود' });
+
+        // Cascade updates to all existing ExamResultModel records if totalMarks, passingMarks, or date changed
+        if (data.totalMarks !== undefined || data.passingMarks !== undefined || data.date !== undefined) {
+            const results = await ExamResultModel.find({ examId, teacherId });
+            if (results.length > 0) {
+                const newTotal = updatedExam.totalMarks;
+                const newPassing = updatedExam.passingMarks;
+                const newDate = updatedExam.date;
+
+                const bulkOps = results.map(r => {
+                    const percentage = Math.round((r.score / newTotal) * 100);
+                    const grade = computeGrade(percentage);
+                    const passed = r.score >= newPassing;
+                    return {
+                        updateOne: {
+                            filter: { _id: r._id },
+                            update: {
+                                $set: {
+                                    totalMarks: newTotal,
+                                    passingMarks: newPassing,
+                                    percentage,
+                                    grade,
+                                    passed,
+                                    date: newDate,
+                                }
+                            }
+                        }
+                    };
+                });
+                await ExamResultModel.bulkWrite(bulkOps);
+            }
+        }
+
+        return updatedExam;
     }
 
     // ── Publish exam ─────────────────────────────────────────────────
@@ -106,7 +150,7 @@ export class ExamsService {
         return exam;
     }
 
-    // ── Record single student result ─────────────────────────────────
+    // ── Record single student result (Insert or Update if already exists) ──
     static async recordResult(teacherId: string, recordedBy: string, data: {
         examId: string;
         studentId: string;
@@ -118,6 +162,9 @@ export class ExamsService {
 
         if (data.score > exam.totalMarks) {
             throw BadRequestException({ message: `الدرجة لا يمكن أن تتجاوز ${exam.totalMarks}` });
+        }
+        if (data.score < 0) {
+            throw BadRequestException({ message: 'الدرجة لا يمكن أن تكون سالبة' });
         }
 
         // Scope student lookup to this teacher — prevent recording results for another teacher's student
@@ -131,49 +178,92 @@ export class ExamsService {
         const grade      = computeGrade(percentage);
         const passed     = data.score >= exam.passingMarks;
 
-        try {
-            const newResult = await ExamResultModel.create({
-                examId:      exam._id,
-                teacherId,
-                studentId:   student._id,
-                studentName: student.studentName,
-                groupId:     student.groupId,
-                score:       data.score,
-                totalMarks:  exam.totalMarks,
-                passingMarks: exam.passingMarks,
-                percentage,
-                grade,
-                passed,
-                recordedBy,
-                date:        exam.date,
-            });
-
-            // ── Parent Push Notification (non-blocking) ─────────────────────────
-            UserModel.findById(teacherId, { name: 1, subject: 1 }).lean().then((teacherDoc) => {
-                const rawName   = (teacherDoc as any)?.name ?? '';
-                const subject   = (teacherDoc as any)?.subject;
-                const teacherName = subject ? `${rawName} (${subject})` : rawName;
-                ParentPushService.notifyExamResult({
-                    studentId:   student._id.toString(),
-                    studentName: student.studentName,
+        const resultDoc = await ExamResultModel.findOneAndUpdate(
+            { examId: exam._id, studentId: student._id },
+            {
+                $set: {
                     teacherId,
-                    teacherName,
-                    examTitle:   exam.title,
-                    examId:      exam._id.toString(),
+                    studentName: student.studentName,
+                    groupId:     student.groupId,
                     score:       data.score,
                     totalMarks:  exam.totalMarks,
+                    passingMarks: exam.passingMarks,
                     percentage,
-                    passed,
                     grade,
-                    examDate:    exam.date,
-                });
-            }).catch(() => {/* ignore */});
+                    passed,
+                    recordedBy,
+                    date:        exam.date,
+                }
+            },
+            { new: true, upsert: true, runValidators: true }
+        ).lean();
 
-            return newResult;
-        } catch (err: any) {
-            if (err.code === 11000) throw ConflictException({ message: 'تم تسجيل درجة هذا الطالب بالفعل' });
-            throw err;
+        // ── Parent Push Notification (non-blocking) ─────────────────────────
+        UserModel.findById(teacherId, { name: 1, subject: 1 }).lean().then((teacherDoc) => {
+            const rawName   = (teacherDoc as any)?.name ?? '';
+            const subject   = (teacherDoc as any)?.subject;
+            const teacherName = subject ? `${rawName} (${subject})` : rawName;
+            ParentPushService.notifyExamResult({
+                studentId:   student._id.toString(),
+                studentName: student.studentName,
+                teacherId,
+                teacherName,
+                subject,
+                examTitle:   exam.title,
+                examId:      exam._id.toString(),
+                score:       data.score,
+                totalMarks:  exam.totalMarks,
+                percentage,
+                passed,
+                grade,
+                examDate:    exam.date,
+            });
+        }).catch(() => {/* ignore */});
+
+        return resultDoc;
+    }
+
+    // ── Update single student result ──────────────────────────────────
+    static async updateResult(teacherId: string, recordedBy: string, examId: string, resultId: string, score: number) {
+        const exam = await ExamModel.findOne({ _id: examId, teacherId }).lean();
+        if (!exam) throw NotFoundException({ message: 'الامتحان غير موجود' });
+
+        if (score > exam.totalMarks) {
+            throw BadRequestException({ message: `الدرجة لا يمكن أن تتجاوز ${exam.totalMarks}` });
         }
+        if (score < 0) {
+            throw BadRequestException({ message: 'الدرجة لا يمكن أن تكون سالبة' });
+        }
+
+        const percentage = Math.round((score / exam.totalMarks) * 100);
+        const grade      = computeGrade(percentage);
+        const passed     = score >= exam.passingMarks;
+
+        const updated = await ExamResultModel.findOneAndUpdate(
+            { _id: resultId, examId, teacherId },
+            {
+                $set: {
+                    score,
+                    totalMarks:   exam.totalMarks,
+                    passingMarks: exam.passingMarks,
+                    percentage,
+                    grade,
+                    passed,
+                    recordedBy,
+                }
+            },
+            { new: true }
+        ).lean();
+
+        if (!updated) throw NotFoundException({ message: 'النتيجة غير موجودة' });
+        return updated;
+    }
+
+    // ── Delete single student result ──────────────────────────────────
+    static async deleteResult(teacherId: string, examId: string, resultId: string) {
+        const deleted = await ExamResultModel.findOneAndDelete({ _id: resultId, examId, teacherId }).lean();
+        if (!deleted) throw NotFoundException({ message: 'النتيجة غير موجودة' });
+        return deleted;
     }
 
     // ── Batch record results for multiple students ───────────────────
@@ -197,7 +287,7 @@ export class ExamsService {
         const docs = data.results.map(r => {
             const student = studentMap.get(r.studentId);
             if (!student) return null;
-            const score      = Math.min(r.score, exam.totalMarks);
+            const score      = Math.min(Math.max(0, r.score), exam.totalMarks);
             const percentage = Math.round((score / exam.totalMarks) * 100);
             return {
                 examId:      exam._id,
@@ -216,7 +306,20 @@ export class ExamsService {
             };
         }).filter(Boolean);
 
-        const result = await ExamResultModel.insertMany(docs, { ordered: false });
+        if (docs.length === 0) {
+            return { total: data.results.length, inserted: 0 };
+        }
+
+        const bulkOps = docs.map((doc: any) => ({
+            updateOne: {
+                filter: { examId: doc.examId, studentId: doc.studentId },
+                update: { $set: doc },
+                upsert: true,
+            }
+        }));
+
+        const bulkRes = await ExamResultModel.bulkWrite(bulkOps);
+        const totalAffected = (bulkRes.upsertedCount || 0) + (bulkRes.modifiedCount || 0) + (bulkRes.matchedCount || 0);
 
         // ── Parent Push Notifications for batch (non-blocking) ───────────────────
         UserModel.findById(teacherId, { name: 1, subject: 1 }).lean().then((teacherDoc) => {
@@ -229,6 +332,7 @@ export class ExamsService {
                     studentName: doc.studentName,
                     teacherId,
                     teacherName,
+                    subject,
                     examTitle:   exam.title,
                     examId:      exam._id.toString(),
                     score:       doc.score,
@@ -240,7 +344,7 @@ export class ExamsService {
                 });
             }
         }).catch(() => {/* ignore */});
-        return { total: data.results.length, inserted: result.length };
+        return { total: data.results.length, inserted: totalAffected };
     }
 
     // ── Get results for an exam ──────────────────────────────────────
@@ -248,8 +352,9 @@ export class ExamsService {
         const exam = await ExamModel.findOne({ _id: examId, teacherId }).lean();
         if (!exam) throw NotFoundException({ message: 'الامتحان غير موجود' });
 
-        const teacherDoc = await UserModel.findById(teacherId, { name: 1 }).lean().catch(() => null);
+        const teacherDoc = await UserModel.findById(teacherId, { name: 1, subject: 1 }).lean().catch(() => null);
         const teacherName = (teacherDoc as any)?.name ?? '';
+        const subject = (teacherDoc as any)?.subject ?? '';
 
         const results = await ExamResultModel.find({ examId, teacherId }).sort({ studentName: 1 }).lean();
 
@@ -271,6 +376,7 @@ export class ExamsService {
         return {
             exam:         { title: exam.title, date: exam.date, totalMarks: exam.totalMarks },
             teacherName,
+            subject,
             totalStudents: results.length,
             passingCount:  passing,
             failingCount:  results.length - passing,
@@ -324,7 +430,8 @@ export class ExamsService {
                 grade:       r.grade,
                 passed:      r.passed,
                 examDate:    exam.date.toISOString(),
-                teacherName,
+                teacherName: rawTeacherName,
+                subject:     subject || '',
             });
             sentCount++;
         }

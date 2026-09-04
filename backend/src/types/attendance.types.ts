@@ -12,6 +12,9 @@ export interface IAttendance {
     homeworkDone?: boolean | null;
     notes?:      string;
     isConsumed?: boolean;
+    relatedSessionId?: Types.ObjectId;
+    relatedGroupName?: string;
+    relatedDate?:      Date;
     exemptionDecision?: {
         decision: 'CONSUMED' | 'EXEMPTED' | 'PENDING';
         decidedBy: Types.ObjectId;

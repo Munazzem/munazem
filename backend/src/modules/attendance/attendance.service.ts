@@ -24,6 +24,18 @@ const startOfDay = startOfDayEgyptMs;
 
 export class AttendanceService {
 
+    /**
+     * Determine lookup window in days based on student's home group schedule.
+     * If group meets 2+ times a week: window is 4 days (covers 3-4 days between consecutive sessions).
+     * If group meets once a week (or schedule not set): window is 7 days.
+     */
+    static async getCompensationWindowDays(groupId: any): Promise<number> {
+        if (!groupId) return 7;
+        const group = await GroupModel.findById(groupId, { schedule: 1 }).lean();
+        const scheduleCount = group?.schedule?.length || 0;
+        return scheduleCount >= 2 ? 4 : 7;
+    }
+
     // ─── Record single attendance (QR scan or manual) ──────────────
     static async recordAttendance(scannedBy: string, data: RecordAttendanceDTO, teacherId: string) {
         // Verify session belongs to this teacher
@@ -92,8 +104,10 @@ export class AttendanceService {
 
             // ── Step 3: Parent Push Notification ─────────────────────────────────
             // Non-blocking: fetch teacher name and fire-and-forget push notification
-            UserModel.findById(teacherId, { name: 1 }).lean().then((teacherDoc) => {
-                const teacherName = (teacherDoc as any)?.name ?? '';
+            UserModel.findById(teacherId, { name: 1, subject: 1 }).lean().then((teacherDoc) => {
+                const rawName = (teacherDoc as any)?.name ?? '';
+                const subject = (teacherDoc as any)?.subject;
+                const teacherName = subject ? `${rawName} (${subject})` : rawName;
                 ParentPushService.notifyAttendance({
                     studentId:   student._id.toString(),
                     studentName: student.studentName,
@@ -101,37 +115,73 @@ export class AttendanceService {
                     teacherName,
                     sessionDate: session.date,
                     status:      data.status as 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED',
+                    isGuest,
                 });
             }).catch(() => {/* ignore */});
 
             // ── Step 4: Retroactive Compensation ──────────────────────────────
-            // If student was marked ABSENT in their own group earlier this week,
-            // convert the previous ABSENT record to EXCUSED (compensated) and decrement consecutive absences.
+            // If student was marked ABSENT in their own group earlier,
+            // convert the previous ABSENT record to EXCUSED (compensated), add to compensatedStudents in snapshot, and decrement consecutive absences.
             if (isGuest && (data.status === AttendanceStatus.PRESENT || data.status === AttendanceStatus.LATE)) {
-                const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+                const windowDays = await AttendanceService.getCompensationWindowDays(student.groupId);
+                const windowStart = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
+                const sidStr = student._id.toString();
+
+                // Fetch group names for bidirectional linking
+                const [hostGroup, homeGroup] = await Promise.all([
+                    GroupModel.findById(session.groupId, { name: 1 }).lean(),
+                    student.groupId ? GroupModel.findById(student.groupId, { name: 1 }).lean() : Promise.resolve(null),
+                ]);
+                const hostGroupName = hostGroup?.name || 'مجموعة أخرى';
+                const homeGroupName = homeGroup?.name || 'المجموعة الأصلية';
+
                 const pastAbsentRecord = await AttendanceModel.findOne({
                     studentId: student._id,
                     status: AttendanceStatus.ABSENT,
-                    scannedAt: { $gte: oneWeekAgo }
+                    scannedAt: { $gte: windowStart }
                 }).sort({ scannedAt: -1 });
 
                 if (pastAbsentRecord) {
                     pastAbsentRecord.status = AttendanceStatus.EXCUSED;
-                    pastAbsentRecord.notes = 'معوّض — حضر كزائر في مجموعة أخرى';
+                    pastAbsentRecord.notes = `معوّض — حضر كزائر في مجموعة (${hostGroupName})`;
+                    (pastAbsentRecord as any).relatedSessionId = session._id;
+                    (pastAbsentRecord as any).relatedGroupName = hostGroupName;
+                    (pastAbsentRecord as any).relatedDate = session.date;
                     await pastAbsentRecord.save();
 
-                    // Synchronize AttendanceSnapshotModel: remove student from absentStudents of the past session
+                    // Link the current guest record back to the compensated past session
+                    record.notes = `طالب زائر — تعويض عن غياب في مجموعة (${homeGroupName})`;
+                    (record as any).relatedSessionId = pastAbsentRecord.sessionId;
+                    (record as any).relatedGroupName = homeGroupName;
+                    (record as any).relatedDate = pastAbsentRecord.scannedAt;
+                    await record.save();
+
+                    // Synchronize AttendanceSnapshotModel atomically for the compensated past session
                     if (pastAbsentRecord.sessionId) {
                         const pastSnapshot = await AttendanceSnapshotModel.findOne({ sessionId: pastAbsentRecord.sessionId });
                         if (pastSnapshot) {
-                            const originalLen = pastSnapshot.absentStudents.length;
                             pastSnapshot.absentStudents = pastSnapshot.absentStudents.filter(
-                                s => s.studentId.toString() !== student._id.toString()
+                                s => s.studentId.toString() !== sidStr
                             );
-                            if (pastSnapshot.absentStudents.length !== originalLen) {
-                                pastSnapshot.absentCount = pastSnapshot.absentStudents.length;
-                                await pastSnapshot.save();
-                            }
+                            if (!pastSnapshot.compensatedStudents) pastSnapshot.compensatedStudents = [];
+                            pastSnapshot.compensatedStudents = pastSnapshot.compensatedStudents.filter(
+                                s => s.studentId.toString() !== sidStr
+                            );
+                            pastSnapshot.compensatedStudents.push({
+                                studentId: student._id,
+                                studentName: student.studentName,
+                                scannedAt: session.date || new Date(),
+                                status: AttendanceStatus.EXCUSED,
+                                homeworkDone: record.homeworkDone ?? null,
+                                relatedSessionId: session._id,
+                                relatedGroupName: hostGroupName,
+                                relatedDate: session.date,
+                            });
+                            pastSnapshot.absentCount = pastSnapshot.absentStudents.length;
+                            pastSnapshot.compensatedCount = pastSnapshot.compensatedStudents.length;
+                            pastSnapshot.markModified('compensatedStudents');
+                            pastSnapshot.markModified('absentStudents');
+                            await pastSnapshot.save();
                         }
                     }
 
@@ -139,6 +189,94 @@ export class AttendanceService {
                         await StudentModel.findByIdAndUpdate(student._id, {
                             $inc: { consecutiveAbsences: -1 }
                         });
+                    }
+
+                    // ── Notify Parent of Compensation (Push & In-App) ──────────────
+                    UserModel.findById(teacherId, { name: 1, subject: 1 }).lean().then((teacherDoc) => {
+                        const rawName = (teacherDoc as any)?.name ?? '';
+                        const subject = (teacherDoc as any)?.subject;
+                        const teacherName = subject ? `${rawName} (${subject})` : rawName;
+                        ParentPushService.notifyCompensation({
+                            studentId:   student._id.toString(),
+                            studentName: student.studentName,
+                            teacherId,
+                            teacherName,
+                            missedSessionDate: pastAbsentRecord.scannedAt || pastAbsentRecord.createdAt || session.date,
+                            hostGroupName,
+                        });
+                    }).catch(() => {/* ignore */});
+                } else if (student.groupId) {
+                    // Check if there was a past session in student's home group within window
+                    const recentPastSession = await SessionModel.findOne({
+                        groupId: student.groupId,
+                        date: { $gte: windowStart, $lte: new Date() },
+                        _id: { $ne: session._id }
+                    }).sort({ date: -1 }).lean();
+
+                    if (recentPastSession) {
+                        await AttendanceModel.findOneAndUpdate(
+                            { studentId: student._id, sessionId: recentPastSession._id },
+                            {
+                                $set: {
+                                    status: AttendanceStatus.EXCUSED,
+                                    notes: `معوّض — حضر كزائر في مجموعة (${hostGroupName})`,
+                                    isConsumed: false,
+                                    scannedAt: new Date(),
+                                    type: 'SESSION',
+                                    relatedSessionId: session._id,
+                                    relatedGroupName: hostGroupName,
+                                    relatedDate: session.date,
+                                }
+                            },
+                            { upsert: true }
+                        );
+
+                        record.notes = `طالب زائر — تعويض عن غياب في مجموعة (${homeGroupName})`;
+                        (record as any).relatedSessionId = recentPastSession._id;
+                        (record as any).relatedGroupName = homeGroupName;
+                        (record as any).relatedDate = recentPastSession.date;
+                        await record.save();
+
+                        const pastSnapshot = await AttendanceSnapshotModel.findOne({ sessionId: recentPastSession._id });
+                        if (pastSnapshot) {
+                            pastSnapshot.absentStudents = pastSnapshot.absentStudents.filter(
+                                s => s.studentId.toString() !== sidStr
+                            );
+                            if (!pastSnapshot.compensatedStudents) pastSnapshot.compensatedStudents = [];
+                            pastSnapshot.compensatedStudents = pastSnapshot.compensatedStudents.filter(
+                                s => s.studentId.toString() !== sidStr
+                            );
+                            pastSnapshot.compensatedStudents.push({
+                                studentId: student._id,
+                                studentName: student.studentName,
+                                scannedAt: session.date || new Date(),
+                                status: AttendanceStatus.EXCUSED,
+                                homeworkDone: record.homeworkDone ?? null,
+                                relatedSessionId: session._id,
+                                relatedGroupName: hostGroupName,
+                                relatedDate: session.date,
+                            });
+                            pastSnapshot.absentCount = pastSnapshot.absentStudents.length;
+                            pastSnapshot.compensatedCount = pastSnapshot.compensatedStudents.length;
+                            pastSnapshot.markModified('compensatedStudents');
+                            pastSnapshot.markModified('absentStudents');
+                            await pastSnapshot.save();
+                        }
+
+                        // ── Notify Parent of Compensation (Push & In-App) ──────────────
+                        UserModel.findById(teacherId, { name: 1, subject: 1 }).lean().then((teacherDoc) => {
+                            const rawName = (teacherDoc as any)?.name ?? '';
+                            const subject = (teacherDoc as any)?.subject;
+                            const teacherName = subject ? `${rawName} (${subject})` : rawName;
+                            ParentPushService.notifyCompensation({
+                                studentId:   student._id.toString(),
+                                studentName: student.studentName,
+                                teacherId,
+                                teacherName,
+                                missedSessionDate: recentPastSession.date,
+                                hostGroupName,
+                            });
+                        }).catch(() => {/* ignore */});
                     }
                 }
             }
@@ -247,6 +385,8 @@ export class AttendanceService {
         // Retroactive compensation for any guest students marked present
         const guestDocs = docs.filter(d => d.isGuest && (d.status === AttendanceStatus.PRESENT || d.status === AttendanceStatus.LATE));
         if (guestDocs.length > 0) {
+            const hostGroup = await GroupModel.findById(session.groupId, { name: 1 }).lean();
+            const hostGroupName = hostGroup?.name || 'مجموعة أخرى';
             const guestStudentIds = guestDocs.map(d => d.studentId);
             const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
             
@@ -258,6 +398,8 @@ export class AttendanceService {
 
             if (absentRecords.length > 0) {
                 const compensatedStudentIds: any[] = [];
+                const guestDocUpdates: any[] = [];
+
                 const updates = absentRecords.map(r => {
                     compensatedStudentIds.push(r.studentId);
                     return {
@@ -266,7 +408,10 @@ export class AttendanceService {
                             update: {
                                 $set: {
                                     status: AttendanceStatus.EXCUSED,
-                                    notes: 'معوّض — حضر كزائر في مجموعة أخرى'
+                                    notes: `معوّض — حضر كزائر في مجموعة (${hostGroupName})`,
+                                    relatedSessionId: session._id,
+                                    relatedGroupName: hostGroupName,
+                                    relatedDate: session.date,
                                 }
                             }
                         }
@@ -278,17 +423,48 @@ export class AttendanceService {
                 // Synchronize AttendanceSnapshotModel for affected sessions
                 const sessionIdsToSync = Array.from(new Set(absentRecords.filter(r => r.sessionId).map(r => r.sessionId!.toString())));
                 const compensatedStudentIdSet = new Set(compensatedStudentIds.map(id => id.toString()));
+                
+                // Fetch student documents to have accurate names for snapshot
+                const compStudents = await StudentModel.find(
+                    { _id: { $in: compensatedStudentIds } },
+                    { _id: 1, studentName: 1, groupId: 1 }
+                ).populate('groupId', 'name').lean();
+                const compStudentMap = new Map(compStudents.map(s => [s._id.toString(), s]));
+
                 for (const pastSessionId of sessionIdsToSync) {
                     const pastSnapshot = await AttendanceSnapshotModel.findOne({ sessionId: pastSessionId });
                     if (pastSnapshot) {
-                        const originalLen = pastSnapshot.absentStudents.length;
                         pastSnapshot.absentStudents = pastSnapshot.absentStudents.filter(
                             s => !compensatedStudentIdSet.has(s.studentId.toString())
                         );
-                        if (pastSnapshot.absentStudents.length !== originalLen) {
-                            pastSnapshot.absentCount = pastSnapshot.absentStudents.length;
-                            await pastSnapshot.save();
+                        if (!pastSnapshot.compensatedStudents) pastSnapshot.compensatedStudents = [];
+                        
+                        // Add each compensated student to pastSnapshot
+                        for (const sid of compensatedStudentIds) {
+                            const sidStr = sid.toString();
+                            const stDoc = compStudentMap.get(sidStr);
+                            if (stDoc) {
+                                pastSnapshot.compensatedStudents = pastSnapshot.compensatedStudents.filter(
+                                    s => s.studentId.toString() !== sidStr
+                                );
+                                pastSnapshot.compensatedStudents.push({
+                                    studentId: stDoc._id,
+                                    studentName: stDoc.studentName,
+                                    scannedAt: session.date || new Date(),
+                                    status: AttendanceStatus.EXCUSED,
+                                    homeworkDone: null,
+                                    relatedSessionId: session._id,
+                                    relatedGroupName: hostGroupName,
+                                    relatedDate: session.date,
+                                });
+                            }
                         }
+
+                        pastSnapshot.absentCount = pastSnapshot.absentStudents.length;
+                        pastSnapshot.compensatedCount = pastSnapshot.compensatedStudents.length;
+                        pastSnapshot.markModified('absentStudents');
+                        pastSnapshot.markModified('compensatedStudents');
+                        await pastSnapshot.save();
                     }
                 }
 
@@ -303,8 +479,10 @@ export class AttendanceService {
 
         // ── Parent Push Notifications for batch (non-blocking) ───────────────────
         // Fetch teacher name once, then notify per student
-        UserModel.findById(teacherId, { name: 1 }).lean().then((teacherDoc) => {
-            const teacherName = (teacherDoc as any)?.name ?? '';
+        UserModel.findById(teacherId, { name: 1, subject: 1 }).lean().then((teacherDoc) => {
+            const rawName = (teacherDoc as any)?.name ?? '';
+            const subject = (teacherDoc as any)?.subject;
+            const teacherName = subject ? `${rawName} (${subject})` : rawName;
             // Fetch student names for all records in the batch
             const studentIds = data.records.map(r => r.studentId);
             StudentModel.find({ _id: { $in: studentIds }, teacherId }, { _id: 1, studentName: 1 }).lean().then((students) => {
@@ -316,6 +494,7 @@ export class AttendanceService {
                         studentName,
                         teacherId,
                         teacherName,
+                        subject,
                         sessionDate: session.date,
                         status:      r.status as 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED',
                     });
@@ -410,7 +589,7 @@ export class AttendanceService {
         const studentObjectIds = resolved.map(r => r.studentId);
         const students = await StudentModel.find(
             { _id: { $in: studentObjectIds }, teacherId },
-            { _id: 1, groupId: 1, gradeLevel: 1 }
+            { _id: 1, studentName: 1, groupId: 1, gradeLevel: 1 }
         ).lean();
 
         const studentMap = new Map(students.map(s => [s._id.toString(), s]));
@@ -518,6 +697,27 @@ export class AttendanceService {
             const result = await AttendanceModel.bulkWrite(bulkOps, { ordered: false });
             upsertedCount = result.upsertedCount;
             matchedCount  = result.matchedCount;
+
+            // ── Parent Push Notifications for newly upserted batch items ─────────────
+            if (upsertedCount > 0) {
+                UserModel.findById(teacherId, { name: 1, subject: 1 }).lean().then((teacherDoc) => {
+                    const rawName = (teacherDoc as any)?.name ?? '';
+                    const subject = (teacherDoc as any)?.subject;
+                    const teacherName = subject ? `${rawName} (${subject})` : rawName;
+                    for (const rec of resolved) {
+                        const student = studentMap.get(rec.studentId.toString());
+                        if (!student) continue;
+                        ParentPushService.notifyAttendance({
+                            studentId:   rec.studentId.toString(),
+                            studentName: (student as any).studentName || 'الطالب',
+                            teacherId,
+                            teacherName,
+                            sessionDate: session.date,
+                            status:      rec.status as any,
+                        });
+                    }
+                }).catch(() => {/* ignore */});
+            }
         }
 
         // ── Step 4: Retroactive guest compensation ───────────────────────────────
@@ -557,14 +757,27 @@ export class AttendanceService {
                 for (const pastSessionId of sessionIdsToSync) {
                     const pastSnapshot = await AttendanceSnapshotModel.findOne({ sessionId: pastSessionId });
                     if (pastSnapshot) {
-                        const originalLen = pastSnapshot.absentStudents.length;
+                        const removedStudents = pastSnapshot.absentStudents.filter(
+                            s => compensatedSet.has(s.studentId.toString())
+                        );
                         pastSnapshot.absentStudents = pastSnapshot.absentStudents.filter(
                             s => !compensatedSet.has(s.studentId.toString())
                         );
-                        if (pastSnapshot.absentStudents.length !== originalLen) {
-                            pastSnapshot.absentCount = pastSnapshot.absentStudents.length;
-                            await pastSnapshot.save();
+                        if (!pastSnapshot.compensatedStudents) pastSnapshot.compensatedStudents = [];
+                        for (const rem of removedStudents) {
+                            if (!pastSnapshot.compensatedStudents.some(s => s.studentId.toString() === rem.studentId.toString())) {
+                                pastSnapshot.compensatedStudents.push({
+                                    studentId: rem.studentId,
+                                    studentName: rem.studentName,
+                                    scannedAt: new Date(),
+                                    status: AttendanceStatus.EXCUSED,
+                                    homeworkDone: rem.homeworkDone ?? null
+                                });
+                            }
                         }
+                        pastSnapshot.absentCount = pastSnapshot.absentStudents.length;
+                        pastSnapshot.compensatedCount = pastSnapshot.compensatedStudents.length;
+                        await pastSnapshot.save();
                     }
                 }
 
@@ -620,6 +833,101 @@ export class AttendanceService {
         // So we filter out the records where studentId is null (meaning the student didn't match the search)
         const filtered = records.filter(r => r.studentId !== null);
 
+        // Check for advance-compensated students during active session
+        if (session.status === SessionStatus.IN_PROGRESS || session.status === SessionStatus.SCHEDULED) {
+            const windowDays = await AttendanceService.getCompensationWindowDays(session.groupId);
+            const sessionDate = new Date(session.date);
+            const windowStart = new Date(sessionDate);
+            windowStart.setDate(windowStart.getDate() - windowDays);
+            windowStart.setHours(0, 0, 0, 0);
+
+            const windowEnd = new Date(sessionDate);
+            windowEnd.setDate(windowEnd.getDate() + windowDays);
+            windowEnd.setHours(23, 59, 59, 999);
+
+            const allGroupStudents = await StudentModel.find(
+                { groupId: session.groupId, teacherId, isActive: true },
+                { studentName: 1, studentPhone: 1, studentCode: 1 }
+            ).lean();
+
+            const studentIds = allGroupStudents.map(s => s._id);
+            const guestAttendances = await AttendanceModel.find({
+                studentId: { $in: studentIds },
+                isGuest: true,
+                status: { $in: [AttendanceStatus.PRESENT, AttendanceStatus.LATE] },
+                scannedAt: { $gte: windowStart, $lte: windowEnd }
+            }).sort({ scannedAt: -1 }).lean();
+
+            const recordedSidSet = new Set(
+                filtered.map(r => ((r.studentId as any)?._id || r.studentId)?.toString())
+            );
+
+            for (const g of guestAttendances) {
+                const sidStr = g.studentId.toString();
+                if (!recordedSidSet.has(sidStr)) {
+                    const st = allGroupStudents.find(s => s._id.toString() === sidStr);
+                    if (st) {
+                        filtered.push({
+                            _id: `comp-${st._id}`,
+                            studentId: st as any,
+                            sessionId: session._id,
+                            status: AttendanceStatus.EXCUSED,
+                            isGuest: false,
+                            isCompensated: true,
+                            scannedAt: g.scannedAt,
+                            notes: `معوّض مسبقاً — حضر كزائر بتاريخ ${new Date(g.scannedAt).toLocaleDateString('ar-EG')}`,
+                            homeworkDone: g.homeworkDone ?? null,
+                            relatedSessionId: g.sessionId,
+                            relatedDate: g.scannedAt,
+                        } as any);
+                        recordedSidSet.add(sidStr);
+                    }
+                }
+            }
+        }
+
+        // Ensure relatedSessionId and relatedGroupName are populated for guest and compensated records
+        const guestOrCompRecords = filtered.filter(r => r.isGuest || r.status === AttendanceStatus.EXCUSED || (r as any).isCompensated);
+        if (guestOrCompRecords.length > 0) {
+            const studentIdsToResolve = guestOrCompRecords
+                .filter(r => !(r as any).relatedSessionId || !(r as any).relatedGroupName)
+                .map(r => ((r.studentId as any)?._id || r.studentId));
+            
+            if (studentIdsToResolve.length > 0) {
+                const relatedRecords = await AttendanceModel.find({
+                    studentId: { $in: studentIdsToResolve },
+                    sessionId: { $ne: session._id }
+                }).sort({ scannedAt: -1 }).populate({
+                    path: 'sessionId',
+                    populate: { path: 'groupId', select: 'name' }
+                }).lean();
+
+                const relatedMap = new Map<string, any>();
+                for (const rel of relatedRecords) {
+                    const sidStr = rel.studentId.toString();
+                    if (!relatedMap.has(sidStr)) {
+                        relatedMap.set(sidStr, rel);
+                    }
+                }
+
+                for (const r of filtered) {
+                    const sidStr = ((r.studentId as any)?._id || r.studentId)?.toString();
+                    const matchedRel = relatedMap.get(sidStr);
+                    if (matchedRel && matchedRel.sessionId) {
+                        if (!(r as any).relatedSessionId) {
+                            (r as any).relatedSessionId = (matchedRel.sessionId as any)._id;
+                        }
+                        if (!(r as any).relatedGroupName) {
+                            (r as any).relatedGroupName = (matchedRel.sessionId as any).groupId?.name || 'مجموعة أخرى';
+                        }
+                        if (!(r as any).relatedDate) {
+                            (r as any).relatedDate = (matchedRel.sessionId as any).date || matchedRel.scannedAt;
+                        }
+                    }
+                }
+            }
+        }
+
         // Sort alphabetically by student name
         filtered.sort((a, b) => {
             const nameA = (a.studentId as any)?.studentName ?? '';
@@ -651,14 +959,15 @@ export class AttendanceService {
         const attendanceRecords = await AttendanceModel.find({ sessionId }).lean();
         const attendedSet = new Map(attendanceRecords.map(r => [r.studentId.toString(), r]));
 
-        // Check for guest attendances in other groups within the same week window (compensation)
+        // Check for guest attendances in other groups within compensation window
+        const windowDays = await AttendanceService.getCompensationWindowDays(session.groupId);
         const sessionDate = new Date(session.date);
         const windowStart = new Date(sessionDate);
-        windowStart.setDate(windowStart.getDate() - 7);
+        windowStart.setDate(windowStart.getDate() - windowDays);
         windowStart.setHours(0, 0, 0, 0);
 
         const windowEnd = new Date(sessionDate);
-        windowEnd.setDate(windowEnd.getDate() + 7);
+        windowEnd.setDate(windowEnd.getDate() + windowDays);
         windowEnd.setHours(23, 59, 59, 999);
 
         const studentIds = allStudents.map(s => s._id);
@@ -677,9 +986,10 @@ export class AttendanceService {
         }
 
         // Build snapshot lists
-        const presentStudents: any[] = [];
-        const absentStudents:  any[] = [];
-        const guestStudents:   any[] = [];
+        const presentStudents:     any[] = [];
+        const absentStudents:      any[] = [];
+        const guestStudents:       any[] = [];
+        const compensatedStudents: any[] = [];
 
         // Arrays to accumulate bulk operations
         const excusedAttendanceDocsToInsert: any[] = [];
@@ -690,7 +1000,7 @@ export class AttendanceService {
         for (const student of allStudents) {
             const record = attendedSet.get(student._id.toString());
             
-            if (record && record.status !== AttendanceStatus.ABSENT) {
+            if (record && record.status !== AttendanceStatus.ABSENT && record.status !== AttendanceStatus.EXCUSED) {
                 presentStudents.push({
                     studentId:    student._id,
                     studentName:  student.studentName,
@@ -699,12 +1009,64 @@ export class AttendanceService {
                     homeworkDone: record.homeworkDone ?? null,
                 });
             } else {
-                const isCompensated = compensatedMap.has(student._id.toString());
+                const isAlreadyExcusedCompensated = record && record.status === AttendanceStatus.EXCUSED && (record.notes?.includes('معوّض') || record.notes?.includes('معوض') || !!(record as any).relatedSessionId);
+                const isCompensated = compensatedMap.has(student._id.toString()) || isAlreadyExcusedCompensated;
                 const hasSessionExcuse = (student.excusedSessionsCount || 0) > 0;
                 const matchesDateExcuse = student.excusedUntil && new Date(student.excusedUntil) >= session.date;
-                const isExcused = isCompensated || hasSessionExcuse || matchesDateExcuse;
+                const isExcused = hasSessionExcuse || matchesDateExcuse;
                 
-                if (isExcused) {
+                if (isCompensated) {
+                    const compRecord = compensatedMap.get(student._id.toString());
+                    const relSessionId = (record as any)?.relatedSessionId || compRecord?.sessionId;
+                    const relGroupName = (record as any)?.relatedGroupName;
+                    const relDate = (record as any)?.relatedDate || compRecord?.scannedAt;
+
+                    compensatedStudents.push({
+                        studentId:    student._id,
+                        studentName:  student.studentName,
+                        scannedAt:    record?.scannedAt || compRecord?.scannedAt || session.date,
+                        status:       AttendanceStatus.EXCUSED,
+                        homeworkDone: record?.homeworkDone ?? compRecord?.homeworkDone ?? null,
+                        relatedSessionId: relSessionId,
+                        relatedGroupName: relGroupName,
+                        relatedDate: relDate,
+                    });
+
+                    const excuseNote = (record && record.notes)
+                        ? record.notes
+                        : `معوّض مسبقاً — حضر كزائر في مجموعة أخرى بتاريخ ${new Date(compRecord?.scannedAt || session.date).toLocaleDateString('ar-EG')}`;
+
+                    if (!record) {
+                        excusedAttendanceDocsToInsert.push({
+                            studentId: student._id,
+                            sessionId: session._id,
+                            status:    AttendanceStatus.EXCUSED,
+                            type:      'SESSION',
+                            scannedBy: completedBy ? new mongoose.Types.ObjectId(completedBy) : undefined,
+                            isConsumed: false,
+                            notes:     excuseNote,
+                            relatedSessionId: relSessionId,
+                            relatedGroupName: relGroupName,
+                            relatedDate: relDate,
+                        });
+                    } else if (record.status === AttendanceStatus.ABSENT) {
+                        attendanceRecordsToUpdate.push({
+                            updateOne: {
+                                filter: { _id: record._id },
+                                update: {
+                                    $set: {
+                                        status: AttendanceStatus.EXCUSED,
+                                        notes: excuseNote,
+                                        isConsumed: false,
+                                        relatedSessionId: relSessionId,
+                                        relatedGroupName: relGroupName,
+                                        relatedDate: relDate,
+                                    }
+                                }
+                            }
+                        });
+                    }
+                } else if (isExcused) {
                     presentStudents.push({
                         studentId:    student._id,
                         studentName:  student.studentName,
@@ -713,13 +1075,11 @@ export class AttendanceService {
                         homeworkDone: null,
                     });
                     
-                    if (!record) {
-                        const excuseNote = isCompensated
-                            ? 'معوّض — حضر كزائر في مجموعة أخرى'
-                            : (hasSessionExcuse 
-                                ? `مُستأذن (متبقي ${student.excusedSessionsCount} حصص قبل هذه)` 
-                                : 'مُستأذن تلقائياً بناءً على تاريخ الإذن');
+                    const excuseNote = hasSessionExcuse 
+                        ? `مُستأذن (متبقي ${student.excusedSessionsCount} حصص قبل هذه)` 
+                        : 'مُستأذن تلقائياً بناءً على تاريخ الإذن';
 
+                    if (!record) {
                         excusedAttendanceDocsToInsert.push({
                             studentId: student._id,
                             sessionId: session._id,
@@ -730,12 +1090,6 @@ export class AttendanceService {
                             notes:     excuseNote,
                         });
                     } else if (record.status === AttendanceStatus.ABSENT) {
-                        const excuseNote = isCompensated
-                            ? 'معوّض — حضر كزائر في مجموعة أخرى'
-                            : (hasSessionExcuse 
-                                ? `مُستأذن (متبقي ${student.excusedSessionsCount} حصص قبل هذه)` 
-                                : 'مُستأذن تلقائياً بناءً على تاريخ الإذن');
-
                         attendanceRecordsToUpdate.push({
                             updateOne: {
                                 filter: { _id: record._id },
@@ -750,7 +1104,7 @@ export class AttendanceService {
                         });
                     }
 
-                    if (!isCompensated && hasSessionExcuse) {
+                    if (hasSessionExcuse) {
                         studentIdsToDecrementExcuse.push(student._id);
                     }
                 } else {
@@ -817,13 +1171,17 @@ export class AttendanceService {
                         studentName:  student.studentName,
                         scannedAt:    r.scannedAt,
                         homeworkDone: r.homeworkDone ?? null,
+                        relatedSessionId: (r as any).relatedSessionId,
+                        relatedGroupName: (r as any).relatedGroupName,
+                        relatedDate:  (r as any).relatedDate,
                     });
                 }
             }
         }
 
         // ── Group Cycle Progression ──
-        let capacity = group.cycle?.capacity ?? (group.schedule?.length || 2) * 4;
+        const defaultFullCapacity = (group.schedule?.length || 2) * 4 || 8;
+        let capacity = group.cycle?.capacity ?? defaultFullCapacity;
         let currentCycleNumber = group.cycle?.currentCycleNumber ?? 1;
         let currentSessionNumber = group.cycle?.currentSessionNumber ?? 0;
         let startedAt = group.cycle?.startedAt ?? new Date();
@@ -837,6 +1195,8 @@ export class AttendanceService {
             currentCycleNumber++;
             startedAt = new Date();
             cycleRolledOver = true;
+            // Any custom quota was for that specific cycle only. The new cycle reverts to a full cycle.
+            capacity = defaultFullCapacity;
         } else if (!group.cycle || (currentSessionNumber === 1 && !group.cycle.startedAt)) {
             startedAt = new Date();
             cycleRolledOver = true;
@@ -921,6 +1281,15 @@ export class AttendanceService {
                 await CycleEnrollmentModel.bulkWrite(enrollmentOps, { session: dbSession });
             }
 
+            if (cycleRolledOver) {
+                // When a new cycle starts, revert student session quota to full default cycle
+                await StudentModel.updateMany(
+                    { groupId: group._id, teacherId: session.teacherId },
+                    { $set: { monthlySessionsQuota: defaultFullCapacity, cycleCapacity: defaultFullCapacity } },
+                    { session: dbSession }
+                );
+            }
+
             if (cycleRolledOver || (!group.cycle?.startedAt && currentSessionNumber === 1)) {
                 const studentDebtUpdates = activeStudents.map(student => {
                     // @ts-ignore
@@ -972,9 +1341,11 @@ export class AttendanceService {
                         presentStudents,
                         absentStudents,
                         guestStudents,
-                        presentCount: presentStudents.length,
-                        absentCount:  absentStudents.length,
-                        totalCount:   allStudents.length,
+                        compensatedStudents,
+                        presentCount:     presentStudents.length,
+                        absentCount:      absentStudents.length,
+                        compensatedCount: compensatedStudents.length,
+                        totalCount:       allStudents.length,
                     },
                     { upsert: true, new: true, session: dbSession }
                 ).lean(),
@@ -1039,18 +1410,31 @@ export class AttendanceService {
             const teacherName = subject ? `${rawTeacherName} (${subject})` : rawTeacherName;
 
             for (const absent of absentStudents) {
-                const parentPhone = phoneMap.get(absent.studentId.toString());
-                if (!parentPhone) continue;
+                const sid = absent.studentId.toString();
+                const parentPhone = phoneMap.get(sid);
 
-                enqueueWhatsApp({
-                    kind:        'session_absent',
-                    teacherId,
-                    parentPhone,
-                    studentId:   absent.studentId.toString(),
+                if (parentPhone) {
+                    enqueueWhatsApp({
+                        kind:        'session_absent',
+                        teacherId,
+                        parentPhone,
+                        studentId:   sid,
+                        studentName: absent.studentName,
+                        groupName:   group.name,
+                        sessionDate: session.date.toISOString(),
+                        teacherName: rawTeacherName,
+                        subject:     subject || '',
+                    });
+                }
+
+                // ── Parent Mobile Push & In-App Notification ───────────────────────
+                ParentPushService.notifyAttendance({
+                    studentId:   sid,
                     studentName: absent.studentName,
-                    groupName:   group.name,
-                    sessionDate: session.date.toISOString(),
+                    teacherId,
                     teacherName,
+                    sessionDate: session.date,
+                    status:      'ABSENT',
                 });
             }
         }
@@ -1089,15 +1473,132 @@ export class AttendanceService {
         ).lean();
     }
 
-    // ─── Get snapshot (fast read — no populate) ──────────────────────
+    // ─── Get snapshot (fast read with self-healing synchronization) ──
     static async getSnapshot(sessionId: string, teacherId: string) {
         const session = await SessionModel.findOne({ _id: sessionId, teacherId }).lean();
         if (!session) throw NotFoundException({ message: 'الحصة غير موجودة' });
 
-        const snapshot = await AttendanceSnapshotModel.findOne({ sessionId }).lean();
+        const snapshot = await AttendanceSnapshotModel.findOne({ sessionId });
         if (!snapshot) throw NotFoundException({ message: 'لم يتم إنهاء هذه الحصة بعد' });
 
-        return snapshot;
+        // ── Self-healing & Bidirectional Linking Sync ──
+        let modified = false;
+        const records = await AttendanceModel.find({ sessionId }).lean();
+
+        // 1. Compensated students sync
+        const compRecords = records.filter(r => 
+            r.status === AttendanceStatus.EXCUSED && 
+            (r.notes?.includes('معوّض') || r.notes?.includes('معوض') || !!(r as any).relatedSessionId)
+        );
+
+        if (compRecords.length > 0) {
+            const compSidSet = new Set(compRecords.map(r => r.studentId.toString()));
+            const originalAbsentLen = snapshot.absentStudents.length;
+            snapshot.absentStudents = snapshot.absentStudents.filter(
+                s => !compSidSet.has(s.studentId.toString())
+            );
+            if (snapshot.absentStudents.length !== originalAbsentLen) {
+                snapshot.absentCount = snapshot.absentStudents.length;
+                modified = true;
+            }
+
+            if (!snapshot.compensatedStudents) snapshot.compensatedStudents = [];
+            const existingCompSids = new Set(snapshot.compensatedStudents.map(s => s.studentId.toString()));
+            const missingCompRecords = compRecords.filter(r => !existingCompSids.has(r.studentId.toString()));
+
+            if (missingCompRecords.length > 0) {
+                const missingStudentIds = missingCompRecords.map(r => r.studentId);
+                const studentDocs = await StudentModel.find(
+                    { _id: { $in: missingStudentIds } },
+                    { studentName: 1, groupId: 1 }
+                ).lean();
+                const studentMap = new Map(studentDocs.map(s => [s._id.toString(), s]));
+
+                for (const r of missingCompRecords) {
+                    const st = studentMap.get(r.studentId.toString());
+                    let relSessionId = (r as any).relatedSessionId;
+                    let relGroupName = (r as any).relatedGroupName;
+                    let relDate = (r as any).relatedDate;
+
+                    if (!relSessionId) {
+                        const guestAtt = await AttendanceModel.findOne({
+                            studentId: r.studentId,
+                            sessionId: { $ne: session._id },
+                            isGuest: true
+                        }).sort({ scannedAt: -1 }).populate({
+                            path: 'sessionId',
+                            populate: { path: 'groupId', select: 'name' }
+                        }).lean();
+
+                        if (guestAtt && guestAtt.sessionId) {
+                            relSessionId = (guestAtt.sessionId as any)._id;
+                            relGroupName = (guestAtt.sessionId as any).groupId?.name || 'مجموعة أخرى';
+                            relDate = (guestAtt.sessionId as any).date || guestAtt.scannedAt;
+                            await AttendanceModel.updateOne({ _id: r._id }, {
+                                $set: {
+                                    relatedSessionId: relSessionId,
+                                    relatedGroupName: relGroupName,
+                                    relatedDate: relDate
+                                }
+                            });
+                        }
+                    }
+
+                    snapshot.compensatedStudents.push({
+                        studentId: r.studentId,
+                        studentName: st?.studentName || 'طالب',
+                        scannedAt: r.scannedAt || session.date,
+                        status: AttendanceStatus.EXCUSED,
+                        homeworkDone: r.homeworkDone ?? null,
+                        relatedSessionId: relSessionId,
+                        relatedGroupName: relGroupName,
+                        relatedDate: relDate || r.scannedAt,
+                    });
+                    modified = true;
+                }
+            }
+        }
+
+        // 2. Guest students sync & link
+        if (snapshot.guestStudents && snapshot.guestStudents.length > 0) {
+            for (const g of snapshot.guestStudents) {
+                if (!g.relatedSessionId) {
+                    const compAtt = await AttendanceModel.findOne({
+                        studentId: g.studentId,
+                        sessionId: { $ne: session._id },
+                        status: AttendanceStatus.EXCUSED,
+                        $or: [
+                            { notes: { $regex: /معوّض|معوض/ } },
+                            { relatedSessionId: session._id }
+                        ]
+                    }).sort({ scannedAt: -1 }).populate({
+                        path: 'sessionId',
+                        populate: { path: 'groupId', select: 'name' }
+                    }).lean();
+
+                    if (compAtt && compAtt.sessionId) {
+                        g.relatedSessionId = (compAtt.sessionId as any)._id;
+                        g.relatedGroupName = (compAtt.sessionId as any).groupId?.name || 'المجموعة الأصلية';
+                        g.relatedDate = (compAtt.sessionId as any).date || compAtt.scannedAt;
+                        modified = true;
+                    }
+                }
+            }
+        }
+
+        if (snapshot.compensatedStudents && snapshot.compensatedCount !== snapshot.compensatedStudents.length) {
+            snapshot.compensatedCount = snapshot.compensatedStudents.length;
+            modified = true;
+        }
+
+        if (modified) {
+            snapshot.markModified('compensatedStudents');
+            snapshot.markModified('absentStudents');
+            snapshot.markModified('guestStudents');
+            await snapshot.save();
+        }
+
+        return snapshot.toObject ? snapshot.toObject() : snapshot;
     }
 
     // ─── Update a single attendance record (manual edit by assistant) ──
@@ -1136,11 +1637,36 @@ export class AttendanceService {
         if (notes !== undefined) updateFields.notes = notes;
         if (homeworkDone !== undefined) updateFields.homeworkDone = homeworkDone;
 
-        return await AttendanceModel.findByIdAndUpdate(
+        const updated = await AttendanceModel.findByIdAndUpdate(
             attendanceId,
             updateFields,
             { new: true, runValidators: true }
         ).lean();
+
+        // ── Parent Push Notification on status change (non-blocking) ─────────
+        if (status && status !== record.status && teacherId) {
+            Promise.all([
+                record.sessionId ? SessionModel.findById(record.sessionId, { date: 1 }).lean() : Promise.resolve(null),
+                StudentModel.findById(record.studentId, { studentName: 1 }).lean(),
+                UserModel.findById(teacherId, { name: 1, subject: 1 }).lean(),
+            ]).then(([sessionDoc, studentDoc, teacherDoc]) => {
+                if (!studentDoc) return;
+                const rawName = (teacherDoc as any)?.name ?? '';
+                const subject = (teacherDoc as any)?.subject;
+                const teacherName = subject ? `${rawName} (${subject})` : rawName;
+                const sessionDate = sessionDoc?.date || record.scannedAt || new Date();
+                ParentPushService.notifyAttendance({
+                    studentId:   record.studentId.toString(),
+                    studentName: studentDoc.studentName,
+                    teacherId,
+                    teacherName,
+                    sessionDate,
+                    status:      status as any,
+                });
+            }).catch(() => {/* ignore */});
+        }
+
+        return updated;
     }
 
     // ─── Adjust attendance for a COMPLETED session (safe, idempotent, no billing side-effects) ──
@@ -1257,6 +1783,23 @@ export class AttendanceService {
             }
         });
 
+        // ── Parent Push Notification for adjusted attendance (non-blocking) ─────────
+        if (oldStatus !== newStatus) {
+            UserModel.findById(teacherId, { name: 1, subject: 1 }).lean().then((teacherDoc) => {
+                const rawName = (teacherDoc as any)?.name ?? '';
+                const subject = (teacherDoc as any)?.subject;
+                const teacherName = subject ? `${rawName} (${subject})` : rawName;
+                ParentPushService.notifyAttendance({
+                    studentId:   student._id.toString(),
+                    studentName: student.studentName,
+                    teacherId,
+                    teacherName,
+                    sessionDate: session.date,
+                    status:      newStatus as any,
+                });
+            }).catch(() => {/* ignore */});
+        }
+
         // Invalidate teacher cache
         await cache.invalidate(CacheKeys.teacherAll(teacherId));
 
@@ -1354,13 +1897,24 @@ export class AttendanceService {
             SessionModel.findOne({ _id: sessionId, teacherId })
                 .populate('groupId', 'name')
                 .lean(),
-            UserModel.findById(teacherId, { name: 1, features: 1 }).lean(),
+            UserModel.findById(teacherId, { name: 1, subject: 1, features: 1 }).lean(),
         ]);
             
         if (!session) throw NotFoundException({ message: 'الحصة غير موجودة' });
 
-        const groupName   = (session.groupId as any)?.name || 'مجموعة غير معروفة';
-        const teacherName = teacher?.name || '';
+        const groupName      = (session.groupId as any)?.name || 'مجموعة غير معروفة';
+        const rawTeacherName = teacher?.name || '';
+        const subject        = (teacher as any)?.subject || '';
+        let cleanName        = rawTeacherName.replace(/^(أ\/|أ\.|الأستاذ\/|الأستاذ\s+)/, '').trim();
+        const match          = cleanName.match(/^(.*?)\s*\((.*?)\)$/);
+        let cleanSubject     = subject.trim();
+        if (match && match[1]) {
+            cleanName = match[1].trim();
+            if (!cleanSubject && match[2]) cleanSubject = match[2].trim();
+        }
+        const teacherSig = cleanName
+            ? (cleanSubject ? `أ/ ${cleanName} (${cleanSubject})` : `أ/ ${cleanName}`)
+            : '';
         const isHomeworkTrackingEnabled = Boolean(teacher?.features?.homeworkTracking);
 
         // 1. Get all students in the group — sorted alphabetically
@@ -1372,6 +1926,32 @@ export class AttendanceService {
         // 2. Get attendance records for this session
         const records = await AttendanceModel.find({ sessionId }).lean();
         const attendedSet = new Map(records.map(r => [r.studentId.toString(), r]));
+
+        // Check for guest attendances in other groups within compensation window
+        const windowDays = await AttendanceService.getCompensationWindowDays(session.groupId);
+        const sessionDate = new Date(session.date);
+        const windowStart = new Date(sessionDate);
+        windowStart.setDate(windowStart.getDate() - windowDays);
+        windowStart.setHours(0, 0, 0, 0);
+
+        const windowEnd = new Date(sessionDate);
+        windowEnd.setDate(windowEnd.getDate() + windowDays);
+        windowEnd.setHours(23, 59, 59, 999);
+
+        const studentIds = allStudents.map(s => s._id);
+        const guestAttendances = await AttendanceModel.find({
+            studentId: { $in: studentIds },
+            isGuest: true,
+            status: { $in: [AttendanceStatus.PRESENT, AttendanceStatus.LATE] },
+            scannedAt: { $gte: windowStart, $lte: windowEnd }
+        }).sort({ scannedAt: -1 }).lean();
+
+        const compensatedMap = new Map<string, any>();
+        guestAttendances.forEach(g => {
+            if (!compensatedMap.has(g.studentId.toString())) {
+                compensatedMap.set(g.studentId.toString(), g);
+            }
+        });
 
         // Formatter for WhatsApp (wa.me accepts standard phone numbers with country code)
         // If the number doesn't start with country code, assume Egypt (+20) for Monazem context
@@ -1386,10 +1966,28 @@ export class AttendanceService {
 
         return allStudents.map(student => {
             const record = attendedSet.get(student._id.toString());
-            const isPresent = record && record.status !== AttendanceStatus.ABSENT;
+            const isPresent = record && record.status !== AttendanceStatus.ABSENT && record.status !== AttendanceStatus.EXCUSED;
+            const isCompensated = (!record && compensatedMap.has(student._id.toString())) || (record && record.status === AttendanceStatus.EXCUSED && record.notes?.includes('معوّض'));
 
             let message = '';
-            const signature = teacherName ? `\n\nمع تحيات أ/ ${teacherName}` : '';
+            const signature = teacherSig ? `\n\nمع تحيات: ${teacherSig}` : '';
+            const waPhone = formatPhone(student.parentPhone);
+
+            if (isCompensated) {
+                const compRecord = compensatedMap.get(student._id.toString());
+                const compDateStr = compRecord?.scannedAt ? new Date(compRecord.scannedAt).toLocaleDateString('ar-EG', { month: 'short', day: 'numeric' }) : '';
+                message = `السلام عليكم ورحمة الله،\nنحيطكم علمًا بأن الطالب/ة: **${student.studentName}** قد أتم تعويض حصة [${groupName}] بحضوره في موعد سابق${compDateStr ? ` بتاريخ ${compDateStr}` : ''}.\n\nبالتوفيق دائمًا.${signature}`;
+                const encodedMessage = encodeURIComponent(message);
+
+                return {
+                    studentId: student._id,
+                    studentName: student.studentName,
+                    status: 'COMPENSATED',
+                    homeworkDone: compRecord?.homeworkDone ?? null,
+                    whatsappLink: waPhone ? `https://wa.me/${waPhone}?text=${encodedMessage}` : '',
+                };
+            }
+
             if (isPresent) {
                 const timeStr = record?.scannedAt ? new Date(record.scannedAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : '';
                 let homeworkLine = '';
@@ -1418,14 +2016,13 @@ export class AttendanceService {
             }
 
             const encodedMessage = encodeURIComponent(message);
-            const waPhone = formatPhone(student.parentPhone);
 
             return {
                 studentId: student._id,
                 studentName: student.studentName,
                 status: isPresent ? 'PRESENT' : 'ABSENT',
                 homeworkDone: isPresent && typeof record?.homeworkDone === 'boolean' ? record.homeworkDone : null,
-                whatsappLink: `https://wa.me/${waPhone}?text=${encodedMessage}`,
+                whatsappLink: waPhone ? `https://wa.me/${waPhone}?text=${encodedMessage}` : '',
             };
         });
     }

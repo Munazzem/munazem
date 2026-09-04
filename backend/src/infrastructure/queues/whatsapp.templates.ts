@@ -14,12 +14,12 @@ export const DEFAULT_SESSION_ABSENT_TEMPLATES = [
 
 // ── Default Exam Result Templates (Rich, Diverse, ending with Call to Action) ──
 export const DEFAULT_EXAM_RESULT_TEMPLATES = [
-    'السلام عليكم ورحمة الله،\nتقرير نتيجة اختبار [**{examName}**] للطالب/ة: **{studentName}**\n📊 الدرجة: **{studentScore} من {examTotal}** ({percentage}%)\n\n📌 **الرجاء الرد بـ (تم) لتأكيد الاطلاع على النتيجة.**',
-    'أهلاً بحضرتك يا فندم،\nتم رصد درجات اختبار **{examName}**، وحصل **{studentName}** على: **{studentScore} من {examTotal}** ({percentage}%).\nشاكرين لكم حرصكم ومتابعتكم المستمرة لمستوى الطالب.\n\n📌 **يرجى الرد بكلمة (تم) لتأكيد الاستلام.**',
-    '📈 **إشعار نتيجة اختبار**:\nالطالب/ة: **{studentName}** | الاختبار: **{examName}**\n🎯 النتيجة المحققة: **{studentScore} من {examTotal}** ({percentage}%)\n\n📌 **الرجاء الرد بـ (تم) للتأكيد.**',
-    'تحية طيبة،\nنود إحاطتكم علمًا بنتيجة **{studentName}** في اختبار **{examName}**:\n📊 الدرجة: **{studentScore} من {examTotal}** ({percentage}%).\nمع تمنياتنا للطالب بدوام التوفيق والتقدم.\n\n📌 **الرجاء الرد بـ (تم) للاطلاع.**',
-    'أهلاً بحضرتك،\nنتيجة اختبار **{examName}** للطالب/ة **{studentName}**:\n📊 **{studentScore} من {examTotal}** ({percentage}%).\nنقدر دعمكم المتواصل لتطوير أداء الطالب.\n\n📌 **يرجى الرد بـ (تم) لتأكيد المتابعة.**',
-    '📌 **تقرير درجات الاختبار**:\nتم رصد نتيجة **{examName}** للطالب/ة **{studentName}**، وكانت الدرجة: **{studentScore} من {examTotal}** بنسبة ({percentage}%).\n\n📌 **الرجاء الرد بـ (تم) لتأكيد العلم.**'
+    'السلام عليكم ورحمة الله،\nتقرير نتيجة اختبار [**{examName}**] للطالب/ة: **{studentName}**\n📊 الدرجة: **{studentScore} من {examTotal}**\n\n📌 **الرجاء الرد بـ (تم) لتأكيد الاطلاع على النتيجة.**',
+    'أهلاً بحضرتك يا فندم،\nتم رصد درجات اختبار **{examName}**، وحصل **{studentName}** على: **{studentScore} من {examTotal}**.\nشاكرين لكم حرصكم ومتابعتكم المستمرة لمستوى الطالب.\n\n📌 **يرجى الرد بكلمة (تم) لتأكيد الاستلام.**',
+    '📈 **إشعار نتيجة اختبار**:\nالطالب/ة: **{studentName}** | الاختبار: **{examName}**\n🎯 النتيجة المحققة: **{studentScore} من {examTotal}**\n\n📌 **الرجاء الرد بـ (تم) للتأكيد.**',
+    'تحية طيبة،\nنود إحاطتكم علمًا بنتيجة **{studentName}** في اختبار **{examName}**:\n📊 الدرجة: **{studentScore} من {examTotal}**.\nمع تمنياتنا للطالب بدوام التوفيق والتقدم.\n\n📌 **الرجاء الرد بـ (تم) للاطلاع.**',
+    'أهلاً بحضرتك،\nنتيجة اختبار **{examName}** للطالب/ة **{studentName}**:\n📊 **{studentScore} من {examTotal}**.\nنقدر دعمكم المتواصل لتطوير أداء الطالب.\n\n📌 **يرجى الرد بـ (تم) لتأكيد المتابعة.**',
+    '📌 **تقرير درجات الاختبار**:\nتم رصد نتيجة **{examName}** للطالب/ة **{studentName}**، وكانت الدرجة: **{studentScore} من {examTotal}**.\n\n📌 **الرجاء الرد بـ (تم) لتأكيد العلم.**'
 ];
 
 const CACHE_KEY = 'whatsapp_dynamic_templates';
@@ -82,10 +82,18 @@ export async function pickTemplate(
         text = text.replace(new RegExp(`\\{${key}\\}`, 'g'), value);
     }
 
-    // Append teacher signature cleanly
+    // Append teacher signature cleanly: مع تحيات: أ/ [اسم المعلم] ([اسم المادة])
     if (replacements.teacherName) {
-        const cleanedName = replacements.teacherName.replace(/\s*\(.*?\)\s*/g, '').trim();
-        text += `\nمع تحيات: أ/ ${cleanedName}`;
+        let cleanName = replacements.teacherName.trim();
+        let subject = replacements.subject?.trim() || '';
+        const match = cleanName.match(/^(.*?)\s*\((.*?)\)$/);
+        if (match && match[1]) {
+            cleanName = match[1].trim();
+            if (!subject && match[2]) subject = match[2].trim();
+        }
+        cleanName = cleanName.replace(/^(أ\/|أ\.|الأستاذ\/|الأستاذ\s+)/, '').trim();
+        const signature = subject ? `أ/ ${cleanName} (${subject})` : `أ/ ${cleanName}`;
+        text += `\nمع تحيات: ${signature}`;
     }
 
     return { text, templateIdx: index };

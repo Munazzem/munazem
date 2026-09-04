@@ -803,7 +803,7 @@ export class PdfService {
                         if (isAttended) {
                             statusText = isGuest ? 'زائر' : (record.status === 'LATE' ? 'متأخر' : 'حاضر');
                         } else if (record.status === 'EXCUSED') {
-                            statusText = 'بعذر';
+                            statusText = 'معوض';
                         }
 
                         let hwColumn = '';
@@ -1085,7 +1085,7 @@ export class PdfService {
                                     if (status === AttendanceStatus.PRESENT || status === AttendanceStatus.LATE || isCompensated) {
                                         return `<td style="font-weight:bold; font-size: 15px; color: green;">✓</td>`;
                                     } else if (status === AttendanceStatus.EXCUSED) {
-                                        return `<td style="font-weight:bold; font-size: 11px; color: #0284c7;">عذر</td>`;
+                                        return `<td style="font-weight:bold; font-size: 11px; color: #0284c7;">معوض</td>`;
                                     } else {
                                         return `<td style="font-weight:bold; font-size: 15px; color: red;">✗</td>`;
                                     }

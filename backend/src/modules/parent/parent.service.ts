@@ -40,8 +40,8 @@ export class ParentService {
             { name: 1, cycle: 1 }
         ).lean();
 
-        // Teacher name
-        const teacher = await UserModel.findById(teacherId, { name: 1 }).lean();
+        // Teacher name & subject
+        const teacher = await UserModel.findById(teacherId, { name: 1, subject: 1 }).lean();
 
         // Attendance snapshots
         const snapshots = await AttendanceSnapshotModel.find({
@@ -101,11 +101,25 @@ export class ParentService {
             (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
         );
 
-        const presentCount = deduplicatedEntries.filter(
+        // Filter out redundant EXCUSED entries if compensated by a GUEST session
+        const guestCount = deduplicatedEntries.filter(e => e.status === 'GUEST').length;
+        let availableGuestCredits = guestCount;
+
+        const effectiveEntries = deduplicatedEntries.filter(e => {
+            if (e.status === AttendanceStatus.EXCUSED) {
+                if (availableGuestCredits > 0) {
+                    availableGuestCredits--;
+                    return false; // Suppress phantom compensated absence card
+                }
+            }
+            return true;
+        });
+
+        const presentCount = effectiveEntries.filter(
             e => e.status === AttendanceStatus.PRESENT || e.status === AttendanceStatus.LATE || e.status === 'GUEST' || e.status === AttendanceStatus.EXCUSED
         ).length;
-        const absentCount  = deduplicatedEntries.filter(e => e.status === AttendanceStatus.ABSENT).length;
-        const attendanceHistory = deduplicatedEntries.slice(0, 20).map(e => ({
+        const absentCount  = effectiveEntries.filter(e => e.status === AttendanceStatus.ABSENT).length;
+        const attendanceHistory = effectiveEntries.slice(0, 20).map(e => ({
             date: e.date,
             status: e.status,
             homeworkDone: e.homeworkDone ?? null,
@@ -143,7 +157,9 @@ export class ParentService {
             studentCode: student.studentCode,
             gradeLevel:  student.gradeLevel,
             groupName:   group?.name ?? '—',
+            teacherId:   teacherId?.toString(),
             teacherName: teacher?.name ?? '—',
+            subject:     (teacher as any)?.subject ?? undefined,
             isActive:    student.isActive,
             hasActiveSubscription,
             attendance: {

@@ -583,6 +583,11 @@ export class StudentService {
             if (!data.gradeLevel) {
                 updatePayload.gradeLevel = group.gradeLevel;
             }
+
+            const currentStudent = await StudentModel.findOne({ _id: studentId, teacherId }, { groupId: 1 }).lean();
+            if (currentStudent && currentStudent.groupId?.toString() !== data.groupId.toString()) {
+                (updatePayload as any).groupAssignedAt = new Date();
+            }
         }
 
         if (data.monthlySessionsQuota !== undefined && data.monthlySessionsQuota > 0) {
