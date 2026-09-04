@@ -54,5 +54,5 @@ afterAll(async () => {
     }
 
     // 4. Drain event loop to ensure any pending logging RPCs finish before worker teardown
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await new Promise((resolve) => setTimeout(resolve, 200));
 });

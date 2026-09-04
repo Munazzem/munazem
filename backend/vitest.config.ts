@@ -5,8 +5,8 @@ export default defineConfig({
         // ── Environment ──────────────────────────────────────────────────
         globals: true,          // describe, it, expect بدون imports
         environment: 'node',    // Node.js environment (مش jsdom)
+        silent: true,           // Suppress console log RPC during test runs & worker teardown
         onConsoleLog() {
-            // Suppress RPC console log streaming during worker teardown
             return false;
         },
 
