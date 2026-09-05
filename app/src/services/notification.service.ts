@@ -62,6 +62,8 @@ export const NotificationService = {
    */
   async getPushToken(): Promise<string | null> {
     try {
+      if (Platform.OS === 'web') return null;
+
       // In Expo Go SDK 53+, remote push notifications are not supported directly in Expo Go
       const isExpoGo =
         Constants.appOwnership === 'expo' ||

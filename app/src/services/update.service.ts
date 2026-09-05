@@ -1,5 +1,5 @@
 import * as Updates from 'expo-updates';
-import { AppState, AppStateStatus } from 'react-native';
+import { AppState, AppStateStatus, Platform } from 'react-native';
 
 export class UpdateService {
   private static isChecking = false;
@@ -9,7 +9,7 @@ export class UpdateService {
    * Safe to call anywhere: no-ops in development mode or web.
    */
   static async checkAndApplyUpdate(isForegroundEvent = false): Promise<boolean> {
-    if (__DEV__) return false;
+    if (Platform.OS === 'web' || __DEV__) return false;
     if (UpdateService.isChecking) return false;
 
     UpdateService.isChecking = true;
@@ -37,7 +37,7 @@ export class UpdateService {
    * Listen for app coming to the foreground to check for updates in the background.
    */
   static initForegroundUpdateListener(): () => void {
-    if (__DEV__) return () => {};
+    if (Platform.OS === 'web' || __DEV__) return () => {};
 
     const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
       if (nextState === 'active') {

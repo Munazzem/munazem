@@ -44,3 +44,6 @@ backend/docs/PRODUCTION.md
 # WhatsApp Session Cache (Hidden everywhere)
 **/.wwebjs_auth/
 **/.wwebjs_cache/
+
+# Independent Standalone Landing & PWA Repository
+landing/
