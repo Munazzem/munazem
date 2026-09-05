@@ -776,7 +776,7 @@ export default function SessionDetailPage() {
     ).length;
     const presentCount = regularPresentCount + guestCount;
     const compCount = attendanceRecords.filter(
-        (r) => (r as any).isCompensated || (r.status === 'EXCUSED' && (r.notes?.includes('معوّض') || r.notes?.includes('معوض')))
+        (r) => !r.isGuest && ((r as any).isCompensated || (r.status === 'EXCUSED' && (r.notes?.includes('معوّض') || r.notes?.includes('معوض'))))
     ).length;
     const excusedOtherCount = attendanceRecords.filter(
         (r) => r.status === 'EXCUSED' && !(r as any).isCompensated && !r.notes?.includes('معوّض') && !r.notes?.includes('معوض')
