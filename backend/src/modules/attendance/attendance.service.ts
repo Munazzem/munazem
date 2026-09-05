@@ -14,7 +14,7 @@ import type { RecordAttendanceDTO, BatchAttendanceDTO, SyncBatchAttendanceDTO } 
 import { enqueueWhatsApp } from '../../infrastructure/queues/whatsapp.queue.js';
 import { cache, CacheKeys } from '../../infrastructure/cache/cache.service.js';
 import mongoose from 'mongoose';
-import { startOfDayEgyptMs } from '../../common/utils/date.util.js';
+import { startOfDayEgyptMs, getEgyptParts, egyptDayBounds } from '../../common/utils/date.util.js';
 import { CardsService } from '../cards/cards.service.js';
 import { ParentPushService } from '../parent/parent-push.service.js';
 
@@ -25,9 +25,65 @@ const startOfDay = startOfDayEgyptMs;
 export class AttendanceService {
 
     /**
-     * Determine lookup window in days based on student's home group schedule.
-     * If group meets 2+ times a week: window is 4 days (covers 3-4 days between consecutive sessions).
-     * If group meets once a week (or schedule not set): window is 7 days.
+     * Determine compensation slot window based on group schedule and session date.
+     * In Egyptian tutoring centers:
+     * - Week starts on Saturday (السبت) and ends on Friday (الجمعة).
+     * - If group meets 2+ times a week:
+     *     Slot 1 (الحصة الأولى في الأسبوع): Saturday, Sunday, Monday
+     *     Slot 2 (الحصة الثانية في الأسبوع): Tuesday, Wednesday, Thursday, Friday
+     *   Compensation (retroactive or advance) is strictly restricted to the same slot of the same week.
+     *   No compensation across slots (Sat/Sun/Mon cannot compensate in Tue/Wed/Thu/Fri),
+     *   and no compensation across weeks.
+     * - If group meets once a week (or unscheduled):
+     *   Compensation window covers the entire academic week (Saturday 00:00 to Friday 23:59:59).
+     */
+    static async getCompensationWindow(
+        groupId: any,
+        sessionDate: Date | string
+    ): Promise<{ windowStart: Date; windowEnd: Date }> {
+        const group = groupId ? await GroupModel.findById(groupId, { schedule: 1 }).lean() : null;
+        const scheduleCount = group?.schedule?.length || 0;
+
+        const dateObj = typeof sessionDate === 'string' ? new Date(sessionDate) : sessionDate;
+        const parts = getEgyptParts(dateObj);
+        const utcDate = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 12, 0, 0));
+        const dayOfWeek = utcDate.getUTCDay(); // 0 = Sun, 1 = Mon, ..., 6 = Sat
+
+        // Days elapsed since Saturday (0 = Sat, 1 = Sun, 2 = Mon, 3 = Tue, 4 = Wed, 5 = Thu, 6 = Fri)
+        const daysSinceSaturday = (dayOfWeek + 1) % 7;
+
+        let startOffsetDays = 0;
+        let endOffsetDays = 0;
+
+        if (scheduleCount >= 2) {
+            if (daysSinceSaturday <= 2) {
+                // Slot 1: Saturday (offset 0) to Monday (offset 2)
+                startOffsetDays = -daysSinceSaturday;
+                endOffsetDays = 2 - daysSinceSaturday;
+            } else {
+                // Slot 2: Tuesday (offset 3) to Friday (offset 6)
+                startOffsetDays = 3 - daysSinceSaturday;
+                endOffsetDays = 6 - daysSinceSaturday;
+            }
+        } else {
+            // 1 session per week: Full academic week (Saturday to Friday)
+            startOffsetDays = -daysSinceSaturday;
+            endOffsetDays = 6 - daysSinceSaturday;
+        }
+
+        const startDateObj = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + startOffsetDays, 12, 0, 0));
+        const startParts = getEgyptParts(startDateObj);
+        const endDateObj = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + endOffsetDays, 12, 0, 0));
+        const endParts = getEgyptParts(endDateObj);
+
+        const { dayStart: windowStart } = egyptDayBounds(startParts.year, startParts.month, startParts.day);
+        const { dayEnd: windowEnd }     = egyptDayBounds(endParts.year, endParts.month, endParts.day);
+
+        return { windowStart, windowEnd };
+    }
+
+    /**
+     * Backward-compatible helper for legacy callers.
      */
     static async getCompensationWindowDays(groupId: any): Promise<number> {
         if (!groupId) return 7;
@@ -123,8 +179,7 @@ export class AttendanceService {
             // If student was marked ABSENT in their own group earlier,
             // convert the previous ABSENT record to EXCUSED (compensated), add to compensatedStudents in snapshot, and decrement consecutive absences.
             if (isGuest && (data.status === AttendanceStatus.PRESENT || data.status === AttendanceStatus.LATE)) {
-                const windowDays = await AttendanceService.getCompensationWindowDays(student.groupId);
-                const windowStart = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
+                const { windowStart, windowEnd } = await AttendanceService.getCompensationWindow(student.groupId || session.groupId, session.date);
                 const sidStr = student._id.toString();
 
                 // Fetch group names for bidirectional linking
@@ -138,7 +193,7 @@ export class AttendanceService {
                 const pastAbsentRecord = await AttendanceModel.findOne({
                     studentId: student._id,
                     status: AttendanceStatus.ABSENT,
-                    scannedAt: { $gte: windowStart }
+                    scannedAt: { $gte: windowStart, $lte: windowEnd }
                 }).sort({ scannedAt: -1 });
 
                 if (pastAbsentRecord) {
@@ -836,15 +891,7 @@ export class AttendanceService {
 
         // Check for advance-compensated students during active session
         if (session.status === SessionStatus.IN_PROGRESS || session.status === SessionStatus.SCHEDULED) {
-            const windowDays = await AttendanceService.getCompensationWindowDays(session.groupId);
-            const sessionDate = new Date(session.date);
-            const windowStart = new Date(sessionDate);
-            windowStart.setDate(windowStart.getDate() - windowDays);
-            windowStart.setHours(0, 0, 0, 0);
-
-            const windowEnd = new Date(sessionDate);
-            windowEnd.setDate(windowEnd.getDate() + windowDays);
-            windowEnd.setHours(23, 59, 59, 999);
+            const { windowStart, windowEnd } = await AttendanceService.getCompensationWindow(session.groupId, session.date);
 
             const allGroupStudents = await StudentModel.find(
                 { groupId: session.groupId, teacherId, isActive: true },
@@ -856,7 +903,12 @@ export class AttendanceService {
                 studentId: { $in: studentIds },
                 isGuest: true,
                 status: { $in: [AttendanceStatus.PRESENT, AttendanceStatus.LATE] },
-                scannedAt: { $gte: windowStart, $lte: windowEnd }
+                scannedAt: { $gte: windowStart, $lte: windowEnd },
+                $or: [
+                    { relatedSessionId: { $exists: false } },
+                    { relatedSessionId: null },
+                    { relatedSessionId: session._id }
+                ]
             }).sort({ scannedAt: -1 }).lean();
 
             const recordedSidSet = new Set(
@@ -961,22 +1013,19 @@ export class AttendanceService {
         const attendedSet = new Map(attendanceRecords.map(r => [r.studentId.toString(), r]));
 
         // Check for guest attendances in other groups within compensation window
-        const windowDays = await AttendanceService.getCompensationWindowDays(session.groupId);
-        const sessionDate = new Date(session.date);
-        const windowStart = new Date(sessionDate);
-        windowStart.setDate(windowStart.getDate() - windowDays);
-        windowStart.setHours(0, 0, 0, 0);
-
-        const windowEnd = new Date(sessionDate);
-        windowEnd.setDate(windowEnd.getDate() + windowDays);
-        windowEnd.setHours(23, 59, 59, 999);
+        const { windowStart, windowEnd } = await AttendanceService.getCompensationWindow(session.groupId, session.date);
 
         const studentIds = allStudents.map(s => s._id);
         const guestAttendances = await AttendanceModel.find({
             studentId: { $in: studentIds },
             isGuest: true,
             status: { $in: [AttendanceStatus.PRESENT, AttendanceStatus.LATE] },
-            scannedAt: { $gte: windowStart, $lte: windowEnd }
+            scannedAt: { $gte: windowStart, $lte: windowEnd },
+            $or: [
+                { relatedSessionId: { $exists: false } },
+                { relatedSessionId: null },
+                { relatedSessionId: session._id }
+            ]
         }).sort({ scannedAt: 1 }).lean();
 
         const compensatedMap = new Map<string, any>();
@@ -1062,6 +1111,21 @@ export class AttendanceService {
                                         relatedSessionId: relSessionId,
                                         relatedGroupName: relGroupName,
                                         relatedDate: relDate,
+                                    }
+                                }
+                            }
+                        });
+                    }
+
+                    if (compRecord && !compRecord.relatedSessionId) {
+                        attendanceRecordsToUpdate.push({
+                            updateOne: {
+                                filter: { _id: compRecord._id },
+                                update: {
+                                    $set: {
+                                        relatedSessionId: session._id,
+                                        relatedGroupName: group.name,
+                                        relatedDate: session.date,
                                     }
                                 }
                             }
@@ -1204,7 +1268,9 @@ export class AttendanceService {
         }
 
         // Get Price Snapshot if rolling over or first cycle (to freeze prices for the cycle)
-        if (cycleRolledOver || !group.cycle?.priceSnapshot) {
+        const isSnapshotEmpty = !group.cycle?.priceSnapshot || 
+            (priceSnapshot instanceof Map ? priceSnapshot.size === 0 : Object.keys(priceSnapshot || {}).length === 0);
+        if (cycleRolledOver || isSnapshotEmpty) {
             const priceSettings = await PriceSettingsModel.findOne({ teacherId: session.teacherId }).lean();
             const newSnapshot = new Map<string, number>();
             if (priceSettings?.prices) {
@@ -1220,9 +1286,13 @@ export class AttendanceService {
             { _id: 1, gradeLevel: 1, createdAt: 1 }
         ).lean();
 
+        const groupCustomPrice = (group as any)?.customPrice;
         const enrollmentOps = activeStudents.map(student => {
             // @ts-ignore - priceSnapshot can be Map or plain object depending on Mongoose version/hydration
-            const fullMonthPrice = (priceSnapshot instanceof Map ? priceSnapshot.get(student.gradeLevel) : priceSnapshot?.[student.gradeLevel]) || 0;
+            const snapshotPrice = priceSnapshot instanceof Map ? priceSnapshot.get(student.gradeLevel) : (priceSnapshot as any)?.[student.gradeLevel];
+            const fullMonthPrice = (groupCustomPrice != null && groupCustomPrice > 0)
+                ? groupCustomPrice
+                : (snapshotPrice || 0);
             const pricePerSession = capacity > 0 ? fullMonthPrice / capacity : 0;
             
             // Fixed full cycle price for all students - no automatic prorating
@@ -1488,6 +1558,7 @@ export class AttendanceService {
 
         // 1. Compensated students sync
         const compRecords = records.filter(r => 
+            !r.isGuest &&
             r.status === AttendanceStatus.EXCUSED && 
             (r.notes?.includes('معوّض') || r.notes?.includes('معوض') || !!(r as any).relatedSessionId)
         );
@@ -1584,6 +1655,19 @@ export class AttendanceService {
                         modified = true;
                     }
                 }
+            }
+        }
+
+        // 3. Ensure no guest students leak into compensatedStudents
+        if (snapshot.guestStudents && snapshot.guestStudents.length > 0 && snapshot.compensatedStudents && snapshot.compensatedStudents.length > 0) {
+            const guestSidSet = new Set(snapshot.guestStudents.map(g => g.studentId.toString()));
+            const prevLen = snapshot.compensatedStudents.length;
+            snapshot.compensatedStudents = snapshot.compensatedStudents.filter(
+                c => !guestSidSet.has(c.studentId.toString())
+            );
+            if (snapshot.compensatedStudents.length !== prevLen) {
+                snapshot.compensatedCount = snapshot.compensatedStudents.length;
+                modified = true;
             }
         }
 
@@ -1929,22 +2013,19 @@ export class AttendanceService {
         const attendedSet = new Map(records.map(r => [r.studentId.toString(), r]));
 
         // Check for guest attendances in other groups within compensation window
-        const windowDays = await AttendanceService.getCompensationWindowDays(session.groupId);
-        const sessionDate = new Date(session.date);
-        const windowStart = new Date(sessionDate);
-        windowStart.setDate(windowStart.getDate() - windowDays);
-        windowStart.setHours(0, 0, 0, 0);
-
-        const windowEnd = new Date(sessionDate);
-        windowEnd.setDate(windowEnd.getDate() + windowDays);
-        windowEnd.setHours(23, 59, 59, 999);
+        const { windowStart, windowEnd } = await AttendanceService.getCompensationWindow(session.groupId, session.date);
 
         const studentIds = allStudents.map(s => s._id);
         const guestAttendances = await AttendanceModel.find({
             studentId: { $in: studentIds },
             isGuest: true,
             status: { $in: [AttendanceStatus.PRESENT, AttendanceStatus.LATE] },
-            scannedAt: { $gte: windowStart, $lte: windowEnd }
+            scannedAt: { $gte: windowStart, $lte: windowEnd },
+            $or: [
+                { relatedSessionId: { $exists: false } },
+                { relatedSessionId: null },
+                { relatedSessionId: session._id }
+            ]
         }).sort({ scannedAt: -1 }).lean();
 
         const compensatedMap = new Map<string, any>();

@@ -156,6 +156,63 @@ export class PaymentsService {
             },
             { upsert: true, new: true, runValidators: true }
         ).lean();
+
+        // Auto-heal zero-priced enrollments and empty snapshots for ongoing cycles
+        if (data.prices && data.prices.length > 0) {
+            try {
+                const priceMap = new Map(data.prices.map(p => [p.gradeLevel, p.amount]));
+                const groups = await GroupModel.find({ teacherId, isActive: true }).lean();
+                for (const g of groups) {
+                    const currentCycle = g.cycle?.currentCycleNumber || 1;
+                    const groupCustomPrice = (g as any).customPrice;
+                    const standardFullCap = ((g.schedule?.length || 2) * 4) || 8;
+                    const cycleCap = g.cycle?.capacity || standardFullCap;
+
+                    const gradePrice = groupCustomPrice || priceMap.get(g.gradeLevel) || 0;
+                    if (gradePrice > 0) {
+                        const existingSnapshot = (g.cycle?.priceSnapshot as any) || {};
+                        const hasSnapshotForGrade = existingSnapshot instanceof Map 
+                            ? existingSnapshot.has(g.gradeLevel) 
+                            : (existingSnapshot[g.gradeLevel] != null);
+
+                        if (!hasSnapshotForGrade) {
+                            await GroupModel.findByIdAndUpdate(g._id, {
+                                $set: { [`cycle.priceSnapshot.${g.gradeLevel}`]: gradePrice }
+                            });
+                        }
+
+                        // Update zero-charge unpaid enrollments in current cycle
+                        const zeroEnrollments = await CycleEnrollmentModel.find({
+                            groupId: g._id,
+                            cycleNumber: currentCycle,
+                            totalPaid: 0,
+                            cycleCharge: 0,
+                            status: CycleEnrollmentStatus.UNPAID
+                        }).lean();
+
+                        if (zeroEnrollments.length > 0) {
+                            const pricePerSession = cycleCap > 0 ? gradePrice / cycleCap : 0;
+                            await CycleEnrollmentModel.updateMany(
+                                {
+                                    _id: { $in: zeroEnrollments.map(e => e._id) }
+                                },
+                                {
+                                    $set: {
+                                        fullCyclePrice: gradePrice,
+                                        pricePerSession,
+                                        cycleCharge: gradePrice,
+                                        remainingAmount: gradePrice
+                                    }
+                                }
+                            );
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error('[upsertPriceSettings] auto-heal error:', err);
+            }
+        }
+
         // Invalidate cached price settings
         await cache.del(CacheKeys.priceSettings(teacherId));
         return result;
@@ -325,6 +382,37 @@ export class PaymentsService {
                 enrollment.status = CycleEnrollmentStatus.PARTIALLY_PAID;
             } else {
                 enrollment.status = CycleEnrollmentStatus.UNPAID;
+            }
+        }
+
+        // Auto-heal existing enrollment if it was initialized with 0 charge (e.g. before price settings were configured)
+        if (enrollment && enrollment.cycleCharge === 0 && enrollment.totalPaid === 0 && enrollment.status === CycleEnrollmentStatus.UNPAID) {
+            let fullMonthPrice: number | null | undefined;
+            const groupCustomPrice = (group as any)?.customPrice;
+            if (groupCustomPrice != null && groupCustomPrice > 0) {
+                fullMonthPrice = groupCustomPrice;
+            }
+            if (fullMonthPrice == null || fullMonthPrice <= 0) {
+                const snapshotPrice = priceSnapshot instanceof Map
+                    ? priceSnapshot.get(student.gradeLevel)
+                    : (priceSnapshot as any)?.[student.gradeLevel];
+                if (snapshotPrice != null && snapshotPrice > 0) {
+                    fullMonthPrice = snapshotPrice;
+                }
+            }
+            if (fullMonthPrice == null || fullMonthPrice <= 0) {
+                const settings = await PriceSettingsModel.findOne({ teacherId }).lean();
+                try {
+                    fullMonthPrice = resolveOriginalAmount(undefined, student.gradeLevel, settings);
+                } catch (e) {}
+            }
+            if (fullMonthPrice && fullMonthPrice > 0) {
+                const standardFullCapacity = (group.schedule?.length || 2) * 4 || 8;
+                const pricePerSession = fullMonthPrice / standardFullCapacity;
+                enrollment.fullCyclePrice = fullMonthPrice;
+                enrollment.pricePerSession = pricePerSession;
+                enrollment.cycleCharge = fullMonthPrice;
+                enrollment.remainingAmount = fullMonthPrice;
             }
         }
 

@@ -15,6 +15,9 @@ const memoryFallback = new Map<string, string>();
 async function setItem(key: string, value: string): Promise<void> {
   try {
     if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem(key, value);
+      }
       memoryFallback.set(key, value);
       return;
     }
@@ -30,6 +33,10 @@ async function setItem(key: string, value: string): Promise<void> {
 async function getItem(key: string): Promise<string | null> {
   try {
     if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const stored = window.localStorage.getItem(key);
+        if (stored !== null) return stored;
+      }
       return memoryFallback.get(key) ?? null;
     }
     return await SecureStore.getItemAsync(key);
@@ -42,6 +49,9 @@ async function getItem(key: string): Promise<string | null> {
 async function deleteItem(key: string): Promise<void> {
   try {
     if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.removeItem(key);
+      }
       memoryFallback.delete(key);
       return;
     }

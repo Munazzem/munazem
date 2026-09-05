@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import Link from 'next/link';
 import { parentLookup } from '@/lib/api/parent';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,6 +18,12 @@ import {
     GraduationCap,
     Users,
     Sparkles,
+    Share,
+    PlusSquare,
+    Smartphone,
+    X,
+    RotateCcw,
+    Download
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
