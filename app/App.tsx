@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { I18nManager, View, ActivityIndicator, StyleSheet } from 'react-native';
+import { I18nManager, View, ActivityIndicator, StyleSheet, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer, NavigationContainerRef, LinkingOptions } from '@react-navigation/native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -128,7 +128,7 @@ export default function App() {
     Cairo_800ExtraBold,
   });
 
-  if (!fontsLoaded) {
+  if (!fontsLoaded && Platform.OS !== 'web') {
     return (
       <View style={styles.splashContainer}>
         <ActivityIndicator size="large" color={colors.primary} />
