@@ -374,7 +374,7 @@ export class StudentService {
             $or: [
                 { status: CycleEnrollmentStatus.PAID },
                 { totalPaid: { $gt: 0 } },
-                { remainingAmount: { $lte: 0 } }
+                { remainingAmount: { $lte: 0 }, cycleCharge: { $gt: 0 }, status: { $ne: CycleEnrollmentStatus.UNPAID } }
             ]
         }));
 
