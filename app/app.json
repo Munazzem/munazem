@@ -71,6 +71,18 @@
         "projectId": "9aa64a08-2aad-4799-946c-4cb7a9bf4798"
       }
     },
+    "web": {
+      "favicon": "./assets/icon.png",
+      "bundler": "metro",
+      "name": "منظم - ولي الأمر",
+      "shortName": "منظم",
+      "themeColor": "#0f4c81",
+      "backgroundColor": "#0f4c81",
+      "display": "standalone",
+      "orientation": "portrait",
+      "dir": "rtl",
+      "lang": "ar"
+    },
     "owner": "aymans1"
   }
 }

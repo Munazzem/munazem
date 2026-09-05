@@ -731,7 +731,7 @@ export class ReportsService {
         const studentsListWithStatus = students.map(s => {
             const sid = s._id.toString();
             const enrollment = enrollmentMap.get(sid);
-            const isPaid = (enrollment && (enrollment.status === CycleEnrollmentStatus.PAID || enrollment.remainingAmount <= 0 || (enrollment.totalPaid && enrollment.totalPaid > 0))) || paidTxSet.has(sid);
+            const isPaid = (enrollment && (enrollment.status === CycleEnrollmentStatus.PAID || (enrollment.cycleCharge > 0 && enrollment.remainingAmount <= 0 && enrollment.status !== CycleEnrollmentStatus.UNPAID) || (enrollment.totalPaid && enrollment.totalPaid > 0))) || paidTxSet.has(sid);
 
             if (isPaid) paidStudentsCount++;
 

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 // Public routes that don't require an authentication token
-const PUBLIC_ROUTES = ['/login', '/parent'];
+const PUBLIC_ROUTES = ['/login', '/parent', '/parent-app', '/download', '/app', '/downloads', '/api/download'];
 
 export function middleware(request: NextRequest) {
     const { pathname } = request.nextUrl;
