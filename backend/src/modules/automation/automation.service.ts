@@ -15,6 +15,7 @@ function egyptToday(): Date {
 
 function formatDateAr(date: Date): string {
     return date.toLocaleDateString('ar-EG', {
+        timeZone: 'Africa/Cairo',
         weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
     });
 }

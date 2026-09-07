@@ -14,7 +14,7 @@ import type { RecordAttendanceDTO, BatchAttendanceDTO, SyncBatchAttendanceDTO } 
 import { enqueueWhatsApp } from '../../infrastructure/queues/whatsapp.queue.js';
 import { cache, CacheKeys } from '../../infrastructure/cache/cache.service.js';
 import mongoose from 'mongoose';
-import { startOfDayEgyptMs, getEgyptParts, egyptDayBounds } from '../../common/utils/date.util.js';
+import { startOfDayEgyptMs, getEgyptParts, egyptDayBounds, formatTimeEgypt, format24hToEgypt12h, formatDateEgypt } from '../../common/utils/date.util.js';
 import { CardsService } from '../cards/cards.service.js';
 import { ParentPushService } from '../parent/parent-push.service.js';
 
@@ -928,7 +928,7 @@ export class AttendanceService {
                             isGuest: false,
                             isCompensated: true,
                             scannedAt: g.scannedAt,
-                            notes: `معوّض مسبقاً — حضر كزائر بتاريخ ${new Date(g.scannedAt).toLocaleDateString('ar-EG')}`,
+                            notes: `معوّض مسبقاً — حضر كزائر بتاريخ ${formatDateEgypt(g.scannedAt)}`,
                             homeworkDone: g.homeworkDone ?? null,
                             relatedSessionId: g.sessionId,
                             relatedDate: g.scannedAt,
@@ -1084,7 +1084,7 @@ export class AttendanceService {
 
                     const excuseNote = (record && record.notes)
                         ? record.notes
-                        : `معوّض مسبقاً — حضر كزائر في مجموعة أخرى بتاريخ ${new Date(compRecord?.scannedAt || session.date).toLocaleDateString('ar-EG')}`;
+                        : `معوّض مسبقاً — حضر كزائر في مجموعة أخرى بتاريخ ${formatDateEgypt(compRecord?.scannedAt || session.date)}`;
 
                     if (!record) {
                         excusedAttendanceDocsToInsert.push({
@@ -1252,19 +1252,80 @@ export class AttendanceService {
         let startedAt = group.cycle?.startedAt ?? new Date();
         let priceSnapshot = group.cycle?.priceSnapshot ?? new Map<string, number>();
 
-        currentSessionNumber++;
+        // Check if there are completed sessions with date/time later than this session (retroactive completion)
+        const laterCompletedSession = await SessionModel.findOne({
+            groupId: group._id,
+            status: SessionStatus.COMPLETED,
+            _id: { $ne: sessionId },
+            $or: [
+                { date: { $gt: session.date } },
+                { date: session.date, startTime: { $gt: session.startTime } }
+            ]
+        }).select('_id').lean();
+
+        let sessionCycleNumber = currentCycleNumber;
+        let sessionSessionNumber = currentSessionNumber;
         let cycleRolledOver = false;
-        
-        if (currentSessionNumber > capacity) {
-            currentSessionNumber = 1;
-            currentCycleNumber++;
-            startedAt = new Date();
-            cycleRolledOver = true;
-            // Any custom quota was for that specific cycle only. The new cycle reverts to a full cycle.
-            capacity = defaultFullCapacity;
-        } else if (!group.cycle || (currentSessionNumber === 1 && !group.cycle.startedAt)) {
-            startedAt = new Date();
-            cycleRolledOver = true;
+        const retroactiveSessionUpdates: any[] = [];
+
+        if (laterCompletedSession) {
+            // Retroactive completion: Re-sequence all completed sessions in chronological order
+            const allGroupSessions = await SessionModel.find({
+                groupId: group._id,
+                $or: [
+                    { status: SessionStatus.COMPLETED },
+                    { _id: sessionId }
+                ]
+            })
+            .sort({ date: 1, startTime: 1 })
+            .select('_id date startTime cycleContext')
+            .lean();
+
+            const cycle1Cap = group.cycle?.capacity || defaultFullCapacity;
+            let cNum = 1;
+            let sNum = 0;
+            let capForC = cycle1Cap;
+
+            for (const s of allGroupSessions) {
+                sNum++;
+                if (sNum > capForC) {
+                    cNum++;
+                    sNum = 1;
+                    capForC = defaultFullCapacity;
+                }
+                if (s._id.toString() === sessionId.toString()) {
+                    sessionCycleNumber = cNum;
+                    sessionSessionNumber = sNum;
+                } else if (!s.cycleContext || s.cycleContext.cycleNumber !== cNum || s.cycleContext.sessionNumber !== sNum) {
+                    retroactiveSessionUpdates.push({
+                        updateOne: {
+                            filter: { _id: s._id },
+                            update: { $set: { cycleContext: { cycleNumber: cNum, sessionNumber: sNum } } }
+                        }
+                    });
+                }
+            }
+
+            // The group cycle state is set to the latest completed session
+            currentCycleNumber = cNum;
+            currentSessionNumber = sNum;
+            capacity = capForC;
+            cycleRolledOver = false;
+        } else {
+            currentSessionNumber++;
+            if (currentSessionNumber > capacity) {
+                currentSessionNumber = 1;
+                currentCycleNumber++;
+                startedAt = new Date();
+                cycleRolledOver = true;
+                // Any custom quota was for that specific cycle only. The new cycle reverts to a full cycle.
+                capacity = defaultFullCapacity;
+            } else if (!group.cycle || (currentSessionNumber === 1 && !group.cycle.startedAt)) {
+                startedAt = new Date();
+                cycleRolledOver = true;
+            }
+            sessionCycleNumber = currentCycleNumber;
+            sessionSessionNumber = currentSessionNumber;
         }
 
         // Get Price Snapshot if rolling over or first cycle (to freeze prices for the cycle)
@@ -1352,6 +1413,10 @@ export class AttendanceService {
                 await CycleEnrollmentModel.bulkWrite(enrollmentOps, { session: dbSession });
             }
 
+            if (retroactiveSessionUpdates.length > 0) {
+                await SessionModel.bulkWrite(retroactiveSessionUpdates, { session: dbSession });
+            }
+
             if (cycleRolledOver) {
                 // When a new cycle starts, revert student session quota to full default cycle
                 await StudentModel.updateMany(
@@ -1398,7 +1463,7 @@ export class AttendanceService {
                     sessionId,
                     { 
                         status: SessionStatus.COMPLETED,
-                        cycleContext: { cycleNumber: currentCycleNumber, sessionNumber: currentSessionNumber }
+                        cycleContext: { cycleNumber: sessionCycleNumber, sessionNumber: sessionSessionNumber }
                     },
                     { new: true, session: dbSession }
                 ).lean(),
@@ -2044,7 +2109,7 @@ export class AttendanceService {
             return clean;
         };
 
-        const shortDate = session.date.toLocaleDateString('ar-EG', { month: 'short', day: 'numeric' });
+        const shortDate = formatDateEgypt(session.date, { month: 'short', day: 'numeric' });
 
         return allStudents.map(student => {
             const record = attendedSet.get(student._id.toString());
@@ -2057,7 +2122,7 @@ export class AttendanceService {
 
             if (isCompensated) {
                 const compRecord = compensatedMap.get(student._id.toString());
-                const compDateStr = compRecord?.scannedAt ? new Date(compRecord.scannedAt).toLocaleDateString('ar-EG', { month: 'short', day: 'numeric' }) : '';
+                const compDateStr = compRecord?.scannedAt ? formatDateEgypt(compRecord.scannedAt, { month: 'short', day: 'numeric' }) : '';
                 message = `السلام عليكم ورحمة الله،\nنحيطكم علمًا بأن الطالب/ة: **${student.studentName}** قد أتم تعويض حصة [${groupName}] بحضوره في موعد سابق${compDateStr ? ` بتاريخ ${compDateStr}` : ''}.\n\nبالتوفيق دائمًا.${signature}`;
                 const encodedMessage = encodeURIComponent(message);
 
@@ -2071,7 +2136,9 @@ export class AttendanceService {
             }
 
             if (isPresent) {
-                const timeStr = record?.scannedAt ? new Date(record.scannedAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : '';
+                const timeStr = record?.scannedAt
+                    ? formatTimeEgypt(record.scannedAt)
+                    : (session.startTime ? format24hToEgypt12h(session.startTime) : '');
                 let homeworkLine = '';
                 if (isHomeworkTrackingEnabled && typeof record?.homeworkDone === 'boolean') {
                     homeworkLine = record.homeworkDone
@@ -2080,10 +2147,10 @@ export class AttendanceService {
                 }
 
                 const PRESENT_TEMPLATES = [
-                    `السلام عليكم ورحمة الله،\nنحيطكم علمًا بحضور الطالب/ة: **${student.studentName}** لحصة [${groupName}] بتاريخ ${shortDate} (وقت الوصول: ${timeStr}).${homeworkLine}\n\n📌 **الرجاء الرد بـ (تم) للتأكيد والاستلام.**${signature}`,
-                    `أهلاً بحضرتك،\nتم بنجاح تسجيل حضور **${student.studentName}** لحصة اليوم [${groupName}].${homeworkLine}\n\n📌 **يرجى الرد بـ (تم) لتأكيد الاطلاع.**${signature}`,
+                    `السلام عليكم ورحمة الله،\nنحيطكم علمًا بحضور الطالب/ة: **${student.studentName}** لحصة [${groupName}] بتاريخ ${shortDate}${timeStr ? ` (وقت الوصول: ${timeStr})` : ''}.${homeworkLine}\n\n📌 **الرجاء الرد بـ (تم) للتأكيد والاستلام.**${signature}`,
+                    `أهلاً بحضرتك،\nتم بنجاح تسجيل حضور **${student.studentName}** لحصة اليوم [${groupName}]${timeStr ? ` (الساعة ${timeStr})` : ''}.${homeworkLine}\n\n📌 **يرجى الرد بـ (تم) لتأكيد الاطلاع.**${signature}`,
                     `تحية طيبة،\nنود إعلامكم بتواجد الطالب/ة **${student.studentName}** في مجموعة [${groupName}] بتاريخ ${shortDate}.${homeworkLine}\n\n📌 **الرجاء الرد بكلمة (تم) للتأكيد.**\nبالتوفيق دائمًا.${signature}`,
-                    `السلام عليكم،\nتم رصد حضور **${student.studentName}** في موعد الحصة اليوم [${groupName}].${homeworkLine}\n\n📌 **الرجاء الرد بـ (تم) للتأكيد.**${signature}`,
+                    `السلام عليكم،\nتم رصد حضور **${student.studentName}** في موعد الحصة اليوم [${groupName}]${timeStr ? ` (الساعة ${timeStr})` : ''}.${homeworkLine}\n\n📌 **الرجاء الرد بـ (تم) للتأكيد.**${signature}`,
                 ];
                 message = PRESENT_TEMPLATES[Math.floor(Math.random() * PRESENT_TEMPLATES.length)] as string;
             } else {

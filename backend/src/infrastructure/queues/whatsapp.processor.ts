@@ -28,6 +28,7 @@ let _worker: Worker<WhatsAppJobData> | null = null;
 async function buildMessage(data: WhatsAppJobData): Promise<{ message: string; templateIdx: number }> {
     if (data.kind === 'session_absent') {
         const date = new Date(data.sessionDate).toLocaleDateString('ar-EG', {
+            timeZone: 'Africa/Cairo',
             weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
         });
         const replacements = {
@@ -43,6 +44,7 @@ async function buildMessage(data: WhatsAppJobData): Promise<{ message: string; t
 
     // kind === 'exam_result'
     const date = new Date(data.examDate).toLocaleDateString('ar-EG', {
+        timeZone: 'Africa/Cairo',
         year: 'numeric', month: 'long', day: 'numeric',
     });
     const replacements = {

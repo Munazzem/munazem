@@ -301,6 +301,7 @@ export class ParentPushService {
 
     // ── Build notification content ─────────────────────────────────────────
     const dateStr = new Date(sessionDate).toLocaleDateString('ar-EG', {
+      timeZone: 'Africa/Cairo',
       weekday: 'long',
       day: 'numeric',
       month: 'long',
@@ -407,6 +408,7 @@ export class ParentPushService {
     const signature = teacherSig ? `\nمع تحيات: ${teacherSig}` : '';
 
     const dateStr = new Date(missedSessionDate).toLocaleDateString('ar-EG', {
+      timeZone: 'Africa/Cairo',
       weekday: 'long',
       day: 'numeric',
       month: 'long',
