@@ -5,7 +5,10 @@ import {
     startOfDayEgypt,
     startOfDayEgyptMs,
     todayEgypt,
-    resolveTransactionDate
+    resolveTransactionDate,
+    formatTimeEgypt,
+    format24hToEgypt12h,
+    formatDateEgypt
 } from '../../src/common/utils/date.util.js';
 
 describe('Africa/Cairo Timezone & DST Unit Tests', () => {
@@ -68,5 +71,25 @@ describe('Africa/Cairo Timezone & DST Unit Tests', () => {
         const summerDate = new Date('2026-08-15T14:30:00.000Z');
         const summerMs = startOfDayEgyptMs(summerDate);
         expect(summerMs).toBe(new Date('2026-08-14T21:00:00.000Z').getTime());
+    });
+
+    it('formatTimeEgypt formats UTC dates into Cairo 12-hour local time correctly', () => {
+        // 14:30:09 UTC in summer (UTC+3) -> 17:30 (05:30 م)
+        const summerScan = new Date('2026-09-07T14:30:09.000Z');
+        const formattedSummer = formatTimeEgypt(summerScan);
+        expect(formattedSummer).toBe('05:30 م');
+
+        // 14:30:00 UTC in winter (UTC+2) -> 16:30 (04:30 م)
+        const winterScan = new Date('2026-01-15T14:30:00.000Z');
+        const formattedWinter = formatTimeEgypt(winterScan);
+        expect(formattedWinter).toBe('04:30 م');
+    });
+
+    it('format24hToEgypt12h converts 24h schedule strings into 12h Arabic format', () => {
+        expect(format24hToEgypt12h('17:00')).toBe('05:00 م');
+        expect(format24hToEgypt12h('17:30')).toBe('05:30 م');
+        expect(format24hToEgypt12h('09:00')).toBe('09:00 ص');
+        expect(format24hToEgypt12h('12:00')).toBe('12:00 م');
+        expect(format24hToEgypt12h('00:00')).toBe('12:00 ص');
     });
 });

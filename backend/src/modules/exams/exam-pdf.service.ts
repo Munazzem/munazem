@@ -312,7 +312,7 @@ export class ExamPdfService {
                     <div class="header-info">
                         <div class="header-row">
                             <div class="header-item">الأستاذ: <span>${teacher.name}</span></div>
-                            <div class="header-item">التاريخ: <span>${new Date(exam.date).toLocaleDateString('ar-EG')}</span></div>
+                            <div class="header-item">التاريخ: <span>${new Date(exam.date).toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo' })}</span></div>
                         </div>
                         <div class="header-row">
                             <div class="header-item name-field">اسم الطالب: <span class="name-dots"></span></div>
