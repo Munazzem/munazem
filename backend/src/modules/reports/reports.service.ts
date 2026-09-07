@@ -536,7 +536,7 @@ export class ReportsService {
                 sessionId: entry.sessionId,
                 date: entry.date,
                 status: entry.status,
-                homeworkDone: entry.homeworkDone ?? null
+                homeworkDone: isHomeworkEnabled ? (entry.homeworkDone ?? null) : null
             });
         });
 
