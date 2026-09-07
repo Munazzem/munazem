@@ -373,7 +373,6 @@ export class StudentService {
             cycleNumber: g.cycle?.currentCycleNumber || 1,
             $or: [
                 { status: CycleEnrollmentStatus.PAID },
-                { totalPaid: { $gt: 0 } },
                 { remainingAmount: { $lte: 0 }, cycleCharge: { $gt: 0 }, status: { $ne: CycleEnrollmentStatus.UNPAID } }
             ]
         }));
@@ -386,22 +385,6 @@ export class StudentService {
 
             for (const e of enrollments) {
                 paidIds.add(e.studentId.toString());
-            }
-        }
-
-        // Also check if any subscription transaction was recorded for the current cycle
-        const txConditions = groups.map(g => ({
-            cycleNumber: g.cycle?.currentCycleNumber || 1
-        }));
-        if (txConditions.length > 0) {
-            const txs = await TransactionModel.find({
-                teacherId,
-                category: TransactionCategory.SUBSCRIPTION,
-                $or: txConditions
-            }, { studentId: 1 }).lean();
-
-            for (const t of txs) {
-                if (t.studentId) paidIds.add(t.studentId.toString());
             }
         }
 

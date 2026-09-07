@@ -137,3 +137,40 @@ export function resolveTransactionDate(dateStr?: string): Date {
     }
     return new Date(dateStr);
 }
+
+/**
+ * Formats a Date object or timestamp into 12-hour Arabic time in Egypt timezone (e.g. "05:30 م").
+ */
+export function formatTimeEgypt(date: Date | string | number): string {
+    return new Date(date).toLocaleTimeString('ar-EG-u-nu-latn', {
+        timeZone: EGYPT_TIMEZONE,
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+}
+
+/**
+ * Converts a 24-hour time string (e.g. "17:00") into 12-hour Arabic string (e.g. "05:00 م").
+ */
+export function format24hToEgypt12h(time24?: string): string {
+    if (!time24) return '';
+    const parts = time24.split(':');
+    const h = parseInt(parts[0] || '0', 10);
+    const m = parseInt(parts[1] || '0', 10);
+    if (isNaN(h) || isNaN(m)) return time24;
+    const period = h >= 12 ? 'م' : 'ص';
+    const h12 = h % 12 || 12;
+    const hFormatted = String(h12).padStart(2, '0');
+    const mFormatted = String(m).padStart(2, '0');
+    return `${hFormatted}:${mFormatted} ${period}`;
+}
+
+/**
+ * Formats a Date object or timestamp into an Arabic date string in Egypt timezone.
+ */
+export function formatDateEgypt(date: Date | string | number, options?: Intl.DateTimeFormatOptions): string {
+    return new Date(date).toLocaleDateString('ar-EG', {
+        timeZone: EGYPT_TIMEZONE,
+        ...options,
+    });
+}

@@ -300,6 +300,7 @@ export class ParentAppService {
     );
 
     const todayDate = new Date().toLocaleDateString('ar-EG', {
+      timeZone: 'Africa/Cairo',
       weekday: 'long',
       day: 'numeric',
       month: 'long',
