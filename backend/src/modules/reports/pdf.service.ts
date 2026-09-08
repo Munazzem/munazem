@@ -883,7 +883,10 @@ export class PdfService {
         const sessions = await SessionModel.find({
             groupId,
             teacherId,
-            date: { $gte: cycleStartedAt },
+            $or: [
+                { 'cycleContext.cycleNumber': currentCycleNumber },
+                { 'cycleContext.cycleNumber': { $exists: false }, date: { $gte: cycleStartedAt } }
+            ],
             status: { $ne: SessionStatus.CANCELLED }
         }).sort({ date: 1, startTime: 1 }).limit(cycleCapacity).lean();
 

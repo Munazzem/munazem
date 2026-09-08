@@ -38,9 +38,11 @@ export const FinanceScreen: React.FC<Props> = ({ route }) => {
     enabled: !!queryStudentId,
   });
 
-  const totalPaid   = records.reduce((s, r) => s + r.totalPaid, 0);
-  const totalRemain = records.reduce((s, r) => s + r.remainingAmount, 0);
-  const hasDebt     = totalRemain > 0;
+  const totalPaid     = records.reduce((s, r) => s + r.totalPaid, 0);
+  const totalDiscount = records.reduce((s, r) => s + (r.totalDiscount || 0), 0);
+  const totalRemain   = records.reduce((s, r) => s + r.remainingAmount, 0);
+  const hasDebt       = totalRemain > 0;
+  const hasDiscount   = totalDiscount > 0;
 
   // Collect unique payments from records for this teacher, sorted by date desc
   const paymentMap = new Map<string, any>();
@@ -85,20 +87,29 @@ export const FinanceScreen: React.FC<Props> = ({ route }) => {
           {/* Summary Bar */}
           <View style={[s.summaryCard, { borderColor: hasDebt ? colors.absentLight : colors.presentLight }]}>
             <View style={s.summaryItem}>
-              <Text style={[s.summaryValue, { color: colors.present }]}>{totalPaid} ج</Text>
+              <Text style={[s.summaryValue, hasDiscount && s.summaryValueSm, { color: colors.present }]}>{totalPaid} ج</Text>
               <Text style={s.summaryLabel}>إجمالي المدفوع</Text>
             </View>
+            {hasDiscount && (
+              <>
+                <View style={s.summaryDivider} />
+                <View style={s.summaryItem}>
+                  <Text style={[s.summaryValue, s.summaryValueSm, { color: colors.warning }]}>{totalDiscount} ج</Text>
+                  <Text style={s.summaryLabel}>إجمالي الخصم</Text>
+                </View>
+              </>
+            )}
             <View style={s.summaryDivider} />
             <View style={s.summaryItem}>
-              <Text style={[s.summaryValue, { color: hasDebt ? colors.absent : colors.textMuted }]}>
+              <Text style={[s.summaryValue, hasDiscount && s.summaryValueSm, { color: hasDebt ? colors.absent : colors.textMuted }]}>
                 {totalRemain} ج
               </Text>
               <Text style={s.summaryLabel}>إجمالي المتبقي</Text>
             </View>
             <View style={s.statusIcon}>
               {hasDebt
-                ? <AlertTriangle size={30} color={colors.absent} />
-                : <CheckCircle2 size={30} color={colors.present} />}
+                ? <AlertTriangle size={hasDiscount ? 24 : 30} color={colors.absent} />
+                : <CheckCircle2 size={hasDiscount ? 24 : 30} color={colors.present} />}
             </View>
           </View>
 
@@ -127,8 +138,15 @@ export const FinanceScreen: React.FC<Props> = ({ route }) => {
                   <View key={p.id} style={[s.payRow, i < allPayments.length - 1 && s.payBorder]}>
                     <View style={s.payRight}>
                       <Text style={s.payAmount}>{p.amount} ج</Text>
-                      <View style={[s.payBadge, { backgroundColor: colors.presentLight }]}>
-                        <Text style={[s.payBadgeText, { color: colors.present }]}>مدفوع</Text>
+                      <View style={s.payBadgesRow}>
+                        <View style={[s.payBadge, { backgroundColor: colors.presentLight }]}>
+                          <Text style={[s.payBadgeText, { color: colors.present }]}>مدفوع</Text>
+                        </View>
+                        {(p.discount || 0) > 0 && (
+                          <View style={[s.payBadge, { backgroundColor: colors.warningLight }]}>
+                            <Text style={[s.payBadgeText, { color: colors.warningDark }]}>خصم: {p.discount} ج</Text>
+                          </View>
+                        )}
                       </View>
                     </View>
                     <View style={s.payLeft}>
@@ -171,11 +189,16 @@ const CycleCard: React.FC<{ record: FinancialRecord }> = ({ record }) => (
       <InfoItem label="سعر الدورة" value={`${record.fullCyclePrice} ج`} />
     </View>
 
-    {/* Paid / Remaining chips */}
+    {/* Paid / Remaining / Discount chips */}
     <View style={c.finRow}>
       <View style={[c.chip, { backgroundColor: colors.presentLight }]}>
         <Text style={[c.chipText, { color: colors.present }]}>مدفوع: {record.totalPaid} ج</Text>
       </View>
+      {(record.totalDiscount || 0) > 0 && (
+        <View style={[c.chip, { backgroundColor: colors.warningLight }]}>
+          <Text style={[c.chipText, { color: colors.warningDark }]}>خصم: {record.totalDiscount} ج</Text>
+        </View>
+      )}
       {record.remainingAmount > 0 && (
         <View style={[c.chip, { backgroundColor: colors.absentLight }]}>
           <Text style={[c.chipText, { color: colors.absent }]}>متبقي: {record.remainingAmount} ج</Text>
@@ -224,6 +247,7 @@ const s = StyleSheet.create({
   },
   summaryItem: { flex: 1, alignItems: 'center' },
   summaryValue: { fontFamily: typography.extraBold, fontSize: 24 },
+  summaryValueSm: { fontSize: 18 },
   summaryLabel: { fontFamily: typography.regular, fontSize: 11, color: colors.textSecondary, marginTop: 2 },
   summaryDivider: { width: 1, height: 44, backgroundColor: colors.borderLight, marginHorizontal: spacing.sm },
   statusIcon: { marginLeft: spacing.md },
@@ -258,6 +282,7 @@ const s = StyleSheet.create({
   payBorder: { borderBottomWidth: 1, borderBottomColor: colors.borderLight },
   payRight: { alignItems: 'flex-end', gap: 4 },
   payAmount: { fontFamily: typography.extraBold, fontSize: 17, color: colors.present },
+  payBadgesRow: { flexDirection: 'row-reverse', gap: 4, alignItems: 'center' },
   payBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 99 },
   payBadgeText: { fontFamily: typography.bold, fontSize: 11 },
   payLeft: { alignItems: 'flex-end' },
@@ -295,7 +320,7 @@ const c = StyleSheet.create({
   infoItem: { alignItems: 'center', flex: 1 },
   infoValue: { fontFamily: typography.bold, fontSize: 16, color: colors.text },
   infoLabel: { fontFamily: typography.regular, fontSize: 11, color: colors.textSecondary, marginTop: 2 },
-  finRow: { flexDirection: 'row-reverse', gap: spacing.sm },
+  finRow: { flexDirection: 'row-reverse', gap: spacing.sm, flexWrap: 'wrap' },
   chip: { paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: borderRadius.full },
   chipText: { fontFamily: typography.bold, fontSize: 12 },
 });

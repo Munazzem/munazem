@@ -697,22 +697,29 @@ export class ParentAppService {
         .lean();
 
       if (enrollments.length === 0) {
+        const unassignedPayments = transactions.map((t: any) => ({
+          id: t._id.toString(),
+          amount: t.paidAmount || 0,
+          discount: t.discountAmount || 0,
+          date: t.date?.toISOString(),
+          description: t.description || 'سداد اشتراك',
+        }));
+        const totalDiscount = unassignedPayments.reduce((s: number, p: any) => s + (p.discount || 0), 0);
+        const totalPaid = unassignedPayments.reduce((s: number, p: any) => s + (p.amount || 0), 0);
+
         results.push({
           cycleNumber: student.cycleNumber || 1,
           cycleCapacity: student.cycleCapacity || 8,
           sessionsConsumed: student.remainingSessions ? Math.max(0, (student.cycleCapacity || 8) - student.remainingSessions) : 0,
           fullCyclePrice: student.totalDebt || 0,
-          totalPaid: 0,
+          totalPaid,
+          totalDiscount,
+          settledAmount: totalPaid + totalDiscount,
           remainingAmount: student.totalDebt || 0,
           status: (student.totalDebt || 0) > 0 ? 'UNPAID' : 'PAID',
           subject: (student.teacherId as any)?.subject || 'مادة',
           teacherName: (student.teacherId as any)?.name || 'المعلم',
-          payments: transactions.map((t: any) => ({
-            id: t._id.toString(),
-            amount: t.paidAmount,
-            date: t.date?.toISOString(),
-            description: t.description || 'سداد اشتراك',
-          })),
+          payments: unassignedPayments,
         });
       } else {
         const assignedTxIds = new Set<string>();
@@ -724,18 +731,26 @@ export class ParentAppService {
               assignedTxIds.add(t._id.toString());
               return {
                 id: t._id.toString(),
-                amount: t.paidAmount,
+                amount: t.paidAmount || 0,
+                discount: t.discountAmount || 0,
                 date: t.date?.toISOString(),
                 description: t.description || 'سداد اشتراك',
               };
             });
+
+          const cycleTotalDiscount = cyclePayments.reduce((s, p) => s + (p.discount || 0), 0);
+          // In CycleEnrollmentModel, totalPaid tracks settled portion (paidAmount + discountAmount)
+          // Actual cash paid = settled amount minus discounts
+          const actualPaid = Math.max(0, (e.totalPaid || 0) - cycleTotalDiscount);
 
           return {
             cycleNumber: e.cycleNumber,
             cycleCapacity: e.cycleCapacity || 8,
             sessionsConsumed: (e as any).sessionsConsumed || e.chargeableSessions || 0,
             fullCyclePrice: e.fullCyclePrice || 0,
-            totalPaid: e.totalPaid || 0,
+            totalPaid: actualPaid,
+            totalDiscount: cycleTotalDiscount,
+            settledAmount: e.totalPaid || 0,
             remainingAmount: e.remainingAmount || 0,
             status: e.status,
             subject: (student.teacherId as any)?.subject || 'مادة',
@@ -748,12 +763,16 @@ export class ParentAppService {
         const unassigned = transactions.filter((t: any) => !assignedTxIds.has(t._id.toString()));
         const latestCycle = studentCycleRecords[0];
         if (unassigned.length > 0 && latestCycle) {
-          latestCycle.payments.push(...unassigned.map((t: any) => ({
+          const unassignedPayments = unassigned.map((t: any) => ({
             id: t._id.toString(),
-            amount: t.paidAmount,
+            amount: t.paidAmount || 0,
+            discount: t.discountAmount || 0,
             date: t.date?.toISOString(),
             description: t.description || 'سداد اشتراك',
-          })));
+          }));
+          latestCycle.payments.push(...unassignedPayments);
+          const unassignedDiscount = unassignedPayments.reduce((s, p) => s + (p.discount || 0), 0);
+          latestCycle.totalDiscount = (latestCycle.totalDiscount || 0) + unassignedDiscount;
         }
 
         results.push(...studentCycleRecords);
