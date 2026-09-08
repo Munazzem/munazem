@@ -108,15 +108,18 @@ examsRouter.patch(
     }
 );
 
-// DELETE /exams/:id — Delete DRAFT exam (Teacher + Assistant)
+// DELETE /exams/:id — Delete exam (Teacher + Assistant, Draft or Published with cascade)
 examsRouter.delete(
     '/:id',
     authorizeRoles(UserRole.teacher, UserRole.assistant),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const teacherId = resolveTeacherId(req.user);
-            await ExamsService.deleteExam(req.params['id'] as string, teacherId);
-            return SuccessResponse({ res, data: null, message: 'تم حذف الامتحان بنجاح' });
+            const result = await ExamsService.deleteExam(req.params['id'] as string, teacherId);
+            const message = result.deletedResultsCount > 0
+                ? `تم حذف الامتحان ومسح ${result.deletedResultsCount} درجة مسجلة بنجاح`
+                : 'تم حذف الامتحان بنجاح';
+            return SuccessResponse({ res, data: result, message });
         } catch (error) { next(error); }
     }
 );

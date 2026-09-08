@@ -159,12 +159,14 @@ export default function ExamDetailPage() {
 
     const deleteMutation = useMutation({
         mutationFn: () => deleteExam(examId),
-        onSuccess:  () => {
-            toast.success('تم حذف الامتحان');
+        onSuccess:  (res: any) => {
+            toast.success(res?.message || 'تم حذف الامتحان وكافة نتائجه بنجاح');
             queryClient.invalidateQueries({ queryKey: ['exams'] });
             router.push('/exams');
         },
-        
+        onError: (err: any) => {
+            toast.error(err?.response?.data?.message || 'حدث خطأ أثناء حذف الامتحان');
+        }
     });
 
     const printMutation = useMutation({
@@ -274,31 +276,17 @@ export default function ExamDetailPage() {
                         طباعة الامتحان
                     </Button>
                     {examData.status === 'DRAFT' && (
-                        <>
-                            <Button
-                                onClick={() => publishMutation.mutate()}
-                                disabled={publishMutation.isPending}
-                                className="gap-2 flex-1 sm:flex-none"
-                            >
-                                {publishMutation.isPending
-                                    ? <Loader2 className="h-4 w-4 animate-spin" />
-                                    : <Send className="h-4 w-4" />
-                                }
-                                نشر الامتحان
-                            </Button>
-                            <Button
-                                variant="destructive"
-                                onClick={() => setConfirmDelete(true)}
-                                disabled={deleteMutation.isPending}
-                                className="gap-2 flex-1 sm:flex-none"
-                            >
-                                {deleteMutation.isPending
-                                    ? <Loader2 className="h-4 w-4 animate-spin" />
-                                    : <Trash2 className="h-4 w-4" />
-                                }
-                                حذف
-                            </Button>
-                        </>
+                        <Button
+                            onClick={() => publishMutation.mutate()}
+                            disabled={publishMutation.isPending}
+                            className="gap-2 flex-1 sm:flex-none"
+                        >
+                            {publishMutation.isPending
+                                ? <Loader2 className="h-4 w-4 animate-spin" />
+                                : <Send className="h-4 w-4" />
+                            }
+                            نشر الامتحان
+                        </Button>
                     )}
                     {examData.status === 'PUBLISHED' && (
                         <>
@@ -320,6 +308,18 @@ export default function ExamDetailPage() {
                             </Button>
                         </>
                     )}
+                    <Button
+                        variant="destructive"
+                        onClick={() => setConfirmDelete(true)}
+                        disabled={deleteMutation.isPending}
+                        className="gap-2 flex-1 sm:flex-none"
+                    >
+                        {deleteMutation.isPending
+                            ? <Loader2 className="h-4 w-4 animate-spin" />
+                            : <Trash2 className="h-4 w-4" />
+                        }
+                        حذف الامتحان
+                    </Button>
                 </div>
             )}
 
@@ -672,9 +672,13 @@ export default function ExamDetailPage() {
             <ConfirmDialog
                 open={confirmDelete}
                 onOpenChange={setConfirmDelete}
-                title="حذف الامتحان؟"
-                description="سيتم حذف الامتحان وكل نتائجه نهائياً."
-                confirmLabel="حذف"
+                title={`حذف "${examData?.title}"؟`}
+                description={
+                    examData?.status === 'DRAFT'
+                        ? "هل أنت متأكد من حذف هذه المسودة نهائياً؟"
+                        : `تحذير هام: هذا الامتحان ${results.length > 0 ? `يحتوي على ${results.length} درجة مسجلة، و` : ''}حذفه سيؤدي لمسح جميع درجاته من سجلات الطلاب والتقارير وتطبيق ولي الأمر نهائياً.`
+                }
+                confirmLabel="حذف نهائي"
                 variant="danger"
                 onConfirm={() => deleteMutation.mutate()}
             />
