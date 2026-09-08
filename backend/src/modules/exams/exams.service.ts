@@ -7,6 +7,8 @@ import { NotFoundException, BadRequestException, ConflictException } from '../..
 import { enqueueWhatsApp } from '../../infrastructure/queues/whatsapp.queue.js';
 import type { IQuestion }  from '../../types/exam.types.js';
 import { ParentPushService } from '../parent/parent-push.service.js';
+import { withTransaction }   from '../../common/utils/transaction.util.js';
+import { cache, CacheKeys }  from '../../infrastructure/cache/cache.service.js';
 
 // ── Grade letter calculator ───────────────────────────────────────
 function computeGrade(percentage: number): string {
@@ -143,11 +145,23 @@ export class ExamsService {
         ).lean();
     }
 
-    // ── Delete exam ───────────────────────────────────────────────────
+    // ── Delete exam (Draft or Published) + cascade delete all results ──
     static async deleteExam(examId: string, teacherId: string) {
-        const exam = await ExamModel.findOneAndDelete({ _id: examId, teacherId, status: ExamStatus.DRAFT }).lean();
-        if (!exam) throw NotFoundException({ message: 'الامتحان غير موجود أو لا يمكن حذف امتحان منشور' });
-        return exam;
+        return await withTransaction(async (session) => {
+            const exam = await ExamModel.findOneAndDelete({ _id: examId, teacherId }, { session }).lean();
+            if (!exam) throw NotFoundException({ message: 'الامتحان غير موجود' });
+
+            // Cascade delete all results related to this exam across all students
+            const deleteResults = await ExamResultModel.deleteMany({ examId, teacherId }, { session });
+
+            // Invalidate teacher dashboard / related cache
+            await cache.invalidate(CacheKeys.teacherAll(teacherId));
+
+            return {
+                exam,
+                deletedResultsCount: deleteResults.deletedCount || 0,
+            };
+        });
     }
 
     // ── Record single student result (Insert or Update if already exists) ──

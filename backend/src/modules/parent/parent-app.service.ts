@@ -693,15 +693,8 @@ export class ParentAppService {
         type: 'INCOME',
       })
         .sort({ date: -1 })
-        .limit(20)
+        .limit(50)
         .lean();
-
-      const paymentsList = transactions.map((t: any) => ({
-        id: t._id.toString(),
-        amount: t.paidAmount,
-        date: t.date?.toISOString(),
-        description: t.description || 'سداد اشتراك',
-      }));
 
       if (enrollments.length === 0) {
         results.push({
@@ -714,11 +707,30 @@ export class ParentAppService {
           status: (student.totalDebt || 0) > 0 ? 'UNPAID' : 'PAID',
           subject: (student.teacherId as any)?.subject || 'مادة',
           teacherName: (student.teacherId as any)?.name || 'المعلم',
-          payments: paymentsList,
+          payments: transactions.map((t: any) => ({
+            id: t._id.toString(),
+            amount: t.paidAmount,
+            date: t.date?.toISOString(),
+            description: t.description || 'سداد اشتراك',
+          })),
         });
       } else {
-        for (const e of enrollments) {
-          results.push({
+        const assignedTxIds = new Set<string>();
+
+        const studentCycleRecords = enrollments.map((e) => {
+          const cyclePayments = transactions
+            .filter((t: any) => t.cycleNumber != null && t.cycleNumber === e.cycleNumber)
+            .map((t: any) => {
+              assignedTxIds.add(t._id.toString());
+              return {
+                id: t._id.toString(),
+                amount: t.paidAmount,
+                date: t.date?.toISOString(),
+                description: t.description || 'سداد اشتراك',
+              };
+            });
+
+          return {
             cycleNumber: e.cycleNumber,
             cycleCapacity: e.cycleCapacity || 8,
             sessionsConsumed: (e as any).sessionsConsumed || e.chargeableSessions || 0,
@@ -728,9 +740,23 @@ export class ParentAppService {
             status: e.status,
             subject: (student.teacherId as any)?.subject || 'مادة',
             teacherName: (student.teacherId as any)?.name || 'المعلم',
-            payments: paymentsList,
-          });
+            payments: cyclePayments,
+          };
+        });
+
+        // Attach unassigned/legacy transactions (without cycleNumber) to the latest cycle
+        const unassigned = transactions.filter((t: any) => !assignedTxIds.has(t._id.toString()));
+        const latestCycle = studentCycleRecords[0];
+        if (unassigned.length > 0 && latestCycle) {
+          latestCycle.payments.push(...unassigned.map((t: any) => ({
+            id: t._id.toString(),
+            amount: t.paidAmount,
+            date: t.date?.toISOString(),
+            description: t.description || 'سداد اشتراك',
+          })));
         }
+
+        results.push(...studentCycleRecords);
       }
     }
 
