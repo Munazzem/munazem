@@ -486,6 +486,17 @@ export const ChildDetailsScreen: React.FC<Props> = ({ route }) => {
                         </Text>
                         <Text style={styles.finStatLabel}>المدفوع</Text>
                       </View>
+                      {(fin.totalDiscount || 0) > 0 && (
+                        <>
+                          <View style={styles.finDivider} />
+                          <View style={styles.finStatBox}>
+                            <Text style={[styles.finStatValue, { color: colors.warning }]}>
+                              {fin.totalDiscount} ج
+                            </Text>
+                            <Text style={styles.finStatLabel}>الخصم</Text>
+                          </View>
+                        </>
+                      )}
                       <View style={styles.finDivider} />
                       <View style={styles.finStatBox}>
                         <Text style={styles.finStatValue}>
@@ -504,7 +515,14 @@ export const ChildDetailsScreen: React.FC<Props> = ({ route }) => {
                         </View>
                         {fin.payments.map((p: any) => (
                           <View key={p.id} style={styles.paymentRow}>
-                            <Text style={styles.paymentAmount}>+ {p.amount} ج</Text>
+                            <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 6 }}>
+                              <Text style={styles.paymentAmount}>+ {p.amount} ج</Text>
+                              {(p.discount || 0) > 0 && (
+                                <Text style={{ fontSize: 11, fontFamily: typography.regular, color: colors.warningDark }}>
+                                  (خصم: {p.discount} ج)
+                                </Text>
+                              )}
+                            </View>
                             <Text style={styles.paymentDate}>
                               {new Date(p.date).toLocaleDateString('ar-EG')} - {p.description}
                             </Text>

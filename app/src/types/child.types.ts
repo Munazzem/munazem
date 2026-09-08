@@ -123,6 +123,8 @@ export interface FinancialRecord {
   sessionsConsumed: number;
   fullCyclePrice: number;
   totalPaid: number;
+  totalDiscount?: number;
+  settledAmount?: number;
   remainingAmount: number;
   status: 'PAID' | 'PARTIALLY_PAID' | 'UNPAID';
   subject: string;
@@ -130,6 +132,7 @@ export interface FinancialRecord {
   payments: Array<{
     id: string;
     amount: number;
+    discount?: number;
     date: string;
     description?: string;
   }>;

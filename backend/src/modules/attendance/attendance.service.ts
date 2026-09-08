@@ -1427,16 +1427,26 @@ export class AttendanceService {
             }
 
             if (cycleRolledOver || (!group.cycle?.startedAt && currentSessionNumber === 1)) {
-                const studentDebtUpdates = activeStudents.map(student => {
-                    // @ts-ignore
-                    const fullMonthPrice = (priceSnapshot instanceof Map ? priceSnapshot.get(student.gradeLevel) : priceSnapshot?.[student.gradeLevel]) || 0;
-                    return {
-                        updateOne: {
-                            filter: { _id: student._id },
-                            update: { $inc: { totalDebt: fullMonthPrice } }
-                        }
-                    };
-                });
+                // Prevent duplicate debt charges if students already have an enrollment for this cycle
+                const existingEnrollments = await CycleEnrollmentModel.find({
+                    groupId: group._id,
+                    cycleNumber: currentCycleNumber,
+                    studentId: { $in: activeStudents.map(s => s._id) }
+                }).session(dbSession).select('studentId').lean();
+                const existingStudentIds = new Set(existingEnrollments.map(e => e.studentId.toString()));
+
+                const studentDebtUpdates = activeStudents
+                    .filter(student => !existingStudentIds.has(student._id.toString()))
+                    .map(student => {
+                        // @ts-ignore
+                        const fullMonthPrice = (priceSnapshot instanceof Map ? priceSnapshot.get(student.gradeLevel) : priceSnapshot?.[student.gradeLevel]) || 0;
+                        return {
+                            updateOne: {
+                                filter: { _id: student._id },
+                                update: { $inc: { totalDebt: fullMonthPrice } }
+                            }
+                        };
+                    });
                 if (studentDebtUpdates.length > 0) {
                     await StudentModel.bulkWrite(studentDebtUpdates, { session: dbSession });
                 }
