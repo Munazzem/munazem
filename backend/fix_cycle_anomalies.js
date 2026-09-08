@@ -26,6 +26,12 @@ async function runFix() {
 
     // Check if there is an anomaly in this group
     let hasAnomaly = false;
+
+    // Check if the very first completed session in Cycle 1 started at sessionNumber > 1 (e.g. migration offset)
+    if (completedSessions[0]?.cycleContext?.cycleNumber === 1 && (completedSessions[0]?.cycleContext?.sessionNumber || 0) > 1) {
+      hasAnomaly = true;
+    }
+
     for (let i = 1; i < completedSessions.length; i++) {
       const prevC = completedSessions[i - 1].cycleContext?.cycleNumber || 0;
       const currC = completedSessions[i].cycleContext?.cycleNumber || 0;
@@ -47,11 +53,9 @@ async function runFix() {
     // Skip groups without any anomaly
     if (!hasAnomaly) continue;
 
-    // If it's the old test group with many minutes-apart test sessions in July, handle carefully:
-    // Only re-sequence if it has realistic sessions
     const defaultFullCap = (g.schedule?.length || 2) * 4 || 8;
     const enr1 = await db.collection('cycleenrollments').findOne({ groupId: g._id, cycleNumber: 1 });
-    const cycle1Cap = enr1?.cycleCapacity || enr1?.chargeableSessions || g.cycle?.capacity || defaultFullCap;
+    const cycle1Cap = enr1?.cycleCapacity || g.cycle?.capacity || defaultFullCap;
     const standardCap = defaultFullCap;
 
     console.log(`\nFixing group: "${g.name}" (ID: ${g._id})`);
