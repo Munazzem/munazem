@@ -42,11 +42,16 @@ export const FinanceScreen: React.FC<Props> = ({ route }) => {
   const totalRemain = records.reduce((s, r) => s + r.remainingAmount, 0);
   const hasDebt     = totalRemain > 0;
 
-  // Collect payments from records for this teacher, sorted by date desc
-  const allPayments = records
-    .flatMap((r) =>
-      r.payments.map((p) => ({ ...p, subject: r.subject, teacher: r.teacherName }))
-    )
+  // Collect unique payments from records for this teacher, sorted by date desc
+  const paymentMap = new Map<string, any>();
+  records.forEach((r) => {
+    r.payments?.forEach((p) => {
+      if (!paymentMap.has(p.id)) {
+        paymentMap.set(p.id, { ...p, subject: r.subject, teacher: r.teacherName });
+      }
+    });
+  });
+  const allPayments = Array.from(paymentMap.values())
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   return (
@@ -154,7 +159,7 @@ const CycleCard: React.FC<{ record: FinancialRecord }> = ({ record }) => (
     <View style={c.header}>
       <StatusBadge status={record.status} size="sm" />
       <View style={c.titleWrap}>
-        <Text style={c.subject}>{record.subject}</Text>
+        <Text style={c.subject}>الدورة {record.cycleNumber} ({record.subject})</Text>
         <Text style={c.teacher}>{record.teacherName}</Text>
       </View>
     </View>

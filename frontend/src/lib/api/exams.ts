@@ -71,8 +71,9 @@ export const publishExam = async (id: string): Promise<IExam> => {
     return (res as any).data ?? res;
 };
 
-export const deleteExam = async (id: string): Promise<void> => {
-    await apiClient.delete(`/exams/${id}`);
+export const deleteExam = async (id: string): Promise<any> => {
+    const res = await apiClient.delete(`/exams/${id}`);
+    return (res as any)?.data ?? res;
 };
 
 export const getExamResults = async (id: string): Promise<ExamResultsSummary> => {
