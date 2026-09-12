@@ -119,9 +119,9 @@ describe('Lesson Cycle Redesign - completeSession', () => {
         await AttendanceService.completeSession(session._id.toString(), teacher._id.toString());
 
         const afterGroup = await GroupModel.findById(group._id).lean();
-        // Since it was at 7, the session consumes it to 8.
-        expect(afterGroup?.cycle?.currentSessionNumber).toBe(8); 
-        expect(afterGroup?.cycle?.currentCycleNumber).toBe(1);
+        // Since session 8 completes the cycle of 8, the cycle finishes and resets
+        expect(afterGroup?.cycle?.currentSessionNumber).toBe(0); 
+        expect(afterGroup?.cycle?.currentCycleNumber).toBe(2);
 
         const completedSession = await SessionModel.findById(session._id).lean();
         // Session context should be exactly what it reached

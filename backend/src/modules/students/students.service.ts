@@ -404,25 +404,37 @@ export class StudentService {
     }
 
     static async getStudentsWithPastCycleDebtIds(teacherId: string): Promise<string[]> {
+        const students = await StudentModel.find({ teacherId, isActive: true }, { _id: 1, groupId: 1 }).lean();
+        if (students.length === 0) return [];
+
         const groups = await GroupModel.find({ teacherId }, { 'cycle.currentCycleNumber': 1 }).lean();
+        const groupCycleMap = new Map<string, number>();
+        groups.forEach(g => {
+            groupCycleMap.set(g._id.toString(), g.cycle?.currentCycleNumber || 1);
+        });
+
+        const unpaidEnrollments = await CycleEnrollmentModel.find({
+            teacherId,
+            status: { $in: [CycleEnrollmentStatus.UNPAID, CycleEnrollmentStatus.PARTIALLY_PAID] },
+            remainingAmount: { $gt: 0 }
+        }, { studentId: 1, groupId: 1, cycleNumber: 1, remainingAmount: 1 }).lean();
+
+        const studentGroupMap = new Map<string, string>();
+        students.forEach(s => {
+            if (s.groupId) studentGroupMap.set(s._id.toString(), s.groupId.toString());
+        });
+
         const studentIds = new Set<string>();
+        for (const e of unpaidEnrollments) {
+            const sId = e.studentId.toString();
+            const currentGroupId = studentGroupMap.get(sId);
+            if (!currentGroupId) continue;
 
-        const orConditions = groups
-            .filter(g => (g.cycle?.currentCycleNumber || 1) > 1)
-            .map(g => ({
-                groupId: g._id,
-                cycleNumber: { $lt: g.cycle?.currentCycleNumber || 1 },
-                status: { $in: [CycleEnrollmentStatus.UNPAID, CycleEnrollmentStatus.PARTIALLY_PAID] }
-            }));
+            const enrollmentGroupId = e.groupId?.toString();
+            const currentGroupCycle = groupCycleMap.get(currentGroupId) || 1;
 
-        if (orConditions.length > 0) {
-            const enrollments = await CycleEnrollmentModel.find({
-                teacherId,
-                $or: orConditions
-            }, { studentId: 1 }).lean();
-
-            for (const e of enrollments) {
-                studentIds.add(e.studentId.toString());
+            if (enrollmentGroupId !== currentGroupId || e.cycleNumber < currentGroupCycle) {
+                studentIds.add(sId);
             }
         }
 
@@ -535,8 +547,12 @@ export class StudentService {
         const currentCycleNumber = group?.cycle?.currentCycleNumber || 1;
         const pastEnrollments = await CycleEnrollmentModel.find({
             studentId: student._id,
-            cycleNumber: { $lt: currentCycleNumber },
-            status: { $in: [CycleEnrollmentStatus.UNPAID, CycleEnrollmentStatus.PARTIALLY_PAID] }
+            status: { $in: [CycleEnrollmentStatus.UNPAID, CycleEnrollmentStatus.PARTIALLY_PAID] },
+            remainingAmount: { $gt: 0 },
+            $or: [
+                { groupId: { $ne: student.groupId } },
+                { cycleNumber: { $lt: currentCycleNumber } }
+            ]
         }).lean();
         const truePastDebt = pastEnrollments.reduce((sum, e) => sum + (e.remainingAmount || 0), 0);
 
@@ -557,19 +573,33 @@ export class StudentService {
         const updatePayload: UpdatePayload = { ...data };
         delete (updatePayload as any).fullName;
 
+        let isGroupChanged = false;
+        let oldGroupId: any = null;
+        let newGroupDoc: any = null;
+
         // If groupId is being changed, verify new group exists and sync student gradeLevel with the new group
         if (data.groupId) {
-            const group = await GroupModel.findOne({ _id: data.groupId, teacherId }).lean();
-            if (!group) {
+            newGroupDoc = await GroupModel.findOne({ _id: data.groupId, teacherId }).lean();
+            if (!newGroupDoc) {
                 throw NotFoundException({ message: 'المجموعة الجديدة غير موجودة أو لا صلاحية لك عليها' });
             }
             if (!data.gradeLevel) {
-                updatePayload.gradeLevel = group.gradeLevel;
+                updatePayload.gradeLevel = newGroupDoc.gradeLevel;
             }
 
             const currentStudent = await StudentModel.findOne({ _id: studentId, teacherId }, { groupId: 1 }).lean();
             if (currentStudent && currentStudent.groupId?.toString() !== data.groupId.toString()) {
+                oldGroupId = currentStudent.groupId;
                 (updatePayload as any).groupAssignedAt = new Date();
+                (updatePayload as any).consecutiveAbsences = 0;
+                isGroupChanged = true;
+
+                // Sync default quota and capacity with new group if not explicitly provided
+                if (data.monthlySessionsQuota === undefined) {
+                    const newGroupCapacity = (newGroupDoc.schedule?.length || 2) * 4;
+                    (updatePayload as any).monthlySessionsQuota = newGroupCapacity;
+                    (updatePayload as any).cycleCapacity = newGroupCapacity;
+                }
             }
         }
 
@@ -592,12 +622,12 @@ export class StudentService {
 
             if (!updatedStudent) throw NotFoundException({ message: 'الطالب غير موجود' });
 
-            // If monthlySessionsQuota was updated, sync active ongoing cycle enrollment
-            if (data.monthlySessionsQuota !== undefined && data.monthlySessionsQuota > 0 && updatedStudent.groupId) {
+            // If monthlySessionsQuota was updated without changing group, sync active ongoing cycle enrollment
+            if (!isGroupChanged && data.monthlySessionsQuota !== undefined && data.monthlySessionsQuota > 0 && updatedStudent.groupId) {
                 const group = await GroupModel.findById(updatedStudent.groupId).lean();
                 const currentCycleNum = (group as any)?.cycle?.currentCycleNumber || 1;
                 await CycleEnrollmentModel.updateMany(
-                    { studentId, cycleNumber: currentCycleNum },
+                    { studentId, groupId: updatedStudent.groupId, cycleNumber: currentCycleNum },
                     {
                         $set: {
                             cycleCapacity: data.monthlySessionsQuota,
@@ -605,6 +635,80 @@ export class StudentService {
                         }
                     }
                 );
+            }
+
+            // If groupId was changed, seamlessly transition ongoing active cycle enrollment to new group
+            if (isGroupChanged && data.groupId && oldGroupId) {
+                const oldGroup = await GroupModel.findById(oldGroupId).lean();
+                const oldCycleNum = (oldGroup as any)?.cycle?.currentCycleNumber || 1;
+                const newCycleNum = (newGroupDoc as any)?.cycle?.currentCycleNumber || 1;
+
+                // Find ongoing cycle enrollment in old group
+                const oldActiveEnrollment = await CycleEnrollmentModel.findOne({
+                    studentId,
+                    groupId: oldGroupId,
+                    cycleNumber: oldCycleNum
+                });
+
+                if (oldActiveEnrollment) {
+                    // Check if enrollment already exists in target group for newCycleNum
+                    const targetExistingEnrollment = await CycleEnrollmentModel.findOne({
+                        studentId,
+                        groupId: data.groupId,
+                        cycleNumber: newCycleNum
+                    });
+
+                    const isOldPaid = oldActiveEnrollment.status === CycleEnrollmentStatus.PAID;
+
+                    if (targetExistingEnrollment) {
+                        // Merge them to prevent duplicate key error and retain payment progress
+                        const mergedPaid = Math.max(
+                            targetExistingEnrollment.totalPaid || 0,
+                            oldActiveEnrollment.totalPaid || 0
+                        );
+                        const finalStatus = (isOldPaid || targetExistingEnrollment.status === CycleEnrollmentStatus.PAID)
+                            ? CycleEnrollmentStatus.PAID
+                            : mergedPaid >= targetExistingEnrollment.cycleCharge
+                                ? CycleEnrollmentStatus.PAID
+                                : mergedPaid > 0
+                                    ? CycleEnrollmentStatus.PARTIALLY_PAID
+                                    : CycleEnrollmentStatus.UNPAID;
+
+                        const finalRemaining = finalStatus === CycleEnrollmentStatus.PAID
+                            ? 0
+                            : Math.max(0, targetExistingEnrollment.cycleCharge - mergedPaid);
+
+                        await CycleEnrollmentModel.updateOne(
+                            { _id: targetExistingEnrollment._id },
+                            {
+                                $set: {
+                                    totalPaid: finalStatus === CycleEnrollmentStatus.PAID ? targetExistingEnrollment.cycleCharge : mergedPaid,
+                                    remainingAmount: finalRemaining,
+                                    status: finalStatus
+                                }
+                            }
+                        );
+
+                        // Remove the old group's ongoing enrollment document
+                        await CycleEnrollmentModel.deleteOne({ _id: oldActiveEnrollment._id });
+                    } else {
+                        // Re-point the active enrollment to the new group's active cycle
+                        const newCapacity = (newGroupDoc.schedule?.length || 2) * 4;
+                        await CycleEnrollmentModel.updateOne(
+                            { _id: oldActiveEnrollment._id },
+                            {
+                                $set: {
+                                    groupId: data.groupId,
+                                    cycleNumber: newCycleNum,
+                                    ...(isOldPaid
+                                        ? { status: CycleEnrollmentStatus.PAID, remainingAmount: 0 }
+                                        : { cycleCapacity: newCapacity, chargeableSessions: newCapacity }
+                                    )
+                                }
+                            }
+                        );
+                    }
+                }
             }
 
             // Invalidate teacher cache

@@ -64,6 +64,15 @@ export class SessionService {
         }).lean();
         if (existing) throw ConflictException({ message: 'يوجد حصة مسجلة لهذه المجموعة في نفس اليوم والوقت بالفعل' });
 
+        // Auto-complete any previous unclosed sessions for this group that were left open
+        const { AttendanceService } = await import('../attendance/attendance.service.js');
+        await AttendanceService.autoCompleteStaleGroupSessions(
+            data.groupId,
+            teacherId,
+            undefined,
+            sessionDate
+        );
+
         const session = await SessionModel.create({
             groupId:   data.groupId,
             teacherId,
@@ -168,6 +177,17 @@ export class SessionService {
             throw BadRequestException({ message: 'لا يمكن تعديل حصة مكتملة' });
         }
 
+        // ── Handle IN_PROGRESS — auto-complete previous unclosed sessions for this group ──
+        if (status === SessionStatus.IN_PROGRESS) {
+            const { AttendanceService } = await import('../attendance/attendance.service.js');
+            await AttendanceService.autoCompleteStaleGroupSessions(
+                session.groupId,
+                teacherId,
+                session._id,
+                session.date
+            );
+        }
+
         // ── Handle CANCELLED — clean up ──────────────────
         let replacementSession = null;
         if (status === SessionStatus.CANCELLED) {
@@ -243,10 +263,11 @@ export class SessionService {
                         const currentSessionNum = group.cycle.currentSessionNumber || 0;
                         const currentCycleNum = group.cycle.currentCycleNumber || 1;
 
-                        // Case A: This was session 1 of a rolled-over cycle (e.g. cycle 2, session 1)
-                        if (currentSessionNum <= 1 && currentCycleNum > 1) {
+                        // Case A: The deleted session was the final session of the previous cycle
+                        // (which had rolled the group over to the next cycle with currentSessionNum === 0)
+                        if (currentSessionNum === 0 && currentCycleNum > 1) {
                             const newCycleNum = currentCycleNum - 1;
-                            const newSessionNum = cycleCapacity;
+                            const newSessionNum = Math.max(0, cycleCapacity - 1);
 
                             // Revert group cycle
                             await GroupModel.findByIdAndUpdate(
@@ -260,7 +281,7 @@ export class SessionService {
                                 { session: dbSession }
                             );
 
-                            // Clean up any unpaid cycle enrollment records for the reverted cycle
+                            // Clean up any unpaid cycle enrollment records for the rolled-over cycle
                             await CycleEnrollmentModel.deleteMany(
                                 {
                                     groupId: group._id,
@@ -270,7 +291,7 @@ export class SessionService {
                                 { session: dbSession }
                             );
                         } 
-                        // Case B: Regular mid-cycle session decrement
+                        // Case B: Regular mid-cycle or session 1 decrement
                         else if (currentSessionNum > 0) {
                             const newSessionNum = currentSessionNum - 1;
                             await GroupModel.findByIdAndUpdate(

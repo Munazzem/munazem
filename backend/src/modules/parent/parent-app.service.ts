@@ -807,9 +807,9 @@ export class ParentAppService {
     return {
       notifications: notifications.map((n: any) => ({
         id: n._id.toString(),
-        studentId: n.studentId?._id?.toString() || '',
+        studentId: n.studentId?._id?.toString() || (n.studentId ? n.studentId.toString() : ''),
         studentName: n.studentId?.studentName,
-        teacherId: n.teacherId?._id?.toString() || '',
+        teacherId: n.teacherId?._id?.toString() || (n.teacherId ? n.teacherId.toString() : ''),
         teacherName: n.teacherId?.name,
         type: n.type,
         title: n.title,

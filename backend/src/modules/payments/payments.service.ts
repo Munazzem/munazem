@@ -16,6 +16,7 @@ import { withTransaction } from '../../common/utils/transaction.util.js';
 import { cache, CacheKeys, CacheTTL } from '../../infrastructure/cache/cache.service.js';
 import { startOfDayEgypt, resolveTransactionDate, getEgyptYearMonth } from '../../common/utils/date.util.js';
 import type { IPriceSetting } from '../../types/price-settings.types.js';
+import { ParentPushService } from '../parent/parent-push.service.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────
 // Date helpers (startOfDayEgypt, resolveTransactionDate) are imported from common/utils/date.util.ts
@@ -263,9 +264,13 @@ export class PaymentsService {
         // Find or create CycleEnrollment
         let enrollment = await CycleEnrollmentModel.findOne({
             studentId: student._id,
-            groupId: group._id,
+            teacherId,
             cycleNumber
         });
+        if (enrollment && enrollment.groupId?.toString() !== group._id.toString()) {
+            enrollment.groupId = group._id;
+            await enrollment.save();
+        }
 
         const txDate = resolveTransactionDate(data.date);
         let enrollmentCreatedNow = false;
@@ -516,6 +521,18 @@ export class PaymentsService {
         });
         // Invalidate dashboard cache so fresh financial data is shown
         cache.del(CacheKeys.dashboard(teacherId));
+
+        // Parent Push Notification (non-blocking, fire-and-forget)
+        ParentPushService.notifyPayment({
+            studentId:       student._id.toString(),
+            studentName:     student.studentName,
+            teacherId,
+            paidAmount,
+            remainingAmount: transaction!.remainingAmount,
+            cycleNumber:     transaction!.cycleNumber,
+            transactionId:   transaction!._id.toString(),
+            date:            txDate,
+        });
 
         return transaction;
     }
@@ -1443,6 +1460,17 @@ export class PaymentsService {
         });
 
         cache.del(CacheKeys.dashboard(teacherId));
+
+        // Parent Push Notification (non-blocking, fire-and-forget)
+        ParentPushService.notifyPayment({
+            studentId:     student._id.toString(),
+            studentName:   student.studentName,
+            teacherId,
+            paidAmount:    data.amount,
+            transactionId: transaction!._id.toString(),
+            date:          txDate,
+        });
+
         return transaction;
     }
 
@@ -1453,6 +1481,7 @@ export class PaymentsService {
         data: {
             studentId: string;
             cycleNumber: number;
+            groupId?: any;
             paidAmount?: number;
             discountAmount?: number;
             description?: string;
@@ -1473,8 +1502,9 @@ export class PaymentsService {
 
         const enrollment = await CycleEnrollmentModel.findOne({
             studentId: student._id,
-            cycleNumber: data.cycleNumber
-        });
+            cycleNumber: data.cycleNumber,
+            ...(data.groupId ? { groupId: data.groupId } : {})
+        }).sort({ createdAt: -1 });
 
         if (!enrollment) {
             throw NotFoundException({ message: `سجل الدورة رقم (${data.cycleNumber}) غير موجود لهذا الطالب` });
@@ -1555,6 +1585,19 @@ export class PaymentsService {
         });
 
         cache.del(CacheKeys.dashboard(teacherId));
+
+        // Parent Push Notification (non-blocking, fire-and-forget)
+        ParentPushService.notifyPayment({
+            studentId:       student._id.toString(),
+            studentName:     student.studentName,
+            teacherId,
+            paidAmount,
+            remainingAmount: transaction!.remainingAmount,
+            cycleNumber:     data.cycleNumber,
+            transactionId:   transaction!._id.toString(),
+            date:            txDate,
+        });
+
         return transaction;
     }
 
@@ -1579,11 +1622,15 @@ export class PaymentsService {
         const group = await GroupModel.findById(student.groupId, { 'cycle.currentCycleNumber': 1 }).lean();
         const currentCycleNumber = group?.cycle?.currentCycleNumber || 1;
 
-        // Find past unpaid or partially paid enrollments
+        // Find past unpaid or partially paid enrollments across past cycles and previous groups
         const pastEnrollments = await CycleEnrollmentModel.find({
             studentId: student._id,
-            cycleNumber: { $lt: currentCycleNumber },
-            status: { $in: [CycleEnrollmentStatus.UNPAID, CycleEnrollmentStatus.PARTIALLY_PAID] }
+            status: { $in: [CycleEnrollmentStatus.UNPAID, CycleEnrollmentStatus.PARTIALLY_PAID] },
+            remainingAmount: { $gt: 0 },
+            $or: [
+                { groupId: { $ne: student.groupId } },
+                { cycleNumber: { $lt: currentCycleNumber } }
+            ]
         }).sort({ cycleNumber: 1 });
 
         if (pastEnrollments.length === 0) {
@@ -1611,6 +1658,7 @@ export class PaymentsService {
             const tx = await PaymentsService.payCycleDebt(teacherId, createdBy, {
                 studentId: data.studentId,
                 cycleNumber: enrollment.cycleNumber,
+                groupId: enrollment.groupId,
                 paidAmount: payForThisCycle,
                 discountAmount: 0,
                 description: data.description || `سداد مديونية الدورة رقم ${enrollment.cycleNumber} (سداد شامل)`,
