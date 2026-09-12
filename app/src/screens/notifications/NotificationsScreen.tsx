@@ -9,6 +9,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../../navigation/types';
 import { NotificationsApi } from '../../api/notifications.api';
 import { colors } from '../../theme/colors';
 import { typography, textStyles } from '../../theme/typography';
@@ -25,6 +28,7 @@ import {
 
 export const NotificationsScreen: React.FC = () => {
   const queryClient = useQueryClient();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['notifications'],
@@ -95,6 +99,19 @@ export const NotificationsScreen: React.FC = () => {
               onPress={() => {
                 if (!item.isRead) {
                   markReadMutation.mutate(item.id);
+                }
+                if (item.studentId) {
+                  let initialTab: 'attendance' | 'exams' | 'financial' = 'attendance';
+                  if (item.type === 'PAYMENT_RECORDED' || item.type === 'CYCLE_STARTED') {
+                    initialTab = 'financial';
+                  } else if (item.type === 'EXAM_RESULT') {
+                    initialTab = 'exams';
+                  }
+                  navigation.navigate('ChildDetails', {
+                    studentId: item.studentId,
+                    studentName: item.studentName || '',
+                    initialTab,
+                  });
                 }
               }}
             >

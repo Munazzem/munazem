@@ -51,19 +51,19 @@ export default function RootLayout({
     <html lang="ar" dir="rtl">
       <body className={`${cairo.variable} antialiased bg-slate-50 text-[#111111] overflow-x-hidden`}>
         <Toaster
-            position="top-center"
-            richColors
-            theme="light"
-            dir="rtl"
-            closeButton
+          position="top-center"
+          richColors
+          theme="light"
+          dir="rtl"
+          closeButton
         />
         <Providers>
-            {children}
-            <PWAEventListener />
-            <CacheWarmer />
-            <OfflineSyncWorker />
-            <OfflineIndicator />
-            <InstallPrompt />
+          {children}
+          <PWAEventListener />
+          <CacheWarmer />
+          <OfflineSyncWorker />
+          <OfflineIndicator />
+          <InstallPrompt />
         </Providers>
       </body>
     </html>

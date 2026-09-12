@@ -47,8 +47,9 @@ describe('Cycle-Based Billing Integration', () => {
         }
 
         let updatedGroup = await GroupModel.findById(group._id).lean();
-        expect(updatedGroup?.cycle?.currentCycleNumber).toBe(1);
-        expect(updatedGroup?.cycle?.currentSessionNumber).toBe(8);
+        // Under immediate completion, session 8 completes cycle 1 and advances to cycle 2 (session 0)
+        expect(updatedGroup?.cycle?.currentCycleNumber).toBe(2);
+        expect(updatedGroup?.cycle?.currentSessionNumber).toBe(0);
 
         // Now session 9 -> Rolls over to cycle 2, session 1
         const rolloverSession = await seedSession(group._id);

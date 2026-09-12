@@ -75,7 +75,7 @@ export default function CardPortalPage({ params }: { params: { token: string } }
                 <div className="p-5 space-y-4">
                     {/* Status badges */}
                     <div className="flex gap-2 mb-2">
-                         <Badge className={cn(
+                        <Badge className={cn(
                             'text-xs py-1 px-3',
                             student.hasActiveSubscription
                                 ? 'bg-green-100 text-green-700 hover:bg-green-100 border-green-200'
@@ -108,11 +108,11 @@ export default function CardPortalPage({ params }: { params: { token: string } }
                     {(student.lastAttendanceDate || student.lastPaymentDate) && (
                         <div className="border-t border-gray-100 pt-4 mt-2 space-y-3">
                             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wide">آخر التحديثات</h3>
-                            
+
                             {student.lastAttendanceDate && (
                                 <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50/80">
                                     <div className="flex items-center gap-2.5">
-                                        {student.lastAttendanceStatus === 'PRESENT' 
+                                        {student.lastAttendanceStatus === 'PRESENT'
                                             ? <CheckCircle2 className="h-5 w-5 text-green-500" />
                                             : <XCircle className="h-5 w-5 text-red-400" />
                                         }
