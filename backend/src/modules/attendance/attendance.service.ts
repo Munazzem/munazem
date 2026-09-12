@@ -109,6 +109,17 @@ export class AttendanceService {
             throw BadRequestException({ message: 'لا يمكن تسجيل الحضور قبل يوم الحصة' });
         }
 
+        // Auto-complete any previous unclosed sessions for this group when starting attendance on this session
+        if (session.status === SessionStatus.SCHEDULED) {
+            await AttendanceService.autoCompleteStaleGroupSessions(
+                session.groupId,
+                teacherId,
+                session._id,
+                session.date
+            );
+            await SessionModel.updateOne({ _id: session._id }, { $set: { status: SessionStatus.IN_PROGRESS } });
+        }
+
         // Resolve student — scoped to this teacher to prevent cross-tenant scan
         const isObjectId = mongoose.Types.ObjectId.isValid(data.studentId) && data.studentId.length === 24;
         const student = isObjectId
@@ -991,6 +1002,48 @@ export class AttendanceService {
         return filtered;
     }
 
+    /**
+     * Automatically completes previous unclosed sessions for a group when a new session starts.
+     * Prevents stale open sessions when teachers forget to complete them.
+     */
+    static async autoCompleteStaleGroupSessions(
+        groupId: string | mongoose.Types.ObjectId,
+        teacherId: string | mongoose.Types.ObjectId,
+        currentSessionId?: string | mongoose.Types.ObjectId,
+        referenceDate?: Date
+    ) {
+        try {
+            const query: any = {
+                groupId: new mongoose.Types.ObjectId(groupId.toString()),
+                teacherId: new mongoose.Types.ObjectId(teacherId.toString()),
+                status: { $in: [SessionStatus.IN_PROGRESS, SessionStatus.SCHEDULED] },
+            };
+
+            if (currentSessionId) {
+                query._id = { $ne: new mongoose.Types.ObjectId(currentSessionId.toString()) };
+            }
+
+            if (referenceDate) {
+                query.date = { $lte: new Date(referenceDate) };
+            }
+
+            // Find sessions that either were marked IN_PROGRESS or have attendance records
+            const openSessions = await SessionModel.find(query).sort({ date: 1, startTime: 1 }).lean();
+
+            for (const s of openSessions) {
+                const attCount = await AttendanceModel.countDocuments({ sessionId: s._id });
+                const isStaleInProgress = s.status === SessionStatus.IN_PROGRESS;
+                const hasAttendance = attCount > 0;
+
+                if (isStaleInProgress || hasAttendance) {
+                    await AttendanceService.completeSession(s._id.toString(), teacherId.toString(), teacherId.toString());
+                }
+            }
+        } catch (err) {
+            console.error('[autoCompleteStaleGroupSessions] Error auto-completing sessions:', err);
+        }
+    }
+
     // ─── Complete session + generate Snapshot ───────────────────────
     static async completeSession(sessionId: string, teacherId: string, completedBy?: string) {
         const session = await SessionModel.findOne({ _id: sessionId, teacherId }).lean();
@@ -1005,7 +1058,7 @@ export class AttendanceService {
         // Get all students in this group — sorted alphabetically
         const allStudents = await StudentModel.find(
             { groupId: session.groupId, teacherId, isActive: true },
-            { _id: 1, studentName: 1, excusedSessionsCount: 1, excusedUntil: 1, parentPhone: 1, consecutiveAbsences: 1, createdAt: 1 }
+            { _id: 1, studentName: 1, excusedSessionsCount: 1, excusedUntil: 1, parentPhone: 1, consecutiveAbsences: 1, createdAt: 1, groupAssignedAt: 1 }
         ).sort({ studentName: 1 }).lean();
 
         // Get all present/late/manual attendance records for this session
@@ -1065,6 +1118,14 @@ export class AttendanceService {
                 const matchesDateExcuse = student.excusedUntil && new Date(student.excusedUntil) >= session.date;
                 const isExcused = hasSessionExcuse || matchesDateExcuse;
                 
+                // Transferred or newly registered students should NOT be marked absent for past sessions held before they joined this group
+                if (!isCompensated && !isExcused) {
+                    const assignedDate = (student as any).groupAssignedAt || (student as any).createdAt;
+                    if (assignedDate && new Date(session.date) < new Date(assignedDate)) {
+                        continue;
+                    }
+                }
+
                 if (isCompensated) {
                     const compRecord = compensatedMap.get(student._id.toString());
                     const relSessionId = (record as any)?.relatedSessionId || compRecord?.sessionId;
@@ -1265,6 +1326,10 @@ export class AttendanceService {
 
         let sessionCycleNumber = currentCycleNumber;
         let sessionSessionNumber = currentSessionNumber;
+        let nextGroupCycleNumber = currentCycleNumber;
+        let nextGroupSessionNumber = currentSessionNumber;
+        let nextGroupCapacity = capacity;
+        let nextGroupStartedAt = startedAt;
         let cycleRolledOver = false;
         const retroactiveSessionUpdates: any[] = [];
 
@@ -1306,26 +1371,50 @@ export class AttendanceService {
                 }
             }
 
-            // The group cycle state is set to the latest completed session
-            currentCycleNumber = cNum;
-            currentSessionNumber = sNum;
-            capacity = capForC;
-            cycleRolledOver = false;
-        } else {
-            currentSessionNumber++;
-            if (currentSessionNumber > capacity) {
-                currentSessionNumber = 1;
-                currentCycleNumber++;
-                startedAt = new Date();
+            // If the latest session reached or exceeded the cycle capacity, the cycle is completed!
+            if (sNum >= capForC) {
+                nextGroupCycleNumber = cNum + 1;
+                nextGroupSessionNumber = 0;
+                nextGroupCapacity = defaultFullCapacity;
+                nextGroupStartedAt = new Date();
                 cycleRolledOver = true;
-                // Any custom quota was for that specific cycle only. The new cycle reverts to a full cycle.
-                capacity = defaultFullCapacity;
-            } else if (!group.cycle || (currentSessionNumber === 1 && !group.cycle.startedAt)) {
-                startedAt = new Date();
-                cycleRolledOver = true;
+            } else {
+                nextGroupCycleNumber = cNum;
+                nextGroupSessionNumber = sNum;
+                nextGroupCapacity = capForC;
+                nextGroupStartedAt = startedAt;
+                cycleRolledOver = false;
             }
+        } else {
+            // Sequential completion:
+            // If the group was previously sitting at or past capacity, advance cycle first
+            if (currentSessionNumber >= capacity) {
+                currentCycleNumber++;
+                currentSessionNumber = 0;
+                capacity = defaultFullCapacity;
+                startedAt = new Date();
+            }
+
+            currentSessionNumber++;
             sessionCycleNumber = currentCycleNumber;
             sessionSessionNumber = currentSessionNumber;
+
+            // Check if this session completes the cycle:
+            if (sessionSessionNumber >= capacity) {
+                // Final session of this cycle reached!
+                // Cycle ends immediately upon completion of this session.
+                nextGroupCycleNumber = currentCycleNumber + 1;
+                nextGroupSessionNumber = 0;
+                nextGroupCapacity = defaultFullCapacity;
+                nextGroupStartedAt = new Date();
+                cycleRolledOver = true;
+            } else {
+                nextGroupCycleNumber = currentCycleNumber;
+                nextGroupSessionNumber = sessionSessionNumber;
+                nextGroupCapacity = capacity;
+                nextGroupStartedAt = startedAt;
+                cycleRolledOver = !group.cycle?.startedAt && sessionSessionNumber === 1;
+            }
         }
 
         // Get Price Snapshot if rolling over or first cycle (to freeze prices for the cycle)
@@ -1364,15 +1453,14 @@ export class AttendanceService {
                 updateOne: {
                     filter: {
                         studentId: student._id,
-                        groupId: group._id,
-                        cycleNumber: currentCycleNumber
+                        teacherId: session.teacherId,
+                        cycleNumber: sessionCycleNumber
                     },
                     update: {
                         $setOnInsert: {
                             studentId: student._id,
-                            groupId: group._id,
                             teacherId: session.teacherId,
-                            cycleNumber: currentCycleNumber,
+                            cycleNumber: sessionCycleNumber,
                             cycleCapacity: capacity,
                             pricePerSession,
                             fullCyclePrice: fullMonthPrice,
@@ -1382,6 +1470,9 @@ export class AttendanceService {
                             totalPaid: 0,
                             remainingAmount: cycleCharge,
                             status: CycleEnrollmentStatus.UNPAID
+                        },
+                        $set: {
+                            groupId: group._id
                         }
                     },
                     upsert: true
@@ -1426,7 +1517,7 @@ export class AttendanceService {
                 );
             }
 
-            if (cycleRolledOver || (!group.cycle?.startedAt && currentSessionNumber === 1)) {
+            if (cycleRolledOver || (!group.cycle?.startedAt && sessionSessionNumber === 1)) {
                 const studentDebtUpdates = activeStudents.map(student => {
                     // @ts-ignore
                     const fullMonthPrice = (priceSnapshot instanceof Map ? priceSnapshot.get(student.gradeLevel) : priceSnapshot?.[student.gradeLevel]) || 0;
@@ -1447,10 +1538,10 @@ export class AttendanceService {
                 group._id,
                 {
                     $set: {
-                        'cycle.capacity': capacity,
-                        'cycle.currentSessionNumber': currentSessionNumber,
-                        'cycle.currentCycleNumber': currentCycleNumber,
-                        'cycle.startedAt': startedAt,
+                        'cycle.capacity': nextGroupCapacity,
+                        'cycle.currentSessionNumber': nextGroupSessionNumber,
+                        'cycle.currentCycleNumber': nextGroupCycleNumber,
+                        'cycle.startedAt': nextGroupStartedAt,
                         'cycle.priceSnapshot': priceSnapshot
                     }
                 },

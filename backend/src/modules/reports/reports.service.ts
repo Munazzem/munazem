@@ -73,6 +73,22 @@ export class ReportsService {
             if (s.date) sessionDateMap.set(s._id.toString(), s.date);
         });
 
+        // Also fetch dates for sessions from previous groups attended by this student
+        const prevGroupSessionIds = [
+            ...attendances.map(a => a.sessionId ? ((a.sessionId as any)._id?.toString() || a.sessionId.toString()) : null),
+            ...snapshots.map(s => s.sessionId ? ((s.sessionId as any)._id?.toString() || s.sessionId.toString()) : null),
+        ].filter((id): id is string => !!id && !sessionDateMap.has(id));
+
+        if (prevGroupSessionIds.length > 0) {
+            const pastSessions = await SessionModel.find(
+                { _id: { $in: prevGroupSessionIds.map(id => new mongoose.Types.ObjectId(id)) } },
+                { date: 1 }
+            ).lean();
+            pastSessions.forEach(s => {
+                if (s.date) sessionDateMap.set(s._id.toString(), s.date);
+            });
+        }
+
         // Map sessions (priority: PRESENT/LATE (4) > GUEST (3) > EXCUSED (2) > ABSENT (1))
         // Keyed by sessionId so that each conducted session is counted and displayed on its own, even if on the same day
         const sessionAttendanceMap = new Map<string, { sessionId?: any; date: Date; status: string; homeworkDone?: boolean | null; priority: number }>();
@@ -258,27 +274,57 @@ export class ReportsService {
             teacherId
         }).sort({ cycleNumber: -1 }).lean();
 
-        const cycleEnrollments = allEnrollments.map(e => ({
-            _id: e._id,
-            cycleNumber: e.cycleNumber,
-            cycleCapacity: e.cycleCapacity,
-            pricePerSession: e.pricePerSession,
-            fullCyclePrice: e.fullCyclePrice,
-            startSession: e.startSession,
-            chargeableSessions: e.chargeableSessions,
-            cycleCharge: e.cycleCharge,
-            totalPaid: e.totalPaid,
-            remainingAmount: e.remainingAmount,
-            status: e.status,
-            isCurrentCycle: e.cycleNumber === currentCycleNumber,
-            isPastCycle: e.cycleNumber < currentCycleNumber,
-            createdAt: (e as any).createdAt,
-        }));
+        // Deduplicate enrollments by cycleNumber in case of group transfers:
+        // Priority: PAID > PARTIALLY_PAID > matching student's current groupId > most recently updated
+        const deduplicatedEnrollmentsMap = new Map<number, any>();
+        for (const e of allEnrollments) {
+            const existing = deduplicatedEnrollmentsMap.get(e.cycleNumber);
+            if (!existing) {
+                deduplicatedEnrollmentsMap.set(e.cycleNumber, e);
+            } else {
+                const isExistingPaid = existing.status === CycleEnrollmentStatus.PAID;
+                const isCurrentPaid = e.status === CycleEnrollmentStatus.PAID;
+                if (!isExistingPaid && isCurrentPaid) {
+                    deduplicatedEnrollmentsMap.set(e.cycleNumber, e);
+                } else if (!isExistingPaid && !isCurrentPaid) {
+                    const isCurrentMatchingGroup = e.groupId?.toString() === student.groupId?.toString();
+                    const isExistingMatchingGroup = existing.groupId?.toString() === student.groupId?.toString();
+                    if (isCurrentMatchingGroup && !isExistingMatchingGroup) {
+                        deduplicatedEnrollmentsMap.set(e.cycleNumber, e);
+                    } else if (e.totalPaid > existing.totalPaid) {
+                        deduplicatedEnrollmentsMap.set(e.cycleNumber, e);
+                    }
+                }
+            }
+        }
+        const sortedDeduplicatedEnrollments = Array.from(deduplicatedEnrollmentsMap.values())
+            .sort((a, b) => b.cycleNumber - a.cycleNumber);
+
+        const cycleEnrollments = sortedDeduplicatedEnrollments.map(e => {
+            const isCurrentCycle = e.cycleNumber === currentCycleNumber && e.groupId?.toString() === student.groupId?.toString();
+            const isPastCycle = !isCurrentCycle && (e.groupId?.toString() !== student.groupId?.toString() || e.cycleNumber < currentCycleNumber);
+            return {
+                _id: e._id,
+                cycleNumber: e.cycleNumber,
+                cycleCapacity: e.cycleCapacity,
+                pricePerSession: e.pricePerSession,
+                fullCyclePrice: e.fullCyclePrice,
+                startSession: e.startSession,
+                chargeableSessions: e.chargeableSessions,
+                cycleCharge: e.cycleCharge,
+                totalPaid: e.totalPaid,
+                remainingAmount: e.remainingAmount,
+                status: e.status,
+                isCurrentCycle,
+                isPastCycle,
+                createdAt: (e as any).createdAt,
+            };
+        });
 
         const currentCycleEnrollment = cycleEnrollments.find(e => e.isCurrentCycle);
         const hasActiveSubscription = currentCycleEnrollment?.status === CycleEnrollmentStatus.PAID;
         const pastUnpaidCycles = cycleEnrollments.filter(e => e.isPastCycle && e.status !== CycleEnrollmentStatus.PAID);
-        const pastCyclesDebt = pastUnpaidCycles.reduce((sum, e) => sum + e.remainingAmount, 0);
+        const pastCyclesDebt = pastUnpaidCycles.reduce((sum, e) => sum + (e.remainingAmount || 0), 0);
 
         // ── Lesson Cycle Attendance Calculation ──────────────────────
         const rawCycleStartedAt = (group as any)?.cycle?.startedAt;
@@ -501,7 +547,7 @@ export class ReportsService {
 
         if (missingSessionIds.length > 0) {
             const extraSessions = await SessionModel.find(
-                { _id: { $in: missingSessionIds } },
+                { _id: { $in: missingSessionIds.map(id => new mongoose.Types.ObjectId(id)) } },
                 { cycleContext: 1, date: 1 }
             ).lean();
             extraSessions.forEach(s => sessionDocMap.set(s._id.toString(), s));
@@ -510,6 +556,10 @@ export class ReportsService {
         const chronologicalEntries = [...effectiveEntries].sort(
             (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
         );
+
+        const groupCap = (group as any)?.cycle?.capacity || ((group as any)?.schedule?.length || 2) * 4 || 8;
+        const groupCompletedInCycle = (group as any)?.cycle?.currentSessionNumber || 0;
+        const effectiveCurrentCycle = (groupCompletedInCycle >= groupCap) ? currentCycleNumber + 1 : currentCycleNumber;
 
         chronologicalEntries.forEach(entry => {
             const sid = entry.sessionId ? (typeof entry.sessionId === 'object' ? (entry.sessionId as any)._id?.toString() || (entry.sessionId as any).toString() : entry.sessionId.toString()) : null;
@@ -520,7 +570,9 @@ export class ReportsService {
                 // Use the true, verified cycle number recorded at the time of the session
                 targetCycle = sessionDoc.cycleContext.cycleNumber;
             } else if (cycleStartedAtDate && new Date(entry.date) >= cycleStartedAtDate) {
-                targetCycle = currentCycleNumber;
+                targetCycle = (groupCompletedInCycle >= groupCap && sessionDoc?.status !== SessionStatus.COMPLETED)
+                    ? currentCycleNumber + 1
+                    : currentCycleNumber;
             } else {
                 targetCycle = currentCycleNumber > 1 ? currentCycleNumber - 1 : 1;
             }
@@ -528,7 +580,7 @@ export class ReportsService {
             if (!cyclesMap.has(targetCycle)) {
                 cyclesMap.set(targetCycle, {
                     cycleNumber: targetCycle,
-                    isCurrent: targetCycle === currentCycleNumber,
+                    isCurrent: targetCycle === effectiveCurrentCycle,
                     sessions: []
                 });
             }
@@ -540,9 +592,9 @@ export class ReportsService {
             });
         });
 
-        if (!cyclesMap.has(currentCycleNumber)) {
-            cyclesMap.set(currentCycleNumber, {
-                cycleNumber: currentCycleNumber,
+        if (!cyclesMap.has(effectiveCurrentCycle)) {
+            cyclesMap.set(effectiveCurrentCycle, {
+                cycleNumber: effectiveCurrentCycle,
                 isCurrent: true,
                 sessions: []
             });

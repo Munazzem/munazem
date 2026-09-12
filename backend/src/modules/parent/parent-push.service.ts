@@ -546,4 +546,106 @@ export class ParentPushService {
       parentCount: parentIds.length,
     });
   }
+
+  /**
+   * Notify parents when a student's subscription payment is recorded.
+   * Fires-and-forgets — never throws so it cannot break the payment flow.
+   */
+  static notifyPayment(params: {
+    studentId: string;
+    studentName: string;
+    teacherId: string;
+    teacherName?: string | undefined;
+    subject?: string | undefined;
+    paidAmount: number;
+    remainingAmount?: number | undefined;
+    cycleNumber?: number | undefined;
+    transactionId: string;
+    date?: Date | undefined;
+  }): void {
+    setImmediate(() => {
+      ParentPushService._sendPayment(params).catch((err) =>
+        logger.warn('parent_push_payment_error', { err })
+      );
+    });
+  }
+
+  private static async _sendPayment(params: {
+    studentId: string;
+    studentName: string;
+    teacherId: string;
+    teacherName?: string | undefined;
+    subject?: string | undefined;
+    paidAmount: number;
+    remainingAmount?: number | undefined;
+    cycleNumber?: number | undefined;
+    transactionId: string;
+    date?: Date | undefined;
+  }): Promise<void> {
+    const parentIds = await getParentsForStudent(params.studentId);
+    if (parentIds.length === 0) return;
+
+    const {
+      studentId,
+      studentName,
+      paidAmount,
+      remainingAmount,
+      cycleNumber,
+      transactionId,
+    } = params;
+
+    const { cleanName, teacherSig } = await resolveTeacherSigInfo(
+      params.teacherId,
+      params.teacherName,
+      params.subject
+    );
+    const teacherDisplay = cleanName ? `أ/ ${cleanName}` : (params.teacherName || '');
+    const signature = teacherSig ? `\nمع تحيات: ${teacherSig}` : '';
+
+    const cycleText = cycleNumber ? `الدورة (${cycleNumber})` : 'الاشتراك';
+    const remainingText =
+      remainingAmount !== undefined && remainingAmount > 0
+        ? ` (المتبقي: ${remainingAmount} ج.م)`
+        : '';
+
+    const title = `${studentName} — تسجيل سداد الاشتراك 💳`;
+    const body = `تم تسجيل سداد مبلغ ${paidAmount} ج.م لاشتراك ${cycleText} لـ ${studentName} لدى ${teacherDisplay}${remainingText}.${signature}`;
+
+    const deepLink = buildDeepLink(studentId, 'financial');
+    const eventId = `payment:${transactionId}:${studentId}`;
+    const pushData = {
+      deepLink,
+      studentId,
+      tab: 'financial',
+      transactionId,
+      paidAmount,
+      cycleNumber,
+    };
+
+    await Promise.allSettled(
+      parentIds.map(async (parentId) => {
+        await saveInAppNotification({
+          parentId,
+          studentId,
+          teacherId: params.teacherId,
+          type: ParentNotificationType.PAYMENT_RECORDED,
+          title,
+          body,
+          deepLink,
+          data: pushData,
+          eventId: `${eventId}:${parentId}`,
+        });
+
+        await deliverToParent(parentId, { title, body, data: pushData });
+      })
+    );
+
+    logger.info('parent_push_payment_sent', {
+      studentId,
+      transactionId,
+      paidAmount,
+      cycleNumber,
+      parentCount: parentIds.length,
+    });
+  }
 }
