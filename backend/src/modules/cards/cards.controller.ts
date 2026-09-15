@@ -1,7 +1,10 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
+import multer from 'multer';
 import { CardsService }  from './cards.service.js';
+import { CardTemplateService } from './card-template.service.js';
 import { CardBatchPdfService } from './card-batch-pdf.service.js';
+import { CardPvcPdfService } from './card-pvc-pdf.service.js';
 import { UserRole }      from '../../common/enums/enum.service.js';
 import { SuccessResponse } from '../../common/utils/response/success.responce.js';
 import { authenticate }  from '../../middlewares/auth.middleware.js';
@@ -14,6 +17,11 @@ import {
     disableCardSchema,
     replaceCardSchema,
 } from '../../validation/card.validation.js';
+
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 50 * 1024 * 1024 } // 50MB for PSD files
+});
 
 const cardsRouter = Router();
 cardsRouter.use(authenticate);
@@ -164,6 +172,79 @@ cardsRouter.get(
                 "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:;");
             res.setHeader('Content-Type', 'text/html; charset=utf-8');
             return res.status(200).send(html);
+        } catch (error) { next(error); }
+    }
+);
+
+// ─── GET /cards/batch/:batchId/print-pvc — Printable HTML for PVC Card Printers (CR80) ───
+cardsRouter.get(
+    '/batch/:batchId/print-pvc',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = resolveTeacherId((req as any).user);
+            const batchId   = req.params['batchId'] as string;
+            const mode      = (req.query.mode as any) || 'back_only';
+            const html = await CardPvcPdfService.generatePvcHtml(batchId, teacherId, mode);
+            // Allow inline scripts/styles for this self-contained print page
+            res.setHeader('Content-Security-Policy',
+                "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:;");
+            res.setHeader('Content-Type', 'text/html; charset=utf-8');
+            return res.status(200).send(html);
+        } catch (error) { next(error); }
+    }
+);
+
+// ─── POST /cards/template/upload — Upload PSD or Image card template ──────────
+cardsRouter.post(
+    '/template/upload',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    upload.single('file'),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = resolveTeacherId((req as any).user);
+            const target = (req.body.target === 'front' ? 'front' : 'back') as 'front' | 'back';
+            const result = await CardTemplateService.uploadAndProcessDesign(teacherId, req.file!, target);
+            return SuccessResponse({ res, data: result, message: result.message, status: 200 });
+        } catch (error) { next(error); }
+    }
+);
+
+// ─── GET /cards/template — Get current teacher card template ───────────────────
+cardsRouter.get(
+    '/template',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = resolveTeacherId((req as any).user);
+            const template = await CardTemplateService.getTemplate(teacherId);
+            return SuccessResponse({ res, data: template, message: 'تم جلب قالب الكروت بنجاح' });
+        } catch (error) { next(error); }
+    }
+);
+
+// ─── PUT /cards/template — Update template layout / coordinates ────────────────
+cardsRouter.put(
+    '/template',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = resolveTeacherId((req as any).user);
+            const template = await CardTemplateService.updateTemplate(teacherId, req.body);
+            return SuccessResponse({ res, data: template, message: 'تم حفظ تعديلات القالب بنجاح' });
+        } catch (error) { next(error); }
+    }
+);
+
+// ─── DELETE /cards/template — Delete custom template ──────────────────────────
+cardsRouter.delete(
+    '/template',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = resolveTeacherId((req as any).user);
+            const result = await CardTemplateService.deleteTemplate(teacherId);
+            return SuccessResponse({ res, data: result, message: 'تم حذف القالب المخصص بنجاح' });
         } catch (error) { next(error); }
     }
 );
