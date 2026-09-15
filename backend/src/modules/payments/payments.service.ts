@@ -264,12 +264,19 @@ export class PaymentsService {
         // Find or create CycleEnrollment
         let enrollment = await CycleEnrollmentModel.findOne({
             studentId: student._id,
-            teacherId,
+            groupId: group._id,
             cycleNumber
         });
-        if (enrollment && enrollment.groupId?.toString() !== group._id.toString()) {
-            enrollment.groupId = group._id;
-            await enrollment.save();
+        if (!enrollment) {
+            enrollment = await CycleEnrollmentModel.findOne({
+                studentId: student._id,
+                teacherId,
+                cycleNumber
+            });
+            if (enrollment && enrollment.groupId?.toString() !== group._id.toString()) {
+                enrollment.groupId = group._id;
+                await enrollment.save();
+            }
         }
 
         const txDate = resolveTransactionDate(data.date);
@@ -380,10 +387,12 @@ export class PaymentsService {
                 enrollment.chargeableSessions = data.customSessionsQuota;
                 enrollment.cycleCapacity = data.customSessionsQuota;
             }
-            enrollment.remainingAmount = Math.max(0, enrollment.cycleCharge - enrollment.totalPaid);
-            if (enrollment.remainingAmount === 0 && enrollment.totalPaid > 0) {
+            const currentDiscount = (enrollment as any).totalDiscount || 0;
+            const settled = (enrollment.totalPaid || 0) + currentDiscount;
+            enrollment.remainingAmount = Math.max(0, enrollment.cycleCharge - settled);
+            if (enrollment.remainingAmount === 0 && settled > 0) {
                 enrollment.status = CycleEnrollmentStatus.PAID;
-            } else if (enrollment.totalPaid > 0) {
+            } else if (settled > 0) {
                 enrollment.status = CycleEnrollmentStatus.PARTIALLY_PAID;
             } else {
                 enrollment.status = CycleEnrollmentStatus.UNPAID;
@@ -437,8 +446,11 @@ export class PaymentsService {
             throw BadRequestException({ message: 'إجمالي الدفع والخصم لا يمكن أن يتجاوز المطلوب سداده المتبقي للدورة.' });
         }
 
-        const newTotalPaid = enrollment.totalPaid + paidAmount + discountAmount;
-        const newRemainingAmount = enrollment.cycleCharge - newTotalPaid;
+        const currentDiscount = (enrollment as any).totalDiscount || 0;
+        const newTotalPaid = enrollment.totalPaid + paidAmount;
+        const newTotalDiscount = currentDiscount + discountAmount;
+        const settledAmount = newTotalPaid + newTotalDiscount;
+        const newRemainingAmount = Math.max(0, enrollment.cycleCharge - settledAmount);
         let newStatus = CycleEnrollmentStatus.PARTIALLY_PAID;
         if (newRemainingAmount === 0) newStatus = CycleEnrollmentStatus.PAID;
         if (newRemainingAmount === enrollment.cycleCharge) newStatus = CycleEnrollmentStatus.UNPAID;
@@ -447,6 +459,7 @@ export class PaymentsService {
         const transaction = await withTransaction(async (session) => {
             if (enrollmentCreatedNow) {
                 enrollment.totalPaid = newTotalPaid;
+                (enrollment as any).totalDiscount = newTotalDiscount;
                 enrollment.remainingAmount = newRemainingAmount;
                 enrollment.status = newStatus;
                 await enrollment.save({ session });
@@ -454,6 +467,7 @@ export class PaymentsService {
                 await CycleEnrollmentModel.findByIdAndUpdate(enrollment._id, {
                     $set: {
                         totalPaid: newTotalPaid,
+                        totalDiscount: newTotalDiscount,
                         remainingAmount: newRemainingAmount,
                         status: newStatus
                     }
@@ -1273,9 +1287,11 @@ export class PaymentsService {
 
                     if (enrollment) {
                         const newTotalPaid = Math.max(0, enrollment.totalPaid + delta);
-                        const newRemaining = Math.max(0, enrollment.cycleCharge - newTotalPaid);
+                        const discount = (enrollment as any).totalDiscount || 0;
+                        const settled = newTotalPaid + discount;
+                        const newRemaining = Math.max(0, enrollment.cycleCharge - settled);
                         let newStatus = CycleEnrollmentStatus.PARTIALLY_PAID;
-                        if (newRemaining === 0 && newTotalPaid > 0) newStatus = CycleEnrollmentStatus.PAID;
+                        if (newRemaining === 0 && settled > 0) newStatus = CycleEnrollmentStatus.PAID;
                         if (newRemaining === enrollment.cycleCharge) newStatus = CycleEnrollmentStatus.UNPAID;
 
                         await CycleEnrollmentModel.findByIdAndUpdate(enrollment._id, {
@@ -1522,8 +1538,11 @@ export class PaymentsService {
             throw BadRequestException({ message: 'إجمالي الدفع والخصم لا يمكن أن يتجاوز المبلغ المتبقي للدورة' });
         }
 
-        const newTotalPaid = enrollment.totalPaid + paidAmount + discountAmount;
-        const newRemainingAmount = enrollment.cycleCharge - newTotalPaid;
+        const currentDiscount = (enrollment as any).totalDiscount || 0;
+        const newTotalPaid = enrollment.totalPaid + paidAmount;
+        const newTotalDiscount = currentDiscount + discountAmount;
+        const settledAmount = newTotalPaid + newTotalDiscount;
+        const newRemainingAmount = Math.max(0, enrollment.cycleCharge - settledAmount);
         let newStatus = CycleEnrollmentStatus.PARTIALLY_PAID;
         if (newRemainingAmount === 0) newStatus = CycleEnrollmentStatus.PAID;
         if (newRemainingAmount === enrollment.cycleCharge) newStatus = CycleEnrollmentStatus.UNPAID;
@@ -1534,6 +1553,7 @@ export class PaymentsService {
             await CycleEnrollmentModel.findByIdAndUpdate(enrollment._id, {
                 $set: {
                     totalPaid: newTotalPaid,
+                    totalDiscount: newTotalDiscount,
                     remainingAmount: newRemainingAmount,
                     status: newStatus
                 }
@@ -1781,11 +1801,14 @@ export class PaymentsService {
                 }).session(session);
 
                 if (enrollment) {
-                    const amountToRevert = tx.paidAmount + (tx.discountAmount || 0);
-                    enrollment.totalPaid = Math.max(0, enrollment.totalPaid - amountToRevert);
+                    const cashToRevert = tx.paidAmount || 0;
+                    const discountToRevert = tx.discountAmount || 0;
+                    const totalRevert = cashToRevert + discountToRevert;
+                    enrollment.totalPaid = Math.max(0, enrollment.totalPaid - cashToRevert);
+                    (enrollment as any).totalDiscount = Math.max(0, ((enrollment as any).totalDiscount || 0) - discountToRevert);
                     enrollment.remainingAmount = Math.min(
                         enrollment.cycleCharge,
-                        enrollment.remainingAmount + amountToRevert
+                        enrollment.remainingAmount + totalRevert
                     );
 
                     // If enrollment is back to fully unpaid (no payments remain after reversal),
@@ -1816,7 +1839,7 @@ export class PaymentsService {
 
                         await StudentModel.findByIdAndUpdate(
                             tx.studentId,
-                            { $inc: { totalDebt: amountToRevert } },
+                            { $inc: { totalDebt: totalRevert } },
                             { session }
                         );
                     }
@@ -1990,11 +2013,14 @@ export class PaymentsService {
                     }).session(session);
 
                     if (enrollment) {
-                        const amountToRevert = (tx.paidAmount || 0) + (tx.discountAmount || 0);
-                        enrollment.totalPaid = Math.max(0, enrollment.totalPaid - amountToRevert);
+                        const cashToRevert = (tx.paidAmount || 0);
+                        const discountToRevert = (tx.discountAmount || 0);
+                        const totalRevert = cashToRevert + discountToRevert;
+                        enrollment.totalPaid = Math.max(0, enrollment.totalPaid - cashToRevert);
+                        (enrollment as any).totalDiscount = Math.max(0, ((enrollment as any).totalDiscount || 0) - discountToRevert);
                         enrollment.remainingAmount = Math.min(
                             enrollment.cycleCharge,
-                            enrollment.remainingAmount + amountToRevert
+                            enrollment.remainingAmount + totalRevert
                         );
 
                         if (enrollment.totalPaid <= 0 && enrollment.remainingAmount >= enrollment.cycleCharge) {
@@ -2018,7 +2044,7 @@ export class PaymentsService {
 
                             await StudentModel.findByIdAndUpdate(
                                 tx.studentId,
-                                { $inc: { totalDebt: amountToRevert } },
+                                { $inc: { totalDebt: totalRevert } },
                                 { session }
                             );
                         }

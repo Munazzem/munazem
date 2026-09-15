@@ -1453,12 +1453,13 @@ export class AttendanceService {
                 updateOne: {
                     filter: {
                         studentId: student._id,
-                        teacherId: session.teacherId,
+                        groupId: group._id,
                         cycleNumber: sessionCycleNumber
                     },
                     update: {
                         $setOnInsert: {
                             studentId: student._id,
+                            groupId: group._id,
                             teacherId: session.teacherId,
                             cycleNumber: sessionCycleNumber,
                             cycleCapacity: capacity,
@@ -1470,9 +1471,6 @@ export class AttendanceService {
                             totalPaid: 0,
                             remainingAmount: cycleCharge,
                             status: CycleEnrollmentStatus.UNPAID
-                        },
-                        $set: {
-                            groupId: group._id
                         }
                     },
                     upsert: true

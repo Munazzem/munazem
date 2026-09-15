@@ -19,6 +19,7 @@ export interface ICycleEnrollment {
 
     // Payment tracking
     totalPaid: number;
+    totalDiscount?: number;
     remainingAmount: number;
     status: CycleEnrollmentStatus;
 

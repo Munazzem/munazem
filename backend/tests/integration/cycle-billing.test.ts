@@ -413,4 +413,74 @@ describe('Cycle-Based Billing Integration', () => {
         expect(enrollment2?.cycleCharge).toBe(300);
         expect(enrollment2?.status).toBe(CycleEnrollmentStatus.PAID);
     });
+
+    it('settles cycle completely with discount without leaving any debt', async () => {
+        const student = await seedStudent(group._id, {
+            studentName: 'Discounted Student',
+            gradeLevel: GradeLevel.SEC_1,
+            totalDebt: 0
+        });
+
+        // Price is 800 EGP. Student pays 700 with 100 EGP discount.
+        await PaymentsService.recordSubscription(teacher._id.toString(), teacher._id.toString(), {
+            studentId: student._id.toString(),
+            paidAmount: 700,
+            discountAmount: 100
+        });
+
+        const enrollment = await CycleEnrollmentModel.findOne({
+            studentId: student._id,
+            cycleNumber: 1
+        }).lean();
+
+        expect(enrollment?.cycleCharge).toBe(800);
+        expect(enrollment?.totalPaid).toBe(700);
+        expect(enrollment?.totalDiscount).toBe(100);
+        expect(enrollment?.remainingAmount).toBe(0);
+        expect(enrollment?.status).toBe(CycleEnrollmentStatus.PAID);
+
+        const updatedStudent = await StudentModel.findById(student._id).lean();
+        expect(updatedStudent?.totalDebt).toBe(0);
+
+        // Verify report returns correct separate fields
+        const report = await ReportsService.getStudentReport(student._id.toString(), teacher._id.toString());
+        const cycleReport = report.payments?.allCycleEnrollments?.find((c: any) => c.cycleNumber === 1);
+        expect(cycleReport?.cycleCharge).toBe(800);
+        expect(cycleReport?.totalPaid).toBe(700);
+        expect(cycleReport?.totalDiscount).toBe(100);
+        expect(cycleReport?.remainingAmount).toBe(0);
+        expect(cycleReport?.status).toBe('PAID');
+        expect(report.payments?.pastUnpaidCycles?.length).toBe(0);
+        expect(report.payments?.pastCyclesDebt).toBe(0);
+    });
+
+    it('handles partial payment with discount correctly without adding discount to debt', async () => {
+        const student = await seedStudent(group._id, {
+            studentName: 'Partial Discount Student',
+            gradeLevel: GradeLevel.SEC_1,
+            totalDebt: 0
+        });
+
+        // Price is 800 EGP. Student pays 400 with 100 EGP discount -> Remaining 300 EGP.
+        await PaymentsService.recordSubscription(teacher._id.toString(), teacher._id.toString(), {
+            studentId: student._id.toString(),
+            paidAmount: 400,
+            discountAmount: 100
+        });
+
+        const enrollment = await CycleEnrollmentModel.findOne({
+            studentId: student._id,
+            cycleNumber: 1
+        }).lean();
+
+        expect(enrollment?.cycleCharge).toBe(800);
+        expect(enrollment?.totalPaid).toBe(400);
+        expect(enrollment?.totalDiscount).toBe(100);
+        expect(enrollment?.remainingAmount).toBe(300);
+        expect(enrollment?.status).toBe(CycleEnrollmentStatus.PARTIALLY_PAID);
+
+        const updatedStudent = await StudentModel.findById(student._id).lean();
+        expect(updatedStudent?.totalDebt).toBe(300);
+    });
 });
+

@@ -179,7 +179,10 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                                     </Badge>
                                 </div>
 
-                                <div className="grid grid-cols-3 gap-1.5 text-center bg-gray-50/80 rounded-lg p-2 text-xs">
+                                <div className={cn(
+                                    "grid gap-1.5 text-center bg-gray-50/80 rounded-lg p-2 text-xs",
+                                    (cycle.totalDiscount || 0) > 0 ? "grid-cols-4" : "grid-cols-3"
+                                )}>
                                     <div>
                                         <p className="text-[10px] text-gray-400 font-medium">سعر الدورة</p>
                                         <p className="font-bold text-gray-700 mt-0.5">{cycle.cycleCharge} ج</p>
@@ -188,6 +191,12 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                                         <p className="text-[10px] text-gray-400 font-medium">المدفوع</p>
                                         <p className="font-bold text-green-600 mt-0.5">{cycle.totalPaid} ج</p>
                                     </div>
+                                    {(cycle.totalDiscount || 0) > 0 && (
+                                        <div>
+                                            <p className="text-[10px] text-blue-500 font-medium">الخصم</p>
+                                            <p className="font-bold text-blue-600 mt-0.5">{cycle.totalDiscount} ج</p>
+                                        </div>
+                                    )}
                                     <div>
                                         <p className="text-[10px] text-red-500 font-medium">المتبقي</p>
                                         <p className="font-extrabold text-red-600 mt-0.5">{cycle.remainingAmount} ج</p>
@@ -253,6 +262,7 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                                             </div>
                                             <p className="text-[11px] text-gray-500 mt-0.5">
                                                 المطلوب: {cycle.cycleCharge} ج · المدفوع: {cycle.totalPaid} ج
+                                                {(cycle.totalDiscount || 0) > 0 ? ` · الخصم: ${cycle.totalDiscount} ج` : ''}
                                             </p>
                                         </div>
                                     </div>

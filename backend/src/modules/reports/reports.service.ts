@@ -248,7 +248,7 @@ export class ReportsService {
                 type:       TransactionType.INCOME,
             }, {
                 category: 1, paidAmount: 1, originalAmount: 1,
-                discountAmount: 1, date: 1, description: 1,
+                discountAmount: 1, date: 1, description: 1, cycleNumber: 1,
             }).sort({ date: -1 }).limit(50).lean(),
             TransactionModel.aggregate([
                 { $match: { teacherId: new mongoose.Types.ObjectId(teacherId), studentId: student._id, type: TransactionType.INCOME } },
@@ -300,9 +300,67 @@ export class ReportsService {
         const sortedDeduplicatedEnrollments = Array.from(deduplicatedEnrollmentsMap.values())
             .sort((a, b) => b.cycleNumber - a.cycleNumber);
 
+        // Pre-group subscription payments by cycleNumber
+        const subTxs = payments.filter((p: any) => p.category === TransactionCategory.SUBSCRIPTION);
+        const subTxsByCycle = new Map<number, any[]>();
+        const unassignedSubs: any[] = [];
+        for (const p of subTxs) {
+            if (p.cycleNumber != null) {
+                const list = subTxsByCycle.get(p.cycleNumber) || [];
+                list.push(p);
+                subTxsByCycle.set(p.cycleNumber, list);
+            } else {
+                unassignedSubs.push(p);
+            }
+        }
+
+        // Fallback for legacy transactions without cycleNumber (match oldest tx to oldest cycle)
+        if (unassignedSubs.length > 0) {
+            const sortedAscEnrollments = [...sortedDeduplicatedEnrollments].sort((a, b) => a.cycleNumber - b.cycleNumber);
+            const sortedAscSubs = [...unassignedSubs].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+            sortedAscSubs.forEach((sub, idx) => {
+                const targetCycle = sortedAscEnrollments[idx]?.cycleNumber ?? (idx + 1);
+                (sub as any).cycleNumber = targetCycle;
+                const list = subTxsByCycle.get(targetCycle) || [];
+                list.push(sub);
+                subTxsByCycle.set(targetCycle, list);
+            });
+        }
+
         const cycleEnrollments = sortedDeduplicatedEnrollments.map(e => {
             const isCurrentCycle = e.cycleNumber === currentCycleNumber && e.groupId?.toString() === student.groupId?.toString();
             const isPastCycle = !isCurrentCycle && (e.groupId?.toString() !== student.groupId?.toString() || e.cycleNumber < currentCycleNumber);
+
+            const cycleTxs = subTxsByCycle.get(e.cycleNumber) || [];
+            const txPaid = cycleTxs.reduce((sum: number, t: any) => sum + (t.paidAmount || 0), 0);
+            const txDiscount = cycleTxs.reduce((sum: number, t: any) => sum + (t.discountAmount || 0), 0);
+
+            let totalDiscount = (e as any).totalDiscount != null && (e as any).totalDiscount > 0
+                ? (e as any).totalDiscount
+                : txDiscount;
+
+            let totalPaid = e.totalPaid || 0;
+            if (totalDiscount > 0 && totalPaid >= e.cycleCharge) {
+                totalPaid = Math.max(0, e.cycleCharge - totalDiscount);
+            } else if (txPaid > 0 && Math.abs(txPaid - totalPaid) === totalDiscount) {
+                totalPaid = txPaid;
+            }
+
+            let remainingAmount = e.remainingAmount;
+            let status = e.status;
+            const settled = totalPaid + totalDiscount;
+            if (settled >= e.cycleCharge || (txPaid + txDiscount >= e.cycleCharge)) {
+                remainingAmount = 0;
+                status = CycleEnrollmentStatus.PAID;
+                if (e.remainingAmount > 0 || e.status !== CycleEnrollmentStatus.PAID) {
+                    // Auto-heal DB record
+                    CycleEnrollmentModel.updateOne(
+                        { _id: e._id },
+                        { $set: { remainingAmount: 0, status: CycleEnrollmentStatus.PAID, totalPaid, totalDiscount } }
+                    ).exec().catch(() => {});
+                }
+            }
+
             return {
                 _id: e._id,
                 cycleNumber: e.cycleNumber,
@@ -312,9 +370,10 @@ export class ReportsService {
                 startSession: e.startSession,
                 chargeableSessions: e.chargeableSessions,
                 cycleCharge: e.cycleCharge,
-                totalPaid: e.totalPaid,
-                remainingAmount: e.remainingAmount,
-                status: e.status,
+                totalPaid,
+                totalDiscount,
+                remainingAmount,
+                status,
                 isCurrentCycle,
                 isPastCycle,
                 createdAt: (e as any).createdAt,
@@ -678,6 +737,7 @@ export class ReportsService {
                 history: payments,
                 subscriptions: payments.filter((p: any) => p.category === TransactionCategory.SUBSCRIPTION),
                 cycleEnrollments,
+                allCycleEnrollments: cycleEnrollments,
                 pastUnpaidCycles,
                 pastCyclesDebt,
                 currentCycleNumber,

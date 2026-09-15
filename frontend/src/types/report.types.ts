@@ -38,6 +38,7 @@ export interface ICycleEnrollmentInfo {
     chargeableSessions: number;
     cycleCharge: number;
     totalPaid: number;
+    totalDiscount?: number;
     remainingAmount: number;
     status: 'PAID' | 'PARTIALLY_PAID' | 'UNPAID';
     isCurrentCycle: boolean;

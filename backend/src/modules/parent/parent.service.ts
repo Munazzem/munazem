@@ -10,9 +10,18 @@ import { NotFoundException, BadRequestException } from '../../common/utils/respo
 export class ParentService {
 
     static async lookupByPhone(parentPhone: string) {
-        const phone = parentPhone.trim();
+        // Normalize phone: strip all whitespace, dashes, dots, and parens
+        // then handle Egyptian country code (+20 or 0020 → 0)
+        let phone = (parentPhone || '').replace(/[\s\-\.\(\)]/g, '').trim();
         if (!phone) throw BadRequestException({ message: 'رقم الهاتف مطلوب' });
 
+        // Convert +20XXXXXXXXXX or 0020XXXXXXXXXX → 0XXXXXXXXXX
+        if (phone.startsWith('+20')) phone = '0' + phone.slice(3);
+        else if (phone.startsWith('0020')) phone = '0' + phone.slice(4);
+        // If only 10 digits starting with 1 (missing leading 0) → add 0
+        else if (/^1\d{9}$/.test(phone)) phone = '0' + phone;
+
+        // Search with both the normalized form and common variants
         const students = await StudentModel.find(
             { parentPhone: phone },
             { studentName: 1, gradeLevel: 1, groupId: 1, teacherId: 1,
