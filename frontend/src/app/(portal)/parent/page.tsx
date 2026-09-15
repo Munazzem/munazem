@@ -365,12 +365,18 @@ export default function ParentPortalPage() {
 
     const handleSearch = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!phone.trim()) { setError('أدخل رقم الهاتف'); return; }
+        // Normalize: strip all spaces, dashes, dots — handle +20 prefix
+        let normalized = phone.replace(/[\s\-\.\(\)]/g, '').trim();
+        if (normalized.startsWith('+20')) normalized = '0' + normalized.slice(3);
+        else if (normalized.startsWith('0020')) normalized = '0' + normalized.slice(4);
+        else if (/^1\d{9}$/.test(normalized)) normalized = '0' + normalized;
+
+        if (!normalized) { setError('أدخل رقم الهاتف'); return; }
         setError('');
         setLoading(true);
         setStudents(null);
         try {
-            const data = await parentLookup(phone.trim());
+            const data = await parentLookup(normalized);
             setStudents(Array.isArray(data) ? data : []);
         } catch (err: any) {
             const msg = err?.response?.data?.message ?? 'لم يتم العثور على أي طالب بهذا الرقم';
@@ -422,8 +428,14 @@ export default function ParentPortalPage() {
                         <Phone className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
                         <Input
                             type="tel"
+                            inputMode="numeric"
+                            autoComplete="tel"
+                            enterKeyHint="search"
                             value={phone}
-                            onChange={(e) => setPhone(e.target.value)}
+                            onChange={(e) => {
+                                // Strip spaces and dashes as user types (iOS autocomplete fix)
+                                setPhone(e.target.value.replace(/[\s\-]/g, ''));
+                            }}
                             placeholder="01xxxxxxxxx"
                             dir="ltr"
                             className="pr-10 h-12 rounded-2xl text-base"

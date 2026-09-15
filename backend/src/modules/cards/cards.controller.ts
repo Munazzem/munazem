@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { CardsService }  from './cards.service.js';
+import { CardBatchPdfService } from './card-batch-pdf.service.js';
 import { UserRole }      from '../../common/enums/enum.service.js';
 import { SuccessResponse } from '../../common/utils/response/success.responce.js';
 import { authenticate }  from '../../middlewares/auth.middleware.js';
@@ -13,7 +14,6 @@ import {
     disableCardSchema,
     replaceCardSchema,
 } from '../../validation/card.validation.js';
-import { CardBatchPdfService } from './card-batch-pdf.service.js';
 
 const cardsRouter = Router();
 cardsRouter.use(authenticate);
@@ -150,7 +150,7 @@ cardsRouter.get(
     }
 );
 
-// ─── GET /cards/batch/:batchId/print — Printable HTML for a card batch ────────
+// ─── GET /cards/batch/:batchId/print — Printable HTML for a card batch (A4) ───
 cardsRouter.get(
     '/batch/:batchId/print',
     authorizeRoles(UserRole.teacher, UserRole.assistant),
@@ -159,6 +159,9 @@ cardsRouter.get(
             const teacherId = resolveTeacherId((req as any).user);
             const batchId   = req.params['batchId'] as string;
             const html = await CardBatchPdfService.generateBatchHtml(batchId, teacherId);
+            // Allow inline scripts/styles for this self-contained print page
+            res.setHeader('Content-Security-Policy',
+                "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:;");
             res.setHeader('Content-Type', 'text/html; charset=utf-8');
             return res.status(200).send(html);
         } catch (error) { next(error); }
@@ -166,3 +169,4 @@ cardsRouter.get(
 );
 
 export default cardsRouter;
+

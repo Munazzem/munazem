@@ -57,6 +57,11 @@ const cycleEnrollmentSchema = new Schema<ICycleEnrollmentDocument>({
         default: 0,
         min: [0, 'إجمالي المدفوع لا يمكن أن يكون سالباً'],
     },
+    totalDiscount: {
+        type: Number,
+        default: 0,
+        min: [0, 'إجمالي الخصم لا يمكن أن يكون سالباً'],
+    },
     remainingAmount: {
         type: Number,
         required: true,
