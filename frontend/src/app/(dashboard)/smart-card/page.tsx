@@ -10,7 +10,6 @@ import {
     getCardStats,
     getCards,
     getCardBatchPrintUrl,
-    getCardBatchPvcPrintUrl,
     unlinkCard,
 } from '@/lib/api/cards';
 import type { CardResolveResult, CardStats, ICard } from '@/lib/api/cards';
@@ -24,12 +23,11 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CreditCard, User, Users, Wallet, BookOpen, FileText,
     MessageSquare, Printer, Unlink, CheckCircle2,
-    Loader2, Package, Scan, Link2, Hash, ExternalLink, Palette, Sliders } from 'lucide-react';
+    Loader2, Package, Scan, Link2, Hash, ExternalLink } from 'lucide-react';
 import { QrScanner } from '@/components/scanner/QrScanner';
 import { SubscriptionModal } from '@/components/smart-card/SubscriptionModal';
 import { NotebookActionModal } from '@/components/smart-card/NotebookActionModal';
 import { AddGradeModal } from '@/components/smart-card/AddGradeModal';
-import { CardTemplateModal } from '@/components/smart-card/CardTemplateModal';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type View = 'scanner' | 'result' | 'link-choice' | 'link-student' | 'generate';
@@ -264,7 +262,7 @@ function saveHistory(entries: BatchHistoryEntry[]) {
     try { localStorage.setItem(HISTORY_KEY, JSON.stringify(entries.slice(0, 20))); } catch { /* ignore */ }
 }
 
-function GenerateBatchPanel({ onOpenTemplateModal }: { onOpenTemplateModal: () => void }) {
+function GenerateBatchPanel() {
     const [count, setCount] = useState(50);
     const [history, setHistory] = useState<BatchHistoryEntry[]>(loadHistory);
     const qc = useQueryClient();
@@ -308,14 +306,6 @@ function GenerateBatchPanel({ onOpenTemplateModal }: { onOpenTemplateModal: () =
                     <h3 className="font-bold text-gray-800 flex items-center gap-2">
                         <Package className="h-5 w-5 text-primary" /> إنشاء batch جديد
                     </h3>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={onOpenTemplateModal}
-                        className="gap-1.5 text-xs text-primary border-primary/30 hover:bg-primary/5"
-                    >
-                        <Sliders className="h-3.5 w-3.5" /> تخصيص قالب الكارت
-                    </Button>
                 </div>
                 <div className="flex items-center gap-3">
                     <Input
@@ -389,13 +379,6 @@ function GenerateBatchPanel({ onOpenTemplateModal }: { onOpenTemplateModal: () =
                                     >
                                         <Printer className="h-3 w-3" /> A4
                                     </Button>
-                                    <Button
-                                        size="sm"
-                                        className="gap-1 bg-blue-600 hover:bg-blue-700 text-white text-xs h-7 px-2.5 shadow-sm"
-                                        onClick={() => window.open(getCardBatchPvcPrintUrl(entry.batchId, 'back_only'), '_blank')}
-                                    >
-                                        <CreditCard className="h-3 w-3" /> PVC
-                                    </Button>
                                 </div>
                             </div>
                         ))}
@@ -422,7 +405,6 @@ export default function SmartCardPage() {
     const [resolving, setResolving] = useState(false);
     const [showLinkStudentModal, setShowLinkStudentModal] = useState(false);
     const [showDisableModal, setShowDisableModal] = useState(false);
-    const [showTemplateModal, setShowTemplateModal] = useState(false);
     const [tab, setTab] = useState<'scanner' | 'generate'>('scanner');
     const qc = useQueryClient();
 
@@ -431,21 +413,25 @@ export default function SmartCardPage() {
         try {
             const result = await resolveCard(input);
             setResolveResult(result);
-            if (result.cardStatus === 'NEW') {
+            if (result.source === 'studentCode') {
+                setView('result');
+            } else if (result.cardStatus === 'NEW') {
                 setView('link-choice');
-            } else {
+            } else if (result.cardStatus === 'LINKED') {
+                setView('result');
+            } else if (result.cardStatus === 'DISABLED') {
                 setView('result');
             }
         } catch {
-            // error handled globally
+            toast.error('لم يتم التعرف على الرمز أو الكارت');
         } finally {
             setResolving(false);
         }
     }, []);
 
     const handleReset = () => {
-        setResolveResult(null);
         setView('scanner');
+        setResolveResult(null);
     };
 
     const unlinkMutation = useMutation({
@@ -468,21 +454,11 @@ export default function SmartCardPage() {
                     </h1>
                     <p className="text-sm text-gray-500 mt-0.5">امسح الكارت لتنفيذ الإجراءات السريعة</p>
                 </div>
-                <div className="flex items-center gap-2">
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setShowTemplateModal(true)}
-                        className="gap-1.5 border-primary/30 text-primary hover:bg-primary/5 text-xs font-bold"
-                    >
-                        <Palette className="h-4 w-4" /> قالب الكارت (PVC)
+                {view !== 'scanner' && (
+                    <Button variant="outline" size="sm" onClick={handleReset} className="gap-1.5 text-xs">
+                        <Scan className="h-4 w-4" /> مسح جديد
                     </Button>
-                    {view !== 'scanner' && (
-                        <Button variant="outline" size="sm" onClick={handleReset} className="gap-1.5 text-xs">
-                            <Scan className="h-4 w-4" /> مسح جديد
-                        </Button>
-                    )}
-                </div>
+                )}
             </div>
 
             {/* Tabs */}
@@ -504,7 +480,7 @@ export default function SmartCardPage() {
 
             {/* Tab Content */}
             {tab === 'generate' ? (
-                <GenerateBatchPanel onOpenTemplateModal={() => setShowTemplateModal(true)} />
+                <GenerateBatchPanel />
             ) : (
                 <>
                     {/* Scanner View */}
@@ -612,12 +588,6 @@ export default function SmartCardPage() {
                     )}
                 </DialogContent>
             </Dialog>
-
-            {/* Custom Card Template Modal */}
-            <CardTemplateModal
-                open={showTemplateModal}
-                onOpenChange={setShowTemplateModal}
-            />
         </div>
     );
 }
