@@ -407,6 +407,7 @@ export default function SmartCardPage() {
     const [showDisableModal, setShowDisableModal] = useState(false);
     const [tab, setTab] = useState<'scanner' | 'generate'>('scanner');
     const qc = useQueryClient();
+    const router = useRouter();
 
     const handleScan = useCallback(async (input: string) => {
         setResolving(true);
@@ -545,7 +546,7 @@ export default function SmartCardPage() {
                                     <span className="text-sm font-bold text-primary">ربط بطالب موجود</span>
                                 </button>
                                 <button
-                                    onClick={() => window.location.href = `/students?newCard=${resolveResult.cardNumber}`}
+                                    onClick={() => router.push(`/students?newCard=${resolveResult.cardNumber}`)}
                                     className="flex flex-col items-center gap-3 p-5 rounded-2xl border-2 border-gray-200 bg-gray-50 hover:bg-gray-100 hover:border-gray-300 transition-all"
                                 >
                                     <User className="h-7 w-7 text-gray-600" />

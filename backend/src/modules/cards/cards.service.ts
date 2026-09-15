@@ -85,6 +85,23 @@ export class CardsService {
                     throw BadRequestException({ message: 'هذا الكارت معطل — يرجى استبداله أو التواصل مع إدارة المنصة' });
                 }
                 if (card.status === 'NEW') {
+                    // Self-healing: check if a student was created with this card's cardNumber or token as barcode
+                    const matchedStudent = await StudentModel.findOne({
+                        $or: [{ barcode: card.cardNumber }, { barcode: card.cardToken }],
+                        teacherId: new mongoose.Types.ObjectId(teacherId),
+                    }).lean();
+
+                    if (matchedStudent) {
+                        await CardModel.findByIdAndUpdate(card._id, {
+                            studentId: matchedStudent._id,
+                            status:    'LINKED',
+                            linkedAt:  new Date(),
+                            linkedBy:  new mongoose.Types.ObjectId(teacherId),
+                        });
+                        const student = await CardsService._buildStudentSummary(matchedStudent._id.toString(), teacherId);
+                        return { source: 'card', cardStatus: 'LINKED', cardNumber: card.cardNumber, student };
+                    }
+
                     // Return minimal info to trigger the linking flow on the frontend
                     return {
                         source:     'card',
@@ -106,6 +123,22 @@ export class CardsService {
                 throw BadRequestException({ message: 'هذا الكارت معطل' });
             }
             if (cardByNumber.status === 'NEW') {
+                const matchedStudent = await StudentModel.findOne({
+                    $or: [{ barcode: cardByNumber.cardNumber }, { barcode: cardByNumber.cardToken }],
+                    teacherId: new mongoose.Types.ObjectId(teacherId),
+                }).lean();
+
+                if (matchedStudent) {
+                    await CardModel.findByIdAndUpdate(cardByNumber._id, {
+                        studentId: matchedStudent._id,
+                        status:    'LINKED',
+                        linkedAt:  new Date(),
+                        linkedBy:  new mongoose.Types.ObjectId(teacherId),
+                    });
+                    const student = await CardsService._buildStudentSummary(matchedStudent._id.toString(), teacherId);
+                    return { source: 'card', cardStatus: 'LINKED', cardNumber: cardByNumber.cardNumber, student };
+                }
+
                 return { source: 'card', cardStatus: 'NEW', cardNumber: cardByNumber.cardNumber, student: null as any };
             }
             const student = await CardsService._buildStudentSummary(cardByNumber.studentId!.toString(), teacherId);
@@ -115,8 +148,20 @@ export class CardsService {
         // ── Priority 3: Student.barcode (existing QR codes from before this feature) ─
         const studentByBarcode = await StudentModel.findOne({ barcode: resolvedInput, teacherId }).lean();
         if (studentByBarcode) {
+            const matchingCard = await CardModel.findOne({
+                $or: [{ cardNumber: studentByBarcode.barcode }, { cardToken: studentByBarcode.barcode }],
+                teacherId: new mongoose.Types.ObjectId(teacherId),
+            });
+            if (matchingCard && matchingCard.status === 'NEW') {
+                await CardModel.findByIdAndUpdate(matchingCard._id, {
+                    studentId: studentByBarcode._id,
+                    status:    'LINKED',
+                    linkedAt:  new Date(),
+                    linkedBy:  new mongoose.Types.ObjectId(teacherId),
+                });
+            }
             const student = await CardsService._buildStudentSummary(studentByBarcode._id.toString(), teacherId);
-            return { source: 'barcode', cardStatus: null, cardNumber: null, student };
+            return { source: 'barcode', cardStatus: 'LINKED', cardNumber: matchingCard?.cardNumber || null, student };
         }
 
         // ── Priority 4: Student.studentCode (manual code input fallback) ──────────
