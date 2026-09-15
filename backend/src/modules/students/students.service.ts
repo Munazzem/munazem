@@ -554,7 +554,58 @@ export class StudentService {
                 { cycleNumber: { $lt: currentCycleNumber } }
             ]
         }).lean();
-        const truePastDebt = pastEnrollments.reduce((sum, e) => sum + (e.remainingAmount || 0), 0);
+
+        let truePastDebt = 0;
+        if (pastEnrollments.length > 0) {
+            const subTxs = await TransactionModel.find({
+                teacherId,
+                studentId: student._id,
+                category: TransactionCategory.SUBSCRIPTION
+            }, { cycleNumber: 1, paidAmount: 1, discountAmount: 1, date: 1 }).sort({ date: 1 }).lean();
+
+            const subTxsByCycle = new Map<number, any[]>();
+            const unassignedSubs: any[] = [];
+            for (const p of subTxs) {
+                if (p.cycleNumber != null) {
+                    const list = subTxsByCycle.get(p.cycleNumber) || [];
+                    list.push(p);
+                    subTxsByCycle.set(p.cycleNumber, list);
+                } else {
+                    unassignedSubs.push(p);
+                }
+            }
+
+            if (unassignedSubs.length > 0) {
+                const allStudentEnrollments = await CycleEnrollmentModel.find({
+                    studentId: student._id,
+                    teacherId
+                }, { cycleNumber: 1 }).sort({ cycleNumber: 1 }).lean();
+                unassignedSubs.forEach((sub, idx) => {
+                    const targetCycle = allStudentEnrollments[idx]?.cycleNumber ?? (idx + 1);
+                    const list = subTxsByCycle.get(targetCycle) || [];
+                    list.push(sub);
+                    subTxsByCycle.set(targetCycle, list);
+                });
+            }
+
+            for (const e of pastEnrollments) {
+                const currentDiscount = (e as any).totalDiscount || 0;
+                const matchingTxs = subTxsByCycle.get(e.cycleNumber) || [];
+                const txPaid = matchingTxs.reduce((s, t) => s + (t.paidAmount || 0), 0);
+                const txDiscount = matchingTxs.reduce((s, t) => s + (t.discountAmount || 0), 0);
+                const totalDisc = Math.max(currentDiscount, txDiscount);
+                const settled = (txPaid > 0 ? txPaid : (e.totalPaid || 0)) + totalDisc;
+
+                if (settled >= e.cycleCharge) {
+                    await CycleEnrollmentModel.updateOne(
+                        { _id: e._id },
+                        { $set: { remainingAmount: 0, status: CycleEnrollmentStatus.PAID, totalDiscount: totalDisc, totalPaid: txPaid || e.totalPaid } }
+                    );
+                } else {
+                    truePastDebt += Math.max(0, e.cycleCharge - settled);
+                }
+            }
+        }
 
         if (student.totalDebt !== truePastDebt) {
             await StudentModel.updateOne({ _id: student._id }, { $set: { totalDebt: truePastDebt } });

@@ -3,7 +3,8 @@
     "compilerOptions": {
         "types": [
             "node",
-            "vitest/globals"
+            "vitest/globals",
+            "multer"
         ],
         "rootDir": "."
     },

@@ -46,4 +46,16 @@ backend/docs/PRODUCTION.md
 **/.wwebjs_cache/
 
 # Independent Standalone Landing & PWA Repository
-landing/
+landing/
+
+# Independent Standalone Demo Repository
+munazzem-demo/
+
+# ── WIP: PVC Card Design (still in progress — do not commit yet) ─────────────
+backend/src/modules/cards/card-pvc-pdf.service.ts
+backend/src/database/models/card-template.model.ts
+backend/src/modules/cards/card-template.service.ts
+backend/src/types/card-template.types.ts
+backend/tests/integration/card-template.test.ts
+frontend/src/components/smart-card/CardTemplateModal.tsx
+backend/fix_discount_debts.js

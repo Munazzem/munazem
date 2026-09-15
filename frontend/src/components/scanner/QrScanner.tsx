@@ -25,30 +25,25 @@ export function QrScanner({ onScanned, mode = 'actions' }: QrScannerProps) {
     const startScanner = useCallback(async () => {
         try {
             if (scannerRef.current) return;
-            const scanner = new Html5Qrcode(scannerId);
+            const scanner = new Html5Qrcode(scannerId, { verbose: false } as any);
             scannerRef.current = scanner;
             scannedRef.current = false;
             setActive(true);
             await scanner.start(
                 { facingMode: 'environment' },
                 {
-                    fps: 24,
-                    qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-                        const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-                        const isPortrait = viewfinderHeight >= viewfinderWidth;
-                        const boxWidth = Math.floor(viewfinderWidth * (isPortrait ? 0.92 : 0.88));
-                        const boxHeight = Math.floor(viewfinderHeight * (isPortrait ? 0.65 : 0.80));
-                        return {
-                            width: Math.max(boxWidth, Math.floor(minEdge * 0.90)),
-                            height: Math.max(boxHeight, Math.floor(minEdge * 0.70)),
-                        };
-                    },
+                    fps: 30,
+                    // Fixed small square box → much easier to detect small QR codes
+                    qrbox: { width: 220, height: 220 },
                     videoConstraints: {
-                        facingMode: 'environment',
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 },
+                        facingMode: { ideal: 'environment' },
+                        width:  { ideal: 1280, min: 640 },
+                        height: { ideal: 720,  min: 480 },
+                        focusMode: { ideal: 'continuous' } as any,
                     },
-                },
+                    // Enable all experimental decoders for faster QR detection
+                    experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+                } as any,
                 (decoded) => {
                     if (scannedRef.current) return;
                     scannedRef.current = true;

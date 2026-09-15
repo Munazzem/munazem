@@ -151,3 +151,75 @@ export const getGroupCardTokens = async (groupId: string): Promise<GroupCardToke
     const res = await apiClient.get(`/cards/by-group/${groupId}`);
     return (res as any).data;
 };
+
+// ── Card Template & PVC Print ─────────────────────────────────────────────
+
+export interface ICardTemplate {
+    _id?: string;
+    teacherId?: string;
+    name: string;
+    backImageUrl: string;
+    frontImageUrl?: string | null;
+    cardWidthMm: number;
+    cardHeightMm: number;
+    qrCode: {
+        xPercent: number;
+        yPercent: number;
+        sizePercent: number;
+    };
+    cardNumber: {
+        xPercent: number;
+        yPercent: number;
+        fontSizePt: number;
+        color: string;
+        show: boolean;
+    };
+}
+
+export interface UploadTemplateResult {
+    template: ICardTemplate;
+    detectedLayers?: {
+        qrCode: boolean;
+        qrLayerName?: string;
+        cardNumber: boolean;
+        cardNumLayerName?: string;
+    };
+    format: 'psd' | 'image';
+    message: string;
+}
+
+/** Get current custom card template */
+export const getCardTemplate = async (): Promise<ICardTemplate | null> => {
+    const res = await apiClient.get('/cards/template');
+    return (res as any).data;
+};
+
+/** Upload PSD or image design */
+export const uploadCardTemplate = async (file: File, target: 'back' | 'front' = 'back'): Promise<UploadTemplateResult> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('target', target);
+    const res = await apiClient.post('/cards/template/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    return (res as any).data;
+};
+
+/** Update card template layout coordinates and styles */
+export const updateCardTemplate = async (data: Partial<ICardTemplate>): Promise<ICardTemplate> => {
+    const res = await apiClient.put('/cards/template', data);
+    return (res as any).data;
+};
+
+/** Delete custom template */
+export const deleteCardTemplate = async (): Promise<{ deleted: boolean }> => {
+    const res = await apiClient.delete('/cards/template');
+    return (res as any).data;
+};
+
+/** Get PVC printable HTML URL for a batch (CR80) */
+export const getCardBatchPvcPrintUrl = (batchId: string, mode: 'back_only' | 'dual_sided' = 'back_only'): string => {
+    const token = Cookies.get('token') || '';
+    return `${API_BASE_URL}/cards/batch/${batchId}/print-pvc?mode=${mode}&token=${token}`;
+};
+

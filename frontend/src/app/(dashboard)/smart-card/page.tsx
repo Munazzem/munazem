@@ -10,6 +10,7 @@ import {
     getCardStats,
     getCards,
     getCardBatchPrintUrl,
+    getCardBatchPvcPrintUrl,
     unlinkCard,
 } from '@/lib/api/cards';
 import type { CardResolveResult, CardStats, ICard } from '@/lib/api/cards';
@@ -23,11 +24,12 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CreditCard, User, Users, Wallet, BookOpen, FileText,
     MessageSquare, Printer, Unlink, CheckCircle2,
-    Loader2, Package, Scan, Link2, Hash, ExternalLink } from 'lucide-react';
+    Loader2, Package, Scan, Link2, Hash, ExternalLink, Palette, Sliders } from 'lucide-react';
 import { QrScanner } from '@/components/scanner/QrScanner';
 import { SubscriptionModal } from '@/components/smart-card/SubscriptionModal';
 import { NotebookActionModal } from '@/components/smart-card/NotebookActionModal';
 import { AddGradeModal } from '@/components/smart-card/AddGradeModal';
+import { CardTemplateModal } from '@/components/smart-card/CardTemplateModal';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type View = 'scanner' | 'result' | 'link-choice' | 'link-student' | 'generate';
@@ -252,16 +254,33 @@ function LinkStudentModal({ cardNumber, onLinked, onClose }: {
 }
 
 // ── Generate Batch Panel ───────────────────────────────────────────────────────
-function GenerateBatchPanel() {
+type BatchHistoryEntry = { batchId: string; count: number; createdAt: string };
+
+const HISTORY_KEY = 'cardBatchHistory';
+function loadHistory(): BatchHistoryEntry[] {
+    try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch { return []; }
+}
+function saveHistory(entries: BatchHistoryEntry[]) {
+    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(entries.slice(0, 20))); } catch { /* ignore */ }
+}
+
+function GenerateBatchPanel({ onOpenTemplateModal }: { onOpenTemplateModal: () => void }) {
     const [count, setCount] = useState(50);
-    const [lastBatchId, setLastBatchId] = useState<string | null>(null);
+    const [history, setHistory] = useState<BatchHistoryEntry[]>(loadHistory);
     const qc = useQueryClient();
 
     const generateMutation = useMutation({
         mutationFn: () => generateCardBatch(count),
         onSuccess: (data) => {
             toast.success(`تم إنشاء ${data.count} كارت بنجاح ✅`);
-            setLastBatchId(data.batchId);
+            const entry: BatchHistoryEntry = {
+                batchId: data.batchId,
+                count: data.count,
+                createdAt: new Date().toISOString(),
+            };
+            const updated = [entry, ...history];
+            setHistory(updated);
+            saveHistory(updated);
             qc.invalidateQueries({ queryKey: ['card-stats'] });
             qc.invalidateQueries({ queryKey: ['cards'] });
         },
@@ -277,17 +296,27 @@ function GenerateBatchPanel() {
             {/* Stats */}
             {stats && (
                 <div className="grid grid-cols-3 gap-3">
-                    <StatCard label="جديدة" value={stats.NEW} color="text-blue-600 bg-blue-50" />
-                    <StatCard label="مربوطة" value={stats.LINKED} color="text-green-600 bg-green-50" />
-                    <StatCard label="معطلة" value={stats.DISABLED} color="text-red-600 bg-red-50" />
+                    <StatCard label="جديدة"   value={stats.NEW}      color="text-blue-600 bg-blue-50"   />
+                    <StatCard label="مربوطة"  value={stats.LINKED}   color="text-green-600 bg-green-50" />
+                    <StatCard label="معطلة"   value={stats.DISABLED} color="text-red-600 bg-red-50"     />
                 </div>
             )}
 
             {/* Generate form */}
             <div className="bg-gray-50 rounded-2xl p-5 space-y-4 border border-gray-100">
-                <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                    <Package className="h-5 w-5 text-primary" /> إنشاء batch جديد
-                </h3>
+                <div className="flex items-center justify-between">
+                    <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                        <Package className="h-5 w-5 text-primary" /> إنشاء batch جديد
+                    </h3>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={onOpenTemplateModal}
+                        className="gap-1.5 text-xs text-primary border-primary/30 hover:bg-primary/5"
+                    >
+                        <Sliders className="h-3.5 w-3.5" /> تخصيص قالب الكارت
+                    </Button>
+                </div>
                 <div className="flex items-center gap-3">
                     <Input
                         type="number"
@@ -306,21 +335,73 @@ function GenerateBatchPanel() {
                         إنشاء الكروت
                     </Button>
                 </div>
-                {lastBatchId && (
-                    <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl">
-                        <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
-                        <span className="text-sm text-green-700 flex-1">تم إنشاء الـ batch بنجاح</span>
-                        <Button
-                            size="sm"
-                            variant="outline"
-                            className="gap-1.5 border-green-300 text-green-700 hover:bg-green-100 text-xs"
-                            onClick={() => window.open(getCardBatchPrintUrl(lastBatchId), '_blank')}
-                        >
-                            <Printer className="h-3.5 w-3.5" /> طباعة الكروت
-                        </Button>
-                    </div>
-                )}
             </div>
+
+            {/* Batch History */}
+            {history.length > 0 && (
+                <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                            <ExternalLink className="h-4 w-4 text-gray-400" /> سجل الـ Batches
+                        </h3>
+                        <button
+                            onClick={() => { setHistory([]); saveHistory([]); }}
+                            className="text-xs text-red-400 hover:text-red-600 transition-colors"
+                        >
+                            مسح السجل
+                        </button>
+                    </div>
+                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                        {history.map((entry, idx) => (
+                            <div
+                                key={entry.batchId}
+                                className={cn(
+                                    'flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl border transition-all',
+                                    idx === 0
+                                        ? 'bg-green-50 border-green-200'
+                                        : 'bg-white border-gray-100 hover:border-gray-200'
+                                )}
+                            >
+                                <div className="flex items-center gap-2 min-w-0">
+                                    {idx === 0
+                                        ? <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+                                        : <Package className="h-4 w-4 text-gray-400 shrink-0" />
+                                    }
+                                    <div className="min-w-0">
+                                        <p className="text-xs font-bold text-gray-700">
+                                            {entry.count} كارت
+                                            {idx === 0 && <span className="mr-1.5 text-green-600">(آخر batch)</span>}
+                                        </p>
+                                        <p className="text-xs text-gray-400 font-mono">
+                                            {new Date(entry.createdAt).toLocaleString('ar-EG', {
+                                                day: '2-digit', month: '2-digit', year: '2-digit',
+                                                hour: '2-digit', minute: '2-digit',
+                                            })}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="gap-1 border-gray-200 text-gray-600 hover:bg-gray-50 text-xs h-7 px-2.5"
+                                        onClick={() => window.open(getCardBatchPrintUrl(entry.batchId), '_blank')}
+                                    >
+                                        <Printer className="h-3 w-3" /> A4
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        className="gap-1 bg-blue-600 hover:bg-blue-700 text-white text-xs h-7 px-2.5 shadow-sm"
+                                        onClick={() => window.open(getCardBatchPvcPrintUrl(entry.batchId, 'back_only'), '_blank')}
+                                    >
+                                        <CreditCard className="h-3 w-3" /> PVC
+                                    </Button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
@@ -341,6 +422,7 @@ export default function SmartCardPage() {
     const [resolving, setResolving] = useState(false);
     const [showLinkStudentModal, setShowLinkStudentModal] = useState(false);
     const [showDisableModal, setShowDisableModal] = useState(false);
+    const [showTemplateModal, setShowTemplateModal] = useState(false);
     const [tab, setTab] = useState<'scanner' | 'generate'>('scanner');
     const qc = useQueryClient();
 
@@ -386,11 +468,21 @@ export default function SmartCardPage() {
                     </h1>
                     <p className="text-sm text-gray-500 mt-0.5">امسح الكارت لتنفيذ الإجراءات السريعة</p>
                 </div>
-                {view !== 'scanner' && (
-                    <Button variant="outline" size="sm" onClick={handleReset} className="gap-1.5">
-                        <Scan className="h-4 w-4" /> مسح جديد
+                <div className="flex items-center gap-2">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowTemplateModal(true)}
+                        className="gap-1.5 border-primary/30 text-primary hover:bg-primary/5 text-xs font-bold"
+                    >
+                        <Palette className="h-4 w-4" /> قالب الكارت (PVC)
                     </Button>
-                )}
+                    {view !== 'scanner' && (
+                        <Button variant="outline" size="sm" onClick={handleReset} className="gap-1.5 text-xs">
+                            <Scan className="h-4 w-4" /> مسح جديد
+                        </Button>
+                    )}
+                </div>
             </div>
 
             {/* Tabs */}
@@ -412,7 +504,7 @@ export default function SmartCardPage() {
 
             {/* Tab Content */}
             {tab === 'generate' ? (
-                <GenerateBatchPanel />
+                <GenerateBatchPanel onOpenTemplateModal={() => setShowTemplateModal(true)} />
             ) : (
                 <>
                     {/* Scanner View */}
@@ -501,12 +593,31 @@ export default function SmartCardPage() {
                     {resolveResult?.cardNumber && (
                         <LinkStudentModal
                             cardNumber={resolveResult.cardNumber}
-                            onLinked={() => { setShowLinkStudentModal(false); handleReset(); }}
+                            onLinked={async () => {
+                                setShowLinkStudentModal(false);
+                                // Re-resolve the card so we can show the student result
+                                setResolving(true);
+                                try {
+                                    const updated = await resolveCard(resolveResult.cardNumber!);
+                                    setResolveResult(updated);
+                                    setView('result');
+                                } catch {
+                                    handleReset();
+                                } finally {
+                                    setResolving(false);
+                                }
+                            }}
                             onClose={() => setShowLinkStudentModal(false)}
                         />
                     )}
                 </DialogContent>
             </Dialog>
+
+            {/* Custom Card Template Modal */}
+            <CardTemplateModal
+                open={showTemplateModal}
+                onOpenChange={setShowTemplateModal}
+            />
         </div>
     );
 }
