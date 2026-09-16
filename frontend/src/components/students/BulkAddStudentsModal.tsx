@@ -63,8 +63,8 @@ function emptyRow(): StudentRow {
 function validateRow(row: StudentRow): string[] {
     const errors: string[] = [];
     if (row.fullName.trim().length < 5) errors.push('الاسم يجب 5 أحرف على الأقل');
-    if (!PHONE_REGEX.test(row.studentPhone)) errors.push('هاتف الطالب غير صحيح');
-    if (!PHONE_REGEX.test(row.parentPhone)) errors.push('هاتف ولي الأمر غير صحيح');
+    if (row.studentPhone && !PHONE_REGEX.test(row.studentPhone)) errors.push('هاتف الطالب غير صحيح');
+    if (row.parentPhone && !PHONE_REGEX.test(row.parentPhone)) errors.push('هاتف ولي الأمر غير صحيح');
     return errors;
 }
 
@@ -144,7 +144,7 @@ function StudentRowForm({
                     onChange={(e) => onChange(row.id, 'studentPhone', e.target.value)}
                     disabled={!!result}
                     dir="ltr"
-                    className={cn('text-sm text-right', isDirty && !PHONE_REGEX.test(row.studentPhone) && 'border-red-300')}
+                    className={cn('text-sm text-right', isDirty && row.studentPhone && !PHONE_REGEX.test(row.studentPhone) && 'border-red-300')}
                 />
                 <Input
                     placeholder="هاتف ولي الأمر 01x..."
@@ -152,7 +152,7 @@ function StudentRowForm({
                     onChange={(e) => onChange(row.id, 'parentPhone', e.target.value)}
                     disabled={!!result}
                     dir="ltr"
-                    className={cn('text-sm text-right', isDirty && !PHONE_REGEX.test(row.parentPhone) && 'border-red-300')}
+                    className={cn('text-sm text-right', isDirty && row.parentPhone && !PHONE_REGEX.test(row.parentPhone) && 'border-red-300')}
                 />
             </div>
 
@@ -247,8 +247,10 @@ export function BulkAddStudentsModal() {
             return;
         }
         // Merge shared gradeLevel + groupId into each row
-        const payload: BulkStudentInput[] = rows.map(({ id, ...rest }) => ({
+        const payload: BulkStudentInput[] = rows.map(({ id, studentPhone, parentPhone, ...rest }) => ({
             ...rest,
+            studentPhone: studentPhone?.trim() || undefined,
+            parentPhone: parentPhone?.trim() || undefined,
             gradeLevel: sharedGrade,
             groupId: sharedGroupId,
         }));

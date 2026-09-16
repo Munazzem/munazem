@@ -10,6 +10,7 @@ import { makeTeacherToken, makeAssistantToken, bearerHeader } from '../helpers/a
 import { seedTeacher, seedAssistant, seedGroup, seedStudent } from '../helpers/db.helper.js';
 import { GradeLevel } from '../../src/common/enums/enum.service.js';
 import { CardModel } from '../../src/database/models/card.model.js';
+import { StudentModel } from '../../src/database/models/student.model.js';
 import { CardsService } from '../../src/modules/cards/cards.service.js';
 
 let app: ReturnType<typeof getTestApp>;
@@ -129,6 +130,48 @@ describe('Students API', () => {
 
             expect(res.status).toBe(400);
         });
+
+        it('يُنشئ طالب جديد بدون أرقام هواتف بنجاح ولا يُخزن مفاتيح فارغة في MongoDB', async () => {
+            await seedTeacher();
+            const group = await seedGroup();
+
+            const res = await app
+                .post('/students')
+                .set('Authorization', bearerHeader(makeTeacherToken()))
+                .send({
+                    fullName: 'طالب بدون هاتف إطلاقاً',
+                    gradeLevel: GradeLevel.PREP_1,
+                    groupId: group._id.toString()
+                });
+
+            expect(res.status).toBe(201);
+            expect(res.body.data.studentName).toBe('طالب بدون هاتف إطلاقاً');
+            
+            // Check in raw DB doc that phone fields were omitted completely
+            const rawDoc = await StudentModel.findById(res.body.data._id).lean();
+            expect(rawDoc?.studentPhone).toBeUndefined();
+            expect(rawDoc?.parentPhone).toBeUndefined();
+        });
+
+        it('يُنشئ طالب جديد مع هاتف واحد فقط بنجاح', async () => {
+            await seedTeacher();
+            const group = await seedGroup();
+
+            const res = await app
+                .post('/students')
+                .set('Authorization', bearerHeader(makeTeacherToken()))
+                .send({
+                    fullName: 'طالب برقم هاتف واحد',
+                    studentPhone: '01012345678',
+                    gradeLevel: GradeLevel.PREP_1,
+                    groupId: group._id.toString()
+                });
+
+            expect(res.status).toBe(201);
+            const rawDoc = await StudentModel.findById(res.body.data._id).lean();
+            expect(rawDoc?.studentPhone).toBe('01012345678');
+            expect(rawDoc?.parentPhone).toBeUndefined();
+        });
     });
 
     describe('POST /students/bulk', () => {
@@ -219,6 +262,48 @@ describe('Students API', () => {
 
             expect(res.status).toBe(200);
             expect(res.body.data.studentName).toBe('الاسم الجديد للطالب');
+        });
+
+        it('لا يمسح الأرقام القديمة إذا لم يتم إرسالها في التعديل', async () => {
+            await seedTeacher();
+            const group = await seedGroup();
+            const student = await seedStudent(group._id as any, {
+                studentPhone: '01012345678',
+                parentPhone: '01112345678',
+            });
+
+            const res = await app
+                .put(`/students/${student._id}`)
+                .set('Authorization', bearerHeader(makeTeacherToken()))
+                .send({
+                    fullName: 'تعديل اسم فقط دون لمس الهاتف',
+                });
+
+            expect(res.status).toBe(200);
+            const rawDoc = await StudentModel.findById(student._id).lean();
+            expect(rawDoc?.studentPhone).toBe('01012345678');
+            expect(rawDoc?.parentPhone).toBe('01112345678');
+        });
+
+        it('يحذف رقم الهاتف ($unset) عند إرسال null', async () => {
+            await seedTeacher();
+            const group = await seedGroup();
+            const student = await seedStudent(group._id as any, {
+                studentPhone: '01012345678',
+                parentPhone: '01112345678',
+            });
+
+            const res = await app
+                .put(`/students/${student._id}`)
+                .set('Authorization', bearerHeader(makeTeacherToken()))
+                .send({
+                    studentPhone: null,
+                });
+
+            expect(res.status).toBe(200);
+            const rawDoc = await StudentModel.findById(student._id).lean();
+            expect(rawDoc?.studentPhone).toBeUndefined();
+            expect(rawDoc?.parentPhone).toBe('01112345678');
         });
     });
 

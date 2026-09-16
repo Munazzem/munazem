@@ -4,8 +4,8 @@ import { GradeLevel } from '../common/enums/enum.service.js';
 export interface IStudent {
     studentName: string;
     parentName: string;
-    studentPhone: string;
-    parentPhone: string;
+    studentPhone?: string | undefined;
+    parentPhone?: string | undefined;
     gradeLevel: GradeLevel;
     studentCode: string;
     barcode?: string;
