@@ -28,10 +28,10 @@ export class CardBatchPdfService {
             cards.map(async (card) => {
                 const qrContent  = `${appUrl}/card/${card.cardToken}`;
                 const qrDataUrl  = await QRCode.toDataURL(qrContent, {
-                    width:                200,
-                    margin:               1,
+                    width:                300,
+                    margin:               2,
                     color:                { dark: '#000000', light: '#ffffff' },
-                    errorCorrectionLevel: 'H',
+                    errorCorrectionLevel: 'M',
                 });
                 return { ...card, qrDataUrl };
             })

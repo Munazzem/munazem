@@ -148,8 +148,9 @@ export class CardsService {
         // ── Priority 3: Student.barcode (existing QR codes from before this feature) ─
         const studentByBarcode = await StudentModel.findOne({ barcode: resolvedInput, teacherId }).lean();
         if (studentByBarcode) {
+            const barcode = studentByBarcode.barcode || resolvedInput;
             const matchingCard = await CardModel.findOne({
-                $or: [{ cardNumber: studentByBarcode.barcode }, { cardToken: studentByBarcode.barcode }],
+                $or: [{ cardNumber: barcode }, { cardToken: barcode }],
                 teacherId: new mongoose.Types.ObjectId(teacherId),
             });
             if (matchingCard && matchingCard.status === 'NEW') {

@@ -52,6 +52,16 @@ export function createApp() {
         origin: (origin, callback) => {
             if (!origin) return callback(null, true);
             if (allowedOrigins.includes(origin)) return callback(null, true);
+            if (
+                origin.includes('localhost') ||
+                origin.includes('127.0.0.1') ||
+                origin.startsWith('http://192.168.') ||
+                origin.startsWith('http://10.') ||
+                origin.endsWith('munazzem.tech') ||
+                origin.endsWith('vercel.app')
+            ) {
+                return callback(null, true);
+            }
             callback(new Error(`CORS: origin ${origin} not allowed`));
         },
         credentials: true,

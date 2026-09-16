@@ -211,8 +211,10 @@ export class StudentService {
             if (data.barcode) {
                 let cardIdentifier = data.barcode.trim();
                 if (cardIdentifier.includes('/card/')) {
-                    const parts = cardIdentifier.split('/card/');
-                    cardIdentifier = parts[parts.length - 1].split('?')[0].trim();
+                    const token = cardIdentifier.split('/card/').pop()?.split('?')[0]?.trim();
+                    if (token) {
+                        cardIdentifier = token;
+                    }
                 }
 
                 const card = await CardModel.findOne({
@@ -716,8 +718,10 @@ export class StudentService {
             if (data.barcode) {
                 let cardIdentifier = data.barcode.trim();
                 if (cardIdentifier.includes('/card/')) {
-                    const parts = cardIdentifier.split('/card/');
-                    cardIdentifier = parts[parts.length - 1].split('?')[0].trim();
+                    const token = cardIdentifier.split('/card/').pop()?.split('?')[0]?.trim();
+                    if (token) {
+                        cardIdentifier = token;
+                    }
                 }
 
                 const card = await CardModel.findOne({
