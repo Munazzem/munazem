@@ -72,60 +72,69 @@ export const ManualBarcodeScreen: React.FC<Props> = ({ route, navigation }) => {
     }
   };
 
+  const content = (
+    <ScrollView
+      contentContainerStyle={[
+        styles.scrollContent,
+        { paddingBottom: Math.max(insets.bottom, 24) + spacing.xl },
+      ]}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+    >
+      <View style={styles.topSection}>
+        <View style={styles.header}>
+          <Text style={styles.title}>إدخال رمز البطاقة يدوياً</Text>
+          <Text style={styles.subtitle}>
+            أدخل كود الطالب أو رقم الكارت المطبوع على بطاقة الطالب
+          </Text>
+        </View>
+
+        <View style={styles.form}>
+          <Input
+            label="كود أو رمز الطالب"
+            placeholder="مثال: 12A أو MNZ-XXXX-00001"
+            value={barcode}
+            onChangeText={(t) => {
+              setBarcode(t);
+              if (error) setError('');
+            }}
+            error={error}
+            leftIcon={<KeyRound size={20} color={colors.textMuted} />}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="done"
+            onSubmitEditing={handleVerify}
+            autoFocus={Platform.OS !== 'web'}
+          />
+
+          <Button
+            title="تحقق ودخول"
+            onPress={handleVerify}
+            loading={loading}
+            size="lg"
+            variant="primary"
+            icon={<ShieldCheck size={20} color={colors.textInverse} />}
+            style={styles.verifyBtn}
+          />
+        </View>
+      </View>
+    </ScrollView>
+  );
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.container}
-        >
-          <ScrollView
-            contentContainerStyle={[
-              styles.scrollContent,
-              { paddingBottom: Math.max(insets.bottom, 24) + spacing.md },
-            ]}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={styles.topSection}>
-              <View style={styles.header}>
-                <Text style={styles.title}>إدخال رمز البطاقة يدوياً</Text>
-                <Text style={styles.subtitle}>
-                  أدخل كود الطالب أو رقم الكارت المطبوع على بطاقة الطالب
-                </Text>
-              </View>
-
-              <View style={styles.form}>
-                <Input
-                  label="كود أو رمز الطالب"
-                  placeholder="مثال: 12A أو MNZ-XXXX-00001"
-                  value={barcode}
-                  onChangeText={(t) => {
-                    setBarcode(t);
-                    if (error) setError('');
-                  }}
-                  error={error}
-                  leftIcon={<KeyRound size={20} color={colors.textMuted} />}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  autoFocus
-                />
-              </View>
-            </View>
-
-            <View style={styles.footer}>
-              <Button
-                title="تحقق ودخول"
-                onPress={handleVerify}
-                loading={loading}
-                size="lg"
-                variant="primary"
-                icon={<ShieldCheck size={20} color={colors.textInverse} />}
-              />
-            </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </TouchableWithoutFeedback>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.container}
+      >
+        {Platform.OS === 'web' ? (
+          content
+        ) : (
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            {content}
+          </TouchableWithoutFeedback>
+        )}
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
@@ -142,7 +151,6 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.lg,
-    justifyContent: 'space-between',
   },
   topSection: {
     marginTop: spacing.md,
@@ -164,7 +172,7 @@ const styles = StyleSheet.create({
   form: {
     marginTop: spacing.md,
   },
-  footer: {
-    marginTop: spacing.xl,
+  verifyBtn: {
+    marginTop: spacing.sm,
   },
 });

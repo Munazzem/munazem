@@ -9,6 +9,8 @@ import { getTestApp } from '../helpers/app.helper.js';
 import { makeTeacherToken, makeAssistantToken, bearerHeader } from '../helpers/auth.helper.js';
 import { seedTeacher, seedAssistant, seedGroup, seedStudent } from '../helpers/db.helper.js';
 import { GradeLevel } from '../../src/common/enums/enum.service.js';
+import { CardModel } from '../../src/database/models/card.model.js';
+import { CardsService } from '../../src/modules/cards/cards.service.js';
 
 let app: ReturnType<typeof getTestApp>;
 beforeEach(() => { app = getTestApp(); });
@@ -16,6 +18,66 @@ beforeEach(() => { app = getTestApp(); });
 describe('Students API', () => {
 
     describe('POST /students', () => {
+        it('يربط الكارت الذكي تلقائياً بالطالب ويصبح LINKED عند إدخال barcode للكارت', async () => {
+            const teacher = await seedTeacher();
+            const group = await seedGroup();
+
+            const card = await CardModel.create({
+                cardNumber: 'CRD-TEST101',
+                cardToken: '550e8400-e29b-41d4-a716-446655440101',
+                teacherId: teacher._id,
+                status: 'NEW',
+            });
+
+            const res = await app
+                .post('/students')
+                .set('Authorization', bearerHeader(makeTeacherToken()))
+                .send({
+                    fullName: 'محمد علي كارت',
+                    studentPhone: '01011112222',
+                    parentPhone: '01033334444',
+                    gradeLevel: GradeLevel.PREP_1,
+                    groupId: group._id.toString(),
+                    barcode: card.cardNumber,
+                });
+
+            expect(res.status).toBe(201);
+            const studentId = res.body.data._id;
+
+            // Verify CardModel is LINKED to this student
+            const updatedCard = await CardModel.findById(card._id).lean();
+            expect(updatedCard?.status).toBe('LINKED');
+            expect(updatedCard?.studentId?.toString()).toBe(studentId);
+
+            // Verify scanning the card resolves to the newly created student
+            const resolveResult = await CardsService.resolveCard(card.cardToken, teacher._id.toString());
+            expect(resolveResult.cardStatus).toBe('LINKED');
+            expect(resolveResult.student?.studentName).toBe('محمد علي كارت');
+        });
+
+        it('يقوم بالربط التلقائي الذاتي (Self-healing) إذا كان الطالب منشأ مسبقاً بنفس الباركود', async () => {
+            const teacher = await seedTeacher();
+            const group = await seedGroup();
+            const student = await seedStudent(group._id as any);
+
+            // Student has barcode, card exists as NEW
+            const card = await CardModel.create({
+                cardNumber: student.barcode,
+                cardToken: '550e8400-e29b-41d4-a716-446655440202',
+                teacherId: teacher._id,
+                status: 'NEW',
+            });
+
+            // Resolving the card via its QR token should detect the student and heal the card status
+            const resolveResult = await CardsService.resolveCard(card.cardToken, teacher._id.toString());
+            expect(resolveResult.cardStatus).toBe('LINKED');
+            expect(resolveResult.student?.studentName).toBe(student.studentName);
+
+            const healedCard = await CardModel.findById(card._id).lean();
+            expect(healedCard?.status).toBe('LINKED');
+            expect(healedCard?.studentId?.toString()).toBe(student._id.toString());
+        });
+
         it('يُنشئ طالب جديد بنجاح', async () => {
             await seedTeacher();
             const group = await seedGroup();
