@@ -4,14 +4,16 @@ import { Platform } from 'react-native';
 const PRODUCTION_API_URL = 'https://munazzem.tech';
 
 function resolveApiBaseUrl(): string {
-  // 1. If explicit URL is provided in env and it's not a localhost/lan IP
-  const explicitUrl = process.env.EXPO_PUBLIC_API_URL;
-  if (explicitUrl && !explicitUrl.includes('localhost') && !explicitUrl.includes('127.0.0.1') && !explicitUrl.includes('192.168.')) {
-    return explicitUrl.replace(/\/+$/, '');
-  }
-
-  // 2. If running inside web browser
+  // 1. If running inside web browser
   if (Platform.OS === 'web') {
+    if (typeof window !== 'undefined' && window.location) {
+      const hostname = window.location.hostname;
+      // If developing locally on localhost or local LAN IP, use local backend on port 5000
+      if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('192.168.')) {
+        return `http://${hostname}:5000`;
+      }
+    }
+    const explicitUrl = process.env.EXPO_PUBLIC_API_URL;
     return (explicitUrl || PRODUCTION_API_URL).replace(/\/+$/, '');
   }
 
