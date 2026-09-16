@@ -71,74 +71,83 @@ export const PhoneEntryScreen: React.FC<Props> = ({ navigation }) => {
     }
   };
 
+  const content = (
+    <ScrollView
+      contentContainerStyle={[
+        styles.scrollContent,
+        { paddingBottom: Math.max(insets.bottom, 24) + spacing.xl },
+      ]}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+    >
+      <View style={styles.topSection}>
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.title}>رقم هاتف ولي الأمر</Text>
+          <Text style={styles.subtitle}>
+            أدخل رقم هاتفك المسجل لدى المعلم لمتابعة أبنائك فوراً
+          </Text>
+        </View>
+
+        {/* Input Form */}
+        <View style={styles.form}>
+          <Input
+            label="رقم الهاتف"
+            placeholder="01012345678"
+            keyboardType="phone-pad"
+            returnKeyType="done"
+            onSubmitEditing={handleLogin}
+            value={phone}
+            onChangeText={(text) => {
+              setPhone(text);
+              if (error) setError('');
+            }}
+            error={error}
+            leftIcon={<Phone size={20} color={colors.textMuted} />}
+            autoFocus={Platform.OS !== 'web'}
+          />
+
+          <View style={styles.actionButtons}>
+            <Button
+              title="تسجيل الدخول"
+              onPress={handleLogin}
+              loading={loading}
+              size="lg"
+              variant="primary"
+              icon={<LogIn size={20} color={colors.textInverse} />}
+              style={styles.loginBtn}
+            />
+            <Button
+              title="أو مسح كارت الطالب بكاميرا الهاتف"
+              onPress={() =>
+                navigation.navigate('BarcodeScanner', {
+                  parentPhone: phone.trim() || undefined,
+                })
+              }
+              variant="ghost"
+              size="md"
+              icon={<QrCode size={18} color={colors.primary} />}
+            />
+          </View>
+        </View>
+      </View>
+    </ScrollView>
+  );
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.container}
-        >
-          <ScrollView
-            contentContainerStyle={[
-              styles.scrollContent,
-              { paddingBottom: Math.max(insets.bottom, 24) + spacing.md },
-            ]}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={styles.topSection}>
-              {/* Header */}
-              <View style={styles.header}>
-                <Text style={styles.title}>رقم هاتف ولي الأمر</Text>
-                <Text style={styles.subtitle}>
-                  أدخل رقم هاتفك المسجل لدى المعلم لمتابعة أبنائك فوراً
-                </Text>
-              </View>
-
-              {/* Input Form */}
-              <View style={styles.form}>
-                <Input
-                  label="رقم الهاتف"
-                  placeholder="01012345678"
-                  keyboardType="phone-pad"
-                  value={phone}
-                  onChangeText={(text) => {
-                    setPhone(text);
-                    if (error) setError('');
-                  }}
-                  error={error}
-                  leftIcon={<Phone size={20} color={colors.textMuted} />}
-                  autoFocus
-                />
-              </View>
-            </View>
-
-            {/* Footer Actions with Safe Area Insets */}
-            <View style={styles.footer}>
-              <Button
-                title="تسجيل الدخول"
-                onPress={handleLogin}
-                loading={loading}
-                size="lg"
-                variant="primary"
-                icon={<LogIn size={20} color={colors.textInverse} />}
-                style={styles.loginBtn}
-              />
-              <Button
-                title="أو مسح كارت الطالب بكاميرا الهاتف"
-                onPress={() =>
-                  navigation.navigate('BarcodeScanner', {
-                    parentPhone: phone.trim() || undefined,
-                  })
-                }
-                variant="ghost"
-                size="md"
-                icon={<QrCode size={18} color={colors.primary} />}
-              />
-            </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </TouchableWithoutFeedback>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.container}
+      >
+        {Platform.OS === 'web' ? (
+          content
+        ) : (
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            {content}
+          </TouchableWithoutFeedback>
+        )}
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
@@ -155,7 +164,6 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.lg,
-    justifyContent: 'space-between',
   },
   topSection: {
     marginTop: spacing.md,
@@ -177,8 +185,8 @@ const styles = StyleSheet.create({
   form: {
     marginTop: spacing.md,
   },
-  footer: {
-    marginTop: spacing.xl,
+  actionButtons: {
+    marginTop: spacing.lg,
   },
   loginBtn: {
     marginBottom: spacing.sm,

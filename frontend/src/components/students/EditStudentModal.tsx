@@ -128,6 +128,8 @@ export function EditStudentModal({ student, open, onOpenChange }: EditStudentMod
     onSuccess: () => {
       toast.success('تم تحديث بيانات الطالب بنجاح');
       queryClient.invalidateQueries({ queryKey: QK.students.all });
+      queryClient.invalidateQueries({ queryKey: ['cards'] });
+      queryClient.invalidateQueries({ queryKey: ['card-stats'] });
       onOpenChange(false);
     },
     onError: (error: { response?: { data?: { message?: string } } } | Error) => {

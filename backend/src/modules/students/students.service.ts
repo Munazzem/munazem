@@ -7,6 +7,7 @@ import { AttendanceModel } from '../../database/models/attendance.model.js';
 import { ExamResultModel } from '../../database/models/exam-result.model.js';
 import { NotebookReservationModel } from '../../database/models/notebook-reservation.model.js';
 import { ParentStudentModel } from '../../database/models/parent-student.model.js';
+import { CardModel } from '../../database/models/card.model.js';
 import { NotFoundException, BadRequestException, ConflictException } from '../../common/utils/response/error.responce.js';
 import type { CreateStudentDTO, UpdateStudentDTO } from '../../types/dto.types.js';
 import { GRADE_LETTER, GradeLevel, TransactionType, TransactionCategory, CycleEnrollmentStatus } from '../../common/enums/enum.service.js';
@@ -205,6 +206,46 @@ export class StudentService {
                 barcode: data.barcode || crypto.randomUUID(),
                 monthlySessionsQuota: (group.schedule?.length ?? 2) * 4, // Dynamic from schedule
             });
+
+            // ── Auto-link Smart Card if barcode was provided ─────────────────────
+            if (data.barcode) {
+                let cardIdentifier = data.barcode.trim();
+                if (cardIdentifier.includes('/card/')) {
+                    const token = cardIdentifier.split('/card/').pop()?.split('?')[0]?.trim();
+                    if (token) {
+                        cardIdentifier = token;
+                    }
+                }
+
+                const card = await CardModel.findOne({
+                    $or: [{ cardNumber: cardIdentifier }, { cardToken: cardIdentifier }],
+                    teacherId: new mongoose.Types.ObjectId(teacherId),
+                });
+
+                if (card) {
+                    if (card.status === 'DISABLED') {
+                        throw BadRequestException({ message: 'هذا الكارت الذكي معطل ولا يمكن ربطه' });
+                    }
+                    if (card.status === 'LINKED' && card.studentId && card.studentId.toString() !== student._id.toString()) {
+                        throw ConflictException({ message: 'هذا الكارت الذكي مربوط بالفعل بطالب آخر' });
+                    }
+
+                    await CardModel.findByIdAndUpdate(card._id, {
+                        studentId:  student._id,
+                        status:     'LINKED',
+                        linkedAt:   new Date(),
+                        linkedBy:   new mongoose.Types.ObjectId(teacherId),
+                    });
+
+                    if (student.barcode !== card.cardNumber) {
+                        await StudentModel.findByIdAndUpdate(student._id, { barcode: card.cardNumber });
+                        student.barcode = card.cardNumber;
+                    }
+
+                    await cache.del(CacheKeys.card(card.cardNumber));
+                    await cache.del(CacheKeys.cardToken(card.cardToken));
+                }
+            }
 
             trackEvent('student_created', {
                 tenantId: teacherId,
@@ -673,6 +714,52 @@ export class StudentService {
 
             if (!updatedStudent) throw NotFoundException({ message: 'الطالب غير موجود' });
 
+            // If barcode was updated, also link/sync matching CardModel
+            if (data.barcode) {
+                let cardIdentifier = data.barcode.trim();
+                if (cardIdentifier.includes('/card/')) {
+                    const token = cardIdentifier.split('/card/').pop()?.split('?')[0]?.trim();
+                    if (token) {
+                        cardIdentifier = token;
+                    }
+                }
+
+                const card = await CardModel.findOne({
+                    $or: [{ cardNumber: cardIdentifier }, { cardToken: cardIdentifier }],
+                    teacherId: new mongoose.Types.ObjectId(teacherId),
+                });
+
+                if (card) {
+                    if (card.status === 'DISABLED') {
+                        throw BadRequestException({ message: 'هذا الكارت الذكي معطل ولا يمكن ربطه' });
+                    }
+                    if (card.status === 'LINKED' && card.studentId && card.studentId.toString() !== studentId.toString()) {
+                        throw ConflictException({ message: 'هذا الكارت الذكي مربوط بالفعل بطالب آخر' });
+                    }
+
+                    // Unlink any prior card this student had
+                    await CardModel.updateMany(
+                        { studentId: new mongoose.Types.ObjectId(studentId), _id: { $ne: card._id }, teacherId: new mongoose.Types.ObjectId(teacherId) },
+                        { $set: { status: 'NEW', studentId: null, linkedAt: null, linkedBy: null } }
+                    );
+
+                    await CardModel.findByIdAndUpdate(card._id, {
+                        studentId:  new mongoose.Types.ObjectId(studentId),
+                        status:     'LINKED',
+                        linkedAt:   new Date(),
+                        linkedBy:   new mongoose.Types.ObjectId(teacherId),
+                    });
+
+                    if (updatedStudent.barcode !== card.cardNumber) {
+                        await StudentModel.findByIdAndUpdate(studentId, { barcode: card.cardNumber });
+                        (updatedStudent as any).barcode = card.cardNumber;
+                    }
+
+                    await cache.del(CacheKeys.card(card.cardNumber));
+                    await cache.del(CacheKeys.cardToken(card.cardToken));
+                }
+            }
+
             // If monthlySessionsQuota was updated without changing group, sync active ongoing cycle enrollment
             if (!isGroupChanged && data.monthlySessionsQuota !== undefined && data.monthlySessionsQuota > 0 && updatedStudent.groupId) {
                 const group = await GroupModel.findById(updatedStudent.groupId).lean();
@@ -786,6 +873,11 @@ export class StudentService {
                 ExamResultModel.deleteMany({ studentId, teacherId }, { session }),
                 NotebookReservationModel.deleteMany({ studentId, teacherId }, { session }),
                 ParentStudentModel.deleteMany({ studentId }, { session }),
+                CardModel.updateMany(
+                    { studentId: new mongoose.Types.ObjectId(studentId), teacherId: new mongoose.Types.ObjectId(teacherId) },
+                    { $set: { status: 'NEW', studentId: null, linkedAt: null, linkedBy: null } },
+                    { session }
+                ),
             ]);
 
             return student;

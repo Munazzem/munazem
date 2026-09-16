@@ -145,10 +145,20 @@ export function AddStudentModal() {
   const mutation = useMutation({
     mutationFn: createStudent,
     onSuccess: () => {
-      toast.success('تمت إضافة الطالب بنجاح');
+      toast.success(newCard ? `تمت إضافة الطالب وربط الكارت (${newCard}) بنجاح ✅` : 'تمت إضافة الطالب بنجاح');
       queryClient.invalidateQueries({ queryKey: QK.students.all });
+      queryClient.invalidateQueries({ queryKey: ['cards'] });
+      queryClient.invalidateQueries({ queryKey: ['card-stats'] });
       form.reset();
       handleOpenChange(false); // Close Modal on success
+      if (newCard) {
+        toast.info('تم ربط الكارت الذكي بالطالب الجديد، يمكنك الآن استخدامه في الحضور والعمليات السريعة', {
+          action: {
+            label: 'الكارت الذكي',
+            onClick: () => router.push('/smart-card'),
+          },
+        });
+      }
     },
     onError: (error: any) => {
       const message = error?.response?.data?.message || error?.message || 'حدث خطأ أثناء إضافة الطالب';
