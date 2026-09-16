@@ -4,8 +4,8 @@ import type { ISchedule } from './group.types.js';
 // ─── Student DTOs ──────────────────────────────────────────────
 export interface CreateStudentDTO {
     fullName: string;
-    studentPhone: string;
-    parentPhone: string;
+    studentPhone?: string;
+    parentPhone?: string;
     gradeLevel: GradeLevel;
     groupId: string;
     barcode?: string;
@@ -13,8 +13,8 @@ export interface CreateStudentDTO {
 
 export interface UpdateStudentDTO {
     fullName?: string;
-    studentPhone?: string;
-    parentPhone?: string;
+    studentPhone?: string | null;
+    parentPhone?: string | null;
     gradeLevel?: GradeLevel;
     groupId?: string;
     barcode?: string;

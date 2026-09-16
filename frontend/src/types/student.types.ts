@@ -8,8 +8,8 @@ export interface Student {
     _id: string; // MongoDB ObjectId
     studentName: string;
     parentName: string;
-    studentPhone: string;
-    parentPhone: string;
+    studentPhone?: string;
+    parentPhone?: string;
     gradeLevel: string;
     groupId: string;
     barcode?: string;
@@ -64,8 +64,8 @@ export interface PaginatedStudentsResponse {
 // Data Transfer Object for Creating a Student
 export interface CreateStudentDTO {
     fullName: string; // The backend splits this into studentName and parentName
-    studentPhone: string;
-    parentPhone: string;
+    studentPhone?: string;
+    parentPhone?: string;
     gradeLevel: string;
     groupId: string;
     barcode?: string;
@@ -73,7 +73,9 @@ export interface CreateStudentDTO {
 }
 
 // Data Transfer Object for Updating a Student
-export type UpdateStudentDTO = Partial<CreateStudentDTO> & { 
+export type UpdateStudentDTO = Partial<Omit<CreateStudentDTO, 'studentPhone' | 'parentPhone'>> & { 
+    studentPhone?: string | null;
+    parentPhone?: string | null;
     isActive?: boolean;
     monthlySessionsQuota?: number;
     excusedUntil?: string | null;
@@ -84,8 +86,8 @@ export type UpdateStudentDTO = Partial<CreateStudentDTO> & {
 
 export interface BulkStudentInput {
     fullName:     string;
-    studentPhone: string;
-    parentPhone:  string;
+    studentPhone?: string;
+    parentPhone?:  string;
     gradeLevel:   string;
     groupId:      string;
     barcode?:     string;

@@ -5,11 +5,14 @@ import { BadRequestException } from '../common/utils/response/error.responce.js'
 export const validate = (schema: ZodTypeAny) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      await schema.parseAsync({
+      const parsed: any = await schema.parseAsync({
         body: req.body,
         query: req.query,
         params: req.params,
       });
+      if (parsed?.body !== undefined) {
+        req.body = parsed.body;
+      }
       next();
     } catch (error: any) {
       if (error instanceof ZodError) {

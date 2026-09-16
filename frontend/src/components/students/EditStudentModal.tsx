@@ -7,7 +7,7 @@ import * as z from 'zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { updateStudent } from '@/lib/api/students';
 import { fetchGroups } from '@/lib/api/groups';
-import type { StudentWithGroup } from '@/types/student.types';
+import type { StudentWithGroup, UpdateStudentDTO } from '@/types/student.types';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { QK } from '@/lib/query-keys';
@@ -40,8 +40,14 @@ import {
 // --- Form Validation Schema ---
 const formSchema = z.object({
   fullName: z.string().min(5, { message: 'الاسم يجب أن يكون 5 أحرف على الأقل' }),
-  studentPhone: z.string().regex(/^01[0-2,5]{1}[0-9]{8}$/, { message: 'رقم هاتف الطالب غير صالح' }),
-  parentPhone: z.string().regex(/^01[0-2,5]{1}[0-9]{8}$/, { message: 'رقم هاتف ولي الأمر غير صالح' }),
+  studentPhone: z.union([
+    z.string().regex(/^01[0-2,5]{1}[0-9]{8}$/, { message: 'رقم هاتف الطالب غير صالح' }),
+    z.literal(''),
+  ]).optional(),
+  parentPhone: z.union([
+    z.string().regex(/^01[0-2,5]{1}[0-9]{8}$/, { message: 'رقم هاتف ولي الأمر غير صالح' }),
+    z.literal(''),
+  ]).optional(),
   gradeLevel: z.string().min(1, { message: 'الرجاء اختيار المرحلة الدراسية' }),
   groupId: z.string().min(1, { message: 'الرجاء اختيار المجموعة' }),
   barcode: z.string().optional(),
@@ -108,8 +114,8 @@ export function EditStudentModal({ student, open, onOpenChange }: EditStudentMod
       if (student && open) {
           form.reset({
               fullName: student.studentName,
-              studentPhone: student.studentPhone,
-              parentPhone: student.parentPhone,
+              studentPhone: student.studentPhone || '',
+              parentPhone: student.parentPhone || '',
               gradeLevel: student.gradeLevel,
               groupId: typeof student.groupId === 'string' ? student.groupId : (student.groupId?._id || ''),
               barcode: student.barcode || '',
@@ -121,7 +127,7 @@ export function EditStudentModal({ student, open, onOpenChange }: EditStudentMod
   }, [student, open, form]);
 
   const mutation = useMutation({
-    mutationFn: (data: z.infer<typeof formSchema>) => {
+    mutationFn: (data: UpdateStudentDTO) => {
         if (!student) throw new Error('لا يوجد طالب محدد');
         return updateStudent(student._id, data);
     },
@@ -139,7 +145,18 @@ export function EditStudentModal({ student, open, onOpenChange }: EditStudentMod
   });
 
   const onSubmit = (values: z.infer<typeof formSchema>) => {
-    mutation.mutate(values);
+    const payload: UpdateStudentDTO = { ...values };
+    const sp = values.studentPhone?.trim();
+    const pp = values.parentPhone?.trim();
+
+    // إذا كان الطالب عنده رقم قديم والمستخدم مسحه → أرسل null لحذفه من DB
+    if (student?.studentPhone && !sp) payload.studentPhone = null;
+    else payload.studentPhone = sp || undefined;
+
+    if (student?.parentPhone && !pp) payload.parentPhone = null;
+    else payload.parentPhone = pp || undefined;
+
+    mutation.mutate(payload);
   };
 
   if (!student) return null;
@@ -176,7 +193,7 @@ export function EditStudentModal({ student, open, onOpenChange }: EditStudentMod
                 name="studentPhone"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>هاتف الطالب <span className="text-red-500">*</span></FormLabel>
+                    <FormLabel>هاتف الطالب</FormLabel>
                     <FormControl>
                         <Input dir="ltr" className="text-right" {...field} />
                     </FormControl>
@@ -190,11 +207,14 @@ export function EditStudentModal({ student, open, onOpenChange }: EditStudentMod
                 name="parentPhone"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>هاتف ولي الأمر <span className="text-red-500">*</span></FormLabel>
+                    <FormLabel>هاتف ولي الأمر</FormLabel>
                     <FormControl>
                       <Input dir="ltr" className="text-right" {...field} />
                     </FormControl>
                     <FormMessage />
+                    <p className="text-xs text-amber-600 mt-1">
+                      ⚠️ بدون رقم ولي الأمر لن تصله إشعارات الواتساب ولن يتمكن من متابعة ابنه عبر التطبيق
+                    </p>
                   </FormItem>
                 )}
               />
