@@ -44,8 +44,14 @@ import {
 // --- Form Validation Schema ---
 const formSchema = z.object({
   fullName: z.string().min(5, { message: 'الاسم يجب أن يكون 5 أحرف على الأقل' }),
-  studentPhone: z.string().regex(/^01[0-2,5]{1}[0-9]{8}$/, { message: 'رقم هاتف الطالب غير صالح' }),
-  parentPhone: z.string().regex(/^01[0-2,5]{1}[0-9]{8}$/, { message: 'رقم هاتف ولي الأمر غير صالح' }),
+  studentPhone: z.union([
+    z.string().regex(/^01[0-2,5]{1}[0-9]{8}$/, { message: 'رقم هاتف الطالب غير صالح' }),
+    z.literal(''),
+  ]).optional(),
+  parentPhone: z.union([
+    z.string().regex(/^01[0-2,5]{1}[0-9]{8}$/, { message: 'رقم هاتف ولي الأمر غير صالح' }),
+    z.literal(''),
+  ]).optional(),
   gradeLevel: z.string().min(1, { message: 'الرجاء اختيار المرحلة الدراسية' }),
   groupId: z.string().min(1, { message: 'الرجاء اختيار المجموعة' }),
   barcode: z.string().optional(),
@@ -171,7 +177,11 @@ export function AddStudentModal() {
       toast.error(duplicateResult.message || 'هذا الطالب مسجل بالفعل مسبقاً');
       return;
     }
-    mutation.mutate(values);
+    mutation.mutate({
+      ...values,
+      studentPhone: values.studentPhone?.trim() || undefined,
+      parentPhone: values.parentPhone?.trim() || undefined,
+    });
   };
 
   return (
@@ -220,7 +230,7 @@ export function AddStudentModal() {
                 name="studentPhone"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>هاتف الطالب <span className="text-red-500">*</span></FormLabel>
+                    <FormLabel>هاتف الطالب</FormLabel>
                     <FormControl>
                         <Input dir="ltr" className="text-right" placeholder="01xxxxxxxxx" {...field} />
                     </FormControl>
@@ -235,11 +245,14 @@ export function AddStudentModal() {
                 name="parentPhone"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>هاتف ولي الأمر <span className="text-red-500">*</span></FormLabel>
+                    <FormLabel>هاتف ولي الأمر</FormLabel>
                     <FormControl>
                       <Input dir="ltr" className="text-right" placeholder="01xxxxxxxxx" {...field} />
                     </FormControl>
                     <FormMessage />
+                    <p className="text-xs text-amber-600 mt-1">
+                      ⚠️ بدون رقم ولي الأمر لن تصله إشعارات الواتساب ولن يتمكن من متابعة ابنه عبر التطبيق
+                    </p>
                   </FormItem>
                 )}
               />

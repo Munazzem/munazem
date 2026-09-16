@@ -2191,7 +2191,8 @@ export class AttendanceService {
 
         // Formatter for WhatsApp (wa.me accepts standard phone numbers with country code)
         // If the number doesn't start with country code, assume Egypt (+20) for Monazem context
-        const formatPhone = (phone: string) => {
+        const formatPhone = (phone?: string) => {
+            if (!phone) return '';
             let clean = phone.replace(/\D/g, '');
             if (clean.startsWith('01')) clean = '2' + clean; // e.g. 010... -> 2010...
             else if (!clean.startsWith('20') && clean.length === 10) clean = '20' + clean;
@@ -2260,7 +2261,7 @@ export class AttendanceService {
                 studentName: student.studentName,
                 status: isPresent ? 'PRESENT' : 'ABSENT',
                 homeworkDone: isHomeworkTrackingEnabled && isPresent && typeof record?.homeworkDone === 'boolean' ? record.homeworkDone : null,
-                whatsappLink: `https://wa.me/${waPhone}?text=${encodedMessage}`,
+                whatsappLink: waPhone ? `https://wa.me/${waPhone}?text=${encodedMessage}` : '',
             };
         });
     }

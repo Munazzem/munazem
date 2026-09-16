@@ -178,10 +178,6 @@ export function ImportExcelModal({ open, onOpenChange }: Props) {
                     // Validation
                     if (!fullName || fullName.split(/\s+/).length < 2) {
                         parsed.error = 'الاسم يجب أن يكون ثنائي على الأقل';
-                    } else if (!parentPhone) {
-                        parsed.error = 'رقم ولي الأمر مطلوب';
-                    } else if (!studentPhone) {
-                        parsed.error = 'رقم الطالب مطلوب';
                     } else if (!gradeLevel) {
                         parsed.error = 'المرحلة الدراسية مطلوبة';
                     } else if (!groupName) {
@@ -226,8 +222,8 @@ export function ImportExcelModal({ open, onOpenChange }: Props) {
 
             const payload: BulkStudentInput[] = validRows.map(r => ({
                 fullName:     r.fullName,
-                parentPhone:  r.parentPhone,
-                studentPhone: r.studentPhone,
+                parentPhone:  r.parentPhone || undefined,
+                studentPhone: r.studentPhone || undefined,
                 gradeLevel:   r.gradeLevel,
                 groupId:      r.groupId!,
             }));

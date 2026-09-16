@@ -48,8 +48,8 @@ export class StudentService {
         teacherId: string,
         data: {
             fullName: string;
-            studentPhone?: string;
-            parentPhone?: string;
+            studentPhone?: string | undefined;
+            parentPhone?: string | undefined;
             gradeLevel?: string;
             excludeStudentId?: string;
         }
@@ -197,8 +197,8 @@ export class StudentService {
             const student = await StudentModel.create({
                 studentName,
                 parentName,
-                studentPhone: data.studentPhone,
-                parentPhone:  data.parentPhone,
+                ...(data.studentPhone ? { studentPhone: data.studentPhone } : {}),
+                ...(data.parentPhone  ? { parentPhone:  data.parentPhone }  : {}),
                 gradeLevel:   data.gradeLevel,
                 groupId:      data.groupId,
                 teacherId,
@@ -358,8 +358,8 @@ export class StudentService {
                 return {
                     studentName,
                     parentName,
-                    studentPhone: data.studentPhone,
-                    parentPhone:  data.parentPhone,
+                    ...(data.studentPhone ? { studentPhone: data.studentPhone } : {}),
+                    ...(data.parentPhone  ? { parentPhone:  data.parentPhone }  : {}),
                     gradeLevel:   data.gradeLevel,
                     groupId:      data.groupId,
                     teacherId,
@@ -705,10 +705,39 @@ export class StudentService {
             updatePayload.parentName = parentName;
         }
 
+        // ── Handle explicit phone clearing (null = user wants to remove the field) ──
+        const unsetFields: Record<string, 1> = {};
+        if (data.studentPhone === null) {
+            delete (updatePayload as any).studentPhone;
+            unsetFields.studentPhone = 1;
+        } else if (data.studentPhone === undefined || data.studentPhone === '') {
+            delete (updatePayload as any).studentPhone;
+        }
+        if (data.parentPhone === null) {
+            delete (updatePayload as any).parentPhone;
+            unsetFields.parentPhone = 1;
+        } else if (data.parentPhone === undefined || data.parentPhone === '') {
+            delete (updatePayload as any).parentPhone;
+        }
+
+        const updateOp: any = {};
+        if (Object.keys(updatePayload).length > 0) {
+            updateOp.$set = updatePayload;
+        }
+        if (Object.keys(unsetFields).length > 0) {
+            updateOp.$unset = unsetFields;
+        }
+
         try {
+            if (Object.keys(updateOp).length === 0) {
+                const existing = await StudentModel.findOne({ _id: studentId, teacherId }).lean();
+                if (!existing) throw NotFoundException({ message: 'الطالب غير موجود' });
+                return existing;
+            }
+
             const updatedStudent = await StudentModel.findOneAndUpdate(
                 { _id: studentId, teacherId },
-                updatePayload,
+                updateOp,
                 { new: true, runValidators: true }
             ).lean();
 
