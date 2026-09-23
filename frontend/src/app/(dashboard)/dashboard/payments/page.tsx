@@ -126,7 +126,13 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
         onSuccess: () => {
             toast.success('تم مسح المعاملة بنجاح وعكس أثرها على السجلات');
             queryClient.removeQueries({ queryKey: ['students'] });
+            queryClient.removeQueries({ queryKey: QK.students.details });
+            queryClient.removeQueries({ queryKey: QK.students.reports });
+            queryClient.removeQueries({ queryKey: ['student-report'] });
             queryClient.invalidateQueries({ queryKey: ['students'] });
+            queryClient.invalidateQueries({ queryKey: QK.students.details });
+            queryClient.invalidateQueries({ queryKey: QK.students.reports });
+            queryClient.invalidateQueries({ queryKey: ['student-report'] });
             queryClient.invalidateQueries({ queryKey: ['reports'] });
             queryClient.invalidateQueries({ queryKey: ['sessions'] });
             queryClient.invalidateQueries({ queryKey: ['cycle-enrollment'] });
@@ -145,7 +151,13 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
         onSuccess: (data) => {
             toast.success(`تم مسح ${data.deletedCount} معاملة بنجاح وعكس أثرها على السجلات`);
             queryClient.removeQueries({ queryKey: ['students'] });
+            queryClient.removeQueries({ queryKey: QK.students.details });
+            queryClient.removeQueries({ queryKey: QK.students.reports });
+            queryClient.removeQueries({ queryKey: ['student-report'] });
             queryClient.invalidateQueries({ queryKey: ['students'] });
+            queryClient.invalidateQueries({ queryKey: QK.students.details });
+            queryClient.invalidateQueries({ queryKey: QK.students.reports });
+            queryClient.invalidateQueries({ queryKey: ['student-report'] });
             queryClient.invalidateQueries({ queryKey: ['reports'] });
             queryClient.invalidateQueries({ queryKey: ['sessions'] });
             queryClient.invalidateQueries({ queryKey: ['cycle-enrollment'] });

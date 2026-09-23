@@ -29,6 +29,7 @@ export const QK = {
         detail:  (id: string)      => ['student_detail', id] as const,
         details: ['student_detail'] as const,
         report:  (id: string)      => ['studentReport', id] as const,
+        reports: ['studentReport'] as const,
         search:  (term: string)    => ['students-search', term] as const,
         picker:  (term: string)    => ['students-picker', term] as const,
     },
