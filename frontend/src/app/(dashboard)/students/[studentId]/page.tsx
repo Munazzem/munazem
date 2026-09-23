@@ -85,6 +85,8 @@ export default function StudentProfilePage() {
         queryKey: QK.students.detail(studentId),
         queryFn: () => fetchStudentById(studentId),
         enabled: !!studentId,
+        staleTime: 0,
+        refetchOnMount: 'always',
     });
     
     // fetchStudentById returns the Response wrapper (which has .data), or the student directly depending on interceptor
@@ -106,6 +108,8 @@ export default function StudentProfilePage() {
         queryKey: QK.students.report(studentId),
         queryFn: () => fetchStudentReport(studentId),
         enabled: !!studentId,
+        staleTime: 0,
+        refetchOnMount: 'always',
     });
 
     const subscribeMutation = useMutation({

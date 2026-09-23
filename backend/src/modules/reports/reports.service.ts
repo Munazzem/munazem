@@ -210,11 +210,32 @@ export class ReportsService {
             (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
         );
 
+        // Suppress any ABSENT entries on dates where the student was actually PRESENT, GUEST, or EXCUSED (e.g. from cross-group transfers)
+        const attendedDates = new Set<string>();
+        for (const e of deduplicatedEntries) {
+            if (e.status === AttendanceStatus.PRESENT || e.status === AttendanceStatus.LATE || e.status === 'GUEST' || e.status === AttendanceStatus.EXCUSED) {
+                if (e.date) {
+                    const dateKey = new Date(e.date).toISOString().split('T')[0];
+                    if (dateKey) attendedDates.add(dateKey);
+                }
+            }
+        }
+
+        const conflictResolvedEntries = deduplicatedEntries.filter(e => {
+            if (e.status === AttendanceStatus.ABSENT && e.date) {
+                const dateKey = new Date(e.date).toISOString().split('T')[0];
+                if (dateKey && attendedDates.has(dateKey)) {
+                    return false; // Student cannot be absent and present on the same day for the same teacher
+                }
+            }
+            return true;
+        });
+
         // Filter out redundant EXCUSED entries if compensated by a GUEST session
-        const guestCount = deduplicatedEntries.filter(e => e.status === 'GUEST').length;
+        const guestCount = conflictResolvedEntries.filter(e => e.status === 'GUEST').length;
         let availableGuestCredits = guestCount;
 
-        const effectiveEntries = deduplicatedEntries.filter(e => {
+        const effectiveEntries = conflictResolvedEntries.filter(e => {
             if (e.status === AttendanceStatus.EXCUSED) {
                 if (availableGuestCredits > 0) {
                     availableGuestCredits--;

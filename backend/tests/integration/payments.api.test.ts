@@ -349,6 +349,77 @@ describe('Payments API', () => {
             expect(enrollmentModel.totalPaid).toBe(50);
             expect(enrollmentModel.remainingAmount).toBe(150);
         });
+
+        it('Scenario C: Deleting a debt payment transaction for a past cycle preserves enrollment and restores student debt', async () => {
+            const teacher = await seedTeacher();
+            const group = await seedGroup();
+            // Move group to cycle 2
+            await mongoose.model('Group').findByIdAndUpdate(group._id, {
+                $set: { 'cycle.currentCycleNumber': 2 }
+            });
+
+            const student = await seedStudent(group._id as any);
+            await mongoose.model('Student').findByIdAndUpdate(student._id, {
+                $set: { totalDebt: 120 }
+            });
+
+            // Create past cycle 1 enrollment
+            const cycle1Enrollment = await mongoose.model('CycleEnrollment').create({
+                studentId: student._id,
+                teacherId: teacher._id,
+                groupId: group._id,
+                cycleNumber: 1,
+                cycleCapacity: 8,
+                chargeableSessions: 8,
+                startSession: 1,
+                fullCyclePrice: 120,
+                pricePerSession: 15,
+                cycleCharge: 120,
+                totalPaid: 0,
+                totalDiscount: 0,
+                remainingAmount: 120,
+                status: 'UNPAID',
+            });
+
+            // Pay the cycle 1 debt
+            const payRes = await app
+                .post('/payments/pay-cycle-debt')
+                .set('Authorization', bearerHeader(makeTeacherToken()))
+                .send({
+                    studentId: student._id.toString(),
+                    cycleNumber: 1,
+                    paidAmount: 120,
+                });
+
+            expect(payRes.status).toBe(201);
+            const transactionId = payRes.body.data._id;
+
+            // Student debt is now 0 and enrollment is PAID
+            let updatedStudent = await mongoose.model('Student').findById(student._id);
+            expect(updatedStudent.totalDebt).toBe(0);
+
+            let enrollment = await mongoose.model('CycleEnrollment').findById(cycle1Enrollment._id);
+            expect(enrollment.status).toBe('PAID');
+            expect(enrollment.remainingAmount).toBe(0);
+
+            // Now delete the transaction from daily ledger
+            const delRes = await app
+                .delete(`/payments/${transactionId}`)
+                .set('Authorization', bearerHeader(makeTeacherToken()));
+
+            expect(delRes.status).toBe(200);
+
+            // Verification: Enrollment must NOT be deleted!
+            enrollment = await mongoose.model('CycleEnrollment').findById(cycle1Enrollment._id);
+            expect(enrollment).not.toBeNull();
+            expect(enrollment.status).toBe('UNPAID');
+            expect(enrollment.remainingAmount).toBe(120);
+            expect(enrollment.totalPaid).toBe(0);
+
+            // Student debt must be restored to 120
+            updatedStudent = await mongoose.model('Student').findById(student._id);
+            expect(updatedStudent.totalDebt).toBe(120);
+        });
     });
 
 });
