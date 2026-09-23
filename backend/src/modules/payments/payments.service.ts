@@ -1811,10 +1811,20 @@ export class PaymentsService {
                         enrollment.remainingAmount + totalRevert
                     );
 
+                    const txCreatedAt = (tx as any).createdAt ? new Date((tx as any).createdAt).getTime() : 0;
+                    const enCreatedAt = (enrollment as any).createdAt ? new Date((enrollment as any).createdAt).getTime() : 0;
+                    const group = await GroupModel.findById(enrollment.groupId || (tx as any)?.groupId).session(session);
+                    const isPastCycle = group?.cycle?.currentCycleNumber ? (enrollment.cycleNumber < group.cycle.currentCycleNumber) : false;
+
+                    const isDebtOrExistingEnrollment = 
+                        isPastCycle
+                        || Boolean(tx.description && (tx.description.includes('مديونية') || tx.description.includes('سداد')))
+                        || Boolean((enrollment as any).sessionsConsumed && (enrollment as any).sessionsConsumed > 0)
+                        || (txCreatedAt > 0 && enCreatedAt > 0 && (txCreatedAt - enCreatedAt > 10000));
+
                     // If enrollment is back to fully unpaid (no payments remain after reversal),
-                    // it was created alongside this transaction. Delete it and reverse the net
-                    // debt originally added (tx.remainingAmount = cycleCharge - amountToRevert).
-                    if (enrollment.totalPaid <= 0 && enrollment.remainingAmount >= enrollment.cycleCharge) {
+                    // only delete it if it was created alongside this transaction (not an existing enrollment or debt settlement)
+                    if (enrollment.totalPaid <= 0 && enrollment.remainingAmount >= enrollment.cycleCharge && !isDebtOrExistingEnrollment) {
                         await CycleEnrollmentModel.deleteOne({ _id: enrollment._id }, { session });
                         // net debt added at creation = cycleCharge - (paidAmount + discountAmount)
                         //                           = tx.remainingAmount at the time of the transaction
@@ -1827,7 +1837,7 @@ export class PaymentsService {
                             );
                         }
                     } else {
-                        // Enrollment still has other payments — just re-add this payment's
+                        // Enrollment still has other payments or was a pre-existing debt/cycle — just re-add this payment's
                         // portion to student debt and update status.
                         enrollment.status = enrollment.remainingAmount <= 0
                             ? CycleEnrollmentStatus.PAID
@@ -1837,11 +1847,13 @@ export class PaymentsService {
 
                         await enrollment.save({ session });
 
-                        await StudentModel.findByIdAndUpdate(
-                            tx.studentId,
-                            { $inc: { totalDebt: totalRevert } },
-                            { session }
-                        );
+                        if (totalRevert > 0 && tx.studentId) {
+                            await StudentModel.findByIdAndUpdate(
+                                tx.studentId,
+                                { $inc: { totalDebt: totalRevert } },
+                                { session }
+                            );
+                        }
                     }
                 }
             } else if (tx.remainingAmount && tx.remainingAmount > 0 && tx.studentId) {
@@ -1855,6 +1867,26 @@ export class PaymentsService {
 
             // 5. If this transaction was a DEBT_PAYMENT itself, deleting it means the debt comes back
             if (tx.category === TransactionCategory.DEBT_PAYMENT && tx.studentId) {
+                let amountToRevert = tx.paidAmount || 0;
+                const paidEnrollments = await CycleEnrollmentModel.find({
+                    studentId: tx.studentId,
+                    totalPaid: { $gt: 0 }
+                }).sort({ cycleNumber: -1 }).session(session);
+
+                for (const en of paidEnrollments) {
+                    if (amountToRevert <= 0) break;
+                    const revertFromThis = Math.min(en.totalPaid, amountToRevert);
+                    en.totalPaid = Math.max(0, en.totalPaid - revertFromThis);
+                    en.remainingAmount = Math.min(en.cycleCharge, en.remainingAmount + revertFromThis);
+                    en.status = en.remainingAmount <= 0
+                        ? CycleEnrollmentStatus.PAID
+                        : en.remainingAmount >= en.cycleCharge
+                            ? CycleEnrollmentStatus.UNPAID
+                            : CycleEnrollmentStatus.PARTIALLY_PAID;
+                    await en.save({ session });
+                    amountToRevert -= revertFromThis;
+                }
+
                 await StudentModel.findByIdAndUpdate(
                     tx.studentId,
                     { $inc: { totalDebt: amount } },
@@ -2023,7 +2055,18 @@ export class PaymentsService {
                             enrollment.remainingAmount + totalRevert
                         );
 
-                        if (enrollment.totalPaid <= 0 && enrollment.remainingAmount >= enrollment.cycleCharge) {
+                        const txCreatedAt = (tx as any).createdAt ? new Date((tx as any).createdAt).getTime() : 0;
+                        const enCreatedAt = (enrollment as any).createdAt ? new Date((enrollment as any).createdAt).getTime() : 0;
+                        const group = await GroupModel.findById(enrollment.groupId || (tx as any)?.groupId).session(session);
+                        const isPastCycle = group?.cycle?.currentCycleNumber ? (enrollment.cycleNumber < group.cycle.currentCycleNumber) : false;
+
+                        const isDebtOrExistingEnrollment = 
+                            isPastCycle
+                            || Boolean(tx.description && (tx.description.includes('مديونية') || tx.description.includes('سداد')))
+                            || Boolean((enrollment as any).sessionsConsumed && (enrollment as any).sessionsConsumed > 0)
+                            || (txCreatedAt > 0 && enCreatedAt > 0 && (txCreatedAt - enCreatedAt > 10000));
+
+                        if (enrollment.totalPaid <= 0 && enrollment.remainingAmount >= enrollment.cycleCharge && !isDebtOrExistingEnrollment) {
                             await CycleEnrollmentModel.deleteOne({ _id: enrollment._id }, { session });
                             const netDebtAdded = tx.remainingAmount || 0;
                             if (netDebtAdded > 0 && tx.studentId) {
@@ -2042,11 +2085,13 @@ export class PaymentsService {
 
                             await enrollment.save({ session });
 
-                            await StudentModel.findByIdAndUpdate(
-                                tx.studentId,
-                                { $inc: { totalDebt: totalRevert } },
-                                { session }
-                            );
+                            if (totalRevert > 0 && tx.studentId) {
+                                await StudentModel.findByIdAndUpdate(
+                                    tx.studentId,
+                                    { $inc: { totalDebt: totalRevert } },
+                                    { session }
+                                );
+                            }
                         }
                     }
                 } else if (tx.remainingAmount && tx.remainingAmount > 0 && tx.studentId) {
@@ -2059,6 +2104,26 @@ export class PaymentsService {
                 }
 
                 if (tx.category === TransactionCategory.DEBT_PAYMENT && tx.studentId) {
+                    let amountToRevert = tx.paidAmount || 0;
+                    const paidEnrollments = await CycleEnrollmentModel.find({
+                        studentId: tx.studentId,
+                        totalPaid: { $gt: 0 }
+                    }).sort({ cycleNumber: -1 }).session(session);
+
+                    for (const en of paidEnrollments) {
+                        if (amountToRevert <= 0) break;
+                        const revertFromThis = Math.min(en.totalPaid, amountToRevert);
+                        en.totalPaid = Math.max(0, en.totalPaid - revertFromThis);
+                        en.remainingAmount = Math.min(en.cycleCharge, en.remainingAmount + revertFromThis);
+                        en.status = en.remainingAmount <= 0
+                            ? CycleEnrollmentStatus.PAID
+                            : en.remainingAmount >= en.cycleCharge
+                                ? CycleEnrollmentStatus.UNPAID
+                                : CycleEnrollmentStatus.PARTIALLY_PAID;
+                        await en.save({ session });
+                        amountToRevert -= revertFromThis;
+                    }
+
                     await StudentModel.findByIdAndUpdate(
                         tx.studentId,
                         { $inc: { totalDebt: tx.paidAmount } },

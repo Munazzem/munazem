@@ -205,6 +205,9 @@ export function AddTransactionModal({
             toast.success('تم تسجيل الاشتراك بنجاح'); 
             queryClient.invalidateQueries({ queryKey: QK.payments.dailyLedgerBase });
             queryClient.invalidateQueries({ queryKey: QK.payments.monthlyLedgerBase });
+            queryClient.invalidateQueries({ queryKey: QK.students.all });
+            queryClient.invalidateQueries({ queryKey: QK.students.details });
+            queryClient.invalidateQueries({ queryKey: QK.students.reports });
             setSuccessTransaction(data);
         },
     });
@@ -215,6 +218,9 @@ export function AddTransactionModal({
             toast.success('تم تسجيل بيع المذكرة بنجاح'); 
             queryClient.invalidateQueries({ queryKey: QK.payments.dailyLedgerBase });
             queryClient.invalidateQueries({ queryKey: QK.payments.monthlyLedgerBase });
+            queryClient.invalidateQueries({ queryKey: QK.students.all });
+            queryClient.invalidateQueries({ queryKey: QK.students.details });
+            queryClient.invalidateQueries({ queryKey: QK.students.reports });
             setSuccessTransaction(data);
         },
     });
@@ -240,6 +246,9 @@ export function AddTransactionModal({
             toast.success('تم سداد المديونية بنجاح'); 
             queryClient.invalidateQueries({ queryKey: QK.payments.dailyLedgerBase });
             queryClient.invalidateQueries({ queryKey: QK.payments.monthlyLedgerBase });
+            queryClient.invalidateQueries({ queryKey: QK.students.all });
+            queryClient.invalidateQueries({ queryKey: QK.students.details });
+            queryClient.invalidateQueries({ queryKey: QK.students.reports });
             setSuccessTransaction(data);
         },
     });
