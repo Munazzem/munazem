@@ -291,8 +291,8 @@ export class ReportsService {
         // Active subscription and cycle enrollments
         await StudentService.ensureStudentCycleEnrollments(student._id, teacherId);
         const refreshedStudent = await StudentModel.findById(student._id, { totalDebt: 1 }).lean();
-        if (refreshedStudent) {
-            student.totalDebt = refreshedStudent.totalDebt ?? student.totalDebt;
+        if (refreshedStudent && typeof refreshedStudent.totalDebt === 'number') {
+            student.totalDebt = refreshedStudent.totalDebt;
         }
 
         const currentCycleNumber = (group as any)?.cycle?.currentCycleNumber || 1;
