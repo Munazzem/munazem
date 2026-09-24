@@ -8,9 +8,11 @@ import { ExamResultModel } from '../../database/models/exam-result.model.js';
 import { NotebookReservationModel } from '../../database/models/notebook-reservation.model.js';
 import { ParentStudentModel } from '../../database/models/parent-student.model.js';
 import { CardModel } from '../../database/models/card.model.js';
+import { PriceSettingsModel } from '../../database/models/price-settings.model.js';
+import { SessionModel } from '../../database/models/session.model.js';
 import { NotFoundException, BadRequestException, ConflictException } from '../../common/utils/response/error.responce.js';
 import type { CreateStudentDTO, UpdateStudentDTO } from '../../types/dto.types.js';
-import { GRADE_LETTER, GradeLevel, TransactionType, TransactionCategory, CycleEnrollmentStatus } from '../../common/enums/enum.service.js';
+import { GRADE_LETTER, GradeLevel, TransactionType, TransactionCategory, CycleEnrollmentStatus, SessionStatus, AttendanceStatus } from '../../common/enums/enum.service.js';
 import { nextSequence, nextSequenceBulk } from '../../database/models/counter.model.js';
 import { trackEvent } from '../../common/utils/activity.service.js';
 import { withTransaction } from '../../common/utils/transaction.util.js';
@@ -253,6 +255,9 @@ export class StudentService {
                 targetId: student._id.toString(),
                 meta:     { studentName, studentCode, groupName: group.name },
             });
+
+            // Ensure initial cycle enrollment exists
+            await StudentService.ensureStudentCycleEnrollments(student._id, teacherId);
 
             // Invalidate teacher cache (dashboard stats, student counts)
             await cache.invalidate(CacheKeys.teacherAll(teacherId));
@@ -563,7 +568,169 @@ export class StudentService {
         };
     }
 
+    static async getCyclePriceForStudent(teacherId: any, group: any, gradeLevel: string): Promise<number> {
+        if (group?.customPrice != null && group.customPrice > 0) {
+            return group.customPrice;
+        }
+        const snapshot = group?.cycle?.priceSnapshot;
+        if (snapshot) {
+            const price = snapshot instanceof Map ? snapshot.get(gradeLevel) : (snapshot as any)?.[gradeLevel];
+            if (price != null && price > 0) return price;
+        }
+        const priceSettings = await PriceSettingsModel.findOne({ teacherId }).lean();
+        const found = priceSettings?.prices?.find((p: any) => p.gradeLevel === gradeLevel);
+        if (found?.amount != null && found.amount > 0) return found.amount;
+        return 110;
+    }
+
+    static async ensureStudentCycleEnrollments(studentId: string | Types.ObjectId, teacherId: string | Types.ObjectId): Promise<void> {
+        const student = await StudentModel.findOne({ _id: studentId, teacherId }, { groupId: 1, gradeLevel: 1 }).lean();
+        if (!student || !student.groupId) return;
+
+        const group = await GroupModel.findOne({ _id: student.groupId, teacherId }).lean();
+        if (!group) return;
+
+        const currentCycleNumber = (group as any)?.cycle?.currentCycleNumber || 1;
+        const capacity = (group as any)?.cycle?.capacity || (group?.schedule?.length ? group.schedule.length * 4 : 8);
+        const fullCyclePrice = await StudentService.getCyclePriceForStudent(teacherId, group, student.gradeLevel);
+        const pricePerSession = capacity > 0 ? fullCyclePrice / capacity : 0;
+
+        // Fetch existing cycle numbers for this student
+        const existingEnrollments = await CycleEnrollmentModel.find(
+            { studentId: student._id, teacherId },
+            { cycleNumber: 1, status: 1 }
+        ).lean();
+        const existingCycleNumbers = new Set(existingEnrollments.map(e => e.cycleNumber));
+
+        // 1. Ensure active/current cycle enrollment
+        if (!existingCycleNumbers.has(currentCycleNumber)) {
+            const subTxs = await TransactionModel.find({
+                teacherId,
+                studentId: student._id,
+                category: TransactionCategory.SUBSCRIPTION,
+                cycleNumber: currentCycleNumber
+            }).lean();
+
+            const paid = subTxs.reduce((sum, t) => sum + (t.paidAmount || 0), 0);
+            const disc = subTxs.reduce((sum, t) => sum + (t.discountAmount || 0), 0);
+            const settled = paid + disc;
+            const status = settled >= fullCyclePrice
+                ? CycleEnrollmentStatus.PAID
+                : settled > 0
+                    ? CycleEnrollmentStatus.PARTIALLY_PAID
+                    : CycleEnrollmentStatus.UNPAID;
+            const remainingAmount = status === CycleEnrollmentStatus.PAID ? 0 : Math.max(0, fullCyclePrice - settled);
+
+            await CycleEnrollmentModel.findOneAndUpdate(
+                { studentId: student._id, groupId: student.groupId, cycleNumber: currentCycleNumber },
+                {
+                    $setOnInsert: {
+                        studentId: student._id,
+                        groupId: student.groupId,
+                        teacherId: new Types.ObjectId(teacherId),
+                        cycleNumber: currentCycleNumber,
+                        cycleCapacity: capacity,
+                        pricePerSession,
+                        fullCyclePrice,
+                        startSession: 1,
+                        chargeableSessions: capacity,
+                        cycleCharge: fullCyclePrice,
+                        totalPaid: paid,
+                        totalDiscount: disc,
+                        remainingAmount,
+                        status
+                    }
+                },
+                { upsert: true, returnDocument: 'after' }
+            );
+            existingCycleNumbers.add(currentCycleNumber);
+        }
+
+        // 2. Ensure past cycles that the student attended
+        const attendances = await AttendanceModel.find(
+            {
+                studentId: student._id,
+                sessionId: { $exists: true, $ne: null },
+                status: { $in: [AttendanceStatus.PRESENT, AttendanceStatus.LATE, AttendanceStatus.EXCUSED] }
+            },
+            { sessionId: 1 }
+        ).lean();
+
+        if (attendances.length > 0) {
+            const rawSessionIds = attendances.map(a => a.sessionId?.toString()).filter(Boolean);
+            const sessionIds = [...new Set(rawSessionIds)].map(id => new Types.ObjectId(id));
+
+            const sessions = await SessionModel.find(
+                { _id: { $in: sessionIds }, status: { $ne: SessionStatus.CANCELLED } },
+                { cycleContext: 1, groupId: 1, date: 1 }
+            ).lean();
+
+            const missingPastCycles = new Set<number>();
+            const pastCycleGroups = new Map<number, any>();
+            const cycleStartedAt = (group as any)?.cycle?.startedAt ? new Date((group as any).cycle.startedAt) : null;
+
+            for (const s of sessions) {
+                let cNum = s.cycleContext?.cycleNumber;
+                if (!cNum && cycleStartedAt && s.date && new Date(s.date) < cycleStartedAt) {
+                    cNum = currentCycleNumber > 1 ? currentCycleNumber - 1 : 1;
+                }
+                if (cNum && cNum < currentCycleNumber && !existingCycleNumbers.has(cNum)) {
+                    missingPastCycles.add(cNum);
+                    if (!pastCycleGroups.has(cNum) && s.groupId) {
+                        pastCycleGroups.set(cNum, s.groupId);
+                    }
+                }
+            }
+
+            for (const pastCNum of missingPastCycles) {
+                const targetGroupId = pastCycleGroups.get(pastCNum) || student.groupId;
+                const subTxs = await TransactionModel.find({
+                    teacherId,
+                    studentId: student._id,
+                    category: TransactionCategory.SUBSCRIPTION,
+                    cycleNumber: pastCNum
+                }).lean();
+
+                const paid = subTxs.reduce((sum, t) => sum + (t.paidAmount || 0), 0);
+                const disc = subTxs.reduce((sum, t) => sum + (t.discountAmount || 0), 0);
+                const settled = paid + disc;
+                const status = settled >= fullCyclePrice
+                    ? CycleEnrollmentStatus.PAID
+                    : settled > 0
+                        ? CycleEnrollmentStatus.PARTIALLY_PAID
+                        : CycleEnrollmentStatus.UNPAID;
+                const remainingAmount = status === CycleEnrollmentStatus.PAID ? 0 : Math.max(0, fullCyclePrice - settled);
+
+                await CycleEnrollmentModel.findOneAndUpdate(
+                    { studentId: student._id, groupId: targetGroupId, cycleNumber: pastCNum },
+                    {
+                        $setOnInsert: {
+                            studentId: student._id,
+                            groupId: targetGroupId,
+                            teacherId: new Types.ObjectId(teacherId),
+                            cycleNumber: pastCNum,
+                            cycleCapacity: capacity,
+                            pricePerSession,
+                            fullCyclePrice,
+                            startSession: 1,
+                            chargeableSessions: capacity,
+                            cycleCharge: fullCyclePrice,
+                            totalPaid: paid,
+                            totalDiscount: disc,
+                            remainingAmount,
+                            status
+                        }
+                    },
+                    { upsert: true, returnDocument: 'after' }
+                );
+                existingCycleNumbers.add(pastCNum);
+            }
+        }
+    }
+
     static async getStudentById(studentId: string, teacherId: string) {
+        await StudentService.ensureStudentCycleEnrollments(studentId, teacherId);
+
         const student = await StudentModel.findOne({ _id: studentId, teacherId })
                         .populate('groupId', 'name schedule')
                         .lean();
@@ -827,6 +994,10 @@ export class StudentService {
                         );
                     }
                 }
+            }
+
+            if (isGroupChanged) {
+                await StudentService.ensureStudentCycleEnrollments(studentId, teacherId);
             }
 
             // Invalidate teacher cache
