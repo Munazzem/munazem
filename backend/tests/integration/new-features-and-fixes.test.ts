@@ -70,9 +70,14 @@ describe('Recent Fixes and Features Integration Tests', () => {
             const remainingTxs = await TransactionModel.find({ teacherId: teacher._id }).lean();
             expect(remainingTxs.length).toBe(0);
 
-            // Cycle enrollments should be reversed / deleted
+            // Cycle enrollments should be reversed to UNPAID status and preserved
             const enrollments = await CycleEnrollmentModel.find({ teacherId: teacher._id }).lean();
-            expect(enrollments.length).toBe(0);
+            expect(enrollments.length).toBe(2);
+            for (const en of enrollments) {
+                expect(en.status).toBe('UNPAID');
+                expect(en.totalPaid).toBe(0);
+                expect(en.remainingAmount).toBe(en.cycleCharge);
+            }
 
             // Check getPaidStudentIds: Students must now be UNPAID
             paidStudentIds = await StudentService.getPaidStudentIds(teacher._id.toString());
