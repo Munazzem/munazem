@@ -1794,11 +1794,31 @@ export class PaymentsService {
             }
 
             // 4. If this was a subscription, revert the CycleEnrollment
-            if (tx.category === TransactionCategory.SUBSCRIPTION && tx.studentId && tx.cycleNumber !== undefined) {
-                const enrollment = await CycleEnrollmentModel.findOne({
-                    studentId: tx.studentId,
-                    cycleNumber: tx.cycleNumber
-                }).session(session);
+            if (tx.category === TransactionCategory.SUBSCRIPTION && tx.studentId) {
+                let enrollment = null;
+                if (tx.cycleNumber !== undefined) {
+                    enrollment = await CycleEnrollmentModel.findOne({
+                        studentId: tx.studentId,
+                        cycleNumber: tx.cycleNumber
+                    }).session(session);
+                }
+                if (!enrollment) {
+                    const studentDoc = await StudentModel.findById(tx.studentId, { groupId: 1 }).session(session);
+                    if (studentDoc?.groupId) {
+                        const groupDoc = await GroupModel.findById(studentDoc.groupId, { 'cycle.currentCycleNumber': 1 }).session(session);
+                        if (groupDoc?.cycle?.currentCycleNumber) {
+                            enrollment = await CycleEnrollmentModel.findOne({
+                                studentId: tx.studentId,
+                                cycleNumber: groupDoc.cycle.currentCycleNumber
+                            }).session(session);
+                        }
+                    }
+                    if (!enrollment) {
+                        enrollment = await CycleEnrollmentModel.findOne({
+                            studentId: tx.studentId
+                        }).sort({ cycleNumber: -1 }).session(session);
+                    }
+                }
 
                 if (enrollment) {
                     const cashToRevert = tx.paidAmount || 0;
@@ -1811,49 +1831,22 @@ export class PaymentsService {
                         enrollment.remainingAmount + totalRevert
                     );
 
-                    const txCreatedAt = (tx as any).createdAt ? new Date((tx as any).createdAt).getTime() : 0;
-                    const enCreatedAt = (enrollment as any).createdAt ? new Date((enrollment as any).createdAt).getTime() : 0;
-                    const group = await GroupModel.findById(enrollment.groupId || (tx as any)?.groupId).session(session);
-                    const isPastCycle = group?.cycle?.currentCycleNumber ? (enrollment.cycleNumber < group.cycle.currentCycleNumber) : false;
+                    // Revert payment on the cycle enrollment:
+                    // If the payment is voided, the remaining amount increases, and the debt returns to the student in full.
+                    enrollment.status = enrollment.remainingAmount <= 0
+                        ? CycleEnrollmentStatus.PAID
+                        : enrollment.remainingAmount >= enrollment.cycleCharge
+                            ? CycleEnrollmentStatus.UNPAID
+                            : CycleEnrollmentStatus.PARTIALLY_PAID;
 
-                    const isDebtOrExistingEnrollment = 
-                        isPastCycle
-                        || Boolean(tx.description && (tx.description.includes('مديونية') || tx.description.includes('سداد')))
-                        || Boolean((enrollment as any).sessionsConsumed && (enrollment as any).sessionsConsumed > 0)
-                        || (txCreatedAt > 0 && enCreatedAt > 0 && (txCreatedAt - enCreatedAt > 10000));
+                    await enrollment.save({ session });
 
-                    // If enrollment is back to fully unpaid (no payments remain after reversal),
-                    // only delete it if it was created alongside this transaction (not an existing enrollment or debt settlement)
-                    if (enrollment.totalPaid <= 0 && enrollment.remainingAmount >= enrollment.cycleCharge && !isDebtOrExistingEnrollment) {
-                        await CycleEnrollmentModel.deleteOne({ _id: enrollment._id }, { session });
-                        // net debt added at creation = cycleCharge - (paidAmount + discountAmount)
-                        //                           = tx.remainingAmount at the time of the transaction
-                        const netDebtAdded = tx.remainingAmount || 0;
-                        if (netDebtAdded > 0 && tx.studentId) {
-                            await StudentModel.findByIdAndUpdate(
-                                tx.studentId,
-                                { $inc: { totalDebt: -netDebtAdded } },
-                                { session }
-                            );
-                        }
-                    } else {
-                        // Enrollment still has other payments or was a pre-existing debt/cycle — just re-add this payment's
-                        // portion to student debt and update status.
-                        enrollment.status = enrollment.remainingAmount <= 0
-                            ? CycleEnrollmentStatus.PAID
-                            : enrollment.remainingAmount >= enrollment.cycleCharge
-                                ? CycleEnrollmentStatus.UNPAID
-                                : CycleEnrollmentStatus.PARTIALLY_PAID;
-
-                        await enrollment.save({ session });
-
-                        if (totalRevert > 0 && tx.studentId) {
-                            await StudentModel.findByIdAndUpdate(
-                                tx.studentId,
-                                { $inc: { totalDebt: totalRevert } },
-                                { session }
-                            );
-                        }
+                    if (totalRevert > 0 && tx.studentId) {
+                        await StudentModel.findByIdAndUpdate(
+                            tx.studentId,
+                            { $inc: { totalDebt: totalRevert } },
+                            { session }
+                        );
                     }
                 }
             } else if (tx.remainingAmount && tx.remainingAmount > 0 && tx.studentId) {
@@ -2038,11 +2031,31 @@ export class PaymentsService {
 
             // D. Handle Student & CycleEnrollment reversals
             for (const tx of allTxsToDelete) {
-                if (tx.category === TransactionCategory.SUBSCRIPTION && tx.studentId && tx.cycleNumber !== undefined) {
-                    const enrollment = await CycleEnrollmentModel.findOne({
-                        studentId: tx.studentId,
-                        cycleNumber: tx.cycleNumber
-                    }).session(session);
+                if (tx.category === TransactionCategory.SUBSCRIPTION && tx.studentId) {
+                    let enrollment = null;
+                    if (tx.cycleNumber !== undefined) {
+                        enrollment = await CycleEnrollmentModel.findOne({
+                            studentId: tx.studentId,
+                            cycleNumber: tx.cycleNumber
+                        }).session(session);
+                    }
+                    if (!enrollment) {
+                        const studentDoc = await StudentModel.findById(tx.studentId, { groupId: 1 }).session(session);
+                        if (studentDoc?.groupId) {
+                            const groupDoc = await GroupModel.findById(studentDoc.groupId, { 'cycle.currentCycleNumber': 1 }).session(session);
+                            if (groupDoc?.cycle?.currentCycleNumber) {
+                                enrollment = await CycleEnrollmentModel.findOne({
+                                    studentId: tx.studentId,
+                                    cycleNumber: groupDoc.cycle.currentCycleNumber
+                                }).session(session);
+                            }
+                        }
+                        if (!enrollment) {
+                            enrollment = await CycleEnrollmentModel.findOne({
+                                studentId: tx.studentId
+                            }).sort({ cycleNumber: -1 }).session(session);
+                        }
+                    }
 
                     if (enrollment) {
                         const cashToRevert = (tx.paidAmount || 0);
@@ -2055,43 +2068,22 @@ export class PaymentsService {
                             enrollment.remainingAmount + totalRevert
                         );
 
-                        const txCreatedAt = (tx as any).createdAt ? new Date((tx as any).createdAt).getTime() : 0;
-                        const enCreatedAt = (enrollment as any).createdAt ? new Date((enrollment as any).createdAt).getTime() : 0;
-                        const group = await GroupModel.findById(enrollment.groupId || (tx as any)?.groupId).session(session);
-                        const isPastCycle = group?.cycle?.currentCycleNumber ? (enrollment.cycleNumber < group.cycle.currentCycleNumber) : false;
+                        // Revert payment on the cycle enrollment:
+                        // If the payment is voided, the remaining amount increases, and the debt returns to the student in full.
+                        enrollment.status = enrollment.remainingAmount <= 0
+                            ? CycleEnrollmentStatus.PAID
+                            : enrollment.remainingAmount >= enrollment.cycleCharge
+                                ? CycleEnrollmentStatus.UNPAID
+                                : CycleEnrollmentStatus.PARTIALLY_PAID;
 
-                        const isDebtOrExistingEnrollment = 
-                            isPastCycle
-                            || Boolean(tx.description && (tx.description.includes('مديونية') || tx.description.includes('سداد')))
-                            || Boolean((enrollment as any).sessionsConsumed && (enrollment as any).sessionsConsumed > 0)
-                            || (txCreatedAt > 0 && enCreatedAt > 0 && (txCreatedAt - enCreatedAt > 10000));
+                        await enrollment.save({ session });
 
-                        if (enrollment.totalPaid <= 0 && enrollment.remainingAmount >= enrollment.cycleCharge && !isDebtOrExistingEnrollment) {
-                            await CycleEnrollmentModel.deleteOne({ _id: enrollment._id }, { session });
-                            const netDebtAdded = tx.remainingAmount || 0;
-                            if (netDebtAdded > 0 && tx.studentId) {
-                                await StudentModel.findByIdAndUpdate(
-                                    tx.studentId,
-                                    { $inc: { totalDebt: -netDebtAdded } },
-                                    { session }
-                                );
-                            }
-                        } else {
-                            enrollment.status = enrollment.remainingAmount <= 0
-                                ? CycleEnrollmentStatus.PAID
-                                : enrollment.remainingAmount >= enrollment.cycleCharge
-                                    ? CycleEnrollmentStatus.UNPAID
-                                    : CycleEnrollmentStatus.PARTIALLY_PAID;
-
-                            await enrollment.save({ session });
-
-                            if (totalRevert > 0 && tx.studentId) {
-                                await StudentModel.findByIdAndUpdate(
-                                    tx.studentId,
-                                    { $inc: { totalDebt: totalRevert } },
-                                    { session }
-                                );
-                            }
+                        if (totalRevert > 0 && tx.studentId) {
+                            await StudentModel.findByIdAndUpdate(
+                                tx.studentId,
+                                { $inc: { totalDebt: totalRevert } },
+                                { session }
+                            );
                         }
                     }
                 } else if (tx.remainingAmount && tx.remainingAmount > 0 && tx.studentId) {

@@ -365,12 +365,16 @@ export class ReportsService {
                 totalPaid = Math.max(0, e.cycleCharge - totalDiscount);
             } else if (txPaid > 0 && Math.abs(txPaid - totalPaid) === totalDiscount) {
                 totalPaid = txPaid;
+            } else if (txPaid > 0 && totalPaid !== txPaid) {
+                totalPaid = txPaid;
+            } else if (cycleTxs.length === 0 && payments.length === 0 && e.totalPaid > 0 && (!e.sessionsConsumed || e.sessionsConsumed === 0)) {
+                totalPaid = 0;
             }
 
             let remainingAmount = e.remainingAmount;
             let status = e.status;
             const settled = totalPaid + totalDiscount;
-            if (settled >= e.cycleCharge || (txPaid + txDiscount >= e.cycleCharge)) {
+            if (settled >= e.cycleCharge || (txPaid + txDiscount >= e.cycleCharge && e.cycleCharge > 0)) {
                 remainingAmount = 0;
                 status = CycleEnrollmentStatus.PAID;
                 if (e.remainingAmount > 0 || e.status !== CycleEnrollmentStatus.PAID) {
@@ -380,6 +384,13 @@ export class ReportsService {
                         { $set: { remainingAmount: 0, status: CycleEnrollmentStatus.PAID, totalPaid, totalDiscount } }
                     ).exec().catch(() => {});
                 }
+            } else if (totalPaid === 0 && (e.totalPaid > 0 || (e.remainingAmount < e.cycleCharge && totalDiscount === 0))) {
+                remainingAmount = Math.max(0, e.cycleCharge - totalDiscount);
+                status = remainingAmount === 0 ? CycleEnrollmentStatus.PAID : CycleEnrollmentStatus.UNPAID;
+                CycleEnrollmentModel.updateOne(
+                    { _id: e._id },
+                    { $set: { remainingAmount, status, totalPaid: 0 } }
+                ).exec().catch(() => {});
             }
 
             return {

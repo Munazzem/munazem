@@ -249,7 +249,7 @@ describe('Payments API', () => {
     });
 
     describe('DELETE /payments/:id', () => {
-        it('Scenario A: Deleting a subscription on a newly created cycle enrollment correctly reverts student totalDebt to 0 and removes the enrollment', async () => {
+        it('Scenario A: Deleting a subscription payment on a cycle enrollment restores full debt to student and preserves cycle as UNPAID', async () => {
             await seedTeacher();
             
             // Set base price to 100
@@ -286,13 +286,16 @@ describe('Payments API', () => {
 
             expect(delRes.status).toBe(200);
 
-            // Verify the student debt is back to 0
+            // Verify the student debt returns to full 100 (60 + 40)
             updatedStudent = await mongoose.model('Student').findById(student._id);
-            expect(updatedStudent.totalDebt).toBe(0);
+            expect(updatedStudent.totalDebt).toBe(100);
 
-            // Verify the enrollment was completely deleted
+            // Verify the enrollment was NOT deleted, but preserved as UNPAID with remaining 100
             const enrollmentModel = await mongoose.model('CycleEnrollment').findOne({ studentId: student._id });
-            expect(enrollmentModel).toBeNull();
+            expect(enrollmentModel).not.toBeNull();
+            expect(enrollmentModel.status).toBe('UNPAID');
+            expect(enrollmentModel.totalPaid).toBe(0);
+            expect(enrollmentModel.remainingAmount).toBe(100);
         });
 
         it('Scenario B: Deleting a secondary/partial payment transaction on an existing enrollment correctly restores paidAmount back to student.totalDebt', async () => {

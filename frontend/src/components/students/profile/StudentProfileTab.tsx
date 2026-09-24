@@ -118,7 +118,7 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
         onSuccess: () => {
             toast.success('تم تحديث عدد الحصص بنجاح');
             queryClient.invalidateQueries({ queryKey: QK.students.detail(studentId) });
-            queryClient.invalidateQueries({ queryKey: ['student-report', studentId] });
+            queryClient.invalidateQueries({ queryKey: QK.students.report(studentId) });
             setEditingQuota(false);
         },
         onError: (err: any) => {
