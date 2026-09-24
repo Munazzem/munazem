@@ -12,6 +12,7 @@ import { UserModel }               from '../../database/models/user.model.js';
 import mongoose from 'mongoose';
 import { TransactionType, TransactionCategory, SessionStatus, UserRole, AttendanceStatus, CycleEnrollmentStatus } from '../../common/enums/enum.service.js';
 import { NotFoundException } from '../../common/utils/response/error.responce.js';
+import { StudentService } from '../students/students.service.js';
 import { BarcodeUtil } from '../../common/utils/barcode.util.js';
 import { cache, CacheKeys, CacheTTL } from '../../infrastructure/cache/cache.service.js';
 import { logger } from '../../common/utils/logger.util.js';
@@ -288,6 +289,12 @@ export class ReportsService {
         const notebookSalesCount = paymentTotals.find((p: any) => p._id === TransactionCategory.NOTEBOOK_SALE)?.count ?? 0;
 
         // Active subscription and cycle enrollments
+        await StudentService.ensureStudentCycleEnrollments(student._id, teacherId);
+        const refreshedStudent = await StudentModel.findById(student._id, { totalDebt: 1 }).lean();
+        if (refreshedStudent) {
+            student.totalDebt = refreshedStudent.totalDebt ?? student.totalDebt;
+        }
+
         const currentCycleNumber = (group as any)?.cycle?.currentCycleNumber || 1;
 
         const allEnrollments = await CycleEnrollmentModel.find({
