@@ -1,7 +1,10 @@
 export enum UserRole {
-    superAdmin = 'superAdmin',
-    teacher = 'teacher',
-    assistant = 'assistant',
+    superAdmin        = 'superAdmin',
+    teacher           = 'teacher',
+    assistant         = 'assistant',
+    // ── Center Roles ──
+    centerOwner       = 'centerOwner',
+    centerSupervisor  = 'centerSupervisor',
 }
 
 export enum SubscriptionStatus {
@@ -14,12 +17,14 @@ export enum SubscriptionPlan {
     MINI    = 'MINI',
     BASIC   = 'BASIC',
     PREMIUM = 'PREMIUM',
+    CENTER  = 'CENTER',
 }
 
 export const PLAN_PRICES: Record<SubscriptionPlan, number> = {
     [SubscriptionPlan.MINI]:    500,
     [SubscriptionPlan.BASIC]:   900,
     [SubscriptionPlan.PREMIUM]: 1200,
+    [SubscriptionPlan.CENTER]:  0,      // يُحدد لاحقاً
 };
 
 // Configuration for dynamic student-based pricing
@@ -27,6 +32,7 @@ export const PLAN_CONFIG: Record<SubscriptionPlan, { baseStudents: number; extra
     [SubscriptionPlan.MINI]:    { baseStudents: 250, extraPricePer100: 250 },
     [SubscriptionPlan.BASIC]:   { baseStudents: 500, extraPricePer100: 200 },
     [SubscriptionPlan.PREMIUM]: { baseStudents: 500, extraPricePer100: 200 },
+    [SubscriptionPlan.CENTER]:  { baseStudents: 1000, extraPricePer100: 150 }, // يُحدد لاحقاً
 };
 
 export const DURATION_MONTHS = [1, 4, 9, 12] as const;
@@ -120,6 +126,11 @@ export enum TransactionCategory {
     OTHER_INCOME         = 'OTHER_INCOME',   
     DEBT_PAYMENT         = 'DEBT_PAYMENT',   
 
+    // Center-specific income categories
+    CENTER_PACKAGE       = 'CENTER_PACKAGE',
+    CENTER_PRIVATE       = 'CENTER_PRIVATE',
+    CENTER_COMBINED      = 'CENTER_COMBINED',
+
     // Expense categories
     SALARY        = 'SALARY',         
     RENT          = 'RENT',           
@@ -142,4 +153,24 @@ export enum ExamStatus {
 export enum ExamSource {
     MANUAL       = 'MANUAL',        
     AI_GENERATED = 'AI_GENERATED',  
+}
+
+// ── Center-specific enums ─────────────────────────────────────────────
+
+export enum CenterSupervisorType {
+    FINANCIAL  = 'FINANCIAL',
+    ATTENDANCE = 'ATTENDANCE',
+    CUSTOM     = 'CUSTOM',
+}
+
+export enum CenterGroupType {
+    PACKAGE = 'PACKAGE',
+    PRIVATE = 'PRIVATE',
+    MIXED   = 'MIXED',
+}
+
+export enum CenterEnrollmentType {
+    PACKAGE = 'PACKAGE',
+    PRIVATE = 'PRIVATE',
+    BOTH    = 'BOTH',
 }

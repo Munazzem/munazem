@@ -24,6 +24,10 @@ apiClient.interceptors.request.use((config) => {
         if (token && config.headers) {
             config.headers.Authorization = `Bearer ${token}`;
         }
+        const branchId = Cookies.get('selectedBranchId');
+        if (branchId && config.headers && !config.headers['x-branch-id']) {
+            config.headers['x-branch-id'] = branchId;
+        }
     }
     return config;
 }, (error) => {

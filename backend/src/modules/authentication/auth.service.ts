@@ -4,7 +4,8 @@ import { PasswordUtil } from "../../common/utils/password.util.js";
 import { TokenUtil } from "../../common/utils/token.util.js";
 import { trackEvent } from "../../common/utils/activity.service.js";
 import { cache, CacheKeys, CacheTTL } from "../../infrastructure/cache/cache.service.js";
-import type { ILoginRequest, IAuthResponse } from "../../types/auth.types.js";
+import type { ILoginRequest, IAuthResponse, IJwtPayload } from "../../types/auth.types.js";
+import { UserRole } from "../../common/enums/enum.service.js";
 
 export const login = async (data: ILoginRequest): Promise<IAuthResponse> => {
     const { phone, password } = data;
@@ -47,11 +48,13 @@ export const login = async (data: ILoginRequest): Promise<IAuthResponse> => {
         }
     }
 
-    const payload = {
+    const payload: IJwtPayload = {
         userId: user._id.toString(),
         role: user.role,
         teacherId: user.teacherId ? user.teacherId.toString() : null,
-        isActive: user.isActive
+        isActive: user.isActive,
+        centerId: user.centerId ? user.centerId.toString() : null,
+        supervisorType: user.supervisorType || null,
     };
 
     const token = TokenUtil.generateAccessToken(payload);
@@ -69,16 +72,31 @@ export const login = async (data: ILoginRequest): Promise<IAuthResponse> => {
             userObject.logoUrl = teacher.logoUrl;
             userObject.teacherName = teacher.name;
         }
+    } else if (user.role === UserRole.centerSupervisor && user.centerId) {
+        const { CenterModel } = await import('../../database/models/center.model.js');
+        const center = await CenterModel.findById(user.centerId, { name: 1, logoUrl: 1 }).lean();
+        if (center) {
+            userObject.centerName = center.name;
+            userObject.logoUrl = center.logoUrl;
+        }
     }
 
     // Fetch active subscription to include planTier
     const { SubscriptionModel } = await import('../../database/models/subscription.model.js');
     const { SubscriptionStatus } = await import('../../common/enums/enum.service.js');
-    const activeSubscription = await SubscriptionModel.findOne({
-        teacherId: user.role === 'teacher' ? user._id : user.teacherId,
+    
+    let subscriptionOwnerId = null;
+    if (user.role === UserRole.teacher || user.role === UserRole.centerOwner) {
+        subscriptionOwnerId = user._id;
+    } else if (user.role === UserRole.assistant || user.role === UserRole.centerSupervisor) {
+        subscriptionOwnerId = user.teacherId;
+    }
+
+    const activeSubscription = subscriptionOwnerId ? await SubscriptionModel.findOne({
+        teacherId: subscriptionOwnerId,
         status: SubscriptionStatus.ACTIVE,
         endDate: { $gt: new Date() },
-    }).sort({ endDate: -1 }).lean();
+    }).sort({ endDate: -1 }).lean() : null;
     
     userObject.planTier = activeSubscription?.planTier || null;
     userObject.id = user._id.toString();

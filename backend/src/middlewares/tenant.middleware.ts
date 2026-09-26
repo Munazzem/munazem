@@ -40,6 +40,24 @@ export const resolveTenant = (req: Request, _res: Response, next: NextFunction) 
         return next();
     }
 
+    // ── Center Roles ──
+    if (user.role === UserRole.centerOwner) {
+        (req as any).tenantId = user.userId;
+        (req as any).centerId = user.centerId || null;
+        return next();
+    }
+
+    if (user.role === UserRole.centerSupervisor) {
+        if (!user.centerId) {
+            return next(ForbiddenException({
+                message: 'حساب المشرف غير مرتبط بسنتر — تواصل مع الإدارة'
+            }));
+        }
+        (req as any).tenantId = user.teacherId; // ownerId stored in teacherId
+        (req as any).centerId = user.centerId;
+        return next();
+    }
+
     return next(ForbiddenException({ message: 'دور غير معروف' }));
 };
 

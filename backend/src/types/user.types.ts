@@ -1,5 +1,6 @@
 import { Document, Types } from 'mongoose';
-import { UserRole, TeacherStage } from '../common/enums/enum.service.js';
+import { UserRole, TeacherStage, CenterSupervisorType } from '../common/enums/enum.service.js';
+import type { ISupervisorPermissions } from './center.types.js';
 
 export interface IUser {
   name:      string;
@@ -27,6 +28,10 @@ export interface IUser {
   features?: {
     homeworkTracking?: boolean;
   };
+  // ── Center-specific fields (centerOwner & centerSupervisor only) ──
+  centerId?:               Types.ObjectId | null;
+  supervisorType?:         CenterSupervisorType | null;
+  supervisorPermissions?:  ISupervisorPermissions;
 }
 
 export interface IUserDocument extends IUser, Document {

@@ -1,6 +1,6 @@
 import mongoose, { Schema, Model } from "mongoose";
 import type { IUserDocument } from "../../types/user.types.js";
-import { UserRole, TeacherStage } from "../../common/enums/enum.service.js";
+import { UserRole, TeacherStage, CenterSupervisorType } from "../../common/enums/enum.service.js";
 
 const userSchema = new Schema<IUserDocument>(
     {
@@ -92,6 +92,35 @@ const userSchema = new Schema<IUserDocument>(
         features: {
             homeworkTracking: { type: Boolean, default: false },
         },
+        // ── Center-specific fields (centerOwner & centerSupervisor only) ──────
+        centerId: {
+            type: Schema.Types.ObjectId,
+            ref: 'Center',
+            default: null,
+            index: true,
+        },
+        supervisorType: {
+            type: String,
+            enum: [...Object.values(CenterSupervisorType), null],
+            default: null,
+        },
+        supervisorPermissions: {
+            // Financial
+            canViewFinancials:     { type: Boolean, default: false },
+            canRecordPayments:     { type: Boolean, default: false },
+            canManageExpenses:     { type: Boolean, default: false },
+            canViewReports:        { type: Boolean, default: false },
+            // Attendance
+            canTakeAttendance:     { type: Boolean, default: false },
+            canEditAttendance:     { type: Boolean, default: false },
+            canViewAttendance:     { type: Boolean, default: false },
+            // Management
+            canManageStudents:     { type: Boolean, default: false },
+            canManageTeachers:     { type: Boolean, default: false },
+            canManagePackages:     { type: Boolean, default: false },
+            canCreateExams:        { type: Boolean, default: false },
+            canSendNotifications:  { type: Boolean, default: false },
+        },
     },
     {
         timestamps: true,
@@ -99,6 +128,7 @@ const userSchema = new Schema<IUserDocument>(
 );
 
 userSchema.index({ teacherId: 1, role: 1, isActive: 1 });
+userSchema.index({ centerId: 1, role: 1, isActive: 1 });
 
 export const UserModel: Model<IUserDocument> =
     mongoose.models.User || mongoose.model<IUserDocument>("User", userSchema);

@@ -22,6 +22,7 @@ export interface IStudent {
     totalDebt?: number; // إجمالي المبالغ المتبقية غير المسددة
     consecutiveAbsences?: number; // عدد مرات الغياب المتتالي
     groupAssignedAt?: Date; // تاريخ الانضمام للمجموعة الحالية (لتفادي احتساب غيابات سابقة من المجموعة الجديدة)
+    centerId?: Types.ObjectId | null; // للمراكز التعليمية
     createdAt?: Date;
     updatedAt?: Date;
 }

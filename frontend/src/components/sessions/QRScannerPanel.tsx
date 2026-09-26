@@ -1,17 +1,27 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Camera, CameraOff, Search, UserCheck, Loader2, QrCode } from 'lucide-react';
+import { Camera, CameraOff, Search, UserCheck, Loader2, QrCode, Volume2, VolumeX, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { soundEffects } from '@/lib/utils/sound';
+
+export interface ScanFeedback {
+    studentName: string;
+    studentCode?: string;
+    hasDues: boolean;
+    debtAmount?: number;
+    timestamp: number;
+}
 
 interface QRScannerPanelProps {
     sessionId: string;
     onScan: (studentId: string) => Promise<void>;
     onManualSearch: (query: string) => void;
     disabled?: boolean;
+    scanFeedback?: ScanFeedback | null;
 }
 
 export function QRScannerPanel({
@@ -19,6 +29,7 @@ export function QRScannerPanel({
     onScan,
     onManualSearch,
     disabled = false,
+    scanFeedback = null,
 }: QRScannerPanelProps) {
     const scannerRef = useRef<Html5Qrcode | null>(null);
     const [isCameraActive, setIsCameraActive] = useState(false);
@@ -27,6 +38,7 @@ export function QRScannerPanel({
     const [lastScanned, setLastScanned] = useState<string | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+    const [isMuted, setIsMuted] = useState(() => soundEffects.getMuted());
     const lastScannedRef = useRef<string | null>(null);
 
     // Use consistent ID pattern matching QrScanner
@@ -51,6 +63,7 @@ export function QRScannerPanel({
         if (scannerRef.current || isCameraLoading) return;
         setIsCameraLoading(true);
         setCameraError(null);
+        soundEffects.resume();
 
         // 1. Activate camera view FIRST so DOM has computed aspect ratio & dimensions on iOS Safari
         setIsCameraActive(true);
@@ -140,28 +153,48 @@ export function QRScannerPanel({
 
     return (
         <div className="flex flex-col gap-4">
-            {/* Camera Toggle */}
+            {/* Header: Camera Toggle + Audio Cue Mute Toggle */}
             <div className="flex items-center justify-between">
                 <h3 className="font-semibold text-gray-800 flex items-center gap-2">
                     <Camera className="h-5 w-5 text-primary" />
                     مسح QR Code
                 </h3>
-                <Button
-                    size="sm"
-                    variant={isCameraActive ? 'destructive' : 'default'}
-                    onClick={isCameraActive ? stopCamera : startCamera}
-                    disabled={disabled || isCameraLoading}
-                    className="gap-2"
-                >
-                    {isCameraLoading ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : isCameraActive ? (
-                        <CameraOff className="h-4 w-4" />
-                    ) : (
-                        <Camera className="h-4 w-4" />
-                    )}
-                    {isCameraLoading ? 'جارٍ التشغيل...' : isCameraActive ? 'إيقاف الكاميرا' : 'تشغيل الكاميرا'}
-                </Button>
+                <div className="flex items-center gap-2">
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                            const next = soundEffects.toggleMute();
+                            setIsMuted(next);
+                        }}
+                        className={cn(
+                            "h-8 px-2.5 text-xs gap-1.5 transition-colors",
+                            isMuted ? "text-gray-400 border-gray-200 hover:text-gray-600" : "text-emerald-700 border-emerald-200 bg-emerald-50/50 hover:bg-emerald-100/50"
+                        )}
+                        title={isMuted ? "التنبيه الصوتي مكتوم - اضغط للتشغيل" : "التنبيه الصوتي مفعل - اضغط للكتم"}
+                    >
+                        {isMuted ? <VolumeX className="h-3.5 w-3.5 text-gray-400" /> : <Volume2 className="h-3.5 w-3.5 text-emerald-600" />}
+                        <span>{isMuted ? "مكتوم" : "صوت"}</span>
+                    </Button>
+
+                    <Button
+                        size="sm"
+                        variant={isCameraActive ? 'destructive' : 'default'}
+                        onClick={isCameraActive ? stopCamera : startCamera}
+                        disabled={disabled || isCameraLoading}
+                        className="gap-2 h-8 text-xs sm:text-sm"
+                    >
+                        {isCameraLoading ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : isCameraActive ? (
+                            <CameraOff className="h-4 w-4" />
+                        ) : (
+                            <Camera className="h-4 w-4" />
+                        )}
+                        {isCameraLoading ? 'جارٍ التشغيل...' : isCameraActive ? 'إيقاف الكاميرا' : 'تشغيل الكاميرا'}
+                    </Button>
+                </div>
             </div>
 
             {/* Camera Viewport (Direct aspect-ratio container to prevent iOS Safari 0-height bug) */}
@@ -214,8 +247,72 @@ export function QRScannerPanel({
                 </div>
             )}
 
-            {/* Last Scanned */}
-            {lastScanned && (
+            {/* Live Instant Visual Cue Banner for Scanned Student */}
+            {scanFeedback && (
+                <div
+                    key={scanFeedback.timestamp}
+                    className={cn(
+                        "p-3 sm:p-4 rounded-xl border-2 shadow-sm transition-all animate-in fade-in slide-in-from-top-2 duration-200",
+                        scanFeedback.hasDues
+                            ? "border-amber-400 bg-gradient-to-r from-amber-50 to-orange-50/70 text-amber-950"
+                            : "border-emerald-300 bg-gradient-to-r from-emerald-50 to-teal-50/70 text-emerald-950"
+                    )}
+                >
+                    <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                            <div className={cn(
+                                "w-9 h-9 rounded-full flex items-center justify-center shrink-0",
+                                scanFeedback.hasDues ? "bg-amber-200 text-amber-800" : "bg-emerald-200 text-emerald-800"
+                            )}>
+                                {scanFeedback.hasDues ? (
+                                    <AlertTriangle className="h-5 w-5 animate-pulse text-amber-700" />
+                                ) : (
+                                    <CheckCircle2 className="h-5 w-5 text-emerald-700" />
+                                )}
+                            </div>
+                            <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <h4 className="font-bold text-sm sm:text-base truncate">
+                                        {scanFeedback.studentName}
+                                    </h4>
+                                    <span className={cn(
+                                        "text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0",
+                                        scanFeedback.hasDues ? "bg-amber-200/90 text-amber-900" : "bg-emerald-200/90 text-emerald-900"
+                                    )}>
+                                        حاضر ✓
+                                    </span>
+                                </div>
+                                <p className="text-xs mt-0.5 font-medium truncate">
+                                    {scanFeedback.studentCode ? `كود: ${scanFeedback.studentCode} · ` : ''}
+                                    {scanFeedback.hasDues ? (
+                                        <span className="font-bold text-red-600">
+                                            {scanFeedback.debtAmount && scanFeedback.debtAmount > 0
+                                                ? `متبقي عليه: ${scanFeedback.debtAmount} ج.م`
+                                                : 'غير مسدد لاشتراك الدورة الحالية'}
+                                        </span>
+                                    ) : (
+                                        <span className="text-emerald-700 font-bold">
+                                            خالص جميع المستحقات ✓
+                                        </span>
+                                    )}
+                                </p>
+                            </div>
+                        </div>
+
+                        <span className={cn(
+                            "text-xs font-bold px-2.5 py-1 rounded-lg shrink-0",
+                            scanFeedback.hasDues
+                                ? "bg-red-100 text-red-700 border border-red-200"
+                                : "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                        )}>
+                            {scanFeedback.hasDues ? '⚠️ عليه مصاريف' : '✓ بدون مستحقات'}
+                        </span>
+                    </div>
+                </div>
+            )}
+
+            {/* Last Raw Scanned Code (if no feedback banner) */}
+            {!scanFeedback && lastScanned && (
                 <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 rounded-lg px-3 py-2 border border-green-100">
                     <UserCheck className="h-4 w-4 shrink-0" />
                     <span>آخر مسح: <span className="font-mono text-xs">{lastScanned.slice(0, 24)}…</span></span>

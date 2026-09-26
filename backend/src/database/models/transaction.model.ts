@@ -37,6 +37,19 @@ const transactionSchema = new Schema<ITransactionDocument>({
     },
     cycleNumber: { type: Number },
     idempotencyKey: { type: String },
+    // ── Center-specific context ──
+    centerId: {
+        type: Schema.Types.ObjectId,
+        ref: 'Center',
+        default: null,
+        index: true,
+    },
+    centerTeacherId: {
+        type: Schema.Types.ObjectId,
+        ref: 'CenterTeacher',
+        default: null,
+        index: true,
+    },
 }, {
     timestamps: true,
 });
@@ -49,6 +62,12 @@ transactionSchema.index({ teacherId: 1, studentId: 1, date: -1 });
 
 // Fast queries: all transactions by category for reports
 transactionSchema.index({ teacherId: 1, category: 1, date: -1 });
+
+// Fast queries: center transactions by date
+transactionSchema.index({ centerId: 1, date: -1 });
+
+// Fast queries: center transactions by teacher (for teacher account reports)
+transactionSchema.index({ centerId: 1, centerTeacherId: 1, date: -1 });
 
 // Idempotency: prevent exact duplicate HTTP requests safely
 transactionSchema.index({ idempotencyKey: 1 }, { unique: true, sparse: true });

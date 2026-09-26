@@ -25,6 +25,7 @@ export interface IAttendanceRecord {
         studentName: string;
         studentPhone?: string;
         studentCode?: string;
+        totalDebt?: number;
     } | null;
     sessionId: string;
     status: AttendanceStatus;
@@ -37,6 +38,12 @@ export interface IAttendanceRecord {
     relatedGroupName?: string;
     relatedDate?: string;
     _syncStatus?: MutationSyncStatus;
+    financialStatus?: {
+        hasOutstandingFees: boolean;
+        totalDebt: number;
+        hasPaidCurrentCycle: boolean;
+        debtAmount?: number;
+    };
 }
 
 export interface IOfflineOutboxMutation {

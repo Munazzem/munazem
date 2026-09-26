@@ -41,6 +41,30 @@ const getNavItems = (role?: string) => {
         ];
     }
 
+    if (role === 'centerOwner') {
+        return [
+            { name: 'لوحة تحكم السنتر',   href: '/center',             icon: LayoutDashboard },
+            { name: 'المعلمون',           href: '/center/teachers',    icon: GraduationCap   },
+            { name: 'الباكيدجات',         href: '/center/packages',    icon: BookOpen        },
+            { name: 'المجموعات الدراسية',  href: '/center/groups',      icon: Users           },
+            { name: 'الطلاب والاشتراكات',  href: '/center/enrollments', icon: ClipboardList   },
+            { name: 'التحضير السريع',     href: '/center/attendance',  icon: CalendarCheck   },
+            { name: 'المشرفين',           href: '/center/supervisors', icon: ShieldCheck     },
+            { name: 'الماليات والحسابات',  href: '/center/financials',  icon: Wallet          },
+            { name: 'إعدادات السنتر',     href: '/center/settings',    icon: Settings        },
+        ];
+    }
+
+    if (role === 'centerSupervisor') {
+        return [
+            { name: 'لوحة تحكم السنتر',   href: '/center',             icon: LayoutDashboard },
+            { name: 'المجموعات',         href: '/center/groups',      icon: Users           },
+            { name: 'الطلاب والاشتراكات',  href: '/center/enrollments', icon: ClipboardList   },
+            { name: 'التحضير السريع',     href: '/center/attendance',  icon: CalendarCheck   },
+            { name: 'الماليات',          href: '/center/financials',  icon: Wallet          },
+        ];
+    }
+
     const base = [
         { name: 'لوحة التحكم',       href: '/dashboard',           icon: LayoutDashboard },
         { name: 'المجموعات الدراسية', href: '/groups',              icon: GraduationCap   },
@@ -118,7 +142,7 @@ export function Sidebar() {
             >
                 {/* Logo Area */}
             <div className="flex h-16 items-center justify-center border-b border-gray-100 px-6">
-                <Link href="/dashboard" className="flex items-center gap-2 max-w-full overflow-hidden">
+                <Link href={user?.role === 'centerOwner' || user?.role === 'centerSupervisor' ? '/center' : user?.role === 'superAdmin' ? '/admin' : '/dashboard'} className="flex items-center gap-2 max-w-full overflow-hidden">
                     {user?.logoUrl ? (
                         <div className="w-10 h-10 rounded-lg overflow-hidden flex items-center justify-center bg-white border border-gray-100 shrink-0 shadow-sm">
                              <img src={user.logoUrl} alt="Center Logo" className="w-full h-full object-contain" />
