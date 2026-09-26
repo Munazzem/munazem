@@ -25,6 +25,8 @@ const QRScannerPanel = dynamic(
     () => import('@/components/sessions/QRScannerPanel').then(m => m.QRScannerPanel),
     { ssr: false }
 );
+import type { ScanFeedback } from '@/components/sessions/QRScannerPanel';
+import { soundEffects } from '@/lib/utils/sound';
 import { BatchSubscriptionModal } from '@/components/payments/BatchSubscriptionModal';
 import { SetExcuseModal } from '@/components/sessions/SetExcuseModal';
 import { EditAttendanceDialog } from '@/components/sessions/EditAttendanceDialog';
@@ -135,6 +137,7 @@ export default function SessionDetailPage() {
     // Excused Absence State
     const [excuseStudent, setExcuseStudent] = useState<any | null>(null);
     const [showAllStudents, setShowAllStudents] = useState(false);
+    const [scanFeedback, setScanFeedback] = useState<ScanFeedback | null>(null);
 
     const handleDownloadAttendancePdf = async () => {
         setPdfLoading(true);
@@ -328,8 +331,41 @@ export default function SessionDetailPage() {
         },
         onSuccess: (record) => {
             const name = (record.studentId as any)?.studentName ?? 'الطالب';
+            const code = (record.studentId as any)?.studentCode;
             const guestSuffix = (record as any).isGuest ? ' (طالب زائر)' : '';
-            toast.success(`تم تسجيل حضور ${name}${guestSuffix}`);
+            const financial = (record as any).financialStatus;
+
+            const studentId = (record.studentId as any)?._id || (record.studentId as any);
+            const localStudent = groupStudentsData?.data?.find(s => s._id === studentId);
+            const hasDues = financial?.hasOutstandingFees 
+                ?? (localStudent ? ((localStudent.totalDebt && localStudent.totalDebt > 0) || localStudent.hasActiveSubscription === false) : false);
+            const debtAmount = financial?.debtAmount ?? localStudent?.totalDebt ?? 0;
+
+            if (hasDues) {
+                soundEffects.playWarning();
+                setScanFeedback({
+                    studentName: name + guestSuffix,
+                    studentCode: code || localStudent?.studentCode,
+                    hasDues: true,
+                    debtAmount: debtAmount > 0 ? debtAmount : undefined,
+                    timestamp: Date.now(),
+                });
+                toast.warning(`تم تسجيل حضور ${name}${guestSuffix} (⚠️ عليه مصاريف)`, {
+                    description: debtAmount > 0
+                        ? `المبلغ المطلوب: ${debtAmount} ج.م | يرجى تنبيه الطالب أو تحصيل المصاريف`
+                        : 'لم يسدد اشتراك الشهر الحالي | يرجى التنبيه بالسداد',
+                    duration: 6000,
+                });
+            } else {
+                soundEffects.playSuccess();
+                setScanFeedback({
+                    studentName: name + guestSuffix,
+                    studentCode: code || localStudent?.studentCode,
+                    hasDues: false,
+                    timestamp: Date.now(),
+                });
+                toast.success(`تم تسجيل حضور ${name}${guestSuffix}`);
+            }
         },
         onError: async (err: any, studentId, context) => {
             const isNetworkError = !err.response || err.code === 'ERR_NETWORK' || err.message?.includes('Network') || err.message?.includes('timeout') || err.message?.includes('Failed to fetch');
@@ -636,9 +672,34 @@ export default function SessionDetailPage() {
                 });
 
                 await refreshPendingCount(sessionId);
-                toast.info(`تم حفظ حضور ${localStudent.studentName} محلياً (⏳ سيتم رفعه عند الاتصال)`, {
-                    duration: 4000,
-                });
+                const hasDues = (localStudent.totalDebt && localStudent.totalDebt > 0) || localStudent.hasActiveSubscription === false;
+                if (hasDues) {
+                    soundEffects.playWarning();
+                    setScanFeedback({
+                        studentName: localStudent.studentName,
+                        studentCode: localStudent.studentCode,
+                        hasDues: true,
+                        debtAmount: localStudent.totalDebt || undefined,
+                        timestamp: Date.now(),
+                    });
+                    toast.warning(`تم حفظ حضور ${localStudent.studentName} محلياً (⚠️ عليه مصاريف)`, {
+                        description: localStudent.totalDebt
+                            ? `متبقي عليه: ${localStudent.totalDebt} ج.م (سيتم الرفع عند الاتصال)`
+                            : 'غير مسدد لاشتراك الدورة الحالية (سيتم الرفع عند الاتصال)',
+                        duration: 6000,
+                    });
+                } else {
+                    soundEffects.playSuccess();
+                    setScanFeedback({
+                        studentName: localStudent.studentName,
+                        studentCode: localStudent.studentCode,
+                        hasDues: false,
+                        timestamp: Date.now(),
+                    });
+                    toast.info(`تم حفظ حضور ${localStudent.studentName} محلياً (⏳ سيتم رفعه عند الاتصال)`, {
+                        duration: 4000,
+                    });
+                }
 
             } else if (cardEntry) {
                 // ── Card Token HIT: student is a known group member (by Smart Card QR) ──
@@ -686,6 +747,13 @@ export default function SessionDetailPage() {
                 });
 
                 await refreshPendingCount(sessionId);
+                soundEffects.playSuccess();
+                setScanFeedback({
+                    studentName: cardEntry.studentName,
+                    studentCode: cardEntry.studentCode,
+                    hasDues: false,
+                    timestamp: Date.now(),
+                });
                 toast.info(`تم حفظ حضور ${cardEntry.studentName} محلياً (⏳ سيتم رفعه عند الاتصال)`, {
                     duration: 4000,
                 });
@@ -974,6 +1042,7 @@ export default function SessionDetailPage() {
                             onScan={handleQRScan}
                             onManualSearch={(q) => setSearchQuery(q)}
                             disabled={recordMutation.isPending}
+                            scanFeedback={scanFeedback}
                         />
                         {/* Search Results */}
                         {searchQuery && (
@@ -1084,6 +1153,19 @@ export default function SessionDetailPage() {
                                                             غير مشترك
                                                         </span>
                                                     )}
+                                                    {(() => {
+                                                        const debt = Number((record as any).financialStatus?.debtAmount || (record as any).financialStatus?.totalDebt || student?.totalDebt || 0);
+                                                        if (debt <= 0) return null;
+                                                        return (
+                                                            <span
+                                                                title={`متبقي مديونية: ${debt} ج.م`}
+                                                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200 shrink-0"
+                                                            >
+                                                                <AlertTriangle className="h-2.5 w-2.5" />
+                                                                عليه {debt} ج.م
+                                                            </span>
+                                                        );
+                                                    })()}
                                                 </div>
                                                 <p className="text-xs text-gray-400">
                                                     {student?.studentCode} · {' '}
