@@ -347,7 +347,45 @@ export class AttendanceService {
                 }
             }
 
-            return record;
+            // ── Step 5: Financial status check ──────────────────────────────
+            const totalDebt = Number((student as any).totalDebt) || 0;
+            let hasUnpaidCurrentCycle = false;
+            let cycleRemainingAmount = 0;
+
+            if (student.groupId) {
+                const group = await GroupModel.findById(student.groupId, { 'cycle.currentCycleNumber': 1, customPrice: 1 }).lean();
+                const currentCycle = group?.cycle?.currentCycleNumber || 1;
+                const enrollment = await CycleEnrollmentModel.findOne({
+                    studentId: student._id,
+                    groupId: student.groupId,
+                    cycleNumber: currentCycle,
+                }).lean();
+
+                if (!enrollment || enrollment.status === CycleEnrollmentStatus.UNPAID || (enrollment.remainingAmount && enrollment.remainingAmount > 0)) {
+                    hasUnpaidCurrentCycle = true;
+                    cycleRemainingAmount = enrollment?.remainingAmount ?? (enrollment?.cycleCharge ?? (group?.customPrice || 0));
+                }
+            }
+
+            const hasOutstandingFees = totalDebt > 0 || hasUnpaidCurrentCycle;
+            const debtAmount = totalDebt > 0 ? totalDebt : cycleRemainingAmount;
+
+            const recordObj: any = (record as any).toObject ? (record as any).toObject() : { ...record };
+            recordObj.student = {
+                _id: student._id,
+                studentName: student.studentName,
+                studentCode: student.studentCode,
+                studentPhone: student.studentPhone,
+                totalDebt,
+            };
+            recordObj.financialStatus = {
+                hasOutstandingFees,
+                totalDebt,
+                hasPaidCurrentCycle: !hasUnpaidCurrentCycle,
+                debtAmount,
+            };
+
+            return recordObj;
         } catch (error: any) {
             if (error.code === 11000) {
                 throw ConflictException({ message: 'تم تسجيل حضور هذا الطالب بالفعل في هذه الحصة' });
@@ -891,7 +929,7 @@ export class AttendanceService {
         const records = await AttendanceModel.find({ sessionId })
             .populate({
                 path: 'studentId',
-                select: 'studentName studentPhone studentCode',
+                select: 'studentName studentPhone studentCode totalDebt',
                 match: Object.keys(matchFilter).length > 0 ? matchFilter : undefined
             })
             .lean();
@@ -906,7 +944,7 @@ export class AttendanceService {
 
             const allGroupStudents = await StudentModel.find(
                 { groupId: session.groupId, teacherId, isActive: true },
-                { studentName: 1, studentPhone: 1, studentCode: 1 }
+                { studentName: 1, studentPhone: 1, studentCode: 1, totalDebt: 1 }
             ).lean();
 
             const studentIds = allGroupStudents.map(s => s._id);

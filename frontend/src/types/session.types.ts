@@ -20,12 +20,20 @@ export type MutationSyncStatus = 'QUEUED' | 'SYNCING' | 'FAILED' | 'RESOLVED';
 
 export interface IAttendanceRecord {
     _id: string;
-    studentId: {
+    studentId: string | {
         _id: string;
         studentName: string;
         studentPhone?: string;
         studentCode?: string;
+        totalDebt?: number;
     } | null;
+    student?: {
+        _id: string;
+        studentName: string;
+        studentPhone?: string;
+        studentCode?: string;
+        totalDebt?: number;
+    };
     sessionId: string;
     status: AttendanceStatus;
     isGuest: boolean;
@@ -37,6 +45,12 @@ export interface IAttendanceRecord {
     relatedGroupName?: string;
     relatedDate?: string;
     _syncStatus?: MutationSyncStatus;
+    financialStatus?: {
+        hasOutstandingFees: boolean;
+        totalDebt: number;
+        hasPaidCurrentCycle: boolean;
+        debtAmount?: number;
+    };
 }
 
 export interface IOfflineOutboxMutation {
