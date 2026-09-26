@@ -330,13 +330,13 @@ export default function SessionDetailPage() {
             return { previousAttendance, clientMutationId, optimisticRecord, student };
         },
         onSuccess: (record) => {
-            const name = (record.studentId as any)?.studentName ?? 'الطالب';
-            const code = (record.studentId as any)?.studentCode;
+            const rawId = (record.studentId as any)?._id || (record.studentId as any);
+            const studentId = typeof rawId === 'string' ? rawId : rawId?.toString();
+            const localStudent = groupStudentsData?.data?.find(s => s._id === studentId);
+            const name = (record as any).student?.studentName ?? (record.studentId as any)?.studentName ?? localStudent?.studentName ?? 'الطالب';
+            const code = (record as any).student?.studentCode ?? (record.studentId as any)?.studentCode ?? localStudent?.studentCode;
             const guestSuffix = (record as any).isGuest ? ' (طالب زائر)' : '';
             const financial = (record as any).financialStatus;
-
-            const studentId = (record.studentId as any)?._id || (record.studentId as any);
-            const localStudent = groupStudentsData?.data?.find(s => s._id === studentId);
             const hasDues = financial?.hasOutstandingFees 
                 ?? (localStudent ? ((localStudent.totalDebt && localStudent.totalDebt > 0) || localStudent.hasActiveSubscription === false) : false);
             const debtAmount = financial?.debtAmount ?? localStudent?.totalDebt ?? 0;

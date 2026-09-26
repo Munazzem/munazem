@@ -371,7 +371,7 @@ export class AttendanceService {
             const debtAmount = totalDebt > 0 ? totalDebt : cycleRemainingAmount;
 
             const recordObj: any = (record as any).toObject ? (record as any).toObject() : { ...record };
-            recordObj.studentId = {
+            recordObj.student = {
                 _id: student._id,
                 studentName: student.studentName,
                 studentCode: student.studentCode,
