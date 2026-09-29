@@ -8,6 +8,7 @@ import { requireCenterPermission } from '../../middlewares/center-permissions.mi
 import { validate } from '../../middlewares/validate.middleware.js';
 import { UserRole } from '../../common/enums/enum.service.js';
 import {
+    onboardCenterSchema,
     createCenterSchema,
     createBranchSchema,
     updateCenterSchema,
@@ -19,6 +20,9 @@ import {
     updateCenterGroupSchema,
     createCenterSupervisorSchema,
     updateCenterSupervisorSchema,
+    createCenterStudentSchema,
+    bulkCreateCenterStudentSchema,
+    updateCenterStudentSchema,
     createCenterEnrollmentSchema,
     updateCenterEnrollmentSchema,
     recordCenterAttendanceSchema,
@@ -31,6 +35,15 @@ class CenterController {
     }
 
     // ── Centers & Branches ───────────────────────────────────────────────────
+
+    static async onboardCenter(req: Request, res: Response, next: NextFunction) {
+        try {
+            const result = await CenterService.onboardCenterByAdmin(req.body);
+            return SuccessResponse({ res, message: 'تم إنشاء السنتر وصاحب السنتر بنجاح', data: result, status: 201 });
+        } catch (error) {
+            next(error);
+        }
+    }
 
     static async getMyCenters(req: Request, res: Response, next: NextFunction) {
         try {
@@ -277,6 +290,74 @@ class CenterController {
         }
     }
 
+    // ── Students ─────────────────────────────────────────────────────────────
+
+    static async getStudents(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const result = await CenterService.getStudents(centerId, req.query);
+            return SuccessResponse({ res, message: 'تم جلب الطلاب بنجاح', data: result });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async getStudentById(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const student = await CenterService.getStudentById(centerId, req.params.id as string);
+            return SuccessResponse({ res, message: 'تم جلب بيانات الطالب بنجاح', data: student });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async createStudent(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const student = await CenterService.createStudent(centerId, req.body);
+            return SuccessResponse({ res, message: 'تمت إضافة الطالب بنجاح', data: student, status: 201 });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async bulkCreateStudents(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const result = await CenterService.bulkCreateStudents(centerId, req.body);
+            return SuccessResponse({ res, message: `تمت إضافة ${result.count} طالب بنجاح`, data: result, status: 201 });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async updateStudent(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const student = await CenterService.updateStudent(centerId, req.params.id as string, req.body);
+            return SuccessResponse({ res, message: 'تم تعديل بيانات الطالب بنجاح', data: student });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async deleteStudent(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            await CenterService.deleteStudent(centerId, req.params.id as string);
+            return SuccessResponse({ res, message: 'تم حذف الطالب بنجاح' });
+        } catch (error) {
+            next(error);
+        }
+    }
+
     // ── Enrollments ──────────────────────────────────────────────────────────
 
     static async getEnrollments(req: Request, res: Response, next: NextFunction) {
@@ -415,12 +496,24 @@ class CenterController {
             next(error);
         }
     }
+
+    static async getStudentFinancialReport(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const report = await CenterService.getStudentFinancialReport(centerId, req.params.studentId as string);
+            return SuccessResponse({ res, message: 'تم جلب التقرير المالي للطالب بنجاح', data: report });
+        } catch (error) {
+            next(error);
+        }
+    }
 }
 
 const router = Router();
 router.use(authenticate);
 
 // ── Center & Branch Management ───────────────────────────────────────────────
+router.post('/onboard', authorizeRoles(UserRole.superAdmin), validate(onboardCenterSchema), CenterController.onboardCenter);
 router.get('/my', authorizeRoles(UserRole.centerOwner, UserRole.centerSupervisor), CenterController.getMyCenters);
 router.post('/', authorizeRoles(UserRole.centerOwner, UserRole.superAdmin), validate(createCenterSchema), CenterController.createCenter);
 router.post('/branches', authorizeRoles(UserRole.centerOwner), validate(createBranchSchema), CenterController.createBranch);
@@ -453,6 +546,14 @@ router.post('/supervisors', authorizeRoles(UserRole.centerOwner), validate(creat
 router.put('/supervisors/:id', authorizeRoles(UserRole.centerOwner), validate(updateCenterSupervisorSchema), CenterController.updateSupervisor);
 router.delete('/supervisors/:id', authorizeRoles(UserRole.centerOwner), CenterController.deleteSupervisor);
 
+// ── Center Students ──────────────────────────────────────────────────────────
+router.get('/students', authorizeRoles(UserRole.centerOwner, UserRole.centerSupervisor), CenterController.getStudents);
+router.get('/students/:id', authorizeRoles(UserRole.centerOwner, UserRole.centerSupervisor), CenterController.getStudentById);
+router.post('/students', requireCenterPermission('canManageStudents'), validate(createCenterStudentSchema), CenterController.createStudent);
+router.post('/students/bulk', requireCenterPermission('canManageStudents'), validate(bulkCreateCenterStudentSchema), CenterController.bulkCreateStudents);
+router.put('/students/:id', requireCenterPermission('canManageStudents'), validate(updateCenterStudentSchema), CenterController.updateStudent);
+router.delete('/students/:id', requireCenterPermission('canManageStudents'), CenterController.deleteStudent);
+
 // ── Center Enrollments ───────────────────────────────────────────────────────
 router.get('/enrollments', authorizeRoles(UserRole.centerOwner, UserRole.centerSupervisor), CenterController.getEnrollments);
 router.get('/enrollments/student/:studentId', authorizeRoles(UserRole.centerOwner, UserRole.centerSupervisor), CenterController.getStudentEnrollment);
@@ -469,5 +570,6 @@ router.get('/attendance/student/:studentId', requireCenterPermission('canViewAtt
 router.post('/financials/payment', requireCenterPermission('canRecordPayments'), CenterController.recordPayment);
 router.get('/financials/summary', requireCenterPermission('canViewFinancials'), CenterController.getFinancialSummary);
 router.get('/financials/teacher/:teacherId', requireCenterPermission('canViewFinancials'), CenterController.getTeacherFinancialReport);
+router.get('/financials/student/:studentId', requireCenterPermission('canViewFinancials'), CenterController.getStudentFinancialReport);
 
 export default router;

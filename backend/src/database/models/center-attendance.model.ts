@@ -22,7 +22,7 @@ const centerAttendanceSchema = new Schema<ICenterAttendanceDocument>({
     },
     studentId: {
         type: Schema.Types.ObjectId,
-        ref: 'Student',
+        ref: 'CenterStudent',
         required: true,
         index: true,
     },

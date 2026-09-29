@@ -8,6 +8,19 @@ const discountSchema = z.object({
 }).optional();
 
 // ── Center Validation ─────────────────────────────────────────────────────────
+export const onboardCenterSchema = z.object({
+    body: z.object({
+        centerName: z.string().min(2, 'اسم السنتر يجب أن يكون حرفين على الأقل'),
+        ownerName: z.string().min(2, 'اسم المالك يجب أن يكون حرفين على الأقل'),
+        phone: z.string().min(10, 'رقم الهاتف غير صحيح'),
+        password: z.string().min(6, 'كلمة المرور يجب أن تكون 6 أحرف على الأقل'),
+        email: z.string().email('البريد الإلكتروني غير صحيح').optional().or(z.literal('')),
+        address: z.string().optional().nullable(),
+        centerPhone: z.string().optional().nullable(),
+        planTier: z.string().optional(),
+    }),
+});
+
 export const createCenterSchema = z.object({
     body: z.object({
         name: z.string().min(2, 'اسم السنتر يجب أن يكون حرفين على الأقل'),
@@ -42,7 +55,6 @@ export const createCenterTeacherSchema = z.object({
     body: z.object({
         name: z.string().min(2, 'اسم المدرس يجب أن يكون حرفين على الأقل'),
         subject: z.string().min(1, 'المادة الدراسية مطلوبة'),
-        privateMonthlyPrice: z.number().min(0, 'سعر البرايفت يجب أن يكون صفر أو أكثر').optional().nullable(),
     }),
 });
 
@@ -53,7 +65,6 @@ export const updateCenterTeacherSchema = z.object({
     body: z.object({
         name: z.string().min(2, 'اسم المدرس مطلوب').optional(),
         subject: z.string().min(1, 'المادة مطلوبة').optional(),
-        privateMonthlyPrice: z.number().min(0).optional().nullable(),
         isActive: z.boolean().optional(),
     }),
 });
@@ -100,6 +111,14 @@ export const createCenterGroupSchema = z.object({
         })).min(1, 'يجب تحديد موعد واحد على الأقل في الجدول'),
         capacity: z.number().int().positive().default(50),
         privateMonthlyPrice: z.number().min(0).optional().nullable(),
+    }).superRefine((data, ctx) => {
+        if ((data.groupType === 'PRIVATE' || data.groupType === 'MIXED') && !data.privateMonthlyPrice) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: 'سعر البرايفت الشهري مطلوب لنوع المجموعة هذه',
+                path: ['privateMonthlyPrice'],
+            });
+        }
     }),
 });
 
@@ -181,11 +200,12 @@ export const createCenterEnrollmentSchema = z.object({
         type: z.nativeEnum(CenterEnrollmentType, { message: 'نوع الاشتراك غير صحيح' }),
         packageId: z.string().optional().nullable(),
         packageDiscount: discountSchema,
+        packageGroups: z.array(z.string()).optional(),
         privateTeachers: z.array(z.object({
             centerTeacherId: z.string().min(1, 'معرف المدرس مطلوب'),
-            groupId: z.string().optional(),
+            // groupId is required — price is fetched from the group automatically
+            groupId: z.string().min(1, 'يجب تحديد مجموعة البرايفت'),
             subject: z.string().optional(),
-            monthlyPrice: z.number().min(0).optional(),
             sessionsPerWeek: z.number().min(1).default(1),
         })).optional(),
         privateDiscount: discountSchema,
@@ -201,11 +221,11 @@ export const updateCenterEnrollmentSchema = z.object({
         type: z.nativeEnum(CenterEnrollmentType).optional(),
         packageId: z.string().optional().nullable(),
         packageDiscount: discountSchema,
+        packageGroups: z.array(z.string()).optional(),
         privateTeachers: z.array(z.object({
             centerTeacherId: z.string().min(1),
-            groupId: z.string().optional(),
+            groupId: z.string().min(1, 'يجب تحديد مجموعة البرايفت'),
             subject: z.string().optional(),
-            monthlyPrice: z.number().min(0).optional(),
             sessionsPerWeek: z.number().min(1).optional(),
         })).optional(),
         privateDiscount: discountSchema,
@@ -236,5 +256,45 @@ export const bulkCenterAttendanceSchema = z.object({
             notes: z.string().optional(),
             source: z.enum(['MANUAL', 'QR_SCAN']).default('MANUAL'),
         })).min(1, 'يجب إرسال سجل حضور واحد على الأقل'),
+    }),
+});
+
+// ── Center Students Validation ───────────────────────────────────────────────
+export const createCenterStudentSchema = z.object({
+    body: z.object({
+        studentName: z.string().min(2, 'اسم الطالب يجب أن يكون حرفين على الأقل'),
+        parentName: z.string().min(2, 'اسم ولي الأمر يجب أن يكون حرفين على الأقل'),
+        studentPhone: z.string().optional().nullable(),
+        parentPhone: z.string().optional().nullable(),
+        gradeLevel: z.nativeEnum(GradeLevel, { message: 'المرحلة الدراسية غير صحيحة' }),
+        barcode: z.string().optional().nullable(),
+        notes: z.string().optional().nullable(),
+    }),
+});
+
+export const bulkCreateCenterStudentSchema = z.object({
+    body: z.object({
+        students: z.array(z.object({
+            studentName: z.string().min(2, 'اسم الطالب يجب أن يكون حرفين على الأقل'),
+            parentName: z.string().min(2, 'اسم ولي الأمر يجب أن يكون حرفين على الأقل'),
+            studentPhone: z.string().optional().nullable(),
+            parentPhone: z.string().optional().nullable(),
+            gradeLevel: z.nativeEnum(GradeLevel, { message: 'المرحلة الدراسية غير صحيحة' }),
+            barcode: z.string().optional().nullable(),
+            notes: z.string().optional().nullable(),
+        })).min(1, 'يجب إضافة طالب واحد على الأقل'),
+    }),
+});
+
+export const updateCenterStudentSchema = z.object({
+    body: z.object({
+        studentName: z.string().min(2, 'اسم الطالب يجب أن يكون حرفين على الأقل').optional(),
+        parentName: z.string().min(2, 'اسم ولي الأمر يجب أن يكون حرفين على الأقل').optional(),
+        studentPhone: z.string().optional().nullable(),
+        parentPhone: z.string().optional().nullable(),
+        gradeLevel: z.nativeEnum(GradeLevel, { message: 'المرحلة الدراسية غير صحيحة' }).optional(),
+        barcode: z.string().optional().nullable(),
+        notes: z.string().optional().nullable(),
+        isActive: z.boolean().optional(),
     }),
 });

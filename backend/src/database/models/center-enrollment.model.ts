@@ -36,7 +36,7 @@ const centerEnrollmentSchema = new Schema<ICenterEnrollmentDocument>({
     },
     studentId: {
         type: Schema.Types.ObjectId,
-        ref: 'Student',
+        ref: 'CenterStudent',
         required: true,
         index: true,
     },
@@ -54,6 +54,10 @@ const centerEnrollmentSchema = new Schema<ICenterEnrollmentDocument>({
     },
     packageMonthlyPrice: { type: Number, default: null },  // price snapshot
     packageDiscount:     { type: discountSchema, default: () => ({}) },
+    packageGroups: [{
+        type: Schema.Types.ObjectId,
+        ref: 'CenterGroup',
+    }],
 
     // ── Private Fields ──────────────────────────────────────────────
     privateTeachers:     { type: [privateTeacherSchema], default: [] },

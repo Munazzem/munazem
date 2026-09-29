@@ -5,10 +5,13 @@ import { CenterPackageModel } from '../../database/models/center-package.model.j
 import { CenterGroupModel } from '../../database/models/center-group.model.js';
 import { CenterAttendanceModel } from '../../database/models/center-attendance.model.js';
 import { CenterEnrollmentModel } from '../../database/models/center-enrollment.model.js';
+import { CenterStudentModel } from '../../database/models/center-student.model.js';
+import { nextSequence, nextSequenceBulk } from '../../database/models/counter.model.js';
 import { UserModel } from '../../database/models/user.model.js';
 import { StudentModel } from '../../database/models/student.model.js';
 import { TransactionModel } from '../../database/models/transaction.model.js';
-import { UserRole, CenterSupervisorType, TransactionType, TransactionCategory } from '../../common/enums/enum.service.js';
+import { SubscriptionModel } from '../../database/models/subscription.model.js';
+import { UserRole, CenterSupervisorType, TransactionType, TransactionCategory, SubscriptionStatus, SubscriptionPlan, GradeLevel, GRADE_LETTER } from '../../common/enums/enum.service.js';
 import { ConflictException, NotFoundException, ForbiddenException, BadRequestException } from '../../common/utils/response/error.responce.js';
 import { PasswordUtil } from '../../common/utils/password.util.js';
 import type { ISupervisorPermissions } from '../../types/center.types.js';
@@ -70,6 +73,78 @@ export class CenterService {
     // ══════════════════════════════════════════════════════════════════════════
     // 1. Centers & Branches
     // ══════════════════════════════════════════════════════════════════════════
+
+    static async onboardCenterByAdmin(data: {
+        centerName: string;
+        ownerName: string;
+        phone: string;
+        password: string;
+        email?: string;
+        address?: string | null;
+        centerPhone?: string | null;
+        planTier?: string;
+    }) {
+        const existingUser = await UserModel.findOne({ phone: data.phone.trim() }).lean();
+        if (existingUser) {
+            throw BadRequestException({ message: 'رقم الهاتف مسجل بالفعل في النظام' });
+        }
+
+        const hashedPassword = await PasswordUtil.hashPassword(data.password);
+        const userEmail = data.email && data.email.trim()
+            ? data.email.trim()
+            : `center-owner-${Date.now()}-${Math.floor(Math.random() * 10000)}@system.local`;
+
+        const [owner] = await UserModel.create([{
+            name: data.ownerName.trim(),
+            phone: data.phone.trim(),
+            password: hashedPassword,
+            email: userEmail,
+            role: UserRole.centerOwner,
+            isActive: true,
+        }]);
+
+        if (!owner) {
+            throw BadRequestException({ message: 'فشل في إنشاء حساب المالك' });
+        }
+
+        const center = await CenterModel.create({
+            name: data.centerName.trim(),
+            ownerId: owner._id,
+            phone: data.centerPhone?.trim() || data.phone.trim(),
+            address: data.address?.trim() || null,
+            parentCenterId: null,
+            isActive: true,
+        });
+
+        // Link centerId to owner
+        await UserModel.findByIdAndUpdate(owner._id, { centerId: center._id });
+
+        // Default 30-day active subscription
+        const thirtyDaysFromNow = new Date();
+        thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
+        await SubscriptionModel.create({
+            teacherId: owner._id,
+            planTier: data.planTier || SubscriptionPlan.CENTER,
+            status: SubscriptionStatus.ACTIVE,
+            startDate: new Date(),
+            endDate: thirtyDaysFromNow,
+            amount: 0,
+            durationMonths: 1,
+            studentsCount: 1000,
+            isFreeTrial: true,
+        });
+
+        return {
+            center,
+            owner: {
+                id: owner._id,
+                name: owner.name,
+                phone: owner.phone,
+                role: owner.role,
+                centerId: center._id,
+            },
+        };
+    }
 
     static async createCenter(ownerId: string, data: any) {
         const existingMain = await CenterModel.findOne({
@@ -160,7 +235,6 @@ export class CenterService {
             centerId,
             name: data.name,
             subject: data.subject,
-            privateMonthlyPrice: data.privateMonthlyPrice ?? null,
             isActive: true,
         });
     }
@@ -308,8 +382,7 @@ export class CenterService {
             throw NotFoundException({ message: 'المدرس غير موجود بالسنتر' });
         }
 
-        const price = data.privateMonthlyPrice ?? teacher.privateMonthlyPrice ?? null;
-
+        // Price comes from the request — required for PRIVATE/MIXED groups
         return await CenterGroupModel.create({
             centerId,
             centerTeacherId: data.centerTeacherId,
@@ -318,7 +391,7 @@ export class CenterService {
             groupType: data.groupType,
             schedule: data.schedule,
             capacity: data.capacity || 50,
-            privateMonthlyPrice: price,
+            privateMonthlyPrice: data.privateMonthlyPrice ?? null,
             isActive: true,
         });
     }
@@ -512,18 +585,165 @@ export class CenterService {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
+    // 5.5 Center Students (Directory & Management)
+    // ══════════════════════════════════════════════════════════════════════════
+
+    static async createStudent(centerId: string, data: any) {
+        const letter = GRADE_LETTER[data.gradeLevel as GradeLevel] || 'A';
+        const count = await nextSequence(`${centerId}_${data.gradeLevel}`);
+        const studentCode = `${count}${letter}`;
+
+        const barcode = data.barcode?.trim() || `${studentCode}-${Date.now().toString(36).toUpperCase()}`;
+
+        return await CenterStudentModel.create({
+            centerId: new Types.ObjectId(centerId),
+            studentName: data.studentName.trim(),
+            parentName: data.parentName.trim(),
+            studentPhone: data.studentPhone?.trim() || null,
+            parentPhone: data.parentPhone?.trim() || null,
+            gradeLevel: data.gradeLevel,
+            studentCode,
+            barcode,
+            notes: data.notes?.trim() || null,
+            isActive: true,
+        });
+    }
+
+    static async bulkCreateStudents(centerId: string, data: { students: any[] }) {
+        if (!data.students || data.students.length === 0) {
+            throw BadRequestException({ message: 'قائمة الطلاب فارغة' });
+        }
+
+        const byGrade: Record<string, any[]> = {};
+        for (const s of data.students) {
+            const g = s.gradeLevel;
+            if (!byGrade[g]) byGrade[g] = [];
+            byGrade[g].push(s);
+        }
+
+        const docsToInsert: any[] = [];
+        const cid = new Types.ObjectId(centerId);
+
+        for (const [grade, list] of Object.entries(byGrade)) {
+            const letter = GRADE_LETTER[grade as GradeLevel] || 'A';
+            const startSeq = await nextSequenceBulk(`${centerId}_${grade}`, list.length);
+
+            list.forEach((s, idx) => {
+                const count = startSeq + idx;
+                const studentCode = `${count}${letter}`;
+                const barcode = s.barcode?.trim() || `${studentCode}-${Date.now().toString(36).toUpperCase()}`;
+
+                docsToInsert.push({
+                    centerId: cid,
+                    studentName: s.studentName.trim(),
+                    parentName: s.parentName.trim(),
+                    studentPhone: s.studentPhone?.trim() || null,
+                    parentPhone: s.parentPhone?.trim() || null,
+                    gradeLevel: s.gradeLevel,
+                    studentCode,
+                    barcode,
+                    notes: s.notes?.trim() || null,
+                    isActive: true,
+                });
+            });
+        }
+
+        const created = await CenterStudentModel.insertMany(docsToInsert);
+        return {
+            count: created.length,
+            students: created,
+        };
+    }
+
+    static async getStudents(centerId: string, query: any = {}) {
+        const filter: any = { centerId: new Types.ObjectId(centerId) };
+
+        if (query.gradeLevel) filter.gradeLevel = query.gradeLevel;
+        if (query.isActive !== undefined) {
+            filter.isActive = query.isActive === 'true' || query.isActive === true;
+        }
+
+        if (query.search) {
+            const s = query.search.trim();
+            const regex = new RegExp(s, 'i');
+            filter.$or = [
+                { studentName: regex },
+                { parentName: regex },
+                { studentCode: regex },
+                { studentPhone: regex },
+                { parentPhone: regex },
+                { barcode: regex },
+            ];
+        }
+
+        const page = Math.max(1, parseInt(query.page || '1', 10));
+        const limit = Math.max(1, Math.min(100, parseInt(query.limit || '50', 10)));
+        const skip = (page - 1) * limit;
+
+        const [students, total] = await Promise.all([
+            CenterStudentModel.find(filter)
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            CenterStudentModel.countDocuments(filter),
+        ]);
+
+        return {
+            data: students,
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit),
+        };
+    }
+
+    static async getStudentById(centerId: string, studentId: string) {
+        const student = await CenterStudentModel.findOne({ _id: studentId, centerId }).lean();
+        if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
+        return student;
+    }
+
+    static async updateStudent(centerId: string, studentId: string, data: any) {
+        const student = await CenterStudentModel.findOneAndUpdate(
+            { _id: studentId, centerId },
+            { $set: data },
+            { new: true }
+        ).lean();
+        if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
+        return student;
+    }
+
+    static async deleteStudent(centerId: string, studentId: string) {
+        const student = await CenterStudentModel.findOneAndDelete({ _id: studentId, centerId }).lean();
+        if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
+
+        // Clean up student's enrollments and attendance records
+        await Promise.all([
+            CenterEnrollmentModel.deleteMany({ studentId, centerId }),
+            CenterAttendanceModel.deleteMany({ studentId, centerId }),
+        ]);
+
+        return student;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
     // 6. Center Enrollments (Package, Private, or Both)
     // ══════════════════════════════════════════════════════════════════════════
 
     static async enrollStudent(centerId: string, ownerId: string, data: any) {
-        const student = await StudentModel.findById(data.studentId);
-        if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
-
-        // Link student to this center if not linked
-        if (!student.centerId) {
-            student.centerId = new Types.ObjectId(centerId);
-            student.teacherId = new Types.ObjectId(ownerId);
-            await student.save();
+        // Find student in CenterStudentModel (or fallback to StudentModel)
+        let student = await CenterStudentModel.findOne({ _id: data.studentId, centerId });
+        if (!student) {
+            const fallbackStudent = await StudentModel.findById(data.studentId);
+            if (!fallbackStudent) {
+                throw NotFoundException({ message: 'الطالب غير موجود' });
+            }
+            if (!fallbackStudent.centerId) {
+                fallbackStudent.centerId = new Types.ObjectId(centerId);
+                fallbackStudent.teacherId = new Types.ObjectId(ownerId);
+                await fallbackStudent.save();
+            }
         }
 
         // Check if student already enrolled in this center
@@ -532,6 +752,7 @@ export class CenterService {
             studentId: data.studentId,
         });
 
+        // ── Package: snapshot price from package ─────────────────────────
         let packageMonthlyPrice: number | null = null;
         if (data.packageId) {
             const pkg = await CenterPackageModel.findOne({ _id: data.packageId, centerId, isActive: true }).lean();
@@ -539,13 +760,35 @@ export class CenterService {
             packageMonthlyPrice = pkg.monthlyPrice;
         }
 
+        // ── Private: snapshot price from each group ───────────────────────
+        // Price is determined per-group (not per-teacher) because each group
+        // targets a specific grade level with its own price.
+        let resolvedPrivateTeachers = data.privateTeachers || [];
+        if (resolvedPrivateTeachers.length > 0) {
+            resolvedPrivateTeachers = await Promise.all(
+                resolvedPrivateTeachers.map(async (pt: any) => {
+                    if (!pt.groupId) throw NotFoundException({ message: 'يجب تحديد المجموعة لكل مدرس برايفت' });
+                    const group = await CenterGroupModel.findOne({ _id: pt.groupId, centerId }).lean();
+                    if (!group) throw NotFoundException({ message: `المجموعة ${pt.groupId} غير موجودة` });
+                    return {
+                        centerTeacherId: pt.centerTeacherId,
+                        groupId: pt.groupId,
+                        subject: pt.subject || null,
+                        // Store price snapshot from group at enrollment time
+                        monthlyPrice: group.privateMonthlyPrice ?? 0,
+                        sessionsPerWeek: pt.sessionsPerWeek || 1,
+                    };
+                })
+            );
+        }
+
         if (existingEnrollment) {
-            // Update enrollment details
             existingEnrollment.type = data.type;
             if (data.packageId !== undefined) existingEnrollment.packageId = data.packageId;
             if (packageMonthlyPrice !== null) existingEnrollment.packageMonthlyPrice = packageMonthlyPrice;
             if (data.packageDiscount) existingEnrollment.packageDiscount = data.packageDiscount;
-            if (data.privateTeachers) existingEnrollment.privateTeachers = data.privateTeachers;
+            if (data.packageGroups !== undefined) existingEnrollment.packageGroups = data.packageGroups;
+            if (data.privateTeachers) existingEnrollment.privateTeachers = resolvedPrivateTeachers;
             if (data.privateDiscount) existingEnrollment.privateDiscount = data.privateDiscount;
             if (data.combinedDiscount) existingEnrollment.combinedDiscount = data.combinedDiscount;
             existingEnrollment.isActive = true;
@@ -560,7 +803,8 @@ export class CenterService {
             packageId: data.packageId || null,
             packageMonthlyPrice,
             packageDiscount: data.packageDiscount || { type: null, value: 0 },
-            privateTeachers: data.privateTeachers || [],
+            packageGroups: data.packageGroups || [],
+            privateTeachers: resolvedPrivateTeachers,
             privateDiscount: data.privateDiscount || { type: null, value: 0 },
             combinedDiscount: data.combinedDiscount || { type: null, value: 0 },
             isActive: true,
@@ -581,6 +825,11 @@ export class CenterService {
         return await CenterEnrollmentModel.find(filter)
             .populate('studentId', 'studentName studentCode studentPhone gradeLevel parentPhone barcode')
             .populate('packageId', 'name gradeLevel monthlyPrice')
+            .populate({
+                path: 'packageGroups',
+                select: 'name schedule gradeLevel centerTeacherId groupType',
+                populate: { path: 'centerTeacherId', select: 'name subject' },
+            })
             .populate('privateTeachers.centerTeacherId', 'name subject')
             .populate('privateTeachers.groupId', 'name schedule')
             .sort({ createdAt: -1 })
@@ -591,6 +840,11 @@ export class CenterService {
         const enrollment = await CenterEnrollmentModel.findOne({ centerId, studentId })
             .populate('studentId', 'studentName studentCode studentPhone gradeLevel parentPhone barcode')
             .populate('packageId', 'name gradeLevel monthlyPrice teachers')
+            .populate({
+                path: 'packageGroups',
+                select: 'name schedule gradeLevel centerTeacherId groupType',
+                populate: { path: 'centerTeacherId', select: 'name subject' },
+            })
             .populate('privateTeachers.centerTeacherId', 'name subject')
             .populate('privateTeachers.groupId', 'name schedule')
             .lean();
@@ -604,7 +858,9 @@ export class CenterService {
             { _id: enrollmentId, centerId },
             { $set: data },
             { new: true }
-        ).populate('studentId packageId privateTeachers.centerTeacherId').lean();
+        )
+            .populate('studentId packageId packageGroups privateTeachers.centerTeacherId')
+            .lean();
 
         if (!enrollment) throw NotFoundException({ message: 'الاشتراك غير موجود' });
         return enrollment;
@@ -720,7 +976,8 @@ export class CenterService {
         const center = await CenterModel.findById(centerId).lean();
         if (!center) throw NotFoundException({ message: 'السنتر غير موجود' });
 
-        const student = await StudentModel.findById(data.studentId).lean();
+        const student = (await CenterStudentModel.findOne({ _id: data.studentId, centerId }).lean())
+            || (await StudentModel.findById(data.studentId).lean());
 
         const transactionData: any = {
             teacherId: new Types.ObjectId(ownerId),
@@ -824,6 +1081,32 @@ export class CenterService {
             transactions,
             totalPaid,
             totalRemaining,
+            transactionCount: transactions.length,
+        };
+    }
+
+    static async getStudentFinancialReport(centerId: string, studentId: string) {
+        const filter: any = {
+            centerId: new Types.ObjectId(centerId),
+            studentId: new Types.ObjectId(studentId),
+        };
+
+        const transactions = await TransactionModel.find(filter)
+            .populate('centerTeacherId', 'name subject')
+            .populate('createdBy', 'name')
+            .sort({ date: -1 })
+            .lean();
+
+        const totalPaid = transactions.reduce((acc, t) => acc + (t.paidAmount || 0), 0);
+        const totalRemaining = transactions.reduce((acc, t) => acc + (t.remainingAmount || 0), 0);
+        const totalOriginal = transactions.reduce((acc, t) => acc + (t.originalAmount || 0), 0);
+
+        return {
+            studentId,
+            transactions,
+            totalPaid,
+            totalRemaining,
+            totalOriginal,
             transactionCount: transactions.length,
         };
     }

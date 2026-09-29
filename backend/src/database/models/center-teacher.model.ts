@@ -23,13 +23,6 @@ const centerTeacherSchema = new Schema<ICenterTeacherDocument>({
         required: [true, 'المادة مطلوبة'],
         trim: true,
     },
-    // Default monthly price for private lessons with this teacher
-    // Used as a fallback when creating private groups for this teacher
-    privateMonthlyPrice: {
-        type: Number,
-        default: null,
-        min: [0, 'سعر البرايفت يجب أن يكون صفر أو أكبر'],
-    },
     isActive: { type: Boolean, default: true },
 }, { timestamps: true });
 

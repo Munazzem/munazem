@@ -17,15 +17,32 @@ export interface ICenterDocument extends ICenter, Document {}
 
 // ── Center Teacher (Entity — NOT a User) ────────────────────────────
 export interface ICenterTeacher {
-    centerId:             Types.ObjectId;
-    name:                 string;
-    subject:              string;
-    privateMonthlyPrice?: number | null;
-    isActive:             boolean;
-    createdAt?:           Date;
-    updatedAt?:           Date;
+    centerId:   Types.ObjectId;
+    name:       string;
+    subject:    string;
+    isActive:   boolean;
+    createdAt?: Date;
+    updatedAt?: Date;
 }
 export interface ICenterTeacherDocument extends ICenterTeacher, Document {}
+
+// ── Center Student (belongs to the center, not a teacher) ────────────
+export interface ICenterStudent {
+    centerId:      Types.ObjectId;
+    studentName:   string;
+    parentName:    string;
+    studentPhone?: string | null;
+    parentPhone?:  string | null;
+    gradeLevel:    GradeLevel;
+    studentCode:   string;
+    barcode?:      string | null;
+    notes?:        string | null;
+    isActive:      boolean;
+    createdAt?:    Date;
+    updatedAt?:    Date;
+}
+export interface ICenterStudentDocument extends ICenterStudent, Document {}
+
 
 // ── Center Package ──────────────────────────────────────────────────
 export interface ICenterPackageTeacher {
@@ -91,9 +108,9 @@ export interface IDiscount {
 // ── Private Teacher Enrollment ──────────────────────────────────────
 export interface IPrivateTeacherEnrollment {
     centerTeacherId:  Types.ObjectId;
-    groupId?:         Types.ObjectId;
+    groupId:          Types.ObjectId;  // required — price snapshot comes from group at enroll time
     subject?:         string;
-    monthlyPrice?:    number;
+    monthlyPrice?:    number;          // snapshot of group.privateMonthlyPrice at enrollment
     sessionsPerWeek?: number;
 }
 
@@ -106,6 +123,7 @@ export interface ICenterEnrollment {
     packageId?:           Types.ObjectId | null;
     packageMonthlyPrice?: number | null;
     packageDiscount?:     IDiscount;
+    packageGroups?:       Types.ObjectId[];
     // Private
     privateTeachers?:     IPrivateTeacherEnrollment[];
     privateDiscount?:     IDiscount;

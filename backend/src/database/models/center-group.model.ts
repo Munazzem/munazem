@@ -41,8 +41,9 @@ const centerGroupSchema = new Schema<ICenterGroupDocument>({
         _id: false,
     }],
     capacity: { type: Number, default: 50 },
-    // Monthly price for private students in this group
-    // Defaults from CenterTeacher.privateMonthlyPrice if not set
+    // Monthly price for private/mixed students in this specific group.
+    // Required when groupType is PRIVATE or MIXED.
+    // Each group has its own price because price varies by grade level.
     privateMonthlyPrice: {
         type: Number,
         default: null,
