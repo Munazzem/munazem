@@ -17,9 +17,28 @@ import type {
     EnrollStudentDTO,
     RecordAttendanceDTO,
     RecordPaymentDTO,
+    ICenterStudent,
+    CreateCenterStudentDTO,
+    BulkCreateCenterStudentDTO,
 } from '@/types/center.types';
 
 // ── Centers & Branches ────────────────────────────────────────────────────────
+
+export interface OnboardCenterDTO {
+    centerName: string;
+    ownerName: string;
+    phone: string;
+    password: string;
+    email?: string;
+    address?: string;
+    centerPhone?: string;
+    planTier?: string;
+}
+
+export const onboardCenter = async (data: OnboardCenterDTO): Promise<any> => {
+    const res = await apiClient.post('/centers/onboard', data);
+    return (res as any).data;
+};
 
 export const fetchMyCenters = async (): Promise<ICenter[]> => {
     const res = await apiClient.get('/centers/my');
@@ -157,6 +176,53 @@ export const updateEnrollment = async (id: string, data: any): Promise<ICenterEn
     return (res as any).data;
 };
 
+// ── Center Students ───────────────────────────────────────────────────────────
+
+export interface FetchCenterStudentsParams {
+    search?: string;
+    gradeLevel?: string;
+    isActive?: boolean;
+    page?: number;
+    limit?: number;
+}
+
+export interface FetchCenterStudentsResponse {
+    data: ICenterStudent[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+}
+
+export const fetchCenterStudents = async (params: FetchCenterStudentsParams = {}): Promise<FetchCenterStudentsResponse> => {
+    const res = await apiClient.get('/centers/students', { params });
+    return (res as any).data;
+};
+
+export const fetchCenterStudentById = async (id: string): Promise<ICenterStudent> => {
+    const res = await apiClient.get(`/centers/students/${id}`);
+    return (res as any).data;
+};
+
+export const createCenterStudent = async (data: CreateCenterStudentDTO): Promise<ICenterStudent> => {
+    const res = await apiClient.post('/centers/students', data);
+    return (res as any).data;
+};
+
+export const bulkCreateCenterStudents = async (data: BulkCreateCenterStudentDTO): Promise<{ count: number; students: ICenterStudent[] }> => {
+    const res = await apiClient.post('/centers/students/bulk', data);
+    return (res as any).data;
+};
+
+export const updateCenterStudent = async (id: string, data: Partial<CreateCenterStudentDTO & { isActive: boolean }>): Promise<ICenterStudent> => {
+    const res = await apiClient.put(`/centers/students/${id}`, data);
+    return (res as any).data;
+};
+
+export const deleteCenterStudent = async (id: string): Promise<void> => {
+    await apiClient.delete(`/centers/students/${id}`);
+};
+
 // ── Quick Attendance ──────────────────────────────────────────────────────────
 
 export const recordCenterAttendance = async (data: RecordAttendanceDTO): Promise<ICenterAttendanceRecord> => {
@@ -195,3 +261,18 @@ export const fetchTeacherFinancialReport = async (teacherId: string, startDate?:
     const res = await apiClient.get(`/centers/financials/teacher/${teacherId}`, { params: { startDate, endDate } });
     return (res as any).data;
 };
+
+export interface IStudentFinancialReport {
+    studentId: string;
+    transactions: any[];
+    totalPaid: number;
+    totalRemaining: number;
+    totalOriginal: number;
+    transactionCount: number;
+}
+
+export const fetchStudentFinancialReport = async (studentId: string): Promise<IStudentFinancialReport> => {
+    const res = await apiClient.get(`/centers/financials/student/${studentId}`);
+    return (res as any).data;
+};
+

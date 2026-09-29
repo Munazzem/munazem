@@ -35,7 +35,6 @@ export interface ICenterTeacher {
     centerId: string;
     name: string;
     subject: string;
-    privateMonthlyPrice?: number | null;
     isActive: boolean;
     createdAt?: string;
     updatedAt?: string;
@@ -112,6 +111,7 @@ export interface ICenterEnrollment {
     } | null;
     packageMonthlyPrice?: number | null;
     packageDiscount?: IDiscount;
+    packageGroups?: Array<string | ICenterGroup>;
     privateTeachers?: IPrivateTeacherEnrollment[];
     privateDiscount?: IDiscount;
     combinedDiscount?: IDiscount;
@@ -184,7 +184,6 @@ export interface CreateBranchDTO {
 export interface CreateTeacherDTO {
     name: string;
     subject: string;
-    privateMonthlyPrice?: number | null;
 }
 
 export interface CreatePackageDTO {
@@ -218,6 +217,7 @@ export interface EnrollStudentDTO {
     type: CenterEnrollmentType;
     packageId?: string | null;
     packageDiscount?: IDiscount;
+    packageGroups?: string[];
     privateTeachers?: Array<{
         centerTeacherId: string;
         groupId?: string;
@@ -248,4 +248,34 @@ export interface RecordPaymentDTO {
     remainingAmount?: number;
     description?: string;
     date?: string;
+}
+
+export interface ICenterStudent {
+    _id: string;
+    centerId: string;
+    studentName: string;
+    parentName: string;
+    studentPhone?: string | null;
+    parentPhone?: string | null;
+    gradeLevel: string;
+    studentCode: string;
+    barcode?: string | null;
+    notes?: string | null;
+    isActive: boolean;
+    createdAt?: string;
+    updatedAt?: string;
+}
+
+export interface CreateCenterStudentDTO {
+    studentName: string;
+    parentName: string;
+    studentPhone?: string | null;
+    parentPhone?: string | null;
+    gradeLevel: string;
+    barcode?: string | null;
+    notes?: string | null;
+}
+
+export interface BulkCreateCenterStudentDTO {
+    students: CreateCenterStudentDTO[];
 }

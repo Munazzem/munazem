@@ -22,6 +22,7 @@ import {
     Activity,
     Bot,
     CreditCard,
+    UserCheck,
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { useUIStore } from '@/lib/store/ui.store';
@@ -47,7 +48,8 @@ const getNavItems = (role?: string) => {
             { name: 'المعلمون',           href: '/center/teachers',    icon: GraduationCap   },
             { name: 'الباكيدجات',         href: '/center/packages',    icon: BookOpen        },
             { name: 'المجموعات الدراسية',  href: '/center/groups',      icon: Users           },
-            { name: 'الطلاب والاشتراكات',  href: '/center/enrollments', icon: ClipboardList   },
+            { name: 'دليل الطلاب',        href: '/center/students',    icon: UserCheck       },
+            { name: 'الاشتراكات',         href: '/center/enrollments', icon: ClipboardList   },
             { name: 'التحضير السريع',     href: '/center/attendance',  icon: CalendarCheck   },
             { name: 'المشرفين',           href: '/center/supervisors', icon: ShieldCheck     },
             { name: 'الماليات والحسابات',  href: '/center/financials',  icon: Wallet          },
@@ -59,7 +61,8 @@ const getNavItems = (role?: string) => {
         return [
             { name: 'لوحة تحكم السنتر',   href: '/center',             icon: LayoutDashboard },
             { name: 'المجموعات',         href: '/center/groups',      icon: Users           },
-            { name: 'الطلاب والاشتراكات',  href: '/center/enrollments', icon: ClipboardList   },
+            { name: 'دليل الطلاب',        href: '/center/students',    icon: UserCheck       },
+            { name: 'الاشتراكات',         href: '/center/enrollments', icon: ClipboardList   },
             { name: 'التحضير السريع',     href: '/center/attendance',  icon: CalendarCheck   },
             { name: 'الماليات',          href: '/center/financials',  icon: Wallet          },
         ];
