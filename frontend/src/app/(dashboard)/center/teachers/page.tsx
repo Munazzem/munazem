@@ -10,7 +10,6 @@ import {
     Edit2,
     Trash2,
     BookOpen,
-    DollarSign,
     CheckCircle2,
     XCircle,
     Loader2,
@@ -43,7 +42,6 @@ export default function CenterTeachersPage() {
     // Form state
     const [name, setName] = useState('');
     const [subject, setSubject] = useState('');
-    const [privatePrice, setPrivatePrice] = useState('');
 
     const { data: teachers = [], isLoading } = useQuery<ICenterTeacher[]>({
         queryKey: ['center', 'teachers', search],
@@ -89,7 +87,6 @@ export default function CenterTeachersPage() {
         setEditingTeacher(null);
         setName('');
         setSubject('');
-        setPrivatePrice('');
         setIsAddOpen(true);
     };
 
@@ -97,7 +94,6 @@ export default function CenterTeachersPage() {
         setEditingTeacher(teacher);
         setName(teacher.name);
         setSubject(teacher.subject);
-        setPrivatePrice(teacher.privateMonthlyPrice ? teacher.privateMonthlyPrice.toString() : '');
         setIsAddOpen(true);
     };
 
@@ -116,7 +112,6 @@ export default function CenterTeachersPage() {
         const payload = {
             name: name.trim(),
             subject: subject.trim(),
-            privateMonthlyPrice: privatePrice ? Number(privatePrice) : null,
         };
 
         if (editingTeacher) {
@@ -211,9 +206,9 @@ export default function CenterTeachersPage() {
                                 </div>
 
                                 <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
-                                    <span>سعر البرايفت الشهري:</span>
-                                    <span className="font-bold text-gray-900">
-                                        {teacher.privateMonthlyPrice ? `${teacher.privateMonthlyPrice} ج.م` : 'غير محدد'}
+                                    <span className="text-gray-400">السعر يُحدد على مستوى المجموعة</span>
+                                    <span className="text-[11px] font-medium text-primary/70 bg-primary/5 px-2 py-0.5 rounded-full">
+                                        حسب المجموعة والمرحلة
                                     </span>
                                 </div>
                             </div>
@@ -276,23 +271,6 @@ export default function CenterTeachersPage() {
                                 className="rounded-xl border-gray-200"
                                 required
                             />
-                        </div>
-
-                        <div>
-                            <label className="text-xs font-bold text-gray-700 block mb-1">
-                                سعر البرايفت الشهري الافتراضي (ج.م)
-                            </label>
-                            <Input
-                                type="number"
-                                min="0"
-                                value={privatePrice}
-                                onChange={(e) => setPrivatePrice(e.target.value)}
-                                placeholder="مثال: 400"
-                                className="rounded-xl border-gray-200"
-                            />
-                            <span className="text-[11px] text-gray-400 mt-1 block">
-                                يمكن تخصيص سعر مختلف لكل مجموعة برايفت لاحقاً
-                            </span>
                         </div>
 
                         <DialogFooter className="gap-2 pt-2 sm:justify-start">

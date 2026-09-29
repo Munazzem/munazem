@@ -166,10 +166,6 @@ export default function CenterGroupsPage() {
 
     const handleTeacherChange = (teacherId: string) => {
         setCenterTeacherId(teacherId);
-        const t = teachers.find((tch) => tch._id === teacherId);
-        if (t?.privateMonthlyPrice && !privatePrice) {
-            setPrivatePrice(t.privateMonthlyPrice.toString());
-        }
     };
 
     const handleSubmit = (e: React.FormEvent) => {

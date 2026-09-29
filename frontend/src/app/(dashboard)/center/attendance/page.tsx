@@ -1,23 +1,19 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import {
     CalendarCheck,
     QrCode,
-    Search,
     CheckCircle2,
     XCircle,
     Clock,
-    AlertCircle,
     Users,
-    Sparkles,
-    Loader2,
-    Check,
-    Volume2,
-    VolumeX,
+    Camera,
+    X,
 } from 'lucide-react';
 import {
     fetchCenterGroups,
@@ -32,6 +28,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 
+const QrScanner = dynamic(
+    () => import('@/components/scanner/QrScanner').then((m) => m.QrScanner),
+    { ssr: false }
+);
+
 export default function CenterAttendancePage() {
     const queryClient = useQueryClient();
     const searchParams = useSearchParams();
@@ -42,10 +43,11 @@ export default function CenterAttendancePage() {
         new Date().toISOString().split('T')[0]
     );
 
-    // Barcode input state
+    // Barcode / QR input state
     const [barcodeInput, setBarcodeInput] = useState('');
     const barcodeInputRef = useRef<HTMLInputElement>(null);
     const [lastScannedStudent, setLastScannedStudent] = useState<string | null>(null);
+    const [showCamera, setShowCamera] = useState(false);
 
     const { data: groups = [], isLoading: loadingGroups } = useQuery<ICenterGroup[]>({
         queryKey: ['center', 'groups'],
@@ -84,7 +86,14 @@ export default function CenterAttendancePage() {
         const isSameGrade = student.gradeLevel === currentGroup.gradeLevel;
 
         if (currentGroup.groupType === 'PACKAGE') {
-            return isSameGrade && (enrollment.type === 'PACKAGE' || enrollment.type === 'BOTH');
+            const isPackage = isSameGrade && (enrollment.type === 'PACKAGE' || enrollment.type === 'BOTH');
+            if (!isPackage) return false;
+            if (enrollment.packageGroups && enrollment.packageGroups.length > 0) {
+                return enrollment.packageGroups.some((pg: any) =>
+                    (typeof pg === 'object' ? pg._id : pg) === currentGroup._id
+                );
+            }
+            return true;
         }
 
         if (currentGroup.groupType === 'PRIVATE') {
@@ -97,7 +106,8 @@ export default function CenterAttendancePage() {
                 (pt) =>
                     (typeof pt.centerTeacherId === 'object'
                         ? (pt.centerTeacherId as any)._id
-                        : pt.centerTeacherId) === currentTeacherId
+                        : pt.centerTeacherId) === currentTeacherId &&
+                    (!pt.groupId || (typeof pt.groupId === 'object' ? (pt.groupId as any)._id : pt.groupId) === currentGroup._id)
             );
         }
 
@@ -107,14 +117,22 @@ export default function CenterAttendancePage() {
                     ? (currentGroup.centerTeacherId as any)._id
                     : currentGroup.centerTeacherId;
 
-            const isPackage = isSameGrade && (enrollment.type === 'PACKAGE' || enrollment.type === 'BOTH');
-            const isPrivate = enrollment.privateTeachers?.some(
+            let isPackageMatch = isSameGrade && (enrollment.type === 'PACKAGE' || enrollment.type === 'BOTH');
+            if (isPackageMatch && enrollment.packageGroups && enrollment.packageGroups.length > 0) {
+                isPackageMatch = enrollment.packageGroups.some((pg: any) =>
+                    (typeof pg === 'object' ? pg._id : pg) === currentGroup._id
+                );
+            }
+
+            const isPrivateMatch = enrollment.privateTeachers?.some(
                 (pt) =>
                     (typeof pt.centerTeacherId === 'object'
                         ? (pt.centerTeacherId as any)._id
-                        : pt.centerTeacherId) === currentTeacherId
+                        : pt.centerTeacherId) === currentTeacherId &&
+                    (!pt.groupId || (typeof pt.groupId === 'object' ? (pt.groupId as any)._id : pt.groupId) === currentGroup._id)
             );
-            return isPackage || isPrivate;
+
+            return Boolean(isPackageMatch || isPrivateMatch);
         }
 
         return false;
@@ -260,8 +278,66 @@ export default function CenterAttendancePage() {
                 </div>
             </div>
 
-            {/* Barcode Scanner Input Box */}
-            <div className="bg-gradient-to-r from-primary/5 via-blue-50/30 to-transparent p-5 rounded-2xl border border-primary/20 shadow-sm">
+            {/* QR / Barcode Scanner Section */}
+            <div className="bg-gradient-to-r from-primary/5 via-blue-50/30 to-transparent p-5 rounded-2xl border border-primary/20 shadow-sm space-y-4">
+
+                {/* Camera toggle */}
+                <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-gray-600 flex items-center gap-1.5">
+                        <QrCode className="h-4 w-4 text-primary" />
+                        مسح باركود / QR الطالب
+                    </span>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowCamera((v) => !v)}
+                        className="h-8 rounded-xl text-xs font-bold gap-1.5 border-primary/30 text-primary hover:bg-primary/5"
+                    >
+                        {showCamera ? (
+                            <><X className="h-3.5 w-3.5" /> إغلاق الكاميرا</>
+                        ) : (
+                            <><Camera className="h-3.5 w-3.5" /> فتح الكاميرا</>
+                        )}
+                    </Button>
+                </div>
+
+                {/* Camera QR Scanner */}
+                {showCamera && (
+                    <QrScanner
+                        mode="attendance"
+                        onScanned={(code) => {
+                            setShowCamera(false);
+                            // Reuse handleBarcodeSubmit logic inline
+                            const matched = eligibleStudents.find(
+                                (e) =>
+                                    e.studentId?.barcode === code ||
+                                    e.studentId?.studentCode?.toLowerCase() === code.toLowerCase()
+                            );
+                            if (!matched) {
+                                toast.error(`لم يتم العثور على طالب بالكود: ${code} في هذه المجموعة`);
+                                return;
+                            }
+                            recordMutation.mutate(
+                                {
+                                    groupId: selectedGroupId,
+                                    studentId: matched.studentId._id,
+                                    date: selectedDate,
+                                    status: 'PRESENT',
+                                    source: 'QR_SCAN',
+                                },
+                                {
+                                    onSuccess: () => {
+                                        setLastScannedStudent(matched.studentId.studentName);
+                                        toast.success(`✅ تم تحضير: ${matched.studentId.studentName}`);
+                                    },
+                                }
+                            );
+                        }}
+                    />
+                )}
+
+                {/* Manual barcode input */}
                 <form onSubmit={handleBarcodeSubmit} className="flex flex-col sm:flex-row items-center gap-3">
                     <div className="relative flex-1 w-full">
                         <QrCode className="absolute right-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-primary" />
@@ -269,9 +345,9 @@ export default function CenterAttendancePage() {
                             ref={barcodeInputRef}
                             value={barcodeInput}
                             onChange={(e) => setBarcodeInput(e.target.value)}
-                            placeholder="امسح كارت الطالب بالباركود/QR أو اكتب الكود واضغط Enter..."
+                            placeholder="أو امسح بقارئ الباركود / اكتب الكود واضغط Enter..."
                             className="pr-11 h-12 text-sm font-bold bg-white rounded-xl border-primary/30 focus:border-primary shadow-sm"
-                            autoFocus
+                            autoFocus={!showCamera}
                         />
                     </div>
                     <Button
@@ -283,7 +359,7 @@ export default function CenterAttendancePage() {
                 </form>
 
                 {lastScannedStudent && (
-                    <div className="mt-3 flex items-center gap-2 text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200 w-fit">
+                    <div className="flex items-center gap-2 text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200 w-fit">
                         <CheckCircle2 className="h-4 w-4 text-emerald-600" />
                         <span>تم تسجيل آخر حضور لـ: <strong>{lastScannedStudent}</strong> بنجاح!</span>
                     </div>
