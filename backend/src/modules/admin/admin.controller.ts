@@ -62,12 +62,13 @@ adminRouter.get('/growth', async (_req: Request, res: Response, next: NextFuncti
 // ── GET /admin/tenants ───────────────────────────────────────────────
 adminRouter.get('/tenants', async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { page, limit, search, status } = req.query as Record<string, string>;
+        const { page, limit, search, status, role } = req.query as Record<string, string>;
         const data = await AdminService.getAllTenants({
             page:  page  ? parseInt(page)  : 1,
             limit: limit ? parseInt(limit) : 20,
             ...(search ? { search } : {}),
             ...(status ? { status } : {}),
+            ...(role   ? { role }   : {}),
         });
         return SuccessResponse({ res, data, message: 'Tenants fetched successfully' });
     } catch (error) { next(error); }
