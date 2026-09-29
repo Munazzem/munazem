@@ -62,7 +62,13 @@ export default function LoginPage() {
                     description: `مرحباً بك، ${user.name || 'في منصة مُنظِّم'}`,
                 });
 
-                window.location.replace('/dashboard');
+                if (user.role === 'centerOwner' || user.role === 'centerSupervisor') {
+                    window.location.replace('/center');
+                } else if (user.role === 'superAdmin') {
+                    window.location.replace('/admin');
+                } else {
+                    window.location.replace('/dashboard');
+                }
                 return;
             } else {
                 toast.error('فشل في استلام بيانات الحساب، يرجى المحاولة مرة أخرى');

@@ -136,6 +136,12 @@ export default function DashboardPage() {
 
     if (!isMounted) return <DashboardSkeleton />;
     if (user?.role === 'superAdmin') return <SuperAdminDashboard />;
+    if (user?.role === 'centerOwner' || user?.role === 'centerSupervisor') {
+        if (typeof window !== 'undefined') {
+            window.location.replace('/center');
+        }
+        return <DashboardSkeleton />;
+    }
 
     const stats = dashboardData as DashboardData | undefined;
 
