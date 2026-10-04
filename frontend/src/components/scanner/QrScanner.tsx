@@ -11,13 +11,18 @@ import { Button } from '@/components/ui/button';
 interface QrScannerProps {
     onScanned: (value: string) => void;
     mode?: 'attendance' | 'actions'; // Can be used for UI changes if needed
+    keepOpen?: boolean; // When true, camera stays open for continuous multi-student scanning
+    autoStart?: boolean; // When true, camera starts automatically without an extra click
 }
 
-export function QrScanner({ onScanned, mode = 'actions' }: QrScannerProps) {
+export function QrScanner({ onScanned, mode = 'actions', keepOpen = false, autoStart = false }: QrScannerProps) {
     const [active, setActive] = useState(false);
     const [manualInput, setManualInput] = useState('');
     const scannerRef = useRef<Html5Qrcode | null>(null);
     const scannedRef = useRef(false);
+    const lastScannedCodeRef = useRef<string | null>(null);
+
+    const isContinuous = keepOpen || mode === 'attendance';
 
     // Ensure we have a unique ID for the scanner if multiple could exist, but usually one per page
     const scannerId = `qr-reader-${mode}`;
@@ -46,9 +51,27 @@ export function QrScanner({ onScanned, mode = 'actions' }: QrScannerProps) {
                 } as any,
                 (decoded) => {
                     if (scannedRef.current) return;
+                    if (isContinuous && lastScannedCodeRef.current === decoded) return;
+
                     scannedRef.current = true;
-                    stopScanner();
-                    onScanned(decoded);
+                    lastScannedCodeRef.current = decoded;
+
+                    // Haptic feedback if supported on mobile
+                    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+                        try { navigator.vibrate(60); } catch {}
+                    }
+
+                    if (isContinuous) {
+                        // Allow scanning the next card after 2 seconds cooldown
+                        setTimeout(() => {
+                            scannedRef.current = false;
+                            lastScannedCodeRef.current = null;
+                        }, 2000);
+                        onScanned(decoded);
+                    } else {
+                        stopScanner();
+                        onScanned(decoded);
+                    }
                 },
                 () => {}
             );
@@ -56,7 +79,7 @@ export function QrScanner({ onScanned, mode = 'actions' }: QrScannerProps) {
             toast.error('تعذر تشغيل الكاميرا — تأكد من منح الإذن');
             setActive(false);
         }
-    }, [onScanned, scannerId]);
+    }, [isContinuous, onScanned, scannerId]);
 
     const stopScanner = useCallback(async () => {
         if (scannerRef.current) {
@@ -65,6 +88,12 @@ export function QrScanner({ onScanned, mode = 'actions' }: QrScannerProps) {
         }
         setActive(false);
     }, []);
+
+    useEffect(() => {
+        if (autoStart) {
+            startScanner();
+        }
+    }, [autoStart, startScanner]);
 
     useEffect(() => () => { stopScanner(); }, [stopScanner]);
 

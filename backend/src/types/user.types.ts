@@ -1,5 +1,6 @@
 import { Document, Types } from 'mongoose';
-import { UserRole, TeacherStage } from '../common/enums/enum.service.js';
+import { UserRole, TeacherStage, CenterSupervisorType } from '../common/enums/enum.service.js';
+import type { ISupervisorPermissions } from './center.types.js';
 
 export interface IUser {
   name:      string;
@@ -13,6 +14,15 @@ export interface IUser {
   isActive:  boolean;
   centerName?: string;              // اسم السنتر — للمدرسين فقط
   logoUrl?:    string;              // لوجو السنتر — للمدرسين فقط
+  cardTemplate?: {                  // تصميم الكارت الذكي — للمدرسين فقط
+    frontImageUrl?: string | null;
+    backImageUrl?:  string | null;
+    qrX?:           number;
+    qrY?:           number;
+    qrSize?:        number;
+    showQrBg?:      boolean;
+    showCardNumber?: boolean;
+  };
   assistantPermissions?: {
     canTakeAttendance: boolean;
     canEditAttendance: boolean;
@@ -27,6 +37,10 @@ export interface IUser {
   features?: {
     homeworkTracking?: boolean;
   };
+  // ── Center-specific fields (centerOwner & centerSupervisor only) ──
+  centerId?:               Types.ObjectId | null;
+  supervisorType?:         CenterSupervisorType | null;
+  supervisorPermissions?:  ISupervisorPermissions;
 }
 
 export interface IUserDocument extends IUser, Document {

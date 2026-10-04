@@ -9,10 +9,28 @@ const parentStudentSchema = new Schema<IParentStudentDocument>(
       required: true,
       index: true,
     },
+    studentModelType: {
+      type: String,
+      enum: ['Student', 'CenterStudent'],
+      default: 'Student',
+      index: true,
+    },
     studentId: {
       type: Schema.Types.ObjectId,
-      ref: 'Student',
+      refPath: 'studentModelType',
       required: true,
+      index: true,
+    },
+    centerStudentId: {
+      type: Schema.Types.ObjectId,
+      ref: 'CenterStudent',
+      default: null,
+      index: true,
+    },
+    centerId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Center',
+      default: null,
       index: true,
     },
     status: {

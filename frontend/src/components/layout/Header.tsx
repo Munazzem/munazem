@@ -67,7 +67,7 @@ export function Header() {
                             {user?.name || 'مستخدم'}
                         </span>
                         <span className="text-[10px] sm:text-xs text-primary font-medium opacity-80 truncate w-full text-right">
-                            {user?.role === 'superAdmin' ? 'مدير النظام' : user?.role === 'teacher' ? 'معلم' : user?.role === 'assistant' ? 'مساعد' : 'مستخدم'}
+                            {user?.role === 'superAdmin' ? 'مدير النظام' : user?.role === 'teacher' ? 'معلم' : user?.role === 'assistant' ? 'مساعد' : user?.role === 'centerOwner' ? 'مدير السنتر' : user?.role === 'centerSupervisor' ? 'مشرف سنتر' : 'مستخدم'}
                         </span>
                     </div>
                     <div className="relative shrink-0">

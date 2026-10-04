@@ -22,6 +22,7 @@ import {
     Activity,
     Bot,
     CreditCard,
+    UserCheck,
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { useUIStore } from '@/lib/store/ui.store';
@@ -38,6 +39,34 @@ const getNavItems = (role?: string) => {
             { name: 'إدارة المستخدمين', href: '/dashboard/users', icon: Users       },
             { name: 'قوالب الواتساب', href: '/admin/settings/templates', icon: FileText },
             { name: 'الإعدادات',     href: '/dashboard/settings', icon: Settings    },
+        ];
+    }
+
+    if (role === 'centerOwner') {
+        return [
+            { name: 'لوحة تحكم السنتر',   href: '/center',             icon: LayoutDashboard },
+            { name: 'المعلمون',           href: '/center/teachers',    icon: GraduationCap   },
+            { name: 'الباكيدجات',         href: '/center/packages',    icon: BookOpen        },
+            { name: 'المجموعات الدراسية',  href: '/center/groups',      icon: Users           },
+            { name: 'دليل الطلاب',        href: '/center/students',    icon: UserCheck       },
+            { name: 'الاشتراكات',         href: '/center/enrollments', icon: ClipboardList   },
+            { name: 'التحضير السريع',     href: '/center/attendance',  icon: CalendarCheck   },
+            { name: 'التقارير الشاملة',   href: '/center/reports',     icon: FileText        },
+            { name: 'المشرفين',           href: '/center/supervisors', icon: ShieldCheck     },
+            { name: 'الماليات والحسابات',  href: '/center/financials',  icon: Wallet          },
+            { name: 'إعدادات السنتر',     href: '/center/settings',    icon: Settings        },
+        ];
+    }
+
+    if (role === 'centerSupervisor') {
+        return [
+            { name: 'لوحة تحكم السنتر',   href: '/center',             icon: LayoutDashboard },
+            { name: 'المجموعات',         href: '/center/groups',      icon: Users           },
+            { name: 'دليل الطلاب',        href: '/center/students',    icon: UserCheck       },
+            { name: 'الاشتراكات',         href: '/center/enrollments', icon: ClipboardList   },
+            { name: 'التحضير السريع',     href: '/center/attendance',  icon: CalendarCheck   },
+            { name: 'التقارير',          href: '/center/reports',     icon: FileText        },
+            { name: 'الماليات',          href: '/center/financials',  icon: Wallet          },
         ];
     }
 
@@ -118,7 +147,7 @@ export function Sidebar() {
             >
                 {/* Logo Area */}
             <div className="flex h-16 items-center justify-center border-b border-gray-100 px-6">
-                <Link href="/dashboard" className="flex items-center gap-2 max-w-full overflow-hidden">
+                <Link href={user?.role === 'centerOwner' || user?.role === 'centerSupervisor' ? '/center' : user?.role === 'superAdmin' ? '/admin' : '/dashboard'} className="flex items-center gap-2 max-w-full overflow-hidden">
                     {user?.logoUrl ? (
                         <div className="w-10 h-10 rounded-lg overflow-hidden flex items-center justify-center bg-white border border-gray-100 shrink-0 shadow-sm">
                              <img src={user.logoUrl} alt="Center Logo" className="w-full h-full object-contain" />

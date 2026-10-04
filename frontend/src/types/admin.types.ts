@@ -45,6 +45,7 @@ export interface AdminTenant {
     name:         string;
     email?:       string;
     phone:        string;
+    role?:        string;
     stages?:      string[];
     subject?:     string;
     isActive:     boolean;

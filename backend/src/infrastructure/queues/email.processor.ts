@@ -3,6 +3,7 @@ import { envVars }              from '../../../config/env.service.js';
 import { logger }               from '../../common/utils/logger.util.js';
 import { sendWeeklyReportEmail } from '../../common/utils/email.service.js';
 import type { EmailJobData }    from './queue.types.js';
+import { redisConnectionOptions } from './redis.connection.js';
 
 // ─── Processor ───────────────────────────────────────────────────────────────
 async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
@@ -53,7 +54,7 @@ export function startEmailWorker(): Worker<EmailJobData> {
         'email',
         processEmailJob,
         {
-            connection: { url: envVars.redisUrl },
+            connection: redisConnectionOptions,
             concurrency: 2,
         },
     );
@@ -67,6 +68,7 @@ export function startEmailWorker(): Worker<EmailJobData> {
     });
 
     worker.on('error', (err) => {
+        if (err.message.includes('ECONNREFUSED')) return;
         logger.error('email_worker_error', { error: err.message });
     });
 

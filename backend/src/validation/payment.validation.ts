@@ -155,3 +155,13 @@ export const payAllPastCyclesSchema = z.object({
   }),
 });
 
+export const waiveDebtSchema = z.object({
+  body: z.object({
+    studentId:      objectId,
+    cycleNumber:    z.number().int().positive('رقم الدورة غير صحيح').optional(),
+    waivePastOnly:  z.boolean().optional(),
+    amount:         z.number().positive('المبلغ يجب أن يكون أكبر من صفر').optional(),
+    reason:         z.string().max(300).optional(),
+  }),
+});
+

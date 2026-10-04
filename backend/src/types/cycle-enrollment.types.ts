@@ -22,6 +22,7 @@ export interface ICycleEnrollment {
     totalDiscount?: number;
     remainingAmount: number;
     status: CycleEnrollmentStatus;
+    isWaived?: boolean;
 
     createdAt?: Date;
     updatedAt?: Date;

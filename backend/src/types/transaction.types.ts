@@ -20,6 +20,9 @@ export interface ITransaction {
     date:           Date;                 // transaction date (not createdAt)
     cycleNumber?:   number;               // cycle identity this payment applies to
     idempotencyKey?: string;              // unique key to prevent duplicate requests
+    // Center context (optional — for center transactions)
+    centerId?:        Types.ObjectId | null;
+    centerTeacherId?: Types.ObjectId | null;
     createdAt?:     Date;
     updatedAt?:     Date;
 }

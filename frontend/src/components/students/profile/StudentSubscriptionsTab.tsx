@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, BookOpen, AlertTriangle, CheckCircle2, Wallet, Calendar, ArrowRight, Clock } from 'lucide-react';
+import { Loader2, BookOpen, AlertTriangle, CheckCircle2, Wallet, Calendar, ArrowRight, Clock, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { payCycleDebt, payAllPastCycles } from '@/lib/api/payments';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { payCycleDebt, payAllPastCycles, waiveDebt } from '@/lib/api/payments';
 import { QK } from '@/lib/query-keys';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -34,6 +34,12 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
     const [allDate, setAllDate] = useState(() => new Date().toISOString().split('T')[0]);
     const [allDescription, setAllDescription] = useState('');
 
+    // ── Waive Debt States ──
+    const [waiveCycle, setWaiveCycle] = useState<ICycleEnrollmentInfo | null>(null);
+    const [waiveCycleReason, setWaiveCycleReason] = useState('');
+    const [waiveAllPastOpen, setWaiveAllPastOpen] = useState(false);
+    const [waiveAllPastReason, setWaiveAllPastReason] = useState('');
+
     const refreshData = () => {
         queryClient.invalidateQueries({ queryKey: QK.students.detail(studentId) });
         queryClient.invalidateQueries({ queryKey: QK.students.report(studentId) });
@@ -59,6 +65,42 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
             toast.success(res.message || 'تم سداد كافة المديونيات السابقة بنجاح');
             setPayAllOpen(false);
             refreshData();
+        },
+    });
+
+    // Waive specific cycle mutation
+    const waiveCycleMutation = useMutation({
+        mutationFn: () => waiveDebt({
+            studentId,
+            cycleNumber: waiveCycle!.cycleNumber,
+            reason: waiveCycleReason.trim() || undefined,
+        }),
+        onSuccess: (res) => {
+            toast.success(res?.message || `تم حذف وإسقاط مديونية الدورة (${waiveCycle?.cycleNumber}) بنجاح`);
+            setWaiveCycle(null);
+            setWaiveCycleReason('');
+            refreshData();
+        },
+        onError: (err: any) => {
+            toast.error(err?.response?.data?.message || err?.message || 'حدث خطأ أثناء حذف مديونية الدورة');
+        },
+    });
+
+    // Waive all past cycles mutation
+    const waiveAllPastMutation = useMutation({
+        mutationFn: () => waiveDebt({
+            studentId,
+            waivePastOnly: true,
+            reason: waiveAllPastReason.trim() || undefined,
+        }),
+        onSuccess: (res) => {
+            toast.success(res?.message || 'تم حذف وإسقاط مديونيات كافة الدورات السابقة بنجاح');
+            setWaiveAllPastOpen(false);
+            setWaiveAllPastReason('');
+            refreshData();
+        },
+        onError: (err: any) => {
+            toast.error(err?.response?.data?.message || err?.message || 'حدث خطأ أثناء حذف المديونيات');
         },
     });
 
@@ -119,9 +161,11 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
         );
     }
 
-    const pastUnpaidCycles: ICycleEnrollmentInfo[] = report?.payments?.pastUnpaidCycles || [];
-    const pastCyclesDebt: number = report?.payments?.pastCyclesDebt || 0;
-    const allCycleEnrollments: ICycleEnrollmentInfo[] = report?.payments?.cycleEnrollments || [];
+    const pastUnpaidCycles: ICycleEnrollmentInfo[] = (report?.payments?.pastUnpaidCycles || [])
+        .filter((c: ICycleEnrollmentInfo) => !c.isWaived && c.remainingAmount > 0);
+    const pastCyclesDebt: number = pastUnpaidCycles.reduce((sum, c) => sum + (c.remainingAmount || 0), 0);
+    const allCycleEnrollments: ICycleEnrollmentInfo[] = (report?.payments?.cycleEnrollments || [])
+        .filter((c: ICycleEnrollmentInfo) => !c.isWaived && (c.cycleCharge > 0 || c.totalPaid > 0));
     const subscriptions = report?.payments?.subscriptions || [];
 
     return (
@@ -148,14 +192,28 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                         </div>
 
                         {canWrite && (
-                            <Button
-                                size="sm"
-                                onClick={openPayAllModal}
-                                className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold gap-1.5 shadow-sm rounded-xl h-9 self-start sm:self-auto"
-                            >
-                                <Wallet className="h-3.5 w-3.5" />
-                                سداد كل الدورات السابقة ({pastCyclesDebt} ج)
-                            </Button>
+                            <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+                                <Button
+                                    size="sm"
+                                    onClick={openPayAllModal}
+                                    className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold gap-1.5 shadow-sm rounded-xl h-9"
+                                >
+                                    <Wallet className="h-3.5 w-3.5" />
+                                    سداد كل الدورات ({pastCyclesDebt} ج)
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                        setWaiveAllPastReason('');
+                                        setWaiveAllPastOpen(true);
+                                    }}
+                                    className="bg-rose-50/70 hover:bg-rose-100 text-rose-700 border-rose-200 text-xs font-bold gap-1.5 shadow-sm rounded-xl h-9"
+                                >
+                                    <Trash2 className="h-3.5 w-3.5 text-rose-600" />
+                                    حذف وإسقاط المديونيات
+                                </Button>
+                            </div>
                         )}
                     </div>
 
@@ -204,15 +262,30 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                                 </div>
 
                                 {canWrite && (
-                                    <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={() => openPayCycleModal(cycle)}
-                                        className="w-full text-xs font-bold h-8 border-amber-300 text-amber-900 bg-amber-50/50 hover:bg-amber-100/80 gap-1"
-                                    >
-                                        <Wallet className="h-3 w-3 text-amber-700" />
-                                        سداد الدورة ({cycle.remainingAmount} ج)
-                                    </Button>
+                                    <div className="flex items-center gap-1.5 w-full">
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => openPayCycleModal(cycle)}
+                                            className="flex-1 text-xs font-bold h-8 border-amber-300 text-amber-900 bg-amber-50/50 hover:bg-amber-100/80 gap-1"
+                                        >
+                                            <Wallet className="h-3 w-3 text-amber-700" />
+                                            سداد ({cycle.remainingAmount} ج)
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => {
+                                                setWaiveCycle(cycle);
+                                                setWaiveCycleReason('');
+                                            }}
+                                            className="text-xs font-bold h-8 border-rose-200 text-rose-700 bg-rose-50/60 hover:bg-rose-100 gap-1 px-2.5 shrink-0"
+                                            title="حذف وإسقاط مديونية هذه الدورة بدون دفع"
+                                        >
+                                            <Trash2 className="h-3 w-3 text-rose-600" />
+                                            إسقاط
+                                        </Button>
+                                    </div>
                                 )}
                             </div>
                         ))}
@@ -272,12 +345,24 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                                             {isPaid ? "خالصة ✓" : cycle.isCurrentCycle ? "لم يسدد بعد" : isPartial ? `متبقي ${cycle.remainingAmount} ج` : "غير مسدد"}
                                         </Badge>
                                         {!isPaid && canWrite && (
-                                            <button
-                                                onClick={() => openPayCycleModal(cycle)}
-                                                className="text-[10px] text-primary font-bold hover:underline"
-                                            >
-                                                سداد
-                                            </button>
+                                            <div className="flex items-center gap-1.5">
+                                                <button
+                                                    onClick={() => openPayCycleModal(cycle)}
+                                                    className="text-[10px] text-primary font-bold hover:underline"
+                                                >
+                                                    سداد
+                                                </button>
+                                                <span className="text-gray-300 text-[10px]">·</span>
+                                                <button
+                                                    onClick={() => {
+                                                        setWaiveCycle(cycle);
+                                                        setWaiveCycleReason('');
+                                                    }}
+                                                    className="text-[10px] text-rose-600 font-bold hover:underline"
+                                                >
+                                                    إسقاط
+                                                </button>
+                                            </div>
                                         )}
                                     </div>
                                 </div>
@@ -509,6 +594,150 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                             ) : (
                                 'تأكيد السداد الشامل'
                             )}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* ══════════════════════════════════════════════════════════════ */}
+            {/* WAIVE SPECIFIC CYCLE MODAL */}
+            {/* ══════════════════════════════════════════════════════════════ */}
+            <Dialog open={!!waiveCycle} onOpenChange={(v) => { if (!v) { setWaiveCycle(null); setWaiveCycleReason(''); } }}>
+                <DialogContent className="sm:max-w-[420px]" dir="rtl">
+                    <DialogHeader>
+                        <DialogTitle className="text-base sm:text-lg font-bold text-rose-700 flex items-center gap-2">
+                            <Trash2 className="h-5 w-5 text-rose-600" />
+                            إسقاط مديونية الدورة رقم ({waiveCycle?.cycleNumber})
+                        </DialogTitle>
+                        <DialogDescription className="text-xs text-gray-500 pt-1">
+                            حذف المبلغ المتبقي على الدورة دون تسجيل تحصيل نقدي في الخزينة.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-3 py-2 text-xs">
+                        <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 space-y-1.5">
+                            <div className="flex justify-between items-center text-gray-700 font-semibold">
+                                <span>سعر الدورة:</span>
+                                <span>{waiveCycle?.cycleCharge} ج.م</span>
+                            </div>
+                            <div className="flex justify-between items-center text-green-700 font-semibold">
+                                <span>المدفوع سابقاً:</span>
+                                <span>{waiveCycle?.totalPaid || 0} ج.م</span>
+                            </div>
+                            <div className="flex justify-between items-center text-rose-800 font-bold text-sm pt-1 border-t border-rose-200">
+                                <span>المبلغ المراد إسقاطه:</span>
+                                <span>{waiveCycle?.remainingAmount} ج.م</span>
+                            </div>
+                        </div>
+
+                        <div className="space-y-1">
+                            <label className="text-xs font-semibold text-gray-700 block">
+                                سبب الإسقاط / ملاحظات (اختياري)
+                            </label>
+                            <Input
+                                placeholder="مثال: إعفاء، تخفيض، تسوية..."
+                                value={waiveCycleReason}
+                                onChange={(e) => setWaiveCycleReason(e.target.value)}
+                                className="text-xs h-9 bg-white"
+                            />
+                        </div>
+
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 text-[11px] text-amber-800 flex items-start gap-2">
+                            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+                            <span>
+                                سيتم إغلاق الدورة كـ (خالصة ومسددة بالكامل بعد الإعفاء) ولن يتأثر دخل الخزينة.
+                            </span>
+                        </div>
+                    </div>
+
+                    <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-gray-100">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setWaiveCycle(null)}
+                            disabled={waiveCycleMutation.isPending}
+                            className="text-xs font-semibold"
+                        >
+                            إلغاء
+                        </Button>
+                        <Button
+                            type="button"
+                            onClick={() => waiveCycleMutation.mutate()}
+                            disabled={waiveCycleMutation.isPending}
+                            className="text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white gap-1.5"
+                        >
+                            {waiveCycleMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                            تأكيد إسقاط مديونية الدورة
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* ══════════════════════════════════════════════════════════════ */}
+            {/* WAIVE ALL PAST CYCLES MODAL */}
+            {/* ══════════════════════════════════════════════════════════════ */}
+            <Dialog open={waiveAllPastOpen} onOpenChange={(v) => { setWaiveAllPastOpen(v); if (!v) setWaiveAllPastReason(''); }}>
+                <DialogContent className="sm:max-w-[440px]" dir="rtl">
+                    <DialogHeader>
+                        <DialogTitle className="text-base sm:text-lg font-bold text-rose-700 flex items-center gap-2">
+                            <Trash2 className="h-5 w-5 text-rose-600" />
+                            حذف وإسقاط مديونيات كافة الدورات السابقة
+                        </DialogTitle>
+                        <DialogDescription className="text-xs text-gray-500 pt-1">
+                            إسقاط وتصفير كافة المديونيات المتراكمة من الدورات السابقة دفعة واحدة.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-3.5 py-2 text-xs">
+                        <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-xs space-y-1.5">
+                            <div className="flex justify-between items-center text-gray-700 font-semibold">
+                                <span>عدد الدورات المستحقة:</span>
+                                <span className="font-bold">{pastUnpaidCycles.length} دورات</span>
+                            </div>
+                            <div className="flex justify-between items-center text-rose-800 font-extrabold text-sm pt-1 border-t border-rose-200">
+                                <span>إجمالي المبلغ المطلوب إسقاطه:</span>
+                                <span>{pastCyclesDebt.toLocaleString('ar-EG')} ج.م</span>
+                            </div>
+                        </div>
+
+                        <div className="space-y-1">
+                            <label className="text-xs font-semibold text-gray-700 block">
+                                سبب الإسقاط / ملاحظات (اختياري)
+                            </label>
+                            <Input
+                                placeholder="مثال: تسوية شاملة، إعفاء المعلم لكافة الدورات السابقة..."
+                                value={waiveAllPastReason}
+                                onChange={(e) => setWaiveAllPastReason(e.target.value)}
+                                className="text-xs h-9 bg-white"
+                            />
+                        </div>
+
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 text-[11px] text-amber-800 flex items-start gap-2">
+                            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+                            <span>
+                                تنبيه: سيتم تصفير مديونيات كافة الدورات السابقة المتبقية وإغلاقها دون تسجيل أي إيراد في الخزينة.
+                            </span>
+                        </div>
+                    </div>
+
+                    <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-gray-100">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setWaiveAllPastOpen(false)}
+                            disabled={waiveAllPastMutation.isPending}
+                            className="text-xs font-semibold"
+                        >
+                            إلغاء
+                        </Button>
+                        <Button
+                            type="button"
+                            onClick={() => waiveAllPastMutation.mutate()}
+                            disabled={waiveAllPastMutation.isPending}
+                            className="text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white gap-1.5"
+                        >
+                            {waiveAllPastMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                            تأكيد إسقاط كافة المديونيات
                         </Button>
                     </DialogFooter>
                 </DialogContent>

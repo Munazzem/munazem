@@ -7,7 +7,7 @@ import { ForbiddenException } from '../../common/utils/response/error.responce.j
 import { authenticate } from '../../middlewares/auth.middleware.js';
 import { authorizeRoles } from '../../middlewares/roles.middleware.js';
 import { validate } from '../../middlewares/validate.middleware.js';
-import { recordSubscriptionSchema, batchSubscriptionSchema, recordExpenseSchema, recordNotebookSaleSchema, batchNotebookSaleSchema, reserveNotebookSchema, batchReserveNotebookSchema, upsertPriceSettingsSchema, deliverNotebookSchema, updateTransactionSchema, payDebtSchema, batchDeleteTransactionsSchema, payCycleDebtSchema, payAllPastCyclesSchema } from '../../validation/payment.validation.js';
+import { recordSubscriptionSchema, batchSubscriptionSchema, recordExpenseSchema, recordNotebookSaleSchema, batchNotebookSaleSchema, reserveNotebookSchema, batchReserveNotebookSchema, upsertPriceSettingsSchema, deliverNotebookSchema, updateTransactionSchema, payDebtSchema, batchDeleteTransactionsSchema, payCycleDebtSchema, payAllPastCyclesSchema, waiveDebtSchema } from '../../validation/payment.validation.js';
 
 const paymentsRouter = Router();
 
@@ -182,6 +182,21 @@ paymentsRouter.post(
             const teacherId = resolveTeacherId(user);
             const result = await PaymentsService.payAllPastCycles(teacherId, user.userId, req.body);
             return SuccessResponse({ res, data: result, message: result.message, status: 201 });
+        } catch (error) { next(error); }
+    }
+);
+
+// POST /payments/waive-debt — Waive/delete student debt without payment (Teacher + Assistant)
+paymentsRouter.post(
+    '/waive-debt',
+    authorizeRoles(UserRole.assistant, UserRole.teacher),
+    validate(waiveDebtSchema),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const user = (req as any).user;
+            const teacherId = resolveTeacherId(user);
+            const result = await PaymentsService.waiveDebt(teacherId, user.userId, req.body);
+            return SuccessResponse({ res, data: result, message: result.message, status: 200 });
         } catch (error) { next(error); }
     }
 );
