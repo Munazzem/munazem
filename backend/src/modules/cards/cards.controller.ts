@@ -158,12 +158,72 @@ cardsRouter.get(
         try {
             const teacherId = resolveTeacherId((req as any).user);
             const batchId   = req.params['batchId'] as string;
-            const html = await CardBatchPdfService.generateBatchHtml(batchId, teacherId);
+            const mode = (req.query.mode as string) || 'dual_sided';
+            const token = (req.query.token as string) || '';
+            const html = await CardBatchPdfService.generateBatchHtml(batchId, teacherId, mode, token, req.query);
             // Allow inline scripts/styles for this self-contained print page
             res.setHeader('Content-Security-Policy',
                 "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:;");
             res.setHeader('Content-Type', 'text/html; charset=utf-8');
             return res.status(200).send(html);
+        } catch (error) { next(error); }
+    }
+);
+
+// ─── GET /cards/template — Get teacher's card template ───────────────────────
+cardsRouter.get(
+    '/template',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = resolveTeacherId((req as any).user);
+            const user = await (await import('../../database/models/user.model.js')).UserModel
+                .findById(teacherId).select('cardTemplate centerName logoUrl').lean();
+            const t = (user as any)?.cardTemplate || {};
+            return SuccessResponse({
+                res,
+                data: {
+                    template: {
+                        frontImageUrl:  t.frontImageUrl || null,
+                        backImageUrl:   t.backImageUrl || null,
+                        qrX:            t.qrX ?? 50,
+                        qrY:            t.qrY ?? 70,
+                        qrSize:         t.qrSize ?? 25,
+                        showQrBg:       t.showQrBg ?? true,
+                        showCardNumber: t.showCardNumber ?? true,
+                    },
+                    centerName: (user as any)?.centerName || '',
+                    logoUrl: (user as any)?.logoUrl || null,
+                },
+                message: 'تم جلب إعدادات الكارت',
+            });
+        } catch (error) { next(error); }
+    }
+);
+
+// ─── PUT /cards/template — Update teacher's card template ─────────────────────
+cardsRouter.put(
+    '/template',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { UserModel } = await import('../../database/models/user.model.js');
+            const teacherId = resolveTeacherId((req as any).user);
+            const { frontImageUrl, backImageUrl, qrX, qrY, qrSize, showQrBg, showCardNumber } = req.body;
+            const update: any = {};
+            if (frontImageUrl !== undefined) update['cardTemplate.frontImageUrl'] = frontImageUrl;
+            if (backImageUrl  !== undefined) update['cardTemplate.backImageUrl']  = backImageUrl;
+            if (qrX !== undefined) update['cardTemplate.qrX'] = Number(qrX);
+            if (qrY !== undefined) update['cardTemplate.qrY'] = Number(qrY);
+            if (qrSize !== undefined) update['cardTemplate.qrSize'] = Number(qrSize);
+            if (showQrBg !== undefined) update['cardTemplate.showQrBg'] = Boolean(showQrBg);
+            if (showCardNumber !== undefined) update['cardTemplate.showCardNumber'] = Boolean(showCardNumber);
+            const updated = await UserModel.findByIdAndUpdate(
+                teacherId,
+                { $set: update },
+                { new: true }
+            ).select('cardTemplate').lean();
+            return SuccessResponse({ res, data: (updated as any)?.cardTemplate, message: 'تم حفظ تصميم الكارت بنجاح' });
         } catch (error) { next(error); }
     }
 );

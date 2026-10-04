@@ -1,5 +1,5 @@
 import { Types } from 'mongoose';
-import { UserRole } from '../common/enums/enum.service.js';
+import { UserRole, CenterSupervisorType } from '../common/enums/enum.service.js';
 import type { IUser } from './user.types.js';
 
 export interface ILoginRequest {
@@ -20,6 +20,9 @@ export interface IJwtPayload {
     role:      UserRole;
     teacherId: string | null;
     isActive:  boolean;
+    // Center-specific
+    centerId?:        string | null;
+    supervisorType?:  CenterSupervisorType | null;
     // Standard JWT fields added by jsonwebtoken on sign/verify
     iat?: number;
     exp?: number;

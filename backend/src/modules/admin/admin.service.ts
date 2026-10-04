@@ -9,6 +9,7 @@ import { PlatformSettingsModel } from '../../database/models/platform-settings.m
 import { PromoCodeModel } from '../../database/models/promo-code.model.js';
 import { AnnouncementModel } from '../../database/models/announcement.model.js';
 import { MessageLogModel } from '../../database/models/message-log.model.js';
+import { CenterModel } from '../../database/models/center.model.js';
 import { UserRole, SubscriptionStatus, SubscriptionPlan, PLAN_PRICES } from '../../common/enums/enum.service.js';
 import { NotFoundException, BadRequestException } from '../../common/utils/response/error.responce.js';
 
@@ -139,55 +140,86 @@ export class AdminService {
         }));
     }
 
-    // ── List all tenants (teachers) with their key stats ─────────────
+    // ── List all tenants (teachers & centers) with their key stats ─────────────
     static async getAllTenants(query: {
-        page?: number; limit?: number; search?: string; status?: string;
+        page?: number; limit?: number; search?: string; status?: string; role?: string;
     }) {
         const page  = Math.max(1, query.page ?? 1);
         const limit = Math.min(100, query.limit ?? 20);
         const skip  = (page - 1) * limit;
 
-        const filter: any = { role: UserRole.teacher };
+        const filter: any = {};
+        if (query.role) {
+            filter.role = query.role;
+        } else {
+            filter.role = { $in: [UserRole.teacher, UserRole.centerOwner] };
+        }
+
         if (query.search) {
             filter.$or = [
                 { name:  { $regex: query.search, $options: 'i' } },
                 { email: { $regex: query.search, $options: 'i' } },
                 { phone: { $regex: query.search, $options: 'i' } },
+                { centerName: { $regex: query.search, $options: 'i' } },
             ];
         }
         if (query.status === 'active')   filter.isActive = true;
         if (query.status === 'inactive') filter.isActive = false;
 
-        const [teachers, total] = await Promise.all([
+        const [tenants, total] = await Promise.all([
             UserModel.find(filter).select('-password').sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
             UserModel.countDocuments(filter),
         ]);
 
-        const teacherIds = teachers.map(t => t._id);
+        const tenantIds = tenants.map(t => t._id);
+        const centerOwnerIds = tenants.filter(t => t.role === UserRole.centerOwner).map(t => t._id);
+        const teacherIds = tenants.filter(t => t.role === UserRole.teacher).map(t => t._id);
 
-        // Batch-fetch student counts + subscriptions for all teachers
-        const [studentCounts, subscriptions] = await Promise.all([
-            StudentModel.aggregate([
+        // Fetch centers for center owners
+        const centers = centerOwnerIds.length > 0 ? await CenterModel.find({
+            ownerId: { $in: centerOwnerIds },
+            parentCenterId: null,
+        }).lean() : [];
+        const centerMap = new Map(centers.map(c => [c.ownerId.toString(), c]));
+        const centerIds = centers.map(c => c._id);
+
+        // Batch-fetch student counts + subscriptions
+        const [teacherStudentCounts, centerStudentCounts, subscriptions] = await Promise.all([
+            teacherIds.length > 0 ? StudentModel.aggregate([
                 { $match: { teacherId: { $in: teacherIds } } },
                 { $group: { _id: '$teacherId', count: { $sum: 1 } } },
-            ]),
-            SubscriptionModel.find({ teacherId: { $in: teacherIds } })
+            ]) : [],
+            centerIds.length > 0 ? StudentModel.aggregate([
+                { $match: { centerId: { $in: centerIds } } },
+                { $group: { _id: '$centerId', count: { $sum: 1 } } },
+            ]) : [],
+            SubscriptionModel.find({ teacherId: { $in: tenantIds } })
                 .sort({ endDate: -1 })
                 .lean(),
         ]);
 
-        const studentMap = new Map(studentCounts.map(s => [s._id.toString(), s.count]));
+        const studentMap = new Map(teacherStudentCounts.map(s => [s._id.toString(), s.count]));
+        const centerStudentMap = new Map(centerStudentCounts.map(s => [s._id.toString(), s.count]));
         const subMap     = new Map<string, any>();
         for (const sub of subscriptions) {
             const key = sub.teacherId.toString();
             if (!subMap.has(key)) subMap.set(key, sub); // keep latest
         }
 
-        const enriched = teachers.map(t => ({
-            ...t,
-            studentCount: studentMap.get(t._id.toString()) ?? 0,
-            subscription: subMap.get(t._id.toString()) ?? null,
-        }));
+        const enriched = tenants.map(t => {
+            const isCenter = t.role === UserRole.centerOwner;
+            const center = isCenter ? centerMap.get(t._id.toString()) : null;
+            const studentCount = isCenter
+                ? (center ? (centerStudentMap.get(center._id.toString()) ?? 0) : 0)
+                : (studentMap.get(t._id.toString()) ?? 0);
+
+            return {
+                ...t,
+                centerName: isCenter ? (center?.name || t.centerName) : t.centerName,
+                studentCount,
+                subscription: subMap.get(t._id.toString()) ?? null,
+            };
+        });
 
         return { data: enriched, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } };
     }
@@ -260,13 +292,19 @@ export class AdminService {
         return { data: logs, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } };
     }
 
-    // ── Suspend / Reactivate a teacher ────────────────────────────────
-    static async setTenantStatus(teacherId: string, isActive: boolean) {
-        return UserModel.findOneAndUpdate(
-            { _id: teacherId, role: UserRole.teacher },
+    // ── Suspend / Reactivate a tenant (teacher or centerOwner) ───────
+    static async setTenantStatus(tenantId: string, isActive: boolean) {
+        const user = await UserModel.findOneAndUpdate(
+            { _id: tenantId, role: { $in: [UserRole.teacher, UserRole.centerOwner] } },
             { isActive },
-            { new: true }
+            { returnDocument: 'after' }
         ).select('-password').lean();
+
+        if (user && user.role === UserRole.centerOwner) {
+            await CenterModel.updateMany({ ownerId: tenantId }, { isActive });
+        }
+
+        return user;
     }
 
     // ── Get activity feed (business event log) ────────────────────────
@@ -402,88 +440,98 @@ export class AdminService {
 
     // ── Queues (WhatsApp) ────────────────────────────────────────────
     static async getWhatsAppQueueStatus(filters?: { phone?: string; teacherId?: string }) {
-        const { whatsAppQueue } = await import('../../infrastructure/queues/whatsapp.queue.js');
-        const [waiting, active, completed, failed, delayed] = await Promise.all([
-            whatsAppQueue.getWaitingCount(),
-            whatsAppQueue.getActiveCount(),
-            whatsAppQueue.getCompletedCount(),
-            whatsAppQueue.getFailedCount(),
-            whatsAppQueue.getDelayedCount(),
-        ]);
+        try {
+            const { whatsAppQueue } = await import('../../infrastructure/queues/whatsapp.queue.js');
+            const [waiting, active, completed, failed, delayed] = await Promise.all([
+                whatsAppQueue.getWaitingCount(),
+                whatsAppQueue.getActiveCount(),
+                whatsAppQueue.getCompletedCount(),
+                whatsAppQueue.getFailedCount(),
+                whatsAppQueue.getDelayedCount(),
+            ]);
 
-        let recentFailed = await whatsAppQueue.getFailed(0, 50);
-        let recentCompleted = await whatsAppQueue.getCompleted(0, 50);
+            let recentFailed = await whatsAppQueue.getFailed(0, 50);
+            let recentCompleted = await whatsAppQueue.getCompleted(0, 50);
 
-        if (filters?.phone) {
-            const phone = filters.phone.replace(/\D/g, '');
-            recentFailed = recentFailed.filter(job => {
-                const d = job?.data as any;
-                const jobPhone = String(d?.parentPhone || d?.phone || '').replace(/\D/g, '');
-                return jobPhone.includes(phone);
-            });
-            recentCompleted = recentCompleted.filter(job => {
-                const d = job?.data as any;
-                const jobPhone = String(d?.parentPhone || d?.phone || '').replace(/\D/g, '');
-                return jobPhone.includes(phone);
-            });
+            if (filters?.phone) {
+                const phone = filters.phone.replace(/\D/g, '');
+                recentFailed = recentFailed.filter(job => {
+                    const d = job?.data as any;
+                    const jobPhone = String(d?.parentPhone || d?.phone || '').replace(/\D/g, '');
+                    return jobPhone.includes(phone);
+                });
+                recentCompleted = recentCompleted.filter(job => {
+                    const d = job?.data as any;
+                    const jobPhone = String(d?.parentPhone || d?.phone || '').replace(/\D/g, '');
+                    return jobPhone.includes(phone);
+                });
+            }
+            if (filters?.teacherId) {
+                recentFailed = recentFailed.filter(job => {
+                    const d = job?.data as any;
+                    return String(d?.teacherId) === filters.teacherId;
+                });
+                recentCompleted = recentCompleted.filter(job => {
+                    const d = job?.data as any;
+                    return String(d?.teacherId) === filters.teacherId;
+                });
+            }
+
+            return {
+                counts: { waiting, active, completed, failed, delayed },
+                recentFailed: recentFailed.slice(0, 20).map(job => ({
+                    id: job?.id,
+                    name: job?.name,
+                    data: job?.data,
+                    failedReason: job?.failedReason,
+                    timestamp: job?.timestamp
+                })),
+                recentCompleted: recentCompleted.slice(0, 20).map(job => ({
+                    id: job?.id,
+                    name: job?.name,
+                    data: job?.data,
+                    timestamp: job?.timestamp,
+                    finishedOn: job?.finishedOn
+                }))
+            };
+        } catch {
+            return {
+                counts: { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 },
+                recentFailed: [],
+                recentCompleted: []
+            };
         }
-        if (filters?.teacherId) {
-            recentFailed = recentFailed.filter(job => {
-                const d = job?.data as any;
-                return String(d?.teacherId) === filters.teacherId;
-            });
-            recentCompleted = recentCompleted.filter(job => {
-                const d = job?.data as any;
-                return String(d?.teacherId) === filters.teacherId;
-            });
-        }
-
-        return {
-            counts: { waiting, active, completed, failed, delayed },
-            recentFailed: recentFailed.slice(0, 20).map(job => ({
-                id: job?.id,
-                name: job?.name,
-                data: job?.data,
-                failedReason: job?.failedReason,
-                timestamp: job?.timestamp
-            })),
-            recentCompleted: recentCompleted.slice(0, 20).map(job => ({
-                id: job?.id,
-                name: job?.name,
-                data: job?.data,
-                timestamp: job?.timestamp,
-                finishedOn: job?.finishedOn
-            }))
-        };
     }
 
     static async retryAllFailedWhatsAppJobs() {
-        const { whatsAppQueue } = await import('../../infrastructure/queues/whatsapp.queue.js');
-        
-        let retried = 0;
-
-        // 1. Retry failed jobs in BullMQ
-        const failedJobs = await whatsAppQueue.getFailed(0, 500);
-        for (const job of failedJobs) {
-            try { 
-                await job.retry(); 
-                retried++; 
-            } catch { /* skip */ }
+        try {
+            const { whatsAppQueue } = await import('../../infrastructure/queues/whatsapp.queue.js');
+            let retried = 0;
+            const failedJobs = await whatsAppQueue.getFailed(0, 500);
+            for (const job of failedJobs) {
+                try { 
+                    await job.retry(); 
+                    retried++; 
+                } catch { /* skip */ }
+            }
+            return { retried };
+        } catch {
+            return { retried: 0 };
         }
-
-
-
-        return { retried };
     }
 
     static async clearAllFailedWhatsAppJobs() {
-        const { whatsAppQueue } = await import('../../infrastructure/queues/whatsapp.queue.js');
-        const failedJobs = await whatsAppQueue.getFailed(0, 500);
-        let cleared = 0;
-        for (const job of failedJobs) {
-            try { await job.remove(); cleared++; } catch { /* skip */ }
+        try {
+            const { whatsAppQueue } = await import('../../infrastructure/queues/whatsapp.queue.js');
+            const failedJobs = await whatsAppQueue.getFailed(0, 500);
+            let cleared = 0;
+            for (const job of failedJobs) {
+                try { await job.remove(); cleared++; } catch { /* skip */ }
+            }
+            return { cleared };
+        } catch {
+            return { cleared: 0 };
         }
-        return { cleared };
     }
 
     // ── Monitoring: Message History (paginated from MongoDB) ──────────
@@ -525,14 +573,20 @@ export class AdminService {
         weekStart.setDate(weekStart.getDate() - 7);
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-        // Get BullMQ queue counts
-        const { whatsAppQueue } = await import('../../infrastructure/queues/whatsapp.queue.js');
-        const [waiting, active, delayed, failed] = await Promise.all([
-            whatsAppQueue.getWaitingCount(),
-            whatsAppQueue.getActiveCount(),
-            whatsAppQueue.getDelayedCount(),
-            whatsAppQueue.getFailedCount(),
-        ]);
+        // Get BullMQ queue counts (graceful fallback if Redis is down)
+        let waiting = 0, active = 0, delayed = 0, failed = 0;
+        try {
+            const { whatsAppQueue } = await import('../../infrastructure/queues/whatsapp.queue.js');
+            const [w, a, d, f] = await Promise.all([
+                whatsAppQueue.getWaitingCount(),
+                whatsAppQueue.getActiveCount(),
+                whatsAppQueue.getDelayedCount(),
+                whatsAppQueue.getFailedCount(),
+            ]);
+            waiting = w; active = a; delayed = d; failed = f;
+        } catch {
+            // Redis offline — queue counts default to 0
+        }
 
         // MessageLog-based stats
         const [todayTotal, weekTotal, monthTotal, todaySent, todayFailed, monthSent, monthFailed] = await Promise.all([

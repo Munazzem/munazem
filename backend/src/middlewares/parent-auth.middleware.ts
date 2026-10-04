@@ -10,6 +10,7 @@ import { ParentModel } from '../database/models/parent.model.js';
 import { ParentStudentModel } from '../database/models/parent-student.model.js';
 import { ParentDeviceModel } from '../database/models/parent-device.model.js';
 import { StudentModel } from '../database/models/student.model.js';
+import { CenterStudentModel } from '../database/models/center-student.model.js';
 
 const SLIDING_THRESHOLD_SECONDS = 15 * 60; // 15 minutes
 
@@ -107,32 +108,61 @@ export async function assertParentStudentAccess(
   if (hasAccess) return;
 
   // Auto-healing fallback: Check if parent exists and phone matches this student
-  const [parent, student] = await Promise.all([
+  const [parent, student, centerStudent] = await Promise.all([
     ParentModel.findById(parentId).lean(),
     StudentModel.findById(studentId).lean(),
+    CenterStudentModel.findById(studentId).lean(),
   ]);
 
-  if (parent && student && parent.phone) {
+  if (parent && parent.phone) {
     const parentDigits = parent.phone.replace(/\D/g, '').slice(-10);
-    const studentParentDigits = (student.parentPhone || '').replace(/\D/g, '').slice(-10);
-    const studentDigits = (student.studentPhone || '').replace(/\D/g, '').slice(-10);
 
-    if (
-      (parentDigits && studentParentDigits && parentDigits === studentParentDigits) ||
-      (parentDigits && studentDigits && parentDigits === studentDigits)
-    ) {
-      await ParentStudentModel.findOneAndUpdate(
-        { parentId: parent._id, studentId: student._id },
-        {
-          $set: {
-            status: 'ACTIVE',
-            verifiedVia: 'AUTO_CONFIRMED',
-            linkedAt: new Date(),
+    if (student) {
+      const studentParentDigits = (student.parentPhone || '').replace(/\D/g, '').slice(-10);
+      const studentDigits = (student.studentPhone || '').replace(/\D/g, '').slice(-10);
+
+      if (
+        (parentDigits && studentParentDigits && parentDigits === studentParentDigits) ||
+        (parentDigits && studentDigits && parentDigits === studentDigits)
+      ) {
+        await ParentStudentModel.findOneAndUpdate(
+          { parentId: parent._id, studentId: student._id },
+          {
+            $set: {
+              studentModelType: 'Student',
+              status: 'ACTIVE',
+              verifiedVia: 'AUTO_CONFIRMED',
+              linkedAt: new Date(),
+            },
           },
-        },
-        { upsert: true }
-      );
-      return;
+          { upsert: true }
+        );
+        return;
+      }
+    } else if (centerStudent) {
+      const centerParentDigits = (centerStudent.parentPhone || '').replace(/\D/g, '').slice(-10);
+      const centerStudentDigits = (centerStudent.studentPhone || '').replace(/\D/g, '').slice(-10);
+
+      if (
+        (parentDigits && centerParentDigits && parentDigits === centerParentDigits) ||
+        (parentDigits && centerStudentDigits && parentDigits === centerStudentDigits)
+      ) {
+        await ParentStudentModel.findOneAndUpdate(
+          { parentId: parent._id, studentId: centerStudent._id },
+          {
+            $set: {
+              studentModelType: 'CenterStudent',
+              centerStudentId: centerStudent._id,
+              centerId: centerStudent.centerId,
+              status: 'ACTIVE',
+              verifiedVia: 'AUTO_CONFIRMED',
+              linkedAt: new Date(),
+            },
+          },
+          { upsert: true }
+        );
+        return;
+      }
     }
   }
 

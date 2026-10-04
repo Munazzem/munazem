@@ -3,15 +3,17 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchStudents } from '@/lib/api/students';
-import { recordSubscription } from '@/lib/api/payments';
+import { recordSubscription, waiveDebt } from '@/lib/api/payments';
 import { QK } from '@/lib/query-keys';
 import { toast } from 'sonner';
-import { Loader2, AlertTriangle, BookOpen, UserX, Receipt, CreditCard, ArrowRight, Clock } from 'lucide-react';
+import { Loader2, AlertTriangle, BookOpen, UserX, Receipt, CreditCard, ArrowRight, Clock, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import type { StudentWithGroup } from '@/types/student.types';
 
@@ -85,6 +87,36 @@ export default function StudentAffairsPage() {
     const handleSubscribe = (student: StudentWithGroup) => {
         setSelectedStudent(student);
         setConfirmSubscribeOpen(true);
+    };
+
+    // Waive Debt Dialog State & Mutation
+    const [waiveStudent, setWaiveStudent] = useState<StudentWithGroup | null>(null);
+    const [waiveReason, setWaiveReason] = useState('');
+    const [waiveModalOpen, setWaiveModalOpen] = useState(false);
+
+    const waiveMutation = useMutation({
+        mutationFn: () => waiveDebt({
+            studentId: waiveStudent!._id,
+            reason: waiveReason.trim() || undefined,
+        }),
+        onSuccess: (res) => {
+            toast.success(res?.message || `تم حذف وإسقاط مديونية ${waiveStudent?.studentName} بنجاح`);
+            setWaiveModalOpen(false);
+            setWaiveStudent(null);
+            setWaiveReason('');
+            queryClient.invalidateQueries({ queryKey: QK.students.all });
+            queryClient.invalidateQueries({ queryKey: QK.payments.all });
+            queryClient.invalidateQueries({ queryKey: QK.dashboard.summary });
+        },
+        onError: (err: any) => {
+            toast.error(err?.response?.data?.message || err?.message || 'حدث خطأ أثناء حذف المديونية');
+        },
+    });
+
+    const handleOpenWaiveDebt = (student: StudentWithGroup) => {
+        setWaiveStudent(student);
+        setWaiveReason('');
+        setWaiveModalOpen(true);
     };
 
     // ─── Render Helper for Grouped Lists ───
@@ -200,9 +232,25 @@ export default function StudentAffairsPage() {
                             pastCycleDebtsGrouped,
                             'لا يوجد طلاب لديهم مديونيات من دورات سابقة.',
                             (student) => (
-                                <Button size="sm" variant="outline" className="h-8 text-xs font-bold text-amber-800 border-amber-300 bg-amber-50/50 hover:bg-amber-100 w-full" onClick={() => router.push(`/students/${student._id}`)}>
-                                    <Receipt className="h-3.5 w-3.5 ml-1.5" /> تفاصيل وسداد الدورات
-                                </Button>
+                                <div className="flex items-center gap-1.5 w-full">
+                                    <Button 
+                                        size="sm" 
+                                        variant="outline" 
+                                        className="h-8 text-xs font-bold text-amber-800 border-amber-300 bg-amber-50/50 hover:bg-amber-100 flex-1" 
+                                        onClick={() => router.push(`/students/${student._id}`)}
+                                    >
+                                        <Receipt className="h-3.5 w-3.5 ml-1" /> التفاصيل والسداد
+                                    </Button>
+                                    <Button 
+                                        size="sm" 
+                                        variant="outline" 
+                                        className="h-8 text-xs font-bold text-rose-700 border-rose-200 bg-rose-50/60 hover:bg-rose-100 hover:text-rose-800 hover:border-rose-300 transition-colors shrink-0" 
+                                        onClick={() => handleOpenWaiveDebt(student)}
+                                        title="حذف وإسقاط المديونية بدون دفع"
+                                    >
+                                        <Trash2 className="h-3.5 w-3.5 ml-1" /> حذف المديونية
+                                    </Button>
+                                </div>
                             ),
                             (student) => (
                                 <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 border-0 shadow-sm px-2 text-[10px]">
@@ -245,6 +293,74 @@ export default function StudentAffairsPage() {
                 confirmLabel="تأكيد التسجيل"
                 onConfirm={() => subscribeMutation.mutate()}
             />
+
+            {/* Waive Debt Dialog */}
+            <Dialog open={waiveModalOpen} onOpenChange={(v) => { setWaiveModalOpen(v); if (!v) { setWaiveStudent(null); setWaiveReason(''); } }}>
+                <DialogContent className="sm:max-w-[440px]" dir="rtl">
+                    <DialogHeader>
+                        <DialogTitle className="text-lg font-bold text-rose-700 flex items-center gap-2">
+                            <Trash2 className="h-5 w-5 text-rose-600" />
+                            حذف وإسقاط مديونية الطالب
+                        </DialogTitle>
+                        <DialogDescription className="text-xs text-gray-500 pt-1">
+                            سيتم تصفير وإسقاط المديونية المسجلة دون تحصيل أي مبالغ نقدية في الخزينة.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-3.5 py-2">
+                        <div className="bg-rose-50/70 border border-rose-200/80 rounded-xl p-3 text-xs space-y-1.5">
+                            <div className="flex justify-between items-center text-gray-700">
+                                <span className="font-semibold">اسم الطالب:</span>
+                                <span className="font-bold text-gray-900">{waiveStudent?.studentName}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-rose-700">
+                                <span className="font-semibold">إجمالي المديونية المستحقة:</span>
+                                <span className="font-extrabold text-sm">{waiveStudent?.totalDebt || 0} ج.م</span>
+                            </div>
+                        </div>
+
+                        <div className="space-y-1">
+                            <label className="text-xs font-semibold text-gray-700 block">
+                                سبب الإسقاط / ملاحظة (اختياري)
+                            </label>
+                            <Input
+                                placeholder="مثال: إعفاء من المعلم، ظرف عائلي، تسوية سابقة..."
+                                value={waiveReason}
+                                onChange={(e) => setWaiveReason(e.target.value)}
+                                className="text-xs h-9 bg-white"
+                            />
+                        </div>
+
+                        <div className="bg-amber-50/80 border border-amber-200 rounded-xl p-2.5 text-[11px] text-amber-800 flex items-start gap-2">
+                            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+                            <span>
+                                تنبيه: تأكيد هذه العملية سيقوم بتصفير المديونية وإغلاق الدورات السابقة كـ (مسددة بالكامل بعد الإعفاء) ولن يضاف أي إيراد للخزينة.
+                            </span>
+                        </div>
+                    </div>
+
+                    <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-gray-100">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setWaiveModalOpen(false)}
+                            disabled={waiveMutation.isPending}
+                            className="text-xs font-semibold"
+                        >
+                            إلغاء
+                        </Button>
+                        <Button
+                            type="button"
+                            onClick={() => waiveMutation.mutate()}
+                            disabled={waiveMutation.isPending}
+                            className="text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white gap-1.5"
+                        >
+                            {waiveMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                            تأكيد حذف المديونية
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

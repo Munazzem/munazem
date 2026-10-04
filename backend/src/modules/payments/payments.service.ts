@@ -1387,7 +1387,9 @@ export class PaymentsService {
         // Calculate how much debt belongs to cycles and how much is historical (before CycleEnrollments)
         const unpaidEnrollments = await CycleEnrollmentModel.find({
             studentId: student._id,
-            status: { $in: [CycleEnrollmentStatus.UNPAID, CycleEnrollmentStatus.PARTIALLY_PAID] }
+            status: { $in: [CycleEnrollmentStatus.UNPAID, CycleEnrollmentStatus.PARTIALLY_PAID] },
+            remainingAmount: { $gt: 0 },
+            isWaived: { $ne: true },
         }).sort({ cycleNumber: 1 }).lean(); // Sort oldest to newest
 
         const cycleDebt = unpaidEnrollments.reduce((sum, e) => sum + e.remainingAmount, 0);
@@ -1647,6 +1649,7 @@ export class PaymentsService {
             studentId: student._id,
             status: { $in: [CycleEnrollmentStatus.UNPAID, CycleEnrollmentStatus.PARTIALLY_PAID] },
             remainingAmount: { $gt: 0 },
+            isWaived: { $ne: true },
             $or: [
                 { groupId: { $ne: student.groupId } },
                 { cycleNumber: { $lt: currentCycleNumber } }
@@ -1692,6 +1695,234 @@ export class PaymentsService {
             message: 'تم سداد المديونيات السابقة بنجاح',
             totalPaid: amountToDistribute,
             transactions: results
+        };
+    }
+
+    // ── Waive Student Debt (حذف وإسقاط المديونية بدون دفع) ─────────────
+    static async waiveDebt(
+        teacherId: string,
+        createdBy: string,
+        data: {
+            studentId: string;
+            cycleNumber?: number;
+            waivePastOnly?: boolean;
+            amount?: number;
+            reason?: string;
+        }
+    ) {
+        const student = await StudentModel.findById(data.studentId, {
+            studentName: 1,
+            gradeLevel: 1,
+            teacherId: 1,
+            groupId: 1,
+            totalDebt: 1,
+        }).lean();
+        if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
+        if (student.teacherId.toString() !== teacherId) {
+            throw BadRequestException({ message: 'هذا الطالب لا ينتمي إلى هذا المعلم' });
+        }
+
+        const txDate = new Date();
+
+        // 1) Waiving a specific cycle debt
+        if (data.cycleNumber !== undefined) {
+            const enrollment = await CycleEnrollmentModel.findOne({
+                studentId: student._id,
+                cycleNumber: data.cycleNumber,
+            });
+
+            if (!enrollment) {
+                throw NotFoundException({ message: `سجل الدورة رقم (${data.cycleNumber}) غير موجود لهذا الطالب` });
+            }
+            if (enrollment.remainingAmount <= 0 || enrollment.status === CycleEnrollmentStatus.PAID) {
+                throw BadRequestException({ message: `لا توجد مديونية متبقية على الدورة رقم (${data.cycleNumber})` });
+            }
+
+            let waiveAmount = enrollment.remainingAmount;
+            if (data.amount !== undefined && data.amount > 0) {
+                if (data.amount > enrollment.remainingAmount) {
+                    throw BadRequestException({ message: `المبلغ المطلوب حذفه (${data.amount}) أكبر من متبقي الدورة (${enrollment.remainingAmount})` });
+                }
+                waiveAmount = data.amount;
+            }
+
+            const newRemaining = Math.max(0, enrollment.remainingAmount - waiveAmount);
+            const isFullWaive = newRemaining === 0 && (enrollment.totalPaid || 0) === 0;
+
+            await withTransaction(async (session) => {
+                if (isFullWaive) {
+                    // Fully dropped/deleted cycle: 0 totalPaid, debt waived.
+                    // Mark as waived and zero out charges/discounts so it has NO trace.
+                    await CycleEnrollmentModel.findByIdAndUpdate(enrollment._id, {
+                        $set: {
+                            isWaived: true,
+                            cycleCharge: 0,
+                            totalPaid: 0,
+                            totalDiscount: 0,
+                            remainingAmount: 0,
+                            status: CycleEnrollmentStatus.PAID,
+                        }
+                    }, { session });
+                } else if (newRemaining === 0 && (enrollment.totalPaid || 0) > 0) {
+                    // Student paid part, remaining was waived. Settle cycle at totalPaid with 0 discount.
+                    await CycleEnrollmentModel.findByIdAndUpdate(enrollment._id, {
+                        $set: {
+                            cycleCharge: enrollment.totalPaid,
+                            totalDiscount: 0,
+                            remainingAmount: 0,
+                            status: CycleEnrollmentStatus.PAID,
+                        }
+                    }, { session });
+                } else {
+                    // Partial waive
+                    await CycleEnrollmentModel.findByIdAndUpdate(enrollment._id, {
+                        $set: {
+                            remainingAmount: newRemaining,
+                            status: CycleEnrollmentStatus.PARTIALLY_PAID,
+                        }
+                    }, { session });
+                }
+
+                if (student.totalDebt && student.totalDebt > 0) {
+                    const debtReduction = Math.min(student.totalDebt, waiveAmount);
+                    if (debtReduction > 0) {
+                        await StudentModel.findByIdAndUpdate(student._id, {
+                            $inc: { totalDebt: -debtReduction }
+                        }, { session });
+                    }
+                }
+            });
+
+            cache.del(CacheKeys.dashboard(teacherId));
+            return {
+                message: `تم حذف وإسقاط مديونية الدورة رقم (${data.cycleNumber}) بنجاح`,
+                waivedAmount: waiveAmount,
+            };
+        }
+
+        // 2) Waiving all debts (or all past cycles / specified amount)
+        let filter: any = {
+            studentId: student._id,
+            status: { $in: [CycleEnrollmentStatus.UNPAID, CycleEnrollmentStatus.PARTIALLY_PAID] },
+            remainingAmount: { $gt: 0 },
+            isWaived: { $ne: true },
+        };
+
+        if (data.waivePastOnly) {
+            const group = await GroupModel.findById(student.groupId, { 'cycle.currentCycleNumber': 1 }).lean();
+            const currentCycleNumber = group?.cycle?.currentCycleNumber || 1;
+            filter.$or = [
+                { groupId: { $ne: student.groupId } },
+                { cycleNumber: { $lt: currentCycleNumber } }
+            ];
+        }
+
+        const unpaidEnrollments = await CycleEnrollmentModel.find(filter).sort({ cycleNumber: 1 });
+
+        const totalEnrollmentDebt = unpaidEnrollments.reduce((sum, e) => sum + e.remainingAmount, 0);
+        const currentStudentDebt = student.totalDebt || 0;
+        const totalOutstanding = data.waivePastOnly ? totalEnrollmentDebt : Math.max(currentStudentDebt, totalEnrollmentDebt);
+
+        if (totalOutstanding <= 0 && unpaidEnrollments.length === 0) {
+            throw BadRequestException({ message: 'لا توجد مديونية مسجلة على هذا الطالب لحذفها' });
+        }
+
+        let amountToWaive = data.amount !== undefined ? data.amount : totalOutstanding;
+        if (amountToWaive <= 0) {
+            throw BadRequestException({ message: 'المبلغ المراد حذفه يجب أن يكون أكبر من صفر' });
+        }
+        if (amountToWaive > totalOutstanding) {
+            throw BadRequestException({ message: `المبلغ المطلوب حذفه (${amountToWaive}) أكبر من إجمالي المديونية (${totalOutstanding})` });
+        }
+
+        const finalWaivedAmount = amountToWaive;
+        let remainingToDistribute = amountToWaive;
+
+        const enrollmentUpdates: any[] = [];
+        for (const e of unpaidEnrollments) {
+            if (remainingToDistribute <= 0) break;
+            const waiveForThisCycle = Math.min(e.remainingAmount, remainingToDistribute);
+            remainingToDistribute -= waiveForThisCycle;
+
+            const newRemaining = e.remainingAmount - waiveForThisCycle;
+            const isFullWaive = newRemaining === 0 && (e.totalPaid || 0) === 0;
+
+            if (isFullWaive) {
+                enrollmentUpdates.push({
+                    updateOne: {
+                        filter: { _id: e._id },
+                        update: {
+                            $set: {
+                                isWaived: true,
+                                cycleCharge: 0,
+                                totalPaid: 0,
+                                totalDiscount: 0,
+                                remainingAmount: 0,
+                                status: CycleEnrollmentStatus.PAID,
+                            }
+                        }
+                    }
+                });
+            } else if (newRemaining === 0 && (e.totalPaid || 0) > 0) {
+                enrollmentUpdates.push({
+                    updateOne: {
+                        filter: { _id: e._id },
+                        update: {
+                            $set: {
+                                cycleCharge: e.totalPaid,
+                                totalDiscount: 0,
+                                remainingAmount: 0,
+                                status: CycleEnrollmentStatus.PAID,
+                            }
+                        }
+                    }
+                });
+            } else {
+                enrollmentUpdates.push({
+                    updateOne: {
+                        filter: { _id: e._id },
+                        update: {
+                            $set: {
+                                remainingAmount: newRemaining,
+                                status: CycleEnrollmentStatus.PARTIALLY_PAID,
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        await withTransaction(async (session) => {
+            if (enrollmentUpdates.length > 0) {
+                await CycleEnrollmentModel.bulkWrite(enrollmentUpdates, { session });
+            }
+
+            if (data.waivePastOnly) {
+                if (student.totalDebt && student.totalDebt > 0) {
+                    const reduceDebt = Math.min(student.totalDebt, finalWaivedAmount);
+                    if (reduceDebt > 0) {
+                        await StudentModel.findByIdAndUpdate(student._id, {
+                            $inc: { totalDebt: -reduceDebt }
+                        }, { session });
+                    }
+                }
+            } else {
+                if (data.amount !== undefined && data.amount < currentStudentDebt) {
+                    await StudentModel.findByIdAndUpdate(student._id, {
+                        $inc: { totalDebt: -finalWaivedAmount }
+                    }, { session });
+                } else {
+                    await StudentModel.findByIdAndUpdate(student._id, {
+                        $set: { totalDebt: 0 }
+                    }, { session });
+                }
+            }
+        });
+
+        cache.del(CacheKeys.dashboard(teacherId));
+        return {
+            message: 'تم حذف وإسقاط المديونية بنجاح',
+            waivedAmount: finalWaivedAmount,
         };
     }
 

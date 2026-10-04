@@ -43,5 +43,6 @@ export interface ICycleEnrollmentInfo {
     status: 'PAID' | 'PARTIALLY_PAID' | 'UNPAID';
     isCurrentCycle: boolean;
     isPastCycle: boolean;
+    isWaived?: boolean;
     createdAt?: string;
 }

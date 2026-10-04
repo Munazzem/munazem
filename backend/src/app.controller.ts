@@ -26,11 +26,13 @@ import parentRouter from './modules/parent/parent.controller.js';
 import adminRouter  from './modules/admin/admin.controller.js';
 import whatsappRouter from './modules/whatsapp/whatsapp.controller.js';
 import cardsRouter  from './modules/cards/cards.controller.js';
+import centersRouter from './modules/centers/centers.controller.js';
 import { startWhatsAppWorker }    from './infrastructure/queues/whatsapp.processor.js';
 import { startEmailWorker }       from './infrastructure/queues/email.processor.js';
 import { autoReconnectClients }   from './common/utils/whatsapp.service.js';
 import { startAutomationScheduler } from './infrastructure/schedulers/automation.scheduler.js';
 import { initWhatsAppGateway }    from './infrastructure/socket/whatsapp.gateway.js';
+import { isRedisAvailable }       from './infrastructure/queues/redis.connection.js';
 
 // createApp: pure Express factory (no DB, no workers, no listen).
 // Used by supertest in integration tests.
@@ -42,7 +44,9 @@ export function createApp() {
     app.set('trust proxy', 1);
 
     app.use(helmet());
-    app.use(express.json());
+    app.use(express.json({ limit: '15mb' }));
+    app.use(express.urlencoded({ limit: '15mb', extended: true }));
+
     const allowedOrigins = envVars.frontendUrl
         .split(',')
         .map(o => o.trim())
@@ -162,6 +166,7 @@ export function createApp() {
     app.use('/whatsapp', whatsappRouter);
     app.use('/admin', adminRouter);
     app.use('/cards', cardsRouter);
+    app.use('/centers', centersRouter);
 
     app.get('/health', (_req, res) => {
         const mem = process.memoryUsage();
@@ -211,9 +216,12 @@ export const bootstrap = async () => {
 
     // Background workers (safe to start now — gateway is ready)
     autoReconnectClients();
-    startWhatsAppWorker();
-    startEmailWorker();
-    startAutomationScheduler();
+    const redisAvailable = await isRedisAvailable();
+    if (redisAvailable) {
+        startWhatsAppWorker();
+        startEmailWorker();
+        startAutomationScheduler();
+    }
 
     server.listen(envVars.port, () => {
         console.log(`Server running on http://localhost:${envVars.port}`);

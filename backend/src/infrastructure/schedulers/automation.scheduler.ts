@@ -5,22 +5,22 @@ import { generateWeeklyReports }
     from '../../modules/automation/automation.service.js';
 import { archiveOldData } from '../../scripts/archive-old-data.js';
 import { Worker } from 'bullmq';
+import { redisConnectionOptions } from '../queues/redis.connection.js';
 
 // ─── Automation Queue ────────────────────────────────────────────────────────
 // A dedicated queue for scheduled automation tasks.
 // BullMQ "repeatable jobs" act as cron triggers — each fires a lightweight job
 // whose processor calls the real data-gathering function.
 
-const connection = { url: envVars.redisUrl };
-
 const automationQueue = new Queue('automation', {
-    connection,
+    connection: redisConnectionOptions,
     defaultJobOptions: {
         attempts:         1,       // no retry — if it fails, wait for next cron tick
         removeOnComplete: { count: 50 },
         removeOnFail:     { count: 100 },
     },
 });
+automationQueue.on('error', () => {});
 
 // ─── Schedule definitions ────────────────────────────────────────────────────
 // Cron expressions are in UTC.
@@ -103,7 +103,7 @@ export async function startAutomationScheduler(): Promise<void> {
     const worker = new Worker(
         'automation',
         processAutomationJob,
-        { connection, concurrency: 1 },
+        { connection: redisConnectionOptions, concurrency: 1 },
     );
 
     worker.on('failed', (job, err) => {
@@ -119,6 +119,7 @@ export async function startAutomationScheduler(): Promise<void> {
     });
 
     worker.on('error', (err) => {
+        if (err.message.includes('ECONNREFUSED')) return;
         logger.error('automation_worker_error', { error: err.message });
     });
 

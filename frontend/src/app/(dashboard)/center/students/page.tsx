@@ -1,0 +1,1452 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+    fetchCenterStudents,
+    createCenterStudent,
+    bulkCreateCenterStudents,
+    updateCenterStudent,
+    deleteCenterStudent,
+    fetchCenterPackages,
+    fetchCenterTeachers,
+    fetchCenterGroups,
+    enrollStudent,
+} from '@/lib/api/centers';
+import type {
+    ICenterStudent,
+    CreateCenterStudentDTO,
+    ICenterPackage,
+    ICenterTeacher,
+    ICenterGroup,
+    CenterEnrollmentType,
+} from '@/types/center.types';
+import {
+    ALL_GRADES,
+    PRIMARY_GRADES,
+    PREPARATORY_GRADES,
+    SECONDARY_GRADES,
+} from '@/lib/constants/grade.constants';
+import { STAGE_SECTIONS } from '@/lib/constants/stage-sections';
+import { BranchSwitcher } from '@/components/center/BranchSwitcher';
+import { toast } from 'sonner';
+import {
+    Users,
+    UserPlus,
+    Plus,
+    Search,
+    FileSpreadsheet,
+    Edit2,
+    Trash2,
+    Loader2,
+    CheckCircle2,
+    XCircle,
+    Phone,
+    Barcode,
+    ClipboardList,
+    Sparkles,
+    Copy,
+    GraduationCap,
+    Filter,
+    User,
+    BookOpen,
+    Layers,
+    Check,
+    ChevronDown,
+    ChevronUp,
+    ChevronsUpDown,
+    ChevronLeft,
+    X,
+    Calculator,
+    ArrowRight,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogFooter,
+} from '@/components/ui/dialog';
+
+interface BulkRow {
+    id: string;
+    studentName: string;
+    parentName: string;
+    studentPhone: string;
+    parentPhone: string;
+}
+
+export default function CenterStudentsPage() {
+    const queryClient = useQueryClient();
+    const router = useRouter();
+    const searchParams = useSearchParams();
+
+    // Check if stage query param exists and redirect to dedicated page
+    useEffect(() => {
+        const stage = searchParams.get('stage');
+        if (stage) {
+            router.replace(`/center/students/stage/${stage.toLowerCase()}`);
+        }
+    }, [searchParams, router]);
+
+    // Single Add / Edit Modal State
+    const [isAddOpen, setIsAddOpen] = useState(false);
+    const [editingStudent, setEditingStudent] = useState<ICenterStudent | null>(null);
+
+    // Form State
+    const [studentName, setStudentName] = useState('');
+    const [parentName, setParentName] = useState('');
+    const [studentPhone, setStudentPhone] = useState('');
+    const [parentPhone, setParentPhone] = useState('');
+    const [gradeLevel, setGradeLevel] = useState<string>(ALL_GRADES[0]);
+    const [barcode, setBarcode] = useState('');
+    const [notes, setNotes] = useState('');
+    const [editIsActive, setEditIsActive] = useState(true);
+
+    // Optional Instant Enrollment on Student Creation
+    const [enrollImmediately, setEnrollImmediately] = useState(false);
+    const [enrollmentType, setEnrollmentType] = useState<CenterEnrollmentType>('PACKAGE');
+    const [packageId, setPackageId] = useState('');
+    const [selectedPackageGroupIds, setSelectedPackageGroupIds] = useState<string[]>([]);
+    const [selectedPrivateTeachers, setSelectedPrivateTeachers] = useState<
+        Array<{ centerTeacherId: string; groupId?: string; monthlyPrice?: number; subject?: string }>
+    >([]);
+    const [packageDiscountType, setPackageDiscountType] = useState<'PERCENTAGE' | 'FIXED' | ''>('');
+    const [packageDiscountVal, setPackageDiscountVal] = useState('0');
+    const [privateDiscountType, setPrivateDiscountType] = useState<'PERCENTAGE' | 'FIXED' | ''>('');
+    const [privateDiscountVal, setPrivateDiscountVal] = useState('0');
+
+    // Packages, Teachers, Groups queries (lazy loaded only when Add/Edit modal is open)
+    const { data: packages = [] } = useQuery<ICenterPackage[]>({
+        queryKey: ['center', 'packages'],
+        queryFn: () => fetchCenterPackages({ isActive: true }),
+        enabled: isAddOpen,
+        staleTime: 5 * 60 * 1000,
+    });
+
+    const { data: teachers = [] } = useQuery<ICenterTeacher[]>({
+        queryKey: ['center', 'teachers'],
+        queryFn: () => fetchCenterTeachers({ isActive: true }),
+        enabled: isAddOpen,
+        staleTime: 5 * 60 * 1000,
+    });
+
+    const { data: groups = [] } = useQuery<ICenterGroup[]>({
+        queryKey: ['center', 'groups'],
+        queryFn: () => fetchCenterGroups({ isActive: true }),
+        enabled: isAddOpen,
+        staleTime: 5 * 60 * 1000,
+    });
+
+    const handleSelectPackage = (newPkgId: string) => {
+        setPackageId(newPkgId);
+        const pkg = packages.find((p) => p._id === newPkgId);
+        if (!pkg) {
+            setSelectedPackageGroupIds([]);
+            return;
+        }
+
+        const pkgTeacherIds = (pkg.teachers || []).map((t) =>
+            typeof t.teacherId === 'object' ? (t.teacherId as any)._id : t.teacherId
+        );
+
+        const matchingGroups = groups.filter((g) => {
+            const teacherId = typeof g.centerTeacherId === 'object' ? (g.centerTeacherId as any)._id : g.centerTeacherId;
+            const matchesTeacher = pkgTeacherIds.includes(teacherId);
+            const matchesGrade = g.gradeLevel === pkg.gradeLevel;
+            const matchesType = g.groupType === 'PACKAGE' || g.groupType === 'MIXED';
+            return matchesTeacher && matchesGrade && matchesType;
+        });
+
+        // Automatically select all matching groups by default!
+        setSelectedPackageGroupIds(matchingGroups.map((g) => g._id));
+    };
+
+    const togglePackageGroup = (groupId: string) => {
+        setSelectedPackageGroupIds((prev) =>
+            prev.includes(groupId) ? prev.filter((id) => id !== groupId) : [...prev, groupId]
+        );
+    };
+
+    const togglePrivateGroup = (group: ICenterGroup) => {
+        const teacherId = typeof group.centerTeacherId === 'object' ? (group.centerTeacherId as any)._id : group.centerTeacherId;
+        const isSelected = selectedPrivateTeachers.some((p) => p.groupId === group._id);
+
+        if (isSelected) {
+            setSelectedPrivateTeachers((prev) => prev.filter((p) => p.groupId !== group._id));
+        } else {
+            const teacher = typeof group.centerTeacherId === 'object' ? (group.centerTeacherId as any) : teachers.find((t) => t._id === teacherId);
+            setSelectedPrivateTeachers((prev) => [
+                ...prev,
+                {
+                    centerTeacherId: teacherId,
+                    groupId: group._id,
+                    monthlyPrice: group.privateMonthlyPrice ?? undefined,
+                    subject: teacher?.subject || undefined,
+                },
+            ]);
+        }
+    };
+
+    useEffect(() => {
+        if (enrollImmediately && gradeLevel && packages.length > 0) {
+            const matchingPkg = packages.find((p) => p.gradeLevel === gradeLevel);
+            if (matchingPkg && matchingPkg._id !== packageId) {
+                handleSelectPackage(matchingPkg._id);
+            }
+        }
+    }, [gradeLevel, enrollImmediately, packages]);
+
+    const selectedPkg = packages.find((p) => p._id === packageId);
+    const pkgTeacherIds = (selectedPkg?.teachers || []).map((t) =>
+        typeof t.teacherId === 'object' ? (t.teacherId as any)._id : t.teacherId
+    );
+    const packageMatchingGroups = selectedPkg
+        ? groups.filter((g) => {
+              const teacherId = typeof g.centerTeacherId === 'object' ? (g.centerTeacherId as any)._id : g.centerTeacherId;
+              const matchesTeacher = pkgTeacherIds.includes(teacherId);
+              const matchesGrade = g.gradeLevel === selectedPkg.gradeLevel;
+              const matchesType = g.groupType === 'PACKAGE' || g.groupType === 'MIXED';
+              return matchesTeacher && matchesGrade && matchesType;
+          })
+        : [];
+
+    const availablePrivateGroups = groups.filter((g) => {
+        const isPrivateOrMixed = g.groupType === 'PRIVATE' || g.groupType === 'MIXED';
+        return isPrivateOrMixed && g.gradeLevel === gradeLevel;
+    });
+
+    const instantPkgPrice = (enrollmentType === 'PACKAGE' || enrollmentType === 'BOTH') && selectedPkg
+        ? (selectedPkg.monthlyPrice || 0)
+        : 0;
+    const instantPrivatePrice = (enrollmentType === 'PRIVATE' || enrollmentType === 'BOTH')
+        ? selectedPrivateTeachers.reduce((sum, p) => {
+              const grp = groups.find((g) => g._id === p.groupId);
+              return sum + (grp?.privateMonthlyPrice ?? p.monthlyPrice ?? 0);
+          }, 0)
+        : 0;
+    const instantTotalPrice = instantPkgPrice + instantPrivatePrice;
+
+    // Bulk Add Modal State
+    const [isBulkOpen, setIsBulkOpen] = useState(false);
+    const [bulkGradeLevel, setBulkGradeLevel] = useState<string>(ALL_GRADES[0]);
+    const [bulkPasteText, setBulkPasteText] = useState('');
+    const [bulkRows, setBulkRows] = useState<BulkRow[]>([
+        { id: '1', studentName: '', parentName: '', studentPhone: '', parentPhone: '' },
+    ]);
+
+    // Summary Stage Counts Query (Fetches counts only with 1-min cache, no full student list)
+    const { data: summaryResponse } = useQuery({
+        queryKey: ['center', 'students', 'stage-counts'],
+        queryFn: () => fetchCenterStudents({ limit: 1, includeCounts: 'true' as any }),
+        staleTime: 60000,
+        refetchOnWindowFocus: false,
+    });
+
+    const stageCounts = summaryResponse?.stageCounts || {
+        total: 0,
+        secondary: 0,
+        preparatory: 0,
+        primary: 0,
+    };
+
+    // Global Search State with 350ms debounce
+    const [globalSearch, setGlobalSearch] = useState('');
+    const [debouncedGlobalSearch, setDebouncedGlobalSearch] = useState('');
+
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            setDebouncedGlobalSearch(globalSearch.trim());
+        }, 350);
+        return () => clearTimeout(handler);
+    }, [globalSearch]);
+
+    const { data: globalSearchResults, isLoading: isSearchingGlobal } = useQuery({
+        queryKey: ['center', 'students', 'global-search', debouncedGlobalSearch],
+        queryFn: () => fetchCenterStudents({ search: debouncedGlobalSearch, limit: 15 }),
+        enabled: debouncedGlobalSearch.length >= 2,
+        staleTime: 30000,
+        refetchOnWindowFocus: false,
+    });
+
+    const handleOpenAddForStage = (targetGrade: string) => {
+        handleOpenAdd();
+        setGradeLevel(targetGrade);
+    };
+
+    const handleDeleteStudent = (st: ICenterStudent) => {
+        if (
+            confirm(
+                `هل أنت متأكد من حذف الطالب "${st.studentName}" نهائياً من السنتر؟ سيتم حذف جميع سجلاته واشتراكاته.`
+            )
+        ) {
+            deleteMutation.mutate(st._id);
+        }
+    };
+
+    const handleToggleActive = (st: ICenterStudent) => {
+        updateMutation.mutate({
+            id: st._id,
+            data: { isActive: !st.isActive } as any,
+        });
+    };
+
+    // Mutations
+    const createMutation = useMutation({
+        mutationFn: async (payload: CreateCenterStudentDTO) => {
+            const newStudent = await createCenterStudent(payload);
+            if (enrollImmediately) {
+                const enrollPayload: any = {
+                    studentId: newStudent._id,
+                    type: enrollmentType,
+                };
+                if (enrollmentType === 'PACKAGE' || enrollmentType === 'BOTH') {
+                    enrollPayload.packageId = packageId;
+                    enrollPayload.packageGroups = selectedPackageGroupIds;
+                    if (packageDiscountType) {
+                        enrollPayload.packageDiscount = {
+                            type: packageDiscountType,
+                            value: Number(packageDiscountVal) || 0,
+                        };
+                    }
+                }
+                if (enrollmentType === 'PRIVATE' || enrollmentType === 'BOTH') {
+                    enrollPayload.privateTeachers = selectedPrivateTeachers.map((p) => ({
+                        centerTeacherId: p.centerTeacherId,
+                        groupId: p.groupId,
+                        subject: p.subject,
+                    }));
+                    if (privateDiscountType) {
+                        enrollPayload.privateDiscount = {
+                            type: privateDiscountType,
+                            value: Number(privateDiscountVal) || 0,
+                        };
+                    }
+                }
+                await enrollStudent(enrollPayload);
+            }
+            return newStudent;
+        },
+        onSuccess: (newStudent) => {
+            toast.success(
+                enrollImmediately
+                    ? `تمت إضافة الطالب ${newStudent.studentName} وتسجيل اشتراكه في المجموعات بنجاح`
+                    : 'تمت إضافة الطالب بنجاح'
+            );
+            queryClient.invalidateQueries({ queryKey: ['center', 'students'] });
+            queryClient.invalidateQueries({ queryKey: ['center', 'enrollments'] });
+            handleCloseSingleModal();
+        },
+        onError: (err: any) => {
+            toast.error(err.response?.data?.message || 'فشل في إضافة الطالب أو تسجيل الاشتراك');
+        },
+    });
+
+    const updateMutation = useMutation({
+        mutationFn: ({ id, data }: { id: string; data: Partial<CreateCenterStudentDTO & { isActive: boolean }> }) =>
+            updateCenterStudent(id, data),
+        onSuccess: () => {
+            toast.success('تم تحديث بيانات الطالب بنجاح');
+            queryClient.invalidateQueries({ queryKey: ['center', 'students'] });
+            handleCloseSingleModal();
+        },
+        onError: (err: any) => {
+            toast.error(err.response?.data?.message || 'فشل في تحديث بيانات الطالب');
+        },
+    });
+
+    const deleteMutation = useMutation({
+        mutationFn: deleteCenterStudent,
+        onSuccess: () => {
+            toast.success('تم حذف الطالب بنجاح');
+            queryClient.invalidateQueries({ queryKey: ['center', 'students'] });
+        },
+        onError: (err: any) => {
+            toast.error(err.response?.data?.message || 'فشل في حذف الطالب');
+        },
+    });
+
+    const bulkMutation = useMutation({
+        mutationFn: bulkCreateCenterStudents,
+        onSuccess: (data) => {
+            toast.success(`تمت إضافة ${data.count} طالب بنجاح!`);
+            queryClient.invalidateQueries({ queryKey: ['center', 'students'] });
+            handleCloseBulkModal();
+        },
+        onError: (err: any) => {
+            toast.error(err.response?.data?.message || 'حدث خطأ أثناء الإضافة المتعددة');
+        },
+    });
+
+    // Handlers Single Modal
+    const handleOpenAdd = () => {
+        setEditingStudent(null);
+        setStudentName('');
+        setParentName('');
+        setStudentPhone('');
+        setParentPhone('');
+        setGradeLevel(ALL_GRADES[0]);
+        setBarcode('');
+        setNotes('');
+        setEditIsActive(true);
+        setEnrollImmediately(false);
+        setEnrollmentType('PACKAGE');
+        setPackageId('');
+        setSelectedPackageGroupIds([]);
+        setSelectedPrivateTeachers([]);
+        setPackageDiscountType('');
+        setPackageDiscountVal('0');
+        setPrivateDiscountType('');
+        setPrivateDiscountVal('0');
+        setIsAddOpen(true);
+    };
+
+    const handleOpenEdit = (student: ICenterStudent) => {
+        setEditingStudent(student);
+        setStudentName(student.studentName);
+        setParentName(student.parentName);
+        setStudentPhone(student.studentPhone || '');
+        setParentPhone(student.parentPhone || '');
+        setGradeLevel(student.gradeLevel);
+        setBarcode(student.barcode || '');
+        setNotes(student.notes || '');
+        setEditIsActive(student.isActive);
+        setEnrollImmediately(false);
+        setIsAddOpen(true);
+    };
+
+    const handleCloseSingleModal = () => {
+        setIsAddOpen(false);
+        setEditingStudent(null);
+        setEnrollImmediately(false);
+    };
+
+    const handleSingleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!studentName.trim()) {
+            toast.error('اسم الطالب مطلوب');
+            return;
+        }
+
+        const trimmedStudentName = studentName.trim();
+        const parts = trimmedStudentName.split(/\s+/);
+        const derivedParentName = parentName.trim() || (parts.length > 1 ? parts.slice(1).join(' ') : `ولي أمر ${trimmedStudentName}`);
+
+        const payload: CreateCenterStudentDTO = {
+            studentName: trimmedStudentName,
+            parentName: derivedParentName,
+            gradeLevel,
+            studentPhone: studentPhone.trim() || null,
+            parentPhone: parentPhone.trim() || null,
+            barcode: barcode.trim() || null,
+            notes: notes.trim() || null,
+        };
+
+        if (editingStudent) {
+            updateMutation.mutate({
+                id: editingStudent._id,
+                data: { ...payload, isActive: editIsActive },
+            });
+        } else {
+            if (enrollImmediately) {
+                if ((enrollmentType === 'PACKAGE' || enrollmentType === 'BOTH') && !packageId) {
+                    toast.error('يرجى اختيار الباقة التعليمية');
+                    return;
+                }
+                if ((enrollmentType === 'PRIVATE' || enrollmentType === 'BOTH') && selectedPrivateTeachers.length === 0) {
+                    toast.error('يرجى اختيار مجموعة برايفت واحدة على الأقل');
+                    return;
+                }
+            }
+            createMutation.mutate(payload);
+        }
+    };
+
+    // Handlers Bulk Modal
+    const handleOpenBulk = () => {
+        setBulkGradeLevel(ALL_GRADES[0]);
+        setBulkPasteText('');
+        setBulkRows([
+            { id: '1', studentName: '', parentName: '', studentPhone: '', parentPhone: '' },
+            { id: '2', studentName: '', parentName: '', studentPhone: '', parentPhone: '' },
+            { id: '3', studentName: '', parentName: '', studentPhone: '', parentPhone: '' },
+        ]);
+        setIsBulkOpen(true);
+    };
+
+    const handleCloseBulkModal = () => {
+        setIsBulkOpen(false);
+        setBulkRows([]);
+        setBulkPasteText('');
+    };
+
+    const handleAddBulkRow = () => {
+        setBulkRows((prev) => [
+            ...prev,
+            { id: Date.now().toString(), studentName: '', parentName: '', studentPhone: '', parentPhone: '' },
+        ]);
+    };
+
+    const handleRemoveBulkRow = (id: string) => {
+        setBulkRows((prev) => prev.filter((r) => r.id !== id));
+    };
+
+    const handleUpdateBulkRow = (id: string, field: keyof BulkRow, val: string) => {
+        setBulkRows((prev) =>
+            prev.map((r) => (r.id === id ? { ...r, [field]: val } : r))
+        );
+    };
+
+    const handleParsePasteText = () => {
+        if (!bulkPasteText.trim()) return;
+
+        const lines = bulkPasteText.trim().split('\n');
+        const newRows: BulkRow[] = [];
+
+        for (const line of lines) {
+            if (!line.trim()) continue;
+            // Split by tab (Excel copy) or comma
+            const parts = line.includes('\t') ? line.split('\t') : line.split(',');
+            const sName = parts[0]?.trim() || '';
+            const pName = parts[1]?.trim() || (sName ? `ولي أمر ${sName}` : '');
+            const sPhone = parts[2]?.trim() || '';
+            const pPhone = parts[3]?.trim() || '';
+
+            if (sName) {
+                newRows.push({
+                    id: Math.random().toString(),
+                    studentName: sName,
+                    parentName: pName,
+                    studentPhone: sPhone,
+                    parentPhone: pPhone,
+                });
+            }
+        }
+
+        if (newRows.length > 0) {
+            setBulkRows(newRows);
+            setBulkPasteText('');
+            toast.success(`تم استخراج ${newRows.length} طالب من النص`);
+        } else {
+            toast.error('لم نتمكن من استخراج بيانات الطلاب من النص');
+        }
+    };
+
+    const handleBulkSubmit = () => {
+        const validRows = bulkRows.filter((r) => r.studentName.trim());
+        if (validRows.length === 0) {
+            toast.error('يرجى ملء بيانات طالب واحد على الأقل');
+            return;
+        }
+
+        const studentsPayload: CreateCenterStudentDTO[] = validRows.map((r) => {
+            const sName = r.studentName.trim();
+            const parts = sName.split(/\s+/);
+            const pName = r.parentName.trim() || (parts.length > 1 ? parts.slice(1).join(' ') : `ولي أمر ${sName}`);
+            return {
+                studentName: sName,
+                parentName: pName,
+                studentPhone: r.studentPhone.trim() || null,
+                parentPhone: r.parentPhone.trim() || null,
+                gradeLevel: bulkGradeLevel,
+            };
+        });
+
+        bulkMutation.mutate({ students: studentsPayload });
+    };
+
+    return (
+        <div className="space-y-6 pb-12" dir="rtl">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white/80 backdrop-blur-md p-6 rounded-2xl border border-gray-100 shadow-sm">
+                <div>
+                    <h1 className="text-2xl font-black text-gray-900 flex items-center gap-2">
+                        <Users className="h-6 w-6 text-primary" />
+                        دليل طلاب السنتر
+                    </h1>
+                    <p className="text-xs sm:text-sm text-gray-500 mt-1">
+                        إضافة وإدارة بيانات الطلاب وتوليد الأكواد والباركود وربطهم بالباقات والمجموعات.
+                    </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                    <BranchSwitcher />
+                    <Button
+                        onClick={handleOpenBulk}
+                        variant="outline"
+                        className="gap-2 rounded-xl border-emerald-300 text-emerald-700 hover:bg-emerald-50 font-bold shadow-sm"
+                    >
+                        <FileSpreadsheet className="h-4 w-4" />
+                        إضافة طلاب متعددين (Excel)
+                    </Button>
+                    <Button
+                        onClick={handleOpenAdd}
+                        className="bg-primary hover:bg-primary/95 text-white gap-2 rounded-xl shadow-md shadow-primary/20 font-bold"
+                    >
+                        <Plus className="h-4 w-4" />
+                        إضافة طالب جديد
+                    </Button>
+                </div>
+            </div>
+
+            {/* ── STAGE KPI SUMMARY CARDS ─────────────────────────────────── */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {/* Total Center */}
+                <div
+                    className="p-4 rounded-2xl border border-gray-100 bg-white shadow-xs flex items-center justify-between"
+                >
+                    <div className="space-y-0.5">
+                        <span className="text-[11px] font-bold text-gray-500 block">إجمالي طلاب السنتر</span>
+                        <div className="text-2xl font-black text-gray-900">{stageCounts.total}</div>
+                        <span className="text-[10px] text-gray-400 font-medium block">
+                            جميع المراحل الدراسية المسجلة
+                        </span>
+                    </div>
+                    <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-bold shrink-0 shadow-xs">
+                        <Users className="w-6 h-6" />
+                    </div>
+                </div>
+
+                {/* Secondary Stage */}
+                <div
+                    onClick={() => router.push('/center/students/stage/secondary')}
+                    className="p-4 rounded-2xl border border-indigo-100 bg-white hover:bg-indigo-50/50 hover:border-indigo-300 shadow-xs flex items-center justify-between cursor-pointer transition-all group"
+                    title="اضغط للدخول إلى صفحة طلاب المرحلة الثانوية"
+                >
+                    <div className="space-y-0.5">
+                        <div className="flex items-center gap-1.5">
+                            <span className="text-[11px] font-bold text-indigo-700 block">المرحلة الثانوية</span>
+                            <span className="text-[9px] px-1.5 py-0.5 rounded font-bold bg-indigo-100 text-indigo-800">
+                                عرض الطلاب ←
+                            </span>
+                        </div>
+                        <div className="text-2xl font-black text-indigo-950">{stageCounts.secondary}</div>
+                        <span className="text-[10px] text-indigo-600/70 font-medium block">
+                            الصف 1 و 2 و 3 الثانوي
+                        </span>
+                    </div>
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold shrink-0 shadow-xs group-hover:scale-105 transition-transform">
+                        <GraduationCap className="w-6 h-6" />
+                    </div>
+                </div>
+
+                {/* Preparatory Stage */}
+                <div
+                    onClick={() => router.push('/center/students/stage/preparatory')}
+                    className="p-4 rounded-2xl border border-emerald-100 bg-white hover:bg-emerald-50/50 hover:border-emerald-300 shadow-xs flex items-center justify-between cursor-pointer transition-all group"
+                    title="اضغط للدخول إلى صفحة طلاب المرحلة الإعدادية"
+                >
+                    <div className="space-y-0.5">
+                        <div className="flex items-center gap-1.5">
+                            <span className="text-[11px] font-bold text-emerald-700 block">المرحلة الإعدادية</span>
+                            <span className="text-[9px] px-1.5 py-0.5 rounded font-bold bg-emerald-100 text-emerald-800">
+                                عرض الطلاب ←
+                            </span>
+                        </div>
+                        <div className="text-2xl font-black text-emerald-950">{stageCounts.preparatory}</div>
+                        <span className="text-[10px] text-emerald-600/70 font-medium block">
+                            الصف 1 و 2 و 3 الإعدادي
+                        </span>
+                    </div>
+                    <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold shrink-0 shadow-xs group-hover:scale-105 transition-transform">
+                        <BookOpen className="w-6 h-6" />
+                    </div>
+                </div>
+
+                {/* Primary Stage */}
+                <div
+                    onClick={() => router.push('/center/students/stage/primary')}
+                    className="p-4 rounded-2xl border border-amber-100 bg-white hover:bg-amber-50/50 hover:border-amber-300 shadow-xs flex items-center justify-between cursor-pointer transition-all group"
+                    title="اضغط للدخول إلى صفحة طلاب المرحلة الابتدائية"
+                >
+                    <div className="space-y-0.5">
+                        <div className="flex items-center gap-1.5">
+                            <span className="text-[11px] font-bold text-amber-700 block">المرحلة الابتدائية</span>
+                            <span className="text-[9px] px-1.5 py-0.5 rounded font-bold bg-amber-100 text-amber-800">
+                                عرض الطلاب ←
+                            </span>
+                        </div>
+                        <div className="text-2xl font-black text-amber-950">{stageCounts.primary}</div>
+                        <span className="text-[10px] text-amber-600/70 font-medium block">
+                            الصفوف الابتدائية (1 - 6)
+                        </span>
+                    </div>
+                    <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold shrink-0 shadow-xs group-hover:scale-105 transition-transform">
+                        <Layers className="w-6 h-6" />
+                    </div>
+                </div>
+            </div>
+
+            {/* ── Global Search ────────────────── */}
+            <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-gray-100 shadow-xs flex items-center justify-between gap-3">
+                <div className="relative flex-1 w-full">
+                    <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                        value={globalSearch}
+                        onChange={(e) => setGlobalSearch(e.target.value)}
+                        placeholder="بحث عام في كل المراحل بالاسم، كود الطالب، رقم الهاتف، أو الباركود..."
+                        className="pr-10 pl-9 border-gray-200 rounded-xl text-xs sm:text-sm bg-gray-50/60 focus:bg-white h-10 shadow-2xs"
+                    />
+                    {globalSearch && (
+                        <button
+                            type="button"
+                            onClick={() => setGlobalSearch('')}
+                            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1 cursor-pointer"
+                        >
+                            <X className="w-3.5 h-3.5" />
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {/* ── Search Results OR Stages Directory ───────────────────────── */}
+            {globalSearch.trim() ? (
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-xs p-5 space-y-4">
+                    <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                            <Search className="w-4 h-4 text-primary" />
+                            <span>نتائج البحث عن: "{globalSearch.trim()}"</span>
+                        </h3>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setGlobalSearch('')}
+                            className="text-xs text-gray-500 hover:text-gray-900"
+                        >
+                            إغلاق البحث
+                        </Button>
+                    </div>
+
+                    {isSearchingGlobal ? (
+                        <div className="py-12 text-center space-y-2 text-gray-400">
+                            <Loader2 className="w-6 h-6 animate-spin mx-auto text-primary" />
+                            <p className="text-xs">جاري البحث...</p>
+                        </div>
+                    ) : (globalSearchResults?.data || []).length === 0 ? (
+                        <div className="py-12 text-center text-gray-400 text-xs">
+                            لا يوجد طلاب مطابقين للبحث
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-right text-xs">
+                                <thead className="bg-gray-50 text-gray-500 font-bold border-b">
+                                    <tr>
+                                        <th className="py-2.5 px-3">الطالب</th>
+                                        <th className="py-2.5 px-3">الكود</th>
+                                        <th className="py-2.5 px-3">المرحلة والصف</th>
+                                        <th className="py-2.5 px-3">الهاتف</th>
+                                        <th className="py-2.5 px-3 text-center">إجراءات</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {(globalSearchResults?.data || []).map((st: any) => (
+                                        <tr key={st._id} className="hover:bg-gray-50">
+                                            <td className="py-2.5 px-3 font-bold text-gray-900">{st.studentName}</td>
+                                            <td className="py-2.5 px-3 font-mono font-bold text-blue-600">{st.studentCode}</td>
+                                            <td className="py-2.5 px-3">{st.gradeLevel}</td>
+                                            <td className="py-2.5 px-3 font-mono">{st.parentPhone || st.studentPhone || '—'}</td>
+                                            <td className="py-2.5 px-3 text-center">
+                                                <Link
+                                                    href={`/center/students/${st._id}`}
+                                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary/10 text-primary font-bold hover:bg-primary/20 text-xs"
+                                                >
+                                                    <User className="w-3 h-3" /> بروفايل
+                                                </Link>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            ) : (
+                /* ── STAGE CARDS DIRECTORY (Clickable Hub to Dedicated Pages) ── */
+                <div className="space-y-4">
+                    {STAGE_SECTIONS.map((section) => {
+                        const StageIcon = section.icon;
+                        const theme = section.theme;
+                        const count =
+                            section.key === 'SECONDARY'
+                                ? stageCounts.secondary
+                                : section.key === 'PREPARATORY'
+                                ? stageCounts.preparatory
+                                : stageCounts.primary;
+
+                        return (
+                            <div
+                                key={section.key}
+                                onClick={() => router.push(`/center/students/stage/${section.slug}`)}
+                                className={`rounded-2xl border transition-all duration-200 overflow-hidden cursor-pointer group hover:shadow-md hover:scale-[1.002] active:scale-[0.999] ${theme.headerBg} ${theme.headerBorder}`}
+                            >
+                                <div className="p-4 sm:p-5 flex flex-wrap sm:flex-nowrap items-center justify-between gap-4 select-none">
+                                    {/* Right: Stage Icon & Titles */}
+                                    <div className="flex items-center gap-3.5 min-w-0">
+                                        <div
+                                            className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform ${theme.iconBg} ${theme.iconColor}`}
+                                        >
+                                            <StageIcon className="w-6 h-6" />
+                                        </div>
+                                        <div className="truncate">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <h2 className="text-base sm:text-lg font-black text-gray-900 tracking-tight group-hover:text-primary transition-colors">
+                                                    {section.title}
+                                                </h2>
+                                                <span
+                                                    className={`text-xs font-black px-2.5 py-0.5 rounded-full border shadow-2xs ${theme.badgeBg} ${theme.badgeText} ${theme.badgeBorder}`}
+                                                >
+                                                    {count} طالب
+                                                </span>
+                                            </div>
+                                            <p className="text-xs text-gray-500 font-medium mt-0.5 truncate">{section.subtitle}</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Left: Quick Add & Enter Stage Button */}
+                                    <div className="flex items-center gap-2.5 shrink-0 mr-auto sm:mr-0">
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleOpenAddForStage(section.defaultAddGrade);
+                                            }}
+                                            className="h-9 px-3 rounded-xl text-xs font-bold bg-white text-gray-800 hover:bg-gray-50 border border-gray-200 shadow-2xs gap-1.5 transition-all"
+                                        >
+                                            <Plus className="w-3.5 h-3.5 text-primary" />
+                                            <span>إضافة طالب للمرحلة</span>
+                                        </Button>
+
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                router.push(`/center/students/stage/${section.slug}`);
+                                            }}
+                                            className={`h-9 px-3.5 rounded-xl text-xs font-bold transition-all shadow-2xs gap-1.5 ${theme.badgeBg} ${theme.badgeText} border ${theme.badgeBorder} hover:brightness-95 group-hover:bg-primary group-hover:text-white group-hover:border-primary`}
+                                        >
+                                            <span>عرض طلاب المرحلة</span>
+                                            <ChevronLeft className="w-4 h-4 ml-0.5 group-hover:-translate-x-0.5 transition-transform" />
+                                        </Button>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* ── Single Add / Edit Modal ─────────────────────────────── */}
+            <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+                <DialogContent className="sm:max-w-xl text-right font-sans max-h-[90vh] overflow-y-auto" dir="rtl">
+                    <DialogHeader>
+                        <DialogTitle className="text-lg font-black text-gray-900">
+                            {editingStudent ? 'تعديل بيانات الطالب' : 'إضافة طالب جديد للسنتر'}
+                        </DialogTitle>
+                    </DialogHeader>
+
+                    <form onSubmit={handleSingleSubmit} className="space-y-3.5 py-2">
+                        <div>
+                            <label className="text-xs font-bold text-gray-700 block mb-1">اسم الطالب *</label>
+                            <Input
+                                value={studentName}
+                                onChange={(e) => setStudentName(e.target.value)}
+                                placeholder="مثال: أحمد محمد علي حسن"
+                                className="rounded-xl border-gray-200"
+                                required
+                            />
+                        </div>
+
+                        {editingStudent && (
+                            <div>
+                                <label className="text-xs font-bold text-gray-700 block mb-1">اسم ولي الأمر (اختياري)</label>
+                                <Input
+                                    value={parentName}
+                                    onChange={(e) => setParentName(e.target.value)}
+                                    placeholder="مثال: محمد علي حسن"
+                                    className="rounded-xl border-gray-200"
+                                />
+                            </div>
+                        )}
+
+                        <div>
+                            <label className="text-xs font-bold text-gray-700 block mb-1">المرحلة الدراسية *</label>
+                            <select
+                                value={gradeLevel}
+                                onChange={(e) => setGradeLevel(e.target.value)}
+                                className="w-full text-xs font-bold border border-gray-200 rounded-xl px-3 py-2 bg-white focus:outline-none"
+                            >
+                                <optgroup label="المرحلة الثانوية">
+                                    {SECONDARY_GRADES.map((g) => (
+                                        <option key={g} value={g}>{g}</option>
+                                    ))}
+                                </optgroup>
+                                <optgroup label="المرحلة الإعدادية">
+                                    {PREPARATORY_GRADES.map((g) => (
+                                        <option key={g} value={g}>{g}</option>
+                                    ))}
+                                </optgroup>
+                                <optgroup label="المرحلة الابتدائية">
+                                    {PRIMARY_GRADES.map((g) => (
+                                        <option key={g} value={g}>{g}</option>
+                                    ))}
+                                </optgroup>
+                            </select>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="text-xs font-bold text-gray-700 block mb-1">هاتف الطالب (اختياري)</label>
+                                <Input
+                                    value={studentPhone}
+                                    onChange={(e) => setStudentPhone(e.target.value)}
+                                    placeholder="01xxxxxxxxx"
+                                    className="rounded-xl border-gray-200 font-mono text-xs text-left"
+                                    dir="ltr"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold text-gray-700 block mb-1">هاتف ولي الأمر (اختياري)</label>
+                                <Input
+                                    value={parentPhone}
+                                    onChange={(e) => setParentPhone(e.target.value)}
+                                    placeholder="01xxxxxxxxx"
+                                    className="rounded-xl border-gray-200 font-mono text-xs text-left"
+                                    dir="ltr"
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="text-xs font-bold text-gray-700 block mb-1">ملاحظات (اختياري)</label>
+                            <Input
+                                value={notes}
+                                onChange={(e) => setNotes(e.target.value)}
+                                placeholder="ملاحظات إضافية عن الطالب..."
+                                className="rounded-xl border-gray-200 text-xs"
+                            />
+                        </div>
+
+                        {editingStudent && (
+                            <div>
+                                <label className="text-xs font-bold text-gray-700 block mb-1">حالة الحساب</label>
+                                <select
+                                    value={editIsActive ? 'ACTIVE' : 'INACTIVE'}
+                                    onChange={(e) => setEditIsActive(e.target.value === 'ACTIVE')}
+                                    className="w-full text-xs font-bold border border-gray-200 rounded-xl px-3 py-2 bg-white focus:outline-none"
+                                >
+                                    <option value="ACTIVE">نشط</option>
+                                    <option value="INACTIVE">معطل</option>
+                                </select>
+                            </div>
+                        )}
+
+                        {!editingStudent && (
+                            <div className="pt-2 border-t border-gray-100 space-y-3">
+                                <div
+                                    onClick={() => {
+                                        const next = !enrollImmediately;
+                                        setEnrollImmediately(next);
+                                        if (next && gradeLevel && packages.length > 0) {
+                                            const matchingPkg = packages.find((p) => p.gradeLevel === gradeLevel);
+                                            if (matchingPkg) handleSelectPackage(matchingPkg._id);
+                                        }
+                                    }}
+                                    className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
+                                        enrollImmediately
+                                            ? 'bg-blue-50/70 border-blue-300 shadow-sm'
+                                            : 'bg-gray-50/70 border-gray-200 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    <div className="flex items-center gap-2.5">
+                                        <input
+                                            type="checkbox"
+                                            checked={enrollImmediately}
+                                            onChange={() => {}}
+                                            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                                        />
+                                        <div>
+                                            <span className="font-bold text-gray-900 text-xs block">
+                                                تسجيل باقة / مجموعات للطالب فوراً مع الإضافة
+                                            </span>
+                                            <span className="text-[11px] text-gray-500">
+                                                تحديد باقة ومجموعات الطالب مباشرة دون الحاجة للذهاب لقسم الاشتراكات
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <Badge variant="outline" className={`text-[10px] font-bold ${enrollImmediately ? 'bg-primary text-white border-primary' : 'bg-gray-100 text-gray-600'}`}>
+                                        {enrollImmediately ? 'مفعل ✓' : 'اختياري'}
+                                    </Badge>
+                                </div>
+
+                                {enrollImmediately && (
+                                    <div className="space-y-3 p-3.5 bg-gray-50/60 border border-gray-200 rounded-xl animate-in fade-in-50 duration-200">
+                                        {/* Enrollment Type */}
+                                        <div>
+                                            <label className="text-xs font-bold text-gray-700 block mb-1.5">
+                                                نوع الاشتراك المطلوب للطالب:
+                                            </label>
+                                            <div className="grid grid-cols-3 gap-2">
+                                                <Button
+                                                    type="button"
+                                                    size="sm"
+                                                    variant={enrollmentType === 'PACKAGE' ? 'default' : 'outline'}
+                                                    onClick={() => setEnrollmentType('PACKAGE')}
+                                                    className="rounded-xl text-xs font-bold"
+                                                >
+                                                    باكيدج فقط
+                                                </Button>
+                                                <Button
+                                                    type="button"
+                                                    size="sm"
+                                                    variant={enrollmentType === 'PRIVATE' ? 'default' : 'outline'}
+                                                    onClick={() => setEnrollmentType('PRIVATE')}
+                                                    className="rounded-xl text-xs font-bold"
+                                                >
+                                                    برايفت فقط
+                                                </Button>
+                                                <Button
+                                                    type="button"
+                                                    size="sm"
+                                                    variant={enrollmentType === 'BOTH' ? 'default' : 'outline'}
+                                                    onClick={() => setEnrollmentType('BOTH')}
+                                                    className="rounded-xl text-xs font-bold"
+                                                >
+                                                    باكيدج + برايفت
+                                                </Button>
+                                            </div>
+                                        </div>
+
+                                        {/* Package Selection */}
+                                        {(enrollmentType === 'PACKAGE' || enrollmentType === 'BOTH') && (
+                                            <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-xl space-y-2.5">
+                                                <div>
+                                                    <label className="text-xs font-bold text-blue-900 block mb-1">
+                                                        اختيار الباقة التعليمية ({gradeLevel}) *
+                                                    </label>
+                                                    <select
+                                                        value={packageId}
+                                                        onChange={(e) => handleSelectPackage(e.target.value)}
+                                                        className="w-full h-9 px-3 rounded-lg border border-gray-200 bg-white text-xs font-bold"
+                                                    >
+                                                        <option value="" disabled>اختر الباقة</option>
+                                                        {packages.map((pkg) => (
+                                                            <option key={pkg._id} value={pkg._id}>
+                                                                {pkg.name} ({pkg.gradeLevel}) — {pkg.monthlyPrice} ج.م/شهر
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+
+                                                {/* Auto-selected package groups */}
+                                                {selectedPkg && (
+                                                    <div className="space-y-1.5 pt-1">
+                                                        <div className="flex items-center justify-between">
+                                                            <label className="text-[11px] font-bold text-blue-950 flex items-center gap-1.5">
+                                                                <span>مجموعات الباقة المشمولة (محددة بالكامل تلقائياً):</span>
+                                                                <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-200 text-[10px]">
+                                                                    {selectedPackageGroupIds.length} من {packageMatchingGroups.length} محدد
+                                                                </Badge>
+                                                            </label>
+                                                        </div>
+
+                                                        {packageMatchingGroups.length === 0 ? (
+                                                            <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800">
+                                                                ⚠️ لا توجد مجموعات مسجلة لهذه الباقة في مرحلة ({selectedPkg.gradeLevel}).
+                                                            </div>
+                                                        ) : (
+                                                            <div className="space-y-1.5 max-h-40 overflow-y-auto pr-0.5">
+                                                                {packageMatchingGroups.map((g) => {
+                                                                    const isChecked = selectedPackageGroupIds.includes(g._id);
+                                                                    const teacherName = typeof g.centerTeacherId === 'object'
+                                                                        ? (g.centerTeacherId as any)?.name
+                                                                        : (teachers.find((t) => t._id === g.centerTeacherId)?.name || 'مدرس بالسنتر');
+                                                                    const subject = typeof g.centerTeacherId === 'object'
+                                                                        ? (g.centerTeacherId as any)?.subject
+                                                                        : (teachers.find((t) => t._id === g.centerTeacherId)?.subject || '');
+
+                                                                    return (
+                                                                        <div
+                                                                            key={g._id}
+                                                                            onClick={() => togglePackageGroup(g._id)}
+                                                                            className={`p-2 rounded-lg border text-xs cursor-pointer transition-all flex items-center justify-between gap-2 ${
+                                                                                isChecked
+                                                                                    ? 'bg-white border-blue-400 shadow-sm ring-1 ring-blue-300'
+                                                                                    : 'bg-white/60 border-gray-200 opacity-60 hover:opacity-100'
+                                                                            }`}
+                                                                        >
+                                                                            <div className="flex items-center gap-2">
+                                                                                <input
+                                                                                    type="checkbox"
+                                                                                    checked={isChecked}
+                                                                                    onChange={() => {}}
+                                                                                    className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                                                />
+                                                                                <div>
+                                                                                    <div className="flex items-center gap-1.5 font-bold text-gray-900 text-[11px]">
+                                                                                        <span>{g.name}</span>
+                                                                                        {subject && (
+                                                                                            <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-[9px] py-0 px-1 font-bold">
+                                                                                                {subject}
+                                                                                            </Badge>
+                                                                                        )}
+                                                                                    </div>
+                                                                                    <div className="text-[10px] text-gray-500 flex items-center gap-1.5">
+                                                                                        <span>المدرس: {teacherName}</span>
+                                                                                        {g.schedule && g.schedule.length > 0 && (
+                                                                                            <span>• {g.schedule.map((s) => `${s.day} ${s.time}`).join('، ')}</span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isChecked ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
+                                                                                {isChecked ? 'مشترك ✓' : 'مستبعد'}
+                                                                            </span>
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Private Selection */}
+                                        {(enrollmentType === 'PRIVATE' || enrollmentType === 'BOTH') && (
+                                            <div className="p-3 bg-purple-50/50 border border-purple-100 rounded-xl space-y-2.5">
+                                                <div className="flex items-center justify-between">
+                                                    <label className="text-xs font-bold text-purple-900 block">
+                                                        اختيار مجموعات البرايفت بالسنتر ({gradeLevel}) *
+                                                    </label>
+                                                    <Badge variant="outline" className="bg-purple-100 text-purple-800 border-purple-200 text-[10px]">
+                                                        {selectedPrivateTeachers.length} محددة
+                                                    </Badge>
+                                                </div>
+
+                                                {availablePrivateGroups.length === 0 ? (
+                                                    <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800">
+                                                        ⚠️ لا توجد مجموعات برايفت مسجلة في السنتر لمرحلة ({gradeLevel}).
+                                                    </div>
+                                                ) : (
+                                                    <div className="space-y-1.5 max-h-44 overflow-y-auto pr-0.5">
+                                                        {availablePrivateGroups.map((group) => {
+                                                            const isSelected = selectedPrivateTeachers.some((p) => p.groupId === group._id);
+                                                            const teacherId = typeof group.centerTeacherId === 'object'
+                                                                ? (group.centerTeacherId as any)._id
+                                                                : group.centerTeacherId;
+                                                            const teacherObj = typeof group.centerTeacherId === 'object'
+                                                                ? (group.centerTeacherId as any)
+                                                                : teachers.find((t) => t._id === teacherId);
+
+                                                            return (
+                                                                <div
+                                                                    key={group._id}
+                                                                    onClick={() => togglePrivateGroup(group)}
+                                                                    className={`p-2.5 rounded-lg border text-xs cursor-pointer transition-all flex items-start justify-between gap-2 ${
+                                                                        isSelected
+                                                                            ? 'border-purple-400 bg-white shadow-sm ring-1 ring-purple-300'
+                                                                            : 'border-purple-100 bg-white/70 hover:bg-white hover:border-purple-200'
+                                                                    }`}
+                                                                >
+                                                                    <div className="flex items-start gap-2">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={isSelected}
+                                                                            onChange={() => {}}
+                                                                            className="mt-0.5 h-3.5 w-3.5 rounded border-gray-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                                                                        />
+                                                                        <div>
+                                                                            <div className="flex items-center gap-1.5 font-bold text-gray-900 text-[11px]">
+                                                                                <span>{group.name}</span>
+                                                                                {teacherObj?.subject && (
+                                                                                    <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200 text-[9px] py-0 px-1 font-bold">
+                                                                                        {teacherObj.subject}
+                                                                                    </Badge>
+                                                                                )}
+                                                                            </div>
+                                                                            <div className="text-[10px] text-gray-500 mt-0.5 flex flex-wrap items-center gap-1.5">
+                                                                                <span>المدرس: {teacherObj?.name || 'مدرس بالسنتر'}</span>
+                                                                                {group.schedule && group.schedule.length > 0 && (
+                                                                                    <span>• {group.schedule.map((s) => `${s.day} ${s.time}`).join('، ')}</span>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="text-left shrink-0">
+                                                                        <span className="font-bold text-purple-700 text-xs block">
+                                                                            {group.privateMonthlyPrice ? `${group.privateMonthlyPrice} ج.م` : 'مجاناً'}
+                                                                        </span>
+                                                                        <span className="text-[9px] text-gray-400">شهرياً</span>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Live Pricing Summary for Instant Enrollment */}
+                                        <div className="bg-gradient-to-br from-slate-900 to-gray-900 text-white p-3.5 rounded-xl shadow space-y-2 text-xs">
+                                            <div className="flex items-center justify-between border-b border-gray-700/60 pb-1.5">
+                                                <span className="font-bold flex items-center gap-1.5 text-gray-200">
+                                                    <Calculator className="h-3.5 w-3.5 text-emerald-400" />
+                                                    ملخص رسوم الاشتراك المحسوبة:
+                                                </span>
+                                                <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30 text-[10px]">
+                                                    تسعير معتمد
+                                                </Badge>
+                                            </div>
+                                            <div className="space-y-1 text-[11px] text-gray-300">
+                                                {(enrollmentType === 'PACKAGE' || enrollmentType === 'BOTH') && selectedPkg && (
+                                                    <div className="flex items-center justify-between">
+                                                        <span>سعر باقة السنتر ({selectedPkg.name}):</span>
+                                                        <span className="font-bold font-mono text-white">{instantPkgPrice} ج.م</span>
+                                                    </div>
+                                                )}
+                                                {(enrollmentType === 'PRIVATE' || enrollmentType === 'BOTH') && (
+                                                    <div className="flex items-center justify-between">
+                                                        <span>مجموع مجموعات البرايفت ({selectedPrivateTeachers.length} مجموعة):</span>
+                                                        <span className="font-bold font-mono text-white">{instantPrivatePrice} ج.م</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="pt-1.5 border-t border-gray-700/60 flex items-center justify-between text-xs">
+                                                <span className="font-bold text-gray-100">المبلغ المطلوب شهرياً:</span>
+                                                <div className="text-left">
+                                                    <span className="text-base font-black text-emerald-400 font-mono">{instantTotalPrice}</span>
+                                                    <span className="text-[10px] text-gray-300 mr-1">ج.م / شهرياً</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        <DialogFooter className="gap-2 pt-2">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={handleCloseSingleModal}
+                                className="rounded-xl"
+                            >
+                                إلغاء
+                            </Button>
+                            <Button
+                                type="submit"
+                                disabled={createMutation.isPending || updateMutation.isPending}
+                                className="rounded-xl font-bold bg-primary hover:bg-primary/95 text-white"
+                            >
+                                {createMutation.isPending || updateMutation.isPending ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : editingStudent ? (
+                                    'حفظ التعديلات'
+                                ) : (
+                                    'إضافة الطالب'
+                                )}
+                            </Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
+
+            {/* ── Bulk Add Modal ───────────────────────────────────────── */}
+            <Dialog open={isBulkOpen} onOpenChange={setIsBulkOpen}>
+                <DialogContent className="sm:max-w-2xl text-right font-sans max-h-[90vh] overflow-y-auto" dir="rtl">
+                    <DialogHeader>
+                        <DialogTitle className="text-lg font-black text-gray-900 flex items-center gap-2">
+                            <FileSpreadsheet className="h-5 w-5 text-emerald-600" />
+                            إضافة طلاب متعددين (Excel / قائمة)
+                        </DialogTitle>
+                    </DialogHeader>
+
+                    <div className="space-y-4 py-2 text-xs">
+                        {/* Grade Level Selector */}
+                        <div className="p-3 bg-emerald-50/60 border border-emerald-100 rounded-xl space-y-1.5">
+                            <label className="font-bold text-emerald-900 block">
+                                المرحلة الدراسية للدفعة المضافة:
+                            </label>
+                            <select
+                                value={bulkGradeLevel}
+                                onChange={(e) => setBulkGradeLevel(e.target.value)}
+                                className="w-full text-xs font-bold border border-emerald-200 rounded-lg px-3 py-2 bg-white focus:outline-none"
+                            >
+                                <optgroup label="المرحلة الثانوية">
+                                    {SECONDARY_GRADES.map((g) => (
+                                        <option key={g} value={g}>{g}</option>
+                                    ))}
+                                </optgroup>
+                                <optgroup label="المرحلة الإعدادية">
+                                    {PREPARATORY_GRADES.map((g) => (
+                                        <option key={g} value={g}>{g}</option>
+                                    ))}
+                                </optgroup>
+                                <optgroup label="المرحلة الابتدائية">
+                                    {PRIMARY_GRADES.map((g) => (
+                                        <option key={g} value={g}>{g}</option>
+                                    ))}
+                                </optgroup>
+                            </select>
+                            <p className="text-[11px] text-emerald-700">
+                                سيتم توليد أكواد متسلسلة للطلاب تلقائياً بناءً على هذه المرحلة.
+                            </p>
+                        </div>
+
+                        {/* Paste from Excel box */}
+                        <div className="space-y-1.5">
+                            <label className="font-bold text-gray-700 block">
+                                لصق سريع من Excel (اختياري):
+                            </label>
+                            <textarea
+                                value={bulkPasteText}
+                                onChange={(e) => setBulkPasteText(e.target.value)}
+                                placeholder="انسخ صفوف الطلاب من إكسيل والصقها هنا مباشرة:&#10;اسم الطالب [Tab] اسم ولي الأمر [Tab] هاتف الطالب [Tab] هاتف ولي الأمر"
+                                rows={3}
+                                className="w-full p-2.5 rounded-xl border border-gray-200 text-xs font-mono bg-gray-50/50 focus:bg-white focus:outline-none"
+                            />
+                            <div className="flex justify-end">
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={handleParsePasteText}
+                                    disabled={!bulkPasteText.trim()}
+                                    className="rounded-lg text-xs font-bold gap-1.5"
+                                >
+                                    <Sparkles className="h-3.5 w-3.5 text-primary" />
+                                    تعبئة الجدول من النص المنسوخ
+                                </Button>
+                            </div>
+                        </div>
+
+                        {/* Dynamic Rows Table */}
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between font-bold text-gray-700">
+                                <span>قائمة الطلاب ({bulkRows.filter((r) => r.studentName.trim()).length} جاهز للإضافة):</span>
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={handleAddBulkRow}
+                                    className="h-7 text-xs text-primary font-bold gap-1"
+                                >
+                                    <Plus className="h-3.5 w-3.5" />
+                                    إضافة سطر جديد
+                                </Button>
+                            </div>
+
+                            <div className="border border-gray-200 rounded-xl overflow-hidden max-h-64 overflow-y-auto">
+                                <table className="w-full text-right text-xs">
+                                    <thead className="bg-gray-50 text-gray-500 font-bold sticky top-0 border-b border-gray-200">
+                                        <tr>
+                                            <th className="p-2 w-8">#</th>
+                                            <th className="p-2">اسم الطالب *</th>
+                                            <th className="p-2">اسم ولي الأمر</th>
+                                            <th className="p-2">هاتف الطالب</th>
+                                            <th className="p-2">هاتف ولي الأمر</th>
+                                            <th className="p-2 w-8"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {bulkRows.map((row, idx) => (
+                                            <tr key={row.id} className="hover:bg-gray-50/50">
+                                                <td className="p-2 text-center text-gray-400 font-mono text-[11px]">
+                                                    {idx + 1}
+                                                </td>
+                                                <td className="p-1.5">
+                                                    <Input
+                                                        value={row.studentName}
+                                                        onChange={(e) =>
+                                                            handleUpdateBulkRow(row.id, 'studentName', e.target.value)
+                                                        }
+                                                        placeholder="اسم الطالب"
+                                                        className="h-8 text-xs rounded-lg border-gray-200"
+                                                    />
+                                                </td>
+                                                <td className="p-1.5">
+                                                    <Input
+                                                        value={row.parentName}
+                                                        onChange={(e) =>
+                                                            handleUpdateBulkRow(row.id, 'parentName', e.target.value)
+                                                        }
+                                                        placeholder="اسم ولي الأمر"
+                                                        className="h-8 text-xs rounded-lg border-gray-200"
+                                                    />
+                                                </td>
+                                                <td className="p-1.5">
+                                                    <Input
+                                                        value={row.studentPhone}
+                                                        onChange={(e) =>
+                                                            handleUpdateBulkRow(row.id, 'studentPhone', e.target.value)
+                                                        }
+                                                        placeholder="01xxxxxxxxx"
+                                                        className="h-8 text-xs rounded-lg border-gray-200 font-mono text-left"
+                                                        dir="ltr"
+                                                    />
+                                                </td>
+                                                <td className="p-1.5">
+                                                    <Input
+                                                        value={row.parentPhone}
+                                                        onChange={(e) =>
+                                                            handleUpdateBulkRow(row.id, 'parentPhone', e.target.value)
+                                                        }
+                                                        placeholder="01xxxxxxxxx"
+                                                        className="h-8 text-xs rounded-lg border-gray-200 font-mono text-left"
+                                                        dir="ltr"
+                                                    />
+                                                </td>
+                                                <td className="p-1.5 text-center">
+                                                    {bulkRows.length > 1 && (
+                                                        <Button
+                                                            size="icon"
+                                                            variant="ghost"
+                                                            onClick={() => handleRemoveBulkRow(row.id)}
+                                                            className="h-7 w-7 text-gray-400 hover:text-red-500 rounded-lg"
+                                                        >
+                                                            <Trash2 className="h-3 w-3" />
+                                                        </Button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <DialogFooter className="gap-2 pt-2">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={handleCloseBulkModal}
+                                className="rounded-xl"
+                            >
+                                إلغاء
+                            </Button>
+                            <Button
+                                type="button"
+                                onClick={handleBulkSubmit}
+                                disabled={bulkMutation.isPending}
+                                className="rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
+                            >
+                                {bulkMutation.isPending ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                    `إضافة الطلاب (${bulkRows.filter((r) => r.studentName.trim()).length})`
+                                )}
+                            </Button>
+                        </DialogFooter>
+                    </div>
+                </DialogContent>
+            </Dialog>
+        </div>
+    );
+}

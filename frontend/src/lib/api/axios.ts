@@ -24,6 +24,10 @@ apiClient.interceptors.request.use((config) => {
         if (token && config.headers) {
             config.headers.Authorization = `Bearer ${token}`;
         }
+        const branchId = Cookies.get('selectedBranchId');
+        if (branchId && config.headers && !config.headers['x-branch-id']) {
+            config.headers['x-branch-id'] = branchId;
+        }
     }
     return config;
 }, (error) => {
@@ -49,10 +53,19 @@ apiClient.interceptors.response.use(
                     }
                 }
             } else if (error.response?.status === 403) {
-                // Silently suppress 403s from superAdmin-only routes (/admin/*, /subscriptions)
-                // to avoid confusing teachers/assistants from stale background queries.
+                // Silently suppress 403s from background queries that don't belong to the current user's role
+                // to avoid confusing users when switching between roles (teacher <-> centerOwner <-> superAdmin).
+                const currentUser = useAuthStore.getState().user;
                 const isSuperAdminRoute = url.startsWith('/admin') || url === '/subscriptions';
-                if (!isSuperAdminRoute && !error.config?.headers?.['x-skip-error-toast']) {
+                const isTeacherRoute = url.startsWith('/sessions') || url.startsWith('/groups') || url.startsWith('/reports') || url.startsWith('/students') || url.startsWith('/daily-summary') || url.startsWith('/unpaid-students') || url.startsWith('/ledger');
+                const isCenterRoute = url.startsWith('/centers');
+
+                const isRoleMismatch =
+                    (currentUser?.role !== 'superAdmin' && isSuperAdminRoute) ||
+                    ((currentUser?.role === 'centerOwner' || currentUser?.role === 'centerSupervisor') && isTeacherRoute) ||
+                    ((currentUser?.role === 'teacher' || currentUser?.role === 'assistant') && isCenterRoute);
+
+                if (!isRoleMismatch && !error.config?.headers?.['x-skip-error-toast']) {
                     const errorMsg = error.response?.data?.message || 'ليس لديك الصلاحيات الكافية للوصول إلى هذا المسار';
                     toast.error(errorMsg);
                 }

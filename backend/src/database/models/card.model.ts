@@ -25,12 +25,25 @@ const cardSchema = new Schema<ICard>({
     teacherId: {
         type: Schema.Types.ObjectId,
         ref: 'User',
-        required: true,
+        required: false,
+        default: null,
         index: true,
     },
     studentId: {
         type: Schema.Types.ObjectId,
         ref: 'Student',
+        default: null,
+        index: true,
+    },
+    centerId: {
+        type: Schema.Types.ObjectId,
+        ref: 'Center',
+        default: null,
+        index: true,
+    },
+    centerStudentId: {
+        type: Schema.Types.ObjectId,
+        ref: 'CenterStudent',
         default: null,
         index: true,
     },
@@ -60,6 +73,10 @@ const cardSchema = new Schema<ICard>({
 cardSchema.index({ teacherId: 1, status: 1 });      // list all NEW/LINKED/DISABLED for a teacher
 cardSchema.index({ studentId: 1, status: 1 });      // find active card(s) for a student
 cardSchema.index({ teacherId: 1, batchId: 1 });     // fetch a print batch
-cardSchema.index({ cardNumber: 1, teacherId: 1 });  // scan lookup scoped to tenant
+cardSchema.index({ cardNumber: 1, teacherId: 1 });  // scan lookup scoped to teacher
+cardSchema.index({ centerId: 1, status: 1 });       // list all NEW/LINKED/DISABLED for a center
+cardSchema.index({ centerStudentId: 1, status: 1 });// find active card for center student
+cardSchema.index({ centerId: 1, batchId: 1 });      // fetch center print batch
+cardSchema.index({ cardNumber: 1, centerId: 1 });   // scan lookup scoped to center
 
 export const CardModel: Model<ICard> = mongoose.model<ICard>('Card', cardSchema);

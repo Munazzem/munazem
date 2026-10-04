@@ -34,13 +34,14 @@ export const fetchGrowthData = async (): Promise<GrowthDataPoint[]> => {
 };
 
 export const fetchTenants = async (params?: {
-    page?: number; limit?: number; search?: string; status?: string;
+    page?: number; limit?: number; search?: string; status?: string; role?: string;
 }): Promise<Paginated<AdminTenant>> => {
     const q = new URLSearchParams();
     if (params?.page)   q.set('page',   String(params.page));
     if (params?.limit)  q.set('limit',  String(params.limit));
     if (params?.search) q.set('search', params.search);
     if (params?.status) q.set('status', params.status);
+    if (params?.role)   q.set('role',   params.role);
     const res = await apiClient.get(`/admin/tenants?${q.toString()}`);
     return (res as any).data;
 };

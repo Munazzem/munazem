@@ -11,10 +11,14 @@ export interface IParentDocument extends Document {
 
 export type ParentStudentStatus = 'ACTIVE' | 'REVOKED';
 export type VerifiedViaType = 'BARCODE_SCAN' | 'BARCODE_MANUAL' | 'AUTO_CONFIRMED';
+export type StudentModelType = 'Student' | 'CenterStudent';
 
 export interface IParentStudentDocument extends Document {
   parentId: mongoose.Types.ObjectId;
   studentId: mongoose.Types.ObjectId;
+  studentModelType?: StudentModelType;
+  centerStudentId?: mongoose.Types.ObjectId;
+  centerId?: mongoose.Types.ObjectId;
   status: ParentStudentStatus;
   verifiedVia: VerifiedViaType;
   linkedAt: Date;
@@ -49,6 +53,7 @@ export interface IParentDeviceDocument extends Document {
 export enum ParentNotificationType {
   ATTENDANCE_ABSENT = 'ATTENDANCE_ABSENT',
   ATTENDANCE_PRESENT = 'ATTENDANCE_PRESENT',
+  CENTER_CHECKIN = 'CENTER_CHECKIN',
   EXAM_RESULT = 'EXAM_RESULT',
   PAYMENT_RECORDED = 'PAYMENT_RECORDED',
   CYCLE_STARTED = 'CYCLE_STARTED',
@@ -57,7 +62,8 @@ export enum ParentNotificationType {
 export interface IParentNotificationDocument extends Document {
   parentId: mongoose.Types.ObjectId;
   studentId: mongoose.Types.ObjectId;
-  teacherId: mongoose.Types.ObjectId;
+  teacherId?: mongoose.Types.ObjectId;
+  centerId?: mongoose.Types.ObjectId;
   type: ParentNotificationType;
   title: string;
   body: string;

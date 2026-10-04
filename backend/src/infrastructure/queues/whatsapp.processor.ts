@@ -9,6 +9,7 @@ import { PhoneGuard }            from '../../common/utils/phone-guard.util.js';
 import { checkPhoneRegistration } from '../../common/utils/whatsapp.service.js';
 import type { WhatsAppJobData }  from './queue.types.js';
 import { pickTemplate } from './whatsapp.templates.js';
+import { redisConnectionOptions } from './redis.connection.js';
 
 // ─── Configurable values ─────────────────────────────────────────────────────
 const INTER_MESSAGE_DELAY_MS = parseInt(process.env.WA_INTER_MESSAGE_DELAY_MS ?? '12000');
@@ -167,7 +168,7 @@ export function startWhatsAppWorker(): Worker<WhatsAppJobData> {
         'whatsapp',
         processWhatsAppJob,
         {
-            connection: { url: envVars.redisUrl },
+            connection: redisConnectionOptions,
             concurrency: WORKER_CONCURRENCY,
         },
     );
@@ -198,6 +199,7 @@ export function startWhatsAppWorker(): Worker<WhatsAppJobData> {
     });
 
     worker.on('error', (err) => {
+        if (err.message.includes('ECONNREFUSED')) return;
         logger.error('whatsapp_worker_error', { error: err.message });
     });
 

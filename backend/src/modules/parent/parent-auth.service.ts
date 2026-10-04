@@ -8,6 +8,8 @@ import { StudentModel } from '../../database/models/student.model.js';
 import { UserModel } from '../../database/models/user.model.js';
 import { GroupModel } from '../../database/models/group.model.js';
 import { CardModel } from '../../database/models/card.model.js';
+import { CenterStudentModel } from '../../database/models/center-student.model.js';
+import { CenterModel } from '../../database/models/center.model.js';
 import { TokenUtil } from '../../common/utils/token.util.js';
 import {
   BadRequestException,
@@ -102,7 +104,17 @@ export class ParentAuthService {
     }).lean();
     if (cardByToken?.studentId) {
       const student = await StudentModel.findById(cardByToken.studentId).lean();
-      if (student) return student;
+      if (student) return { ...student, studentModelType: 'Student' as const };
+    }
+    if (cardByToken?.centerStudentId) {
+      const centerStudent = await CenterStudentModel.findById(cardByToken.centerStudentId).lean();
+      if (centerStudent) {
+        return {
+          ...centerStudent,
+          studentModelType: 'CenterStudent' as const,
+          centerId: cardByToken.centerId || centerStudent.centerId,
+        };
+      }
     }
 
     // 3. Check CardModel by cardNumber
@@ -111,7 +123,17 @@ export class ParentAuthService {
     }).lean();
     if (cardByNumber?.studentId) {
       const student = await StudentModel.findById(cardByNumber.studentId).lean();
-      if (student) return student;
+      if (student) return { ...student, studentModelType: 'Student' as const };
+    }
+    if (cardByNumber?.centerStudentId) {
+      const centerStudent = await CenterStudentModel.findById(cardByNumber.centerStudentId).lean();
+      if (centerStudent) {
+        return {
+          ...centerStudent,
+          studentModelType: 'CenterStudent' as const,
+          centerId: cardByNumber.centerId || centerStudent.centerId,
+        };
+      }
     }
 
     // 4. Check StudentModel by barcode
@@ -121,7 +143,16 @@ export class ParentAuthService {
         { barcode: trimmed },
       ],
     }).lean();
-    if (student) return student;
+    if (student) return { ...student, studentModelType: 'Student' as const };
+
+    // 4b. Check CenterStudentModel by barcode
+    let centerStudent = await CenterStudentModel.findOne({
+      $or: [
+        { barcode: candidateToken },
+        { barcode: trimmed },
+      ],
+    }).lean();
+    if (centerStudent) return { ...centerStudent, studentModelType: 'CenterStudent' as const };
 
     // 5. Check StudentModel by studentCode (exact & case-insensitive)
     student = await StudentModel.findOne({
@@ -130,12 +161,23 @@ export class ParentAuthService {
         { studentCode: { $regex: new RegExp(`^${trimmed}$`, 'i') } },
       ],
     }).lean();
-    if (student) return student;
+    if (student) return { ...student, studentModelType: 'Student' as const };
 
-    // 6. Check StudentModel by _id (if valid ObjectId)
+    // 5b. Check CenterStudentModel by studentCode
+    centerStudent = await CenterStudentModel.findOne({
+      $or: [
+        { studentCode: trimmed },
+        { studentCode: { $regex: new RegExp(`^${trimmed}$`, 'i') } },
+      ],
+    }).lean();
+    if (centerStudent) return { ...centerStudent, studentModelType: 'CenterStudent' as const };
+
+    // 6. Check by _id (if valid ObjectId)
     if (mongoose.Types.ObjectId.isValid(candidateToken) && candidateToken.length === 24) {
       student = await StudentModel.findById(candidateToken).lean();
-      if (student) return student;
+      if (student) return { ...student, studentModelType: 'Student' as const };
+      centerStudent = await CenterStudentModel.findById(candidateToken).lean();
+      if (centerStudent) return { ...centerStudent, studentModelType: 'CenterStudent' as const };
     }
 
     return null;
@@ -197,10 +239,14 @@ export class ParentAuthService {
     }
 
     // 4. Create or activate ParentStudent link
+    const modelType = (student as any).studentModelType || ((student as any).centerId ? 'CenterStudent' : 'Student');
     await ParentStudentModel.findOneAndUpdate(
       { parentId: parent._id, studentId: student._id },
       {
         $set: {
+          studentModelType: modelType,
+          centerStudentId: modelType === 'CenterStudent' ? student._id : null,
+          centerId: modelType === 'CenterStudent' ? ((student as any).centerId || null) : null,
           status: 'ACTIVE' as const,
           verifiedVia: 'BARCODE_SCAN' as const,
           linkedAt: new Date(),
@@ -220,23 +266,44 @@ export class ParentAuthService {
     const linkedStudentIds = new Set(existingLinks.map(l => l.studentId.toString()));
     const phoneFilter = getPhoneSearchFilter(normalizedPhone);
 
-    const otherStudents = await StudentModel.find({
-      ...phoneFilter,
-      _id: { $nin: Array.from(linkedStudentIds).map(id => new mongoose.Types.ObjectId(id)) },
-      isActive: true,
-    })
-      .populate('teacherId', 'name subject')
-      .populate('groupId', 'name')
-      .lean();
+    const [otherStudents, otherCenterStudents] = await Promise.all([
+      StudentModel.find({
+        ...phoneFilter,
+        _id: { $nin: Array.from(linkedStudentIds).map(id => new mongoose.Types.ObjectId(id)) },
+        isActive: true,
+      })
+        .populate('teacherId', 'name subject')
+        .populate('groupId', 'name')
+        .lean(),
+      CenterStudentModel.find({
+        ...phoneFilter,
+        _id: { $nin: Array.from(linkedStudentIds).map(id => new mongoose.Types.ObjectId(id)) },
+        isActive: true,
+      })
+        .populate('centerId', 'name')
+        .lean(),
+    ]);
 
-    const discoveredStudents = otherStudents.map((s: any) => ({
-      studentId: s._id.toString(),
-      studentName: s.studentName,
-      gradeLevel: s.gradeLevel,
-      teacherName: s.teacherId?.name || 'المعلم',
-      subject: s.teacherId?.subject || 'مادة',
-      groupName: s.groupId?.name || 'مجموعة',
-    }));
+    const discoveredStudents = [
+      ...otherStudents.map((s: any) => ({
+        studentId: s._id.toString(),
+        studentName: s.studentName,
+        gradeLevel: s.gradeLevel,
+        teacherName: s.teacherId?.name || 'المعلم',
+        subject: s.teacherId?.subject || 'مادة',
+        groupName: s.groupId?.name || 'مجموعة',
+        isCenter: false,
+      })),
+      ...otherCenterStudents.map((s: any) => ({
+        studentId: s._id.toString(),
+        studentName: s.studentName,
+        gradeLevel: s.gradeLevel,
+        teacherName: s.centerId?.name ? (s.centerId.name.trim().startsWith('سنتر') ? s.centerId.name.trim() : `سنتر ${s.centerId.name.trim()}`) : 'السنتر',
+        subject: 'سنتر تعليمي',
+        groupName: s.gradeLevel || 'السنتر',
+        isCenter: true,
+      })),
+    ];
 
     // 6. Generate Tokens & Register Device Session
     const payload: IParentJwtPayload = {
@@ -299,24 +366,37 @@ export class ParentAuthService {
 
     // 1. Find all active students matching any format of this parent phone
     const phoneFilter = getPhoneSearchFilter(dto.parentPhone);
-    let students = await StudentModel.find({
-      ...phoneFilter,
-      isActive: { $ne: false },
-    })
-      .populate('teacherId', 'name subject')
-      .populate('groupId', 'name')
-      .lean();
-
-    // Fallback 1: Try without isActive constraint
-    if (students.length === 0) {
-      students = await StudentModel.find(phoneFilter)
+    let [students, centerStudents] = await Promise.all([
+      StudentModel.find({
+        ...phoneFilter,
+        isActive: { $ne: false },
+      })
         .populate('teacherId', 'name subject')
         .populate('groupId', 'name')
-        .lean();
+        .lean(),
+      CenterStudentModel.find({
+        ...phoneFilter,
+        isActive: { $ne: false },
+      })
+        .populate('centerId', 'name')
+        .lean(),
+    ]);
+
+    // Fallback 1: Try without isActive constraint
+    if (students.length === 0 && centerStudents.length === 0) {
+      [students, centerStudents] = await Promise.all([
+        StudentModel.find(phoneFilter)
+          .populate('teacherId', 'name subject')
+          .populate('groupId', 'name')
+          .lean(),
+        CenterStudentModel.find(phoneFilter)
+          .populate('centerId', 'name')
+          .lean(),
+      ]);
     }
 
     // Fallback 2: Check if a Parent record exists with previously linked students
-    if (students.length === 0) {
+    if (students.length === 0 && centerStudents.length === 0) {
       const existingParent = await ParentModel.findOne({
         phone: {
           $in: [
@@ -333,23 +413,29 @@ export class ParentAuthService {
         }).lean();
         const studentIds = linkedRelations.map((r) => r.studentId);
         if (studentIds.length > 0) {
-          students = await StudentModel.find({ _id: { $in: studentIds } })
-            .populate('teacherId', 'name subject')
-            .populate('groupId', 'name')
-            .lean();
+          [students, centerStudents] = await Promise.all([
+            StudentModel.find({ _id: { $in: studentIds } })
+              .populate('teacherId', 'name subject')
+              .populate('groupId', 'name')
+              .lean(),
+            CenterStudentModel.find({ _id: { $in: studentIds } })
+              .populate('centerId', 'name')
+              .lean(),
+          ]);
         }
       }
     }
 
-    if (students.length === 0) {
+    if (students.length === 0 && centerStudents.length === 0) {
       throw NotFoundException({
         message:
-          'لم يتم العثور على أي طالب مسجل برقم الهاتف هذا. يرجى التأكد من الرقم أو مراجعة المعلم لتسجيله.',
+          'لم يتم العثور على أي طالب مسجل برقم الهاتف هذا. يرجى التأكد من الرقم أو مراجعة المعلم أو إدارة السنتر لتسجيله.',
       });
     }
 
     // 2. Find or create Platform-level Parent
-    const primaryStudent = students[0]!;
+    const allDiscovered = [...students, ...centerStudents];
+    const primaryStudent = allDiscovered[0]!;
     let parent = await ParentModel.findOne({ phone: normalizedPhone });
     if (!parent) {
       parent = await ParentModel.create({
@@ -366,12 +452,13 @@ export class ParentAuthService {
       await parent.save();
     }
 
-    // 3. Link all found students automatically
-    const writes = students.map((student) => ({
+    // 3. Link all found teacher and center students automatically
+    const teacherWrites = students.map((student) => ({
       updateOne: {
         filter: { parentId: parent._id, studentId: student._id },
         update: {
           $set: {
+            studentModelType: 'Student' as const,
             status: 'ACTIVE' as const,
             verifiedVia: 'AUTO_CONFIRMED' as const,
             linkedAt: new Date(),
@@ -383,6 +470,26 @@ export class ParentAuthService {
       },
     }));
 
+    const centerWrites = centerStudents.map((centerStudent) => ({
+      updateOne: {
+        filter: { parentId: parent._id, studentId: centerStudent._id },
+        update: {
+          $set: {
+            studentModelType: 'CenterStudent' as const,
+            centerStudentId: centerStudent._id,
+            centerId: centerStudent.centerId,
+            status: 'ACTIVE' as const,
+            verifiedVia: 'AUTO_CONFIRMED' as const,
+            linkedAt: new Date(),
+            ...(deviceId ? { 'audit.linkedByDeviceId': deviceId } : {}),
+            ...(ip ? { 'audit.linkedIp': ip } : {}),
+          },
+        },
+        upsert: true,
+      },
+    }));
+
+    const writes = [...teacherWrites, ...centerWrites];
     if (writes.length > 0) {
       await ParentStudentModel.bulkWrite(writes as any);
     }
@@ -416,14 +523,26 @@ export class ParentAuthService {
       { upsert: true, new: true }
     );
 
-    const discoveredStudents = students.map((s: any) => ({
-      studentId: s._id.toString(),
-      studentName: s.studentName,
-      gradeLevel: s.gradeLevel,
-      teacherName: s.teacherId?.name || 'المعلم',
-      subject: s.teacherId?.subject || 'مادة',
-      groupName: s.groupId?.name || 'مجموعة',
-    }));
+    const discoveredStudents = [
+      ...students.map((s: any) => ({
+        studentId: s._id.toString(),
+        studentName: s.studentName,
+        gradeLevel: s.gradeLevel,
+        teacherName: s.teacherId?.name || 'المعلم',
+        subject: s.teacherId?.subject || 'مادة',
+        groupName: s.groupId?.name || 'مجموعة',
+        isCenter: false,
+      })),
+      ...centerStudents.map((s: any) => ({
+        studentId: s._id.toString(),
+        studentName: s.studentName,
+        gradeLevel: s.gradeLevel,
+        teacherName: s.centerId?.name ? (s.centerId.name.trim().startsWith('سنتر') ? s.centerId.name.trim() : `سنتر ${s.centerId.name.trim()}`) : 'السنتر',
+        subject: 'سنتر تعليمي',
+        groupName: s.gradeLevel || 'السنتر',
+        isCenter: true,
+      })),
+    ];
 
     return {
       parent: {
@@ -491,15 +610,18 @@ export class ParentAuthService {
     const parent = await ParentModel.findById(parentId).lean();
     if (!parent) throw NotFoundException({ message: 'حساب ولي الأمر غير موجود' });
 
-    const students = await StudentModel.find({
-      _id: { $in: studentIds.map(id => new mongoose.Types.ObjectId(id)) },
-    }).lean();
+    const objIds = studentIds.map((id) => new mongoose.Types.ObjectId(id));
+    const [teacherStudents, centerStudents] = await Promise.all([
+      StudentModel.find({ _id: { $in: objIds } }).lean(),
+      CenterStudentModel.find({ _id: { $in: objIds } }).lean(),
+    ]);
 
-    const writes = students.map(student => ({
+    const teacherWrites = teacherStudents.map((student) => ({
       updateOne: {
         filter: { parentId: new mongoose.Types.ObjectId(parentId), studentId: student._id },
         update: {
           $set: {
+            studentModelType: 'Student' as const,
             status: 'ACTIVE' as const,
             verifiedVia: 'AUTO_CONFIRMED' as const,
             linkedAt: new Date(),
@@ -510,6 +632,25 @@ export class ParentAuthService {
       },
     }));
 
+    const centerWrites = centerStudents.map((centerStudent) => ({
+      updateOne: {
+        filter: { parentId: new mongoose.Types.ObjectId(parentId), studentId: centerStudent._id },
+        update: {
+          $set: {
+            studentModelType: 'CenterStudent' as const,
+            centerStudentId: centerStudent._id,
+            centerId: centerStudent.centerId,
+            status: 'ACTIVE' as const,
+            verifiedVia: 'AUTO_CONFIRMED' as const,
+            linkedAt: new Date(),
+            ...(deviceId ? { 'audit.linkedByDeviceId': deviceId } : {}),
+          },
+        },
+        upsert: true,
+      },
+    }));
+
+    const writes = [...teacherWrites, ...centerWrites];
     if (writes.length > 0) {
       await ParentStudentModel.bulkWrite(writes as any);
     }

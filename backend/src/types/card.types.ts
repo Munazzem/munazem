@@ -5,19 +5,21 @@ export type CardDisabledReason = 'LOST' | 'DAMAGED' | 'MANUAL';
 
 // ── Mongoose Document Interface ───────────────────────────────────────────────
 export interface ICard extends Document {
-    cardNumber:     string;
-    cardToken:      string;
-    teacherId:      Types.ObjectId;
-    studentId:      Types.ObjectId | null;
-    status:         CardStatus;
-    batchId:        string | null;
-    linkedAt:       Date | null;
-    linkedBy:       Types.ObjectId | null;
-    disabledAt:     Date | null;
-    disabledReason: string | null;
-    disabledBy:     Types.ObjectId | null;
-    createdAt:      Date;
-    updatedAt:      Date;
+    cardNumber:      string;
+    cardToken:       string;
+    teacherId?:      Types.ObjectId | null;
+    studentId?:      Types.ObjectId | null;
+    centerId?:       Types.ObjectId | null;
+    centerStudentId?: Types.ObjectId | null;
+    status:          CardStatus;
+    batchId:         string | null;
+    linkedAt:        Date | null;
+    linkedBy:        Types.ObjectId | null;
+    disabledAt:      Date | null;
+    disabledReason:  string | null;
+    disabledBy:      Types.ObjectId | null;
+    createdAt:       Date;
+    updatedAt:       Date;
 }
 
 // ── Request DTOs ──────────────────────────────────────────────────────────────

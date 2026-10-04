@@ -5,8 +5,14 @@ import { StudentModel } from '../../database/models/student.model.js';
 import { GroupModel }   from '../../database/models/group.model.js';
 import { AttendanceSnapshotModel } from '../../database/models/attendance-snapshot.model.js';
 import { TransactionModel } from '../../database/models/transaction.model.js';
+import { CycleEnrollmentModel } from '../../database/models/cycle-enrollment.model.js';
+import { CenterStudentModel } from '../../database/models/center-student.model.js';
+import { CenterModel } from '../../database/models/center.model.js';
+import { CenterEnrollmentModel } from '../../database/models/center-enrollment.model.js';
+import { CenterPackageModel } from '../../database/models/center-package.model.js';
+import { CenterCheckInModel } from '../../database/models/center-checkin.model.js';
 import { nextSequenceBulk } from '../../database/models/counter.model.js';
-import { TransactionType } from '../../common/enums/enum.service.js';
+import { TransactionType, CycleEnrollmentStatus } from '../../common/enums/enum.service.js';
 import {
     NotFoundException,
     BadRequestException,
@@ -60,10 +66,13 @@ export class CardsService {
     // Used by the parent portal (no auth — public access via cardToken)
     static async resolveByToken(cardToken: string): Promise<StudentQuickSummary> {
         const card = await CardModel.findOne({ cardToken, status: 'LINKED' }).lean();
-        if (!card || !card.studentId) {
+        if (!card || (!card.studentId && !card.centerStudentId)) {
             throw NotFoundException({ message: 'الكارت غير موجود أو غير مربوط بطالب' });
         }
-        return CardsService._buildStudentSummary(card.studentId.toString());
+        if (card.centerStudentId) {
+            return CardsService._buildCenterStudentSummary(card.centerStudentId.toString());
+        }
+        return CardsService._buildStudentSummary(card.studentId!.toString());
     }
 
     // ─── Unified resolution: any scan input → card + student summary ───────────
@@ -411,13 +420,21 @@ export class CardsService {
         ).sort({ date: -1 }).lean();
 
         // Payment status based on group cycle
-        const cycleStartedAt = (group as any)?.cycle?.startedAt || new Date('2099-01-01');
-        const hasActiveSubscription = await TransactionModel.exists({
+        const currentCycleNumber = (group as any)?.cycle?.currentCycleNumber || 1;
+        const currentEnrollment = await CycleEnrollmentModel.findOne({
             studentId: student._id,
-            category: 'SUBSCRIPTION',
-            type: 'INCOME',
-            date: { $gte: cycleStartedAt }
-        });
+            groupId: student.groupId,
+            cycleNumber: currentCycleNumber,
+        }).lean();
+
+        const cycleStartedAt = (group as any)?.cycle?.startedAt || new Date('2099-01-01');
+        const hasActiveSubscription = (currentEnrollment && currentEnrollment.status === CycleEnrollmentStatus.PAID)
+            || !!(await TransactionModel.exists({
+                studentId: student._id,
+                category: 'SUBSCRIPTION',
+                type: 'INCOME',
+                date: { $gte: cycleStartedAt }
+            }));
 
         return {
             studentId:             student._id.toString(),
@@ -436,6 +453,64 @@ export class CardsService {
             lastPaymentDate:   lastTx ? (lastTx as any).date?.toISOString() : null,
             lastPaymentAmount: lastTx ? (lastTx as any).paidAmount : null,
             isActive:          student.isActive ?? true,
+        };
+    }
+
+    // ─── Private: Build center student quick summary ───────────────────────────
+    private static async _buildCenterStudentSummary(centerStudentId: string): Promise<StudentQuickSummary> {
+        const student = await CenterStudentModel.findById(centerStudentId).lean();
+        if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
+
+        const center = await CenterModel.findById(student.centerId).select('name').lean();
+        const centerName = center?.name ? (center.name.trim().startsWith('سنتر') ? center.name.trim() : `سنتر ${center.name.trim()}`) : 'السنتر';
+
+        const enrollment = await CenterEnrollmentModel.findOne({
+            centerId: student.centerId,
+            studentId: student._id,
+            isActive: true,
+        }).lean();
+
+        let groupName: string = student.gradeLevel || 'السنتر';
+        if (enrollment?.packageId) {
+            const pkg = await CenterPackageModel.findById(enrollment.packageId).select('name').lean();
+            if (pkg?.name) groupName = pkg.name;
+        }
+
+        const lastCheckIn = await CenterCheckInModel.findOne({
+            centerId: student.centerId,
+            studentId: student._id,
+        }).sort({ date: -1, checkInTime: -1 }).lean();
+
+        const lastTx = await TransactionModel.findOne({
+            centerId: student.centerId,
+            studentId: student._id,
+            type: TransactionType.INCOME,
+        }).sort({ date: -1 }).lean();
+
+        const transactions = await TransactionModel.find({
+            centerId: student.centerId,
+            studentId: student._id,
+        }).lean();
+
+        const totalDebt = transactions.reduce((sum, t: any) => sum + (t.remainingAmount || 0), 0);
+
+        return {
+            studentId:             student._id.toString(),
+            studentName:           student.studentName,
+            studentCode:           student.studentCode,
+            gradeLevel:            student.gradeLevel as any,
+            groupId:               enrollment?.packageGroups?.[0]?.toString() || '',
+            groupName:             `${groupName} (${centerName})`,
+            remainingSessions:     0,
+            cycleCapacity:         1,
+            cycleNumber:           1,
+            totalDebt,
+            hasActiveSubscription: totalDebt === 0,
+            lastAttendanceDate:    lastCheckIn ? (lastCheckIn.checkInTime || lastCheckIn.date)?.toISOString() : null,
+            lastAttendanceStatus:  lastCheckIn ? 'PRESENT' : null,
+            lastPaymentDate:       lastTx ? (lastTx as any).date?.toISOString() : null,
+            lastPaymentAmount:     lastTx ? (lastTx as any).paidAmount : null,
+            isActive:              student.isActive ?? true,
         };
     }
 }

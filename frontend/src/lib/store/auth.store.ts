@@ -69,6 +69,9 @@ export const useAuthStore = create<AuthState>()(
                 } catch {}
                 if (typeof window !== 'undefined') {
                     safeLocalStorage.removeItem('auth-storage');
+                    try {
+                        localStorage.removeItem('REACT_QUERY_OFFLINE_CACHE');
+                    } catch {}
                 }
                 set({ user: null, token: null, isAuthenticated: false });
             },

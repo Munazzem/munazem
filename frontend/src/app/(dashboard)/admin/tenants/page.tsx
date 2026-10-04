@@ -3,13 +3,14 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { Search, UserCheck, UserX, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, UserCheck, UserX, ChevronLeft, ChevronRight, Building2, GraduationCap } from 'lucide-react';
 import { fetchTenants, suspendTenant, activateTenant } from '@/lib/api/admin';
 import type { AdminTenant } from '@/lib/api/admin';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { AddTeacherModal } from '@/components/users/AddTeacherModal';
+import { AddCenterModal } from '@/components/center/AddCenterModal';
 import { AddSubscriptionModal } from '@/components/subscriptions/AddSubscriptionModal';
 
 function StatusBadge({ isActive }: { isActive: boolean }) {
@@ -44,11 +45,18 @@ export default function TenantsPage() {
     const queryClient = useQueryClient();
     const [search, setSearch]   = useState('');
     const [status, setStatus]   = useState('');
+    const [roleFilter, setRoleFilter] = useState<'all' | 'teacher' | 'centerOwner'>('all');
     const [page, setPage]       = useState(1);
 
     const { data, isLoading } = useQuery({
-        queryKey: ['admin-tenants', { search, status, page }],
-        queryFn:  () => fetchTenants({ search: search || undefined, status: status || undefined, page, limit: 20 }),
+        queryKey: ['admin-tenants', { search, status, roleFilter, page }],
+        queryFn:  () => fetchTenants({
+            search: search || undefined,
+            status: status || undefined,
+            role: roleFilter === 'all' ? undefined : roleFilter,
+            page,
+            limit: 20
+        }),
     });
 
     const suspendMutation = useMutation({
@@ -71,34 +79,69 @@ export default function TenantsPage() {
             {/* Header */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">المعلمون (Tenants)</h1>
+                    <h1 className="text-2xl font-bold text-gray-900">العملاء (Tenants)</h1>
                     <p className="text-sm text-gray-500 mt-1">
-                        {pagination ? `${pagination.total} معلم مسجل` : ''}
+                        {pagination ? `${pagination.total} حساب مسجل` : ''}
                     </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                     <AddSubscriptionModal />
                     <AddTeacherModal />
+                    <AddCenterModal />
                 </div>
             </div>
 
             {/* Filters */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-wrap gap-3">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-wrap items-center gap-3">
                 <div className="relative flex-1 min-w-[200px]">
                     <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                     <Input
                         value={search}
                         onChange={e => { setSearch(e.target.value); setPage(1); }}
-                        placeholder="ابحث بالاسم أو الهاتف..."
+                        placeholder="ابحث بالاسم أو الهاتف أو السنتر..."
                         className="pr-9"
                     />
                 </div>
+
+                {/* Role Tabs */}
+                <div className="flex items-center bg-gray-100 p-1 rounded-xl">
+                    <button
+                        type="button"
+                        onClick={() => { setRoleFilter('all'); setPage(1); }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                            roleFilter === 'all' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500 hover:text-gray-900'
+                        }`}
+                    >
+                        الكل
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => { setRoleFilter('teacher'); setPage(1); }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                            roleFilter === 'teacher' ? 'bg-white text-emerald-700 shadow-xs' : 'text-gray-500 hover:text-gray-900'
+                        }`}
+                    >
+                        <GraduationCap className="w-3.5 h-3.5" />
+                        المعلمون
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => { setRoleFilter('centerOwner'); setPage(1); }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                            roleFilter === 'centerOwner' ? 'bg-white text-indigo-700 shadow-xs' : 'text-gray-500 hover:text-gray-900'
+                        }`}
+                    >
+                        <Building2 className="w-3.5 h-3.5" />
+                        السناتر
+                    </button>
+                </div>
+
                 <select
                     value={status}
                     onChange={e => { setStatus(e.target.value); setPage(1); }}
                     className="border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/20"
                 >
-                    <option value="">الكل</option>
+                    <option value="">كل الحالات</option>
                     <option value="active">نشط</option>
                     <option value="inactive">موقوف</option>
                 </select>
@@ -113,13 +156,14 @@ export default function TenantsPage() {
                         ))}
                     </div>
                 ) : tenants.length === 0 ? (
-                    <div className="py-16 text-center text-gray-400">لا يوجد معلمون يطابقون البحث</div>
+                    <div className="py-16 text-center text-gray-400">لا يوجد عملاء يطابقون البحث</div>
                 ) : (
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm">
                             <thead>
                                 <tr className="border-b border-gray-100 text-right text-gray-500 text-xs">
-                                    <th className="px-4 py-3 font-semibold">المعلم</th>
+                                    <th className="px-4 py-3 font-semibold">العميل / الحساب</th>
+                                    <th className="px-4 py-3 font-semibold">النوع</th>
                                     <th className="px-4 py-3 font-semibold">الهاتف</th>
                                     <th className="px-4 py-3 font-semibold">الطلاب</th>
                                     <th className="px-4 py-3 font-semibold">الاشتراك</th>
@@ -137,14 +181,33 @@ export default function TenantsPage() {
                                     >
                                         <td className="px-4 py-3">
                                             <div className="flex items-center gap-2.5">
-                                                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary shrink-0">
-                                                    {t.name.charAt(0)}
+                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                                                    t.role === 'centerOwner' ? 'bg-indigo-100 text-indigo-700' : 'bg-primary/10 text-primary'
+                                                }`}>
+                                                    {t.role === 'centerOwner' ? <Building2 className="w-4 h-4" /> : t.name.charAt(0)}
                                                 </div>
                                                 <div>
-                                                    <p className="font-medium text-gray-900">{t.name}</p>
-                                                    {t.centerName && <p className="text-xs text-gray-400">{t.centerName}</p>}
+                                                    <p className="font-medium text-gray-900">
+                                                        {t.role === 'centerOwner' ? (t.centerName || t.name) : t.name}
+                                                    </p>
+                                                    <p className="text-xs text-gray-400">
+                                                        {t.role === 'centerOwner' ? `المدير: ${t.name}` : (t.centerName || t.subject || 'معلم')}
+                                                    </p>
                                                 </div>
                                             </div>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            {t.role === 'centerOwner' ? (
+                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                                    <Building2 className="w-3 h-3" />
+                                                    سنتر
+                                                </span>
+                                            ) : (
+                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                    <GraduationCap className="w-3 h-3" />
+                                                    معلم
+                                                </span>
+                                            )}
                                         </td>
                                         <td className="px-4 py-3 text-gray-600 dir-ltr">{t.phone}</td>
                                         <td className="px-4 py-3">

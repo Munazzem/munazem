@@ -199,7 +199,7 @@ export const HomeScreen: React.FC = () => {
 
                 {/* ── Finance Card ─────────────────────────────────── */}
                 <SectionCard
-                  icon={<Wallet size={18} color={hasDebt ? colors.absent : colors.present} />}
+                  icon={<Wallet size={18} color={hasDebt ? colors.absent : colors.primary} />}
                   title="المالية"
                   ctaLabel="عرض التفاصيل"
                   onCta={() =>
@@ -217,30 +217,38 @@ export const HomeScreen: React.FC = () => {
                           {activeSubject?.subject ?? 'المادة'} (أ. {activeSubject?.teacherName ?? 'المعلم'})
                         </Text>
                       </View>
-                      <View style={[styles.debtBadge, { backgroundColor: hasDebt ? colors.absentLight : colors.presentLight }]}>
-                        <Text style={[styles.debtText, { color: hasDebt ? colors.absent : colors.present }]}>
-                          {hasDebt ? `متبقي ${remaining} ج` : 'مدفوع ✓'}
-                        </Text>
-                      </View>
+                      {hasDebt && remaining > 0 && (
+                        <View style={[styles.debtBadge, { backgroundColor: colors.absentLight }]}>
+                          <Text style={[styles.debtText, { color: colors.absent }]}>
+                            متبقي {remaining} ج
+                          </Text>
+                        </View>
+                      )}
                     </View>
-                  ) : child.subjects?.map((subj, i) => (
-                    <View key={i} style={styles.financeRow}>
-                      <View style={styles.financeLabel}>
-                        <BookOpen size={13} color={colors.textMuted} />
-                        <Text style={styles.financeLabelText}>{subj.subject}</Text>
+                  ) : child.subjects?.map((subj, i) => {
+                    const subjHasDebt = subj.financialSummary?.hasOutstandingDebt && (subj.financialSummary?.remainingAmount ?? 0) > 0;
+                    const subjRemain = subj.financialSummary?.remainingAmount ?? 0;
+                    return (
+                      <View key={i} style={styles.financeRow}>
+                        <View style={styles.financeLabel}>
+                          <BookOpen size={13} color={colors.textMuted} />
+                          <Text style={styles.financeLabelText}>{subj.subject}</Text>
+                        </View>
+                        {subjHasDebt && (
+                          <View style={[styles.debtBadge, { backgroundColor: colors.absentLight }]}>
+                            <Text style={[styles.debtText, { color: colors.absent }]}>
+                              متبقي {subjRemain} ج
+                            </Text>
+                          </View>
+                        )}
                       </View>
-                      <View style={[styles.debtBadge, { backgroundColor: hasDebt ? colors.absentLight : colors.presentLight }]}>
-                        <Text style={[styles.debtText, { color: hasDebt ? colors.absent : colors.present }]}>
-                          {hasDebt ? `متبقي ${remaining} ج` : 'مدفوع ✓'}
-                        </Text>
-                      </View>
-                    </View>
-                  ))}
-                  {(!child.subjects || child.subjects.length === 0) && (
+                    );
+                  })}
+                  {(!child.subjects || child.subjects.length === 0) && hasDebt && remaining > 0 && (
                     <View style={styles.financeRow}>
-                      <View style={[styles.debtBadge, { backgroundColor: hasDebt ? colors.absentLight : colors.presentLight }]}>
-                        <Text style={[styles.debtText, { color: hasDebt ? colors.absent : colors.present }]}>
-                          {hasDebt ? `متبقي ${remaining} ج` : 'الاشتراكات سارية ✓'}
+                      <View style={[styles.debtBadge, { backgroundColor: colors.absentLight }]}>
+                        <Text style={[styles.debtText, { color: colors.absent }]}>
+                          متبقي {remaining} ج
                         </Text>
                       </View>
                     </View>

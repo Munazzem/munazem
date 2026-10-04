@@ -90,7 +90,14 @@ const studentSchema = new Schema<IStudent>({
     groupAssignedAt: {
         type: Date,
         default: Date.now
-    }
+    },
+    // ── Center field (null for regular teacher students) ──
+    centerId: {
+        type: Schema.Types.ObjectId,
+        ref: 'Center',
+        default: null,
+        index: true,
+    },
 }, {
     timestamps: true
 });

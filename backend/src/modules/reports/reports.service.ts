@@ -92,7 +92,7 @@ export class ReportsService {
 
         // Map sessions (priority: PRESENT/LATE (4) > GUEST (3) > EXCUSED (2) > ABSENT (1))
         // Keyed by sessionId so that each conducted session is counted and displayed on its own, even if on the same day
-        const sessionAttendanceMap = new Map<string, { sessionId?: any; date: Date; status: string; homeworkDone?: boolean | null; priority: number }>();
+        const sessionAttendanceMap = new Map<string, { sessionId?: any; date: Date; status: string; homeworkDone?: boolean | null; priority: number; relatedSessionId?: any }>();
 
         // 1. Direct attendance records
         for (const att of attendances) {
@@ -122,7 +122,8 @@ export class ReportsService {
                     date: recordDate,
                     status,
                     homeworkDone: typeof att.homeworkDone === 'boolean' ? att.homeworkDone : null,
-                    priority
+                    priority,
+                    relatedSessionId: (att as any).relatedSessionId
                 });
             }
         }
@@ -132,7 +133,8 @@ export class ReportsService {
             const sid = studentId.toString();
             const presentStudent = snap.presentStudents?.find((s: any) => s.studentId?.toString() === sid);
             const isAbsent  = snap.absentStudents?.some((s: any)  => s.studentId?.toString() === sid);
-            const isGuest   = snap.guestStudents?.some((s: any)  => s.studentId?.toString() === sid);
+            const guestStudent = snap.guestStudents?.find((s: any)  => s.studentId?.toString() === sid);
+            const isGuest   = Boolean(guestStudent);
 
             let status = 'UNKNOWN';
             let priority = 0;
@@ -162,7 +164,8 @@ export class ReportsService {
                 const sessionKey = snap.sessionId ? snap.sessionId.toString() : ((snap as any)._id?.toString() || 'unknown');
                 const existing = sessionAttendanceMap.get(sessionKey);
                 if (!existing || priority > existing.priority) {
-                    sessionAttendanceMap.set(sessionKey, { sessionId: snap.sessionId, date: snap.date, status, homeworkDone, priority });
+                    const snapRelId = (presentStudent as any)?.relatedSessionId || (guestStudent as any)?.relatedSessionId || (snap as any).compensatedStudents?.find((s: any) => s.studentId?.toString() === sid)?.relatedSessionId;
+                    sessionAttendanceMap.set(sessionKey, { sessionId: snap.sessionId, date: snap.date, status, homeworkDone, priority, relatedSessionId: snapRelId });
                 }
             }
         }
@@ -232,14 +235,21 @@ export class ReportsService {
             return true;
         });
 
-        // Filter out redundant EXCUSED entries if compensated by a GUEST session
-        const guestCount = conflictResolvedEntries.filter(e => e.status === 'GUEST').length;
-        let availableGuestCredits = guestCount;
+        // Filter out redundant EXCUSED entries only if specifically compensated by a GUEST session
+        const guestRelatedSessionIds = new Set<string>();
+        const guestSessionIds = new Set<string>();
+        for (const e of conflictResolvedEntries) {
+            if (e.status === 'GUEST') {
+                if (e.sessionId) guestSessionIds.add(e.sessionId.toString());
+                if ((e as any).relatedSessionId) guestRelatedSessionIds.add((e as any).relatedSessionId.toString());
+            }
+        }
 
         const effectiveEntries = conflictResolvedEntries.filter(e => {
             if (e.status === AttendanceStatus.EXCUSED) {
-                if (availableGuestCredits > 0) {
-                    availableGuestCredits--;
+                const sid = e.sessionId ? e.sessionId.toString() : '';
+                const relId = (e as any).relatedSessionId ? (e as any).relatedSessionId.toString() : '';
+                if ((sid && guestRelatedSessionIds.has(sid)) || (relId && guestSessionIds.has(relId))) {
                     return false; // Suppress phantom compensated absence card
                 }
             }
@@ -299,7 +309,12 @@ export class ReportsService {
 
         const allEnrollments = await CycleEnrollmentModel.find({
             studentId: student._id,
-            teacherId
+            teacherId,
+            isWaived: { $ne: true },
+            $or: [
+                { cycleCharge: { $gt: 0 } },
+                { totalPaid: { $gt: 0 } }
+            ]
         }).sort({ cycleNumber: -1 }).lean();
 
         // Deduplicate enrollments by cycleNumber in case of group transfers:
@@ -415,6 +430,7 @@ export class ReportsService {
                 status,
                 isCurrentCycle,
                 isPastCycle,
+                isWaived: (e as any).isWaived || false,
                 createdAt: (e as any).createdAt,
             };
         });
@@ -457,7 +473,7 @@ export class ReportsService {
 
         // Map all sessions in this cycle for this student by sessionId / dateKey
         // Priority: PRESENT (4) > GUEST (3) > EXCUSED (2) > ABSENT (1)
-        const cycleSessionMap = new Map<string, { sessionId: any; date: Date; status: string; priority: number }>();
+        const cycleSessionMap = new Map<string, { sessionId: any; date: Date; status: string; priority: number; relatedSessionId?: any }>();
 
         // 1. Add records from cycleSnapshots (completed sessions where student was evaluated in ANY group)
         cycleSnapshots.forEach(snap => {
@@ -488,11 +504,13 @@ export class ReportsService {
                 const key = snap.sessionId ? (snap.sessionId as any).toString() : (new Date(snap.date).toISOString().split('T')[0] || 'unknown');
                 const existing = cycleSessionMap.get(key);
                 if (!existing || priority > existing.priority) {
+                    const snapRelId = (presentEntry as any)?.relatedSessionId || (guestEntry as any)?.relatedSessionId || (snap as any).compensatedStudents?.find((s: any) => s.studentId?.toString() === sidStr)?.relatedSessionId;
                     cycleSessionMap.set(key, {
                         sessionId: snap.sessionId,
                         date: snap.date,
                         status,
-                        priority
+                        priority,
+                        relatedSessionId: snapRelId
                     });
                 }
             }
@@ -528,7 +546,8 @@ export class ReportsService {
                     sessionId: sidStr || att._id,
                     date: recordDate,
                     status,
-                    priority
+                    priority,
+                    relatedSessionId: (att as any).relatedSessionId
                 });
             }
         });
@@ -588,22 +607,29 @@ export class ReportsService {
                     sessionId: s.sessionId,
                     date: s.date,
                     status: s.status,
-                });
+                    relatedSessionId: (s as any).relatedSessionId
+                } as any);
             }
         });
 
         const rawMonthlySessions = Array.from(cycleSessionMapFinal.values());
 
-        // Option 1 (استبدال الحصة في الحساب):
-        // Filter out redundant EXCUSED entries if compensated by a GUEST session in this cycle,
+        // Filter out redundant EXCUSED entries if specifically compensated by a GUEST session in this cycle,
         // so that the compensation session replaces the missed session rather than adding an extra session.
-        const cycleGuestCount = rawMonthlySessions.filter(s => (s as any).status === 'GUEST').length;
-        let availableCycleGuestCredits = cycleGuestCount;
+        const cycleGuestRelatedSessionIds = new Set<string>();
+        const cycleGuestSessionIds = new Set<string>();
+        for (const s of rawMonthlySessions) {
+            if ((s as any).status === 'GUEST') {
+                if (s.sessionId) cycleGuestSessionIds.add(s.sessionId.toString());
+                if ((s as any).relatedSessionId) cycleGuestRelatedSessionIds.add((s as any).relatedSessionId.toString());
+            }
+        }
 
         const monthlySessions = rawMonthlySessions.filter(s => {
             if (s.status === AttendanceStatus.EXCUSED) {
-                if (availableCycleGuestCredits > 0) {
-                    availableCycleGuestCredits--;
+                const sid = s.sessionId ? s.sessionId.toString() : '';
+                const relId = (s as any).relatedSessionId ? (s as any).relatedSessionId.toString() : '';
+                if ((sid && cycleGuestRelatedSessionIds.has(sid)) || (relId && cycleGuestSessionIds.has(relId))) {
                     return false; // Suppress phantom compensated absence session
                 }
             }
@@ -862,7 +888,8 @@ export class ReportsService {
         const enrollments = await CycleEnrollmentModel.find({
             studentId: { $in: studentIds },
             groupId: group._id,
-            cycleNumber: currentCycleNumber
+            cycleNumber: currentCycleNumber,
+            isWaived: { $ne: true }
         }).lean();
 
         const enrollmentMap = new Map(enrollments.map(e => [e.studentId.toString(), e]));
