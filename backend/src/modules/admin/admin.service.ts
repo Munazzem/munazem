@@ -440,88 +440,98 @@ export class AdminService {
 
     // ── Queues (WhatsApp) ────────────────────────────────────────────
     static async getWhatsAppQueueStatus(filters?: { phone?: string; teacherId?: string }) {
-        const { whatsAppQueue } = await import('../../infrastructure/queues/whatsapp.queue.js');
-        const [waiting, active, completed, failed, delayed] = await Promise.all([
-            whatsAppQueue.getWaitingCount(),
-            whatsAppQueue.getActiveCount(),
-            whatsAppQueue.getCompletedCount(),
-            whatsAppQueue.getFailedCount(),
-            whatsAppQueue.getDelayedCount(),
-        ]);
+        try {
+            const { whatsAppQueue } = await import('../../infrastructure/queues/whatsapp.queue.js');
+            const [waiting, active, completed, failed, delayed] = await Promise.all([
+                whatsAppQueue.getWaitingCount(),
+                whatsAppQueue.getActiveCount(),
+                whatsAppQueue.getCompletedCount(),
+                whatsAppQueue.getFailedCount(),
+                whatsAppQueue.getDelayedCount(),
+            ]);
 
-        let recentFailed = await whatsAppQueue.getFailed(0, 50);
-        let recentCompleted = await whatsAppQueue.getCompleted(0, 50);
+            let recentFailed = await whatsAppQueue.getFailed(0, 50);
+            let recentCompleted = await whatsAppQueue.getCompleted(0, 50);
 
-        if (filters?.phone) {
-            const phone = filters.phone.replace(/\D/g, '');
-            recentFailed = recentFailed.filter(job => {
-                const d = job?.data as any;
-                const jobPhone = String(d?.parentPhone || d?.phone || '').replace(/\D/g, '');
-                return jobPhone.includes(phone);
-            });
-            recentCompleted = recentCompleted.filter(job => {
-                const d = job?.data as any;
-                const jobPhone = String(d?.parentPhone || d?.phone || '').replace(/\D/g, '');
-                return jobPhone.includes(phone);
-            });
+            if (filters?.phone) {
+                const phone = filters.phone.replace(/\D/g, '');
+                recentFailed = recentFailed.filter(job => {
+                    const d = job?.data as any;
+                    const jobPhone = String(d?.parentPhone || d?.phone || '').replace(/\D/g, '');
+                    return jobPhone.includes(phone);
+                });
+                recentCompleted = recentCompleted.filter(job => {
+                    const d = job?.data as any;
+                    const jobPhone = String(d?.parentPhone || d?.phone || '').replace(/\D/g, '');
+                    return jobPhone.includes(phone);
+                });
+            }
+            if (filters?.teacherId) {
+                recentFailed = recentFailed.filter(job => {
+                    const d = job?.data as any;
+                    return String(d?.teacherId) === filters.teacherId;
+                });
+                recentCompleted = recentCompleted.filter(job => {
+                    const d = job?.data as any;
+                    return String(d?.teacherId) === filters.teacherId;
+                });
+            }
+
+            return {
+                counts: { waiting, active, completed, failed, delayed },
+                recentFailed: recentFailed.slice(0, 20).map(job => ({
+                    id: job?.id,
+                    name: job?.name,
+                    data: job?.data,
+                    failedReason: job?.failedReason,
+                    timestamp: job?.timestamp
+                })),
+                recentCompleted: recentCompleted.slice(0, 20).map(job => ({
+                    id: job?.id,
+                    name: job?.name,
+                    data: job?.data,
+                    timestamp: job?.timestamp,
+                    finishedOn: job?.finishedOn
+                }))
+            };
+        } catch {
+            return {
+                counts: { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 },
+                recentFailed: [],
+                recentCompleted: []
+            };
         }
-        if (filters?.teacherId) {
-            recentFailed = recentFailed.filter(job => {
-                const d = job?.data as any;
-                return String(d?.teacherId) === filters.teacherId;
-            });
-            recentCompleted = recentCompleted.filter(job => {
-                const d = job?.data as any;
-                return String(d?.teacherId) === filters.teacherId;
-            });
-        }
-
-        return {
-            counts: { waiting, active, completed, failed, delayed },
-            recentFailed: recentFailed.slice(0, 20).map(job => ({
-                id: job?.id,
-                name: job?.name,
-                data: job?.data,
-                failedReason: job?.failedReason,
-                timestamp: job?.timestamp
-            })),
-            recentCompleted: recentCompleted.slice(0, 20).map(job => ({
-                id: job?.id,
-                name: job?.name,
-                data: job?.data,
-                timestamp: job?.timestamp,
-                finishedOn: job?.finishedOn
-            }))
-        };
     }
 
     static async retryAllFailedWhatsAppJobs() {
-        const { whatsAppQueue } = await import('../../infrastructure/queues/whatsapp.queue.js');
-        
-        let retried = 0;
-
-        // 1. Retry failed jobs in BullMQ
-        const failedJobs = await whatsAppQueue.getFailed(0, 500);
-        for (const job of failedJobs) {
-            try { 
-                await job.retry(); 
-                retried++; 
-            } catch { /* skip */ }
+        try {
+            const { whatsAppQueue } = await import('../../infrastructure/queues/whatsapp.queue.js');
+            let retried = 0;
+            const failedJobs = await whatsAppQueue.getFailed(0, 500);
+            for (const job of failedJobs) {
+                try { 
+                    await job.retry(); 
+                    retried++; 
+                } catch { /* skip */ }
+            }
+            return { retried };
+        } catch {
+            return { retried: 0 };
         }
-
-
-
-        return { retried };
     }
 
     static async clearAllFailedWhatsAppJobs() {
-        const { whatsAppQueue } = await import('../../infrastructure/queues/whatsapp.queue.js');
-        const failedJobs = await whatsAppQueue.getFailed(0, 500);
-        let cleared = 0;
-        for (const job of failedJobs) {
-            try { await job.remove(); cleared++; } catch { /* skip */ }
+        try {
+            const { whatsAppQueue } = await import('../../infrastructure/queues/whatsapp.queue.js');
+            const failedJobs = await whatsAppQueue.getFailed(0, 500);
+            let cleared = 0;
+            for (const job of failedJobs) {
+                try { await job.remove(); cleared++; } catch { /* skip */ }
+            }
+            return { cleared };
+        } catch {
+            return { cleared: 0 };
         }
-        return { cleared };
     }
 
     // ── Monitoring: Message History (paginated from MongoDB) ──────────
@@ -563,14 +573,20 @@ export class AdminService {
         weekStart.setDate(weekStart.getDate() - 7);
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-        // Get BullMQ queue counts
-        const { whatsAppQueue } = await import('../../infrastructure/queues/whatsapp.queue.js');
-        const [waiting, active, delayed, failed] = await Promise.all([
-            whatsAppQueue.getWaitingCount(),
-            whatsAppQueue.getActiveCount(),
-            whatsAppQueue.getDelayedCount(),
-            whatsAppQueue.getFailedCount(),
-        ]);
+        // Get BullMQ queue counts (graceful fallback if Redis is down)
+        let waiting = 0, active = 0, delayed = 0, failed = 0;
+        try {
+            const { whatsAppQueue } = await import('../../infrastructure/queues/whatsapp.queue.js');
+            const [w, a, d, f] = await Promise.all([
+                whatsAppQueue.getWaitingCount(),
+                whatsAppQueue.getActiveCount(),
+                whatsAppQueue.getDelayedCount(),
+                whatsAppQueue.getFailedCount(),
+            ]);
+            waiting = w; active = a; delayed = d; failed = f;
+        } catch {
+            // Redis offline — queue counts default to 0
+        }
 
         // MessageLog-based stats
         const [todayTotal, weekTotal, monthTotal, todaySent, todayFailed, monthSent, monthFailed] = await Promise.all([

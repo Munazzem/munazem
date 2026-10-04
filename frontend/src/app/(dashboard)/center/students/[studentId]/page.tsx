@@ -35,6 +35,8 @@ import {
     ShieldCheck,
     Loader2,
     ExternalLink,
+    Sparkles,
+    Calculator,
 } from 'lucide-react';
 import {
     fetchCenterStudentById,
@@ -176,13 +178,17 @@ export default function CenterStudentProfilePage() {
 
     const handleSaveEdit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!editName.trim() || !editParentName.trim()) {
-            toast.error('اسم الطالب واسم ولي الأمر مطلوبان');
+        if (!editName.trim()) {
+            toast.error('اسم الطالب مطلوب');
             return;
         }
+        const trimmedName = editName.trim();
+        const parts = trimmedName.split(/\s+/);
+        const derivedParent = editParentName.trim() || (parts.length > 1 ? parts.slice(1).join(' ') : `ولي أمر ${trimmedName}`);
+
         updateMutation.mutate({
-            studentName: editName.trim(),
-            parentName: editParentName.trim(),
+            studentName: trimmedName,
+            parentName: derivedParent,
             studentPhone: editStudentPhone.trim() || null,
             parentPhone: editParentPhone.trim() || null,
             gradeLevel: editGradeLevel,
@@ -255,6 +261,65 @@ export default function CenterStudentProfilePage() {
             description: payDescription.trim() || undefined,
             date: new Date().toISOString(),
         });
+    };
+
+    const handleOpenPaymentModal = () => {
+        if (enrollment) {
+            if (enrollment.type === 'PACKAGE') {
+                setPayCategory('CENTER_PACKAGE');
+                const base = enrollment.packageMonthlyPrice || enrollment.packageId?.monthlyPrice || 0;
+                let disc = 0;
+                if (enrollment.packageDiscount?.type === 'PERCENTAGE') {
+                    disc = (base * (Number(enrollment.packageDiscount.value) || 0)) / 100;
+                } else if (enrollment.packageDiscount?.type === 'FIXED') {
+                    disc = Number(enrollment.packageDiscount.value) || 0;
+                }
+                setPayOriginalAmount(base.toString());
+                setPayDiscountAmount(disc.toString());
+                setPayPaidAmount(Math.max(0, base - disc).toString());
+                setPayDescription(`سداد اشتراك باقة: ${enrollment.packageId?.name || ''}`);
+            } else if (enrollment.type === 'PRIVATE') {
+                setPayCategory('CENTER_PRIVATE');
+                const base = (enrollment.privateTeachers || []).reduce((acc: number, pt: any) => acc + (pt.monthlyPrice || 0), 0);
+                let disc = 0;
+                if (enrollment.privateDiscount?.type === 'PERCENTAGE') {
+                    disc = (base * (Number(enrollment.privateDiscount.value) || 0)) / 100;
+                } else if (enrollment.privateDiscount?.type === 'FIXED') {
+                    disc = Number(enrollment.privateDiscount.value) || 0;
+                }
+                setPayOriginalAmount(base.toString());
+                setPayDiscountAmount(disc.toString());
+                setPayPaidAmount(Math.max(0, base - disc).toString());
+                setPayDescription('سداد اشتراك مجموعات خصوصي');
+            } else if (enrollment.type === 'BOTH') {
+                setPayCategory('CENTER_COMBINED');
+                const pkgBase = enrollment.packageMonthlyPrice || enrollment.packageId?.monthlyPrice || 0;
+                const pvtBase = (enrollment.privateTeachers || []).reduce((acc: number, pt: any) => acc + (pt.monthlyPrice || 0), 0);
+                const totalBase = pkgBase + pvtBase;
+
+                let totalDisc = 0;
+                if (enrollment.packageDiscount?.type === 'PERCENTAGE') totalDisc += (pkgBase * (Number(enrollment.packageDiscount.value) || 0)) / 100;
+                else if (enrollment.packageDiscount?.type === 'FIXED') totalDisc += Number(enrollment.packageDiscount.value) || 0;
+
+                if (enrollment.privateDiscount?.type === 'PERCENTAGE') totalDisc += (pvtBase * (Number(enrollment.privateDiscount.value) || 0)) / 100;
+                else if (enrollment.privateDiscount?.type === 'FIXED') totalDisc += Number(enrollment.privateDiscount.value) || 0;
+
+                if (enrollment.combinedDiscount?.type === 'PERCENTAGE') totalDisc += (totalBase * (Number(enrollment.combinedDiscount.value) || 0)) / 100;
+                else if (enrollment.combinedDiscount?.type === 'FIXED') totalDisc += Number(enrollment.combinedDiscount.value) || 0;
+
+                setPayOriginalAmount(totalBase.toString());
+                setPayDiscountAmount(totalDisc.toString());
+                setPayPaidAmount(Math.max(0, totalBase - totalDisc).toString());
+                setPayDescription('سداد اشتراك شامل (باقة + مجموعات خصوصي)');
+            }
+        } else {
+            setPayCategory('CENTER_PACKAGE');
+            setPayOriginalAmount('');
+            setPayDiscountAmount('0');
+            setPayPaidAmount('');
+            setPayDescription('');
+        }
+        setIsPaymentOpen(true);
     };
 
     // Print Student ID Card
@@ -354,6 +419,15 @@ export default function CenterStudentProfilePage() {
                 </div>
 
                 <div className="flex items-center gap-2">
+                    <Button
+                        onClick={handleOpenPaymentModal}
+                        size="sm"
+                        className="rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+                    >
+                        <CreditCard className="h-4 w-4 ml-1.5" />
+                        تسجيل دفعة نقدية
+                    </Button>
+
                     <Button
                         onClick={handlePrintCard}
                         variant="outline"
@@ -968,7 +1042,7 @@ export default function CenterStudentProfilePage() {
                             <p className="text-xs text-gray-400">جميع الدفعات والمبالغ المحصلة من الطالب بالسنتر</p>
                         </div>
                         <Button
-                            onClick={() => setIsPaymentOpen(true)}
+                            onClick={handleOpenPaymentModal}
                             size="sm"
                             className="rounded-xl font-bold bg-primary text-white text-xs"
                         >
@@ -1137,13 +1211,12 @@ export default function CenterStudentProfilePage() {
                         </div>
 
                         <div className="space-y-1">
-                            <label className="text-xs font-semibold text-gray-700">اسم ولي الأمر *</label>
+                            <label className="text-xs font-semibold text-gray-700">اسم ولي الأمر (اختياري)</label>
                             <Input
                                 value={editParentName}
                                 onChange={(e) => setEditParentName(e.target.value)}
                                 className="rounded-xl text-xs"
-                                placeholder="اسم ولي الأمر"
-                                required
+                                placeholder="اسم ولي الأمر (تلقائي إن ترك فارغاً)"
                             />
                         </div>
 
@@ -1247,11 +1320,64 @@ export default function CenterStudentProfilePage() {
                     </DialogHeader>
 
                     <form onSubmit={handleSavePayment} className="space-y-4 py-2">
+                        {enrollment && (
+                            <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-xl space-y-1.5 text-xs">
+                                <div className="flex items-center justify-between font-bold text-blue-900">
+                                    <span className="flex items-center gap-1.5">
+                                        <Sparkles className="h-4 w-4 text-blue-600" />
+                                        اشتراك الطالب الحالي (مسعر تلقائياً):
+                                    </span>
+                                    <Badge className="bg-blue-600 text-white font-bold text-[10px]">
+                                        {enrollment.type === 'PACKAGE' ? 'باقة سنتر' : enrollment.type === 'PRIVATE' ? 'مجموعات خصوصي' : 'باقة + خصوصي'}
+                                    </Badge>
+                                </div>
+                                <div className="text-[11px] text-blue-800 space-y-1 pt-1 border-t border-blue-200/60">
+                                    {enrollment.packageId && (
+                                        <div className="flex items-center justify-between">
+                                            <span>📦 الباقة: <strong>{enrollment.packageId.name}</strong></span>
+                                            <span className="font-bold font-mono">{enrollment.packageMonthlyPrice || enrollment.packageId.monthlyPrice} ج.م</span>
+                                        </div>
+                                    )}
+                                    {enrollment.privateTeachers && enrollment.privateTeachers.length > 0 && (
+                                        <div>
+                                            <span>👨‍🏫 مجموعات البرايفت: </span>
+                                            <span className="font-medium">
+                                                {enrollment.privateTeachers.map((pt: any) => `${pt.groupId?.name || 'مجموعة'} (${pt.monthlyPrice || 0} ج.م)`).join(' + ')}
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
                         <div className="space-y-1">
                             <label className="text-xs font-semibold text-gray-700">نوع الباقة / الحصة *</label>
                             <select
                                 value={payCategory}
-                                onChange={(e) => setPayCategory(e.target.value as any)}
+                                onChange={(e) => {
+                                    const newCat = e.target.value as any;
+                                    setPayCategory(newCat);
+                                    if (enrollment) {
+                                        if (newCat === 'CENTER_PACKAGE') {
+                                            const base = enrollment.packageMonthlyPrice || enrollment.packageId?.monthlyPrice || 0;
+                                            setPayOriginalAmount(base.toString());
+                                            const disc = Number(payDiscountAmount) || 0;
+                                            setPayPaidAmount(Math.max(0, base - disc).toString());
+                                        } else if (newCat === 'CENTER_PRIVATE') {
+                                            const base = (enrollment.privateTeachers || []).reduce((acc: number, pt: any) => acc + (pt.monthlyPrice || 0), 0);
+                                            setPayOriginalAmount(base.toString());
+                                            const disc = Number(payDiscountAmount) || 0;
+                                            setPayPaidAmount(Math.max(0, base - disc).toString());
+                                        } else if (newCat === 'CENTER_COMBINED') {
+                                            const pkgBase = enrollment.packageMonthlyPrice || enrollment.packageId?.monthlyPrice || 0;
+                                            const pvtBase = (enrollment.privateTeachers || []).reduce((acc: number, pt: any) => acc + (pt.monthlyPrice || 0), 0);
+                                            const total = pkgBase + pvtBase;
+                                            setPayOriginalAmount(total.toString());
+                                            const disc = Number(payDiscountAmount) || 0;
+                                            setPayPaidAmount(Math.max(0, total - disc).toString());
+                                        }
+                                    }
+                                }}
                                 className="w-full text-xs rounded-xl border border-gray-200 px-3 py-2 bg-white"
                             >
                                 <option value="CENTER_PACKAGE">اشتراك باقة سنتر (Package)</option>
@@ -1319,6 +1445,33 @@ export default function CenterStudentProfilePage() {
                                 placeholder="مثلاً: قسط شهر أكتوبر، رسوم تسجيل..."
                             />
                         </div>
+
+                        {/* Live Calculation Summary Banner */}
+                        {Number(payOriginalAmount) > 0 && (
+                            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-1 text-xs">
+                                <div className="flex items-center justify-between text-emerald-950 font-bold">
+                                    <span className="flex items-center gap-1.5">
+                                        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                                        المبلغ المطلوب تسديده:
+                                    </span>
+                                    <span className="font-mono text-sm font-black text-emerald-700">
+                                        {payOriginalAmount} ج.م
+                                    </span>
+                                </div>
+                                <div className="flex items-center justify-between text-[11px] text-emerald-800">
+                                    <span>المسدد نقداً الآن:</span>
+                                    <span className="font-mono font-bold">{payPaidAmount || 0} ج.م</span>
+                                </div>
+                                {Number(payOriginalAmount) - Number(payDiscountAmount || 0) - Number(payPaidAmount || 0) > 0 && (
+                                    <div className="flex items-center justify-between text-[11px] text-red-600 font-bold pt-1 border-t border-emerald-200/60">
+                                        <span>المتبقي دين / مستحق لاحقاً:</span>
+                                        <span className="font-mono">
+                                            {Math.max(0, Number(payOriginalAmount) - Number(payDiscountAmount || 0) - Number(payPaidAmount || 0))} ج.م
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         <DialogFooter className="gap-2 pt-3">
                             <Button

@@ -30,6 +30,7 @@ import {
 } from '@/lib/api/centers';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { CenterDashboardCalendar } from '@/components/dashboard/CenterDashboardCalendar';
 
 export default function CenterDashboardPage() {
     const user = useAuthStore((s) => s.user);
@@ -61,10 +62,6 @@ export default function CenterDashboardPage() {
 
     const isLoading = loadingTeachers || loadingPackages || loadingGroups || loadingEnrollments || loadingFinancials;
 
-    // Filter today's day in Arabic
-    const daysArabic = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
-    const todayName = daysArabic[new Date().getDay()];
-    const todayGroups = groups.filter((g) => g.schedule?.some((s) => s.day === todayName));
 
     const totalStudents = enrollments.length;
     const packageStudentsCount = enrollments.filter((e) => e.type === 'PACKAGE' || e.type === 'BOTH').length;
@@ -227,85 +224,35 @@ export default function CenterDashboardPage() {
                 </Link>
             </div>
 
-            {/* ── Lower Section: Today's Schedule & Financials Breakdown ── */}
+            {/* ── Interactive Calendar & Scheduling Hub ── */}
+            <CenterDashboardCalendar groups={groups} teachers={teachers} isLoading={loadingGroups} />
+
+            {/* ── Lower Section: Financials Breakdown & Center Insights ── */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Today's Schedule (2 cols) */}
-                <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
-                    <div className="flex items-center justify-between mb-4">
-                        <div>
-                            <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
-                                <Clock className="h-4 w-4 text-primary" />
-                                حصص ومجموعات اليوم ({todayName})
-                            </h3>
-                            <p className="text-xs text-gray-500">المجموعات المقرر حضورها في السنتر اليوم</p>
-                        </div>
-                        <Link href="/center/groups">
-                            <Button variant="ghost" size="sm" className="text-xs font-bold text-primary gap-1">
-                                جميع المجموعات
-                                <ArrowUpRight className="h-3.5 w-3.5" />
-                            </Button>
-                        </Link>
-                    </div>
-
-                    {todayGroups.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-12 text-center">
-                            <CalendarCheck className="h-10 w-10 text-gray-300 mb-2" />
-                            <p className="text-sm font-bold text-gray-600">لا توجد مجموعات مجدولة اليوم</p>
-                            <p className="text-xs text-gray-400 mt-1">يمكنك الاطلاع على جدول باقي أيام الأسبوع من إدارة المجموعات</p>
-                        </div>
-                    ) : (
-                        <div className="space-y-3">
-                            {todayGroups.map((group) => {
-                                const teacher = typeof group.centerTeacherId === 'object' ? group.centerTeacherId : null;
-                                return (
-                                    <div
-                                        key={group._id}
-                                        className="flex items-center justify-between p-3.5 rounded-xl border border-gray-100 hover:border-primary/20 hover:bg-primary/5 transition-all"
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary font-bold flex items-center justify-center text-sm">
-                                                {group.name.charAt(0)}
-                                            </div>
-                                            <div>
-                                                <h4 className="text-sm font-bold text-gray-900">{group.name}</h4>
-                                                <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
-                                                    <span>{teacher?.name || 'مدرس السنتر'}</span>
-                                                    <span>•</span>
-                                                    <span>{group.gradeLevel}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center gap-3">
-                                            <Badge variant="outline" className="text-xs font-bold bg-white">
-                                                {group.groupType === 'PACKAGE' ? 'باقة' : group.groupType === 'PRIVATE' ? 'برايفت' : 'مختلط'}
-                                            </Badge>
-                                            <Link href={`/center/attendance?groupId=${group._id}`}>
-                                                <Button size="sm" className="text-xs font-bold gap-1 rounded-lg">
-                                                    تحضير
-                                                </Button>
-                                            </Link>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
-                </div>
-
-                {/* Financial Overview (1 col) */}
-                <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm flex flex-col justify-between">
+                {/* Financial Overview (2 cols) */}
+                <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-100 p-6 shadow-sm flex flex-col justify-between">
                     <div>
-                        <h3 className="text-base font-bold text-gray-900 flex items-center gap-2 mb-4">
-                            <TrendingUp className="h-4 w-4 text-emerald-600" />
-                            توزيع إيرادات السنتر
-                        </h3>
-                        <div className="space-y-4">
+                        <div className="flex items-center justify-between mb-4">
                             <div>
-                                <div className="flex items-center justify-between text-xs font-bold mb-1">
-                                    <span className="text-blue-600">اشتراكات الباقات</span>
-                                    <span>{(financials?.packageRevenue || 0).toLocaleString()} ج.م</span>
+                                <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                                    <TrendingUp className="h-4 w-4 text-emerald-600" />
+                                    توزيع إيرادات وتحصيلات السنتر
+                                </h3>
+                                <p className="text-xs text-gray-500">تفصيل الإيراد بحسب نوع الاشتراك الدراسي</p>
+                            </div>
+                            <Badge variant="outline" className="text-xs font-bold text-emerald-700 bg-emerald-50 border-emerald-200">
+                                إجمالي: {(financials?.totalRevenue || 0).toLocaleString()} ج.م
+                            </Badge>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                            <div className="p-4 rounded-xl bg-blue-50/50 border border-blue-100">
+                                <div className="flex items-center justify-between text-xs font-bold mb-1 text-blue-700">
+                                    <span>اشتراكات الباقات</span>
+                                    <span>{financials?.totalRevenue ? Math.min(100, Math.round(((financials?.packageRevenue || 0) / financials.totalRevenue) * 100)) : 0}%</span>
                                 </div>
-                                <div className="h-2 rounded-full bg-blue-100 overflow-hidden">
+                                <p className="text-xl font-black text-blue-900">{(financials?.packageRevenue || 0).toLocaleString()} <span className="text-xs font-normal">ج.م</span></p>
+                                <div className="h-1.5 rounded-full bg-blue-200/60 overflow-hidden mt-3">
                                     <div
                                         className="h-full bg-blue-600 rounded-full"
                                         style={{
@@ -315,12 +262,13 @@ export default function CenterDashboardPage() {
                                 </div>
                             </div>
 
-                            <div>
-                                <div className="flex items-center justify-between text-xs font-bold mb-1">
-                                    <span className="text-purple-600">اشتراكات البرايفت</span>
-                                    <span>{(financials?.privateRevenue || 0).toLocaleString()} ج.م</span>
+                            <div className="p-4 rounded-xl bg-purple-50/50 border border-purple-100">
+                                <div className="flex items-center justify-between text-xs font-bold mb-1 text-purple-700">
+                                    <span>اشتراكات البرايفت</span>
+                                    <span>{financials?.totalRevenue ? Math.min(100, Math.round(((financials?.privateRevenue || 0) / financials.totalRevenue) * 100)) : 0}%</span>
                                 </div>
-                                <div className="h-2 rounded-full bg-purple-100 overflow-hidden">
+                                <p className="text-xl font-black text-purple-900">{(financials?.privateRevenue || 0).toLocaleString()} <span className="text-xs font-normal">ج.م</span></p>
+                                <div className="h-1.5 rounded-full bg-purple-200/60 overflow-hidden mt-3">
                                     <div
                                         className="h-full bg-purple-600 rounded-full"
                                         style={{
@@ -330,12 +278,13 @@ export default function CenterDashboardPage() {
                                 </div>
                             </div>
 
-                            <div>
-                                <div className="flex items-center justify-between text-xs font-bold mb-1">
-                                    <span className="text-amber-600">الاشتراكات المجمعة</span>
-                                    <span>{(financials?.combinedRevenue || 0).toLocaleString()} ج.م</span>
+                            <div className="p-4 rounded-xl bg-amber-50/50 border border-amber-100">
+                                <div className="flex items-center justify-between text-xs font-bold mb-1 text-amber-700">
+                                    <span>الاشتراكات المجمعة</span>
+                                    <span>{financials?.totalRevenue ? Math.min(100, Math.round(((financials?.combinedRevenue || 0) / financials.totalRevenue) * 100)) : 0}%</span>
                                 </div>
-                                <div className="h-2 rounded-full bg-amber-100 overflow-hidden">
+                                <p className="text-xl font-black text-amber-900">{(financials?.combinedRevenue || 0).toLocaleString()} <span className="text-xs font-normal">ج.م</span></p>
+                                <div className="h-1.5 rounded-full bg-amber-200/60 overflow-hidden mt-3">
                                     <div
                                         className="h-full bg-amber-600 rounded-full"
                                         style={{
@@ -347,13 +296,62 @@ export default function CenterDashboardPage() {
                         </div>
                     </div>
 
-                    <div className="mt-6 pt-4 border-t border-gray-100">
+                    <div className="mt-6 pt-4 border-t border-gray-100 flex items-center justify-between">
+                        <span className="text-xs text-gray-500">للاطلاع على كشوف الحسابات وتفاصيل الديون والسندات</span>
                         <Link href="/center/financials">
-                            <Button variant="outline" className="w-full text-xs font-bold text-gray-700 rounded-xl justify-between">
+                            <Button variant="outline" size="sm" className="text-xs font-bold text-gray-700 rounded-xl gap-2">
                                 <span>تقرير الحسابات التفصيلي</span>
                                 <ArrowUpRight className="h-4 w-4" />
                             </Button>
                         </Link>
+                    </div>
+                </div>
+
+                {/* Center Quick Reports & Statistics (1 col) */}
+                <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm flex flex-col justify-between space-y-4">
+                    <div>
+                        <h3 className="text-base font-bold text-gray-900 flex items-center gap-2 mb-2">
+                            <ShieldCheck className="h-4 w-4 text-primary" />
+                            تقارير ومؤشرات سريعة
+                        </h3>
+                        <p className="text-xs text-gray-500 mb-4">الوصول السريع إلى كشوفات السنتر الرئيسية</p>
+
+                        <div className="space-y-2.5">
+                            <Link href="/center/reports" className="flex items-center justify-between p-3 rounded-xl bg-gray-50/80 hover:bg-primary/5 hover:border-primary/20 border border-transparent transition-all group">
+                                <div className="flex items-center gap-2.5">
+                                    <div className="h-8 w-8 rounded-lg bg-white shadow-2xs flex items-center justify-center text-primary group-hover:scale-105 transition-transform">
+                                        <TrendingUp className="h-4 w-4" />
+                                    </div>
+                                    <span className="text-xs font-bold text-gray-800">تقارير السنتر الشاملة</span>
+                                </div>
+                                <ArrowUpRight className="h-3.5 w-3.5 text-gray-400 group-hover:text-primary transition-colors" />
+                            </Link>
+
+                            <Link href="/center/cards" className="flex items-center justify-between p-3 rounded-xl bg-gray-50/80 hover:bg-emerald-50/50 hover:border-emerald-200 border border-transparent transition-all group">
+                                <div className="flex items-center gap-2.5">
+                                    <div className="h-8 w-8 rounded-lg bg-white shadow-2xs flex items-center justify-center text-emerald-600 group-hover:scale-105 transition-transform">
+                                        <QrCode className="h-4 w-4" />
+                                    </div>
+                                    <span className="text-xs font-bold text-gray-800">إصدار وطباعة كروت الطلاب</span>
+                                </div>
+                                <ArrowUpRight className="h-3.5 w-3.5 text-gray-400 group-hover:text-emerald-600 transition-colors" />
+                            </Link>
+
+                            <Link href="/center/groups" className="flex items-center justify-between p-3 rounded-xl bg-gray-50/80 hover:bg-blue-50/50 hover:border-blue-200 border border-transparent transition-all group">
+                                <div className="flex items-center gap-2.5">
+                                    <div className="h-8 w-8 rounded-lg bg-white shadow-2xs flex items-center justify-center text-blue-600 group-hover:scale-105 transition-transform">
+                                        <BookOpen className="h-4 w-4" />
+                                    </div>
+                                    <span className="text-xs font-bold text-gray-800">إدارة القاعات والمجموعات</span>
+                                </div>
+                                <ArrowUpRight className="h-3.5 w-3.5 text-gray-400 group-hover:text-blue-600 transition-colors" />
+                            </Link>
+                        </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-400 font-medium">
+                        <span>إجمالي المجموعات النشطة: {groups.length}</span>
+                        <span>طاقم المدرسين: {teachers.length}</span>
                     </div>
                 </div>
             </div>

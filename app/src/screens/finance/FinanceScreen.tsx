@@ -99,13 +99,17 @@ export const FinanceScreen: React.FC<Props> = ({ route }) => {
                 </View>
               </>
             )}
-            <View style={s.summaryDivider} />
-            <View style={s.summaryItem}>
-              <Text style={[s.summaryValue, hasDiscount && s.summaryValueSm, { color: hasDebt ? colors.absent : colors.textMuted }]}>
-                {totalRemain} ج
-              </Text>
-              <Text style={s.summaryLabel}>إجمالي المتبقي</Text>
-            </View>
+            {hasDebt && (
+              <>
+                <View style={s.summaryDivider} />
+                <View style={s.summaryItem}>
+                  <Text style={[s.summaryValue, hasDiscount && s.summaryValueSm, { color: colors.absent }]}>
+                    {totalRemain} ج
+                  </Text>
+                  <Text style={s.summaryLabel}>إجمالي المتبقي</Text>
+                </View>
+              </>
+            )}
             <View style={s.statusIcon}>
               {hasDebt
                 ? <AlertTriangle size={hasDiscount ? 24 : 30} color={colors.absent} />

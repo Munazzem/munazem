@@ -51,6 +51,7 @@ const getNavItems = (role?: string) => {
             { name: 'دليل الطلاب',        href: '/center/students',    icon: UserCheck       },
             { name: 'الاشتراكات',         href: '/center/enrollments', icon: ClipboardList   },
             { name: 'التحضير السريع',     href: '/center/attendance',  icon: CalendarCheck   },
+            { name: 'التقارير الشاملة',   href: '/center/reports',     icon: FileText        },
             { name: 'المشرفين',           href: '/center/supervisors', icon: ShieldCheck     },
             { name: 'الماليات والحسابات',  href: '/center/financials',  icon: Wallet          },
             { name: 'إعدادات السنتر',     href: '/center/settings',    icon: Settings        },
@@ -64,6 +65,7 @@ const getNavItems = (role?: string) => {
             { name: 'دليل الطلاب',        href: '/center/students',    icon: UserCheck       },
             { name: 'الاشتراكات',         href: '/center/enrollments', icon: ClipboardList   },
             { name: 'التحضير السريع',     href: '/center/attendance',  icon: CalendarCheck   },
+            { name: 'التقارير',          href: '/center/reports',     icon: FileText        },
             { name: 'الماليات',          href: '/center/financials',  icon: Wallet          },
         ];
     }

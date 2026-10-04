@@ -4,6 +4,7 @@ import { ParentDeviceModel } from '../../database/models/parent-device.model.js'
 import { ParentNotificationModel } from '../../database/models/parent-notification.model.js';
 import { ParentModel } from '../../database/models/parent.model.js';
 import { StudentModel } from '../../database/models/student.model.js';
+import { CenterStudentModel } from '../../database/models/center-student.model.js';
 import { UserModel } from '../../database/models/user.model.js';
 import { ParentNotificationType } from '../../types/parent.types.js';
 import { logger } from '../../common/utils/logger.util.js';
@@ -183,9 +184,22 @@ async function getParentsForStudent(studentId: string): Promise<string[]> {
 
   // Fallback: look up student parentPhone and auto-link matching registered parent
   try {
+    let parentPhone: string | undefined;
+    let studentModelType: 'Student' | 'CenterStudent' = 'Student';
+
     const student = await StudentModel.findById(studentId, { parentPhone: 1 }).lean();
     if (student?.parentPhone) {
-      const normalized = normalizePhone(student.parentPhone);
+      parentPhone = student.parentPhone;
+    } else {
+      const centerStudent = await CenterStudentModel.findById(studentId, { parentPhone: 1 }).lean();
+      if (centerStudent?.parentPhone) {
+        parentPhone = centerStudent.parentPhone;
+        studentModelType = 'CenterStudent';
+      }
+    }
+
+    if (parentPhone) {
+      const normalized = normalizePhone(parentPhone);
       const digits = normalized.replace(/\D/g, '');
       const last10 = digits.slice(-10);
       if (last10.length >= 8) {
@@ -200,6 +214,7 @@ async function getParentsForStudent(studentId: string): Promise<string[]> {
               update: {
                 $set: {
                   status: 'ACTIVE',
+                  studentModelType,
                   verifiedVia: 'AUTO_CONFIRMED',
                   linkedAt: new Date(),
                 },
@@ -223,7 +238,8 @@ async function getParentsForStudent(studentId: string): Promise<string[]> {
 async function saveInAppNotification(params: {
   parentId: string;
   studentId: string;
-  teacherId: string;
+  teacherId?: string;
+  centerId?: string;
   type: ParentNotificationType;
   title: string;
   body: string;
@@ -232,17 +248,24 @@ async function saveInAppNotification(params: {
   eventId: string;
 }): Promise<void> {
   try {
-    await ParentNotificationModel.create({
+    const docData: any = {
       parentId: new mongoose.Types.ObjectId(params.parentId),
       studentId: new mongoose.Types.ObjectId(params.studentId),
-      teacherId: new mongoose.Types.ObjectId(params.teacherId),
       type: params.type,
       title: params.title,
       body: params.body,
       deepLink: params.deepLink,
       data: params.data ?? {},
       eventId: params.eventId,
-    });
+    };
+    if (params.teacherId && mongoose.Types.ObjectId.isValid(params.teacherId)) {
+      docData.teacherId = new mongoose.Types.ObjectId(params.teacherId);
+    }
+    if (params.centerId && mongoose.Types.ObjectId.isValid(params.centerId)) {
+      docData.centerId = new mongoose.Types.ObjectId(params.centerId);
+    }
+
+    await ParentNotificationModel.create(docData);
   } catch (err: any) {
     // Duplicate eventId — notification already saved, safe to ignore
     if (err.code !== 11000) {
@@ -255,6 +278,75 @@ async function saveInAppNotification(params: {
 // PUBLIC SERVICE
 // ═══════════════════════════════════════════════════════════════════════════════
 export class ParentPushService {
+  /**
+   * Notify parents when a student enters the center gate.
+   * Fires-and-forgets — non-blocking.
+   */
+  static notifyCenterCheckIn(params: {
+    studentId: string;
+    studentName: string;
+    centerId: string;
+    centerName: string;
+    checkInTime?: Date;
+    source?: string;
+  }): void {
+    setImmediate(() => {
+      ParentPushService._sendCenterCheckIn(params).catch((err) =>
+        logger.warn('parent_push_center_checkin_error', { err })
+      );
+    });
+  }
+
+  private static async _sendCenterCheckIn(params: {
+    studentId: string;
+    studentName: string;
+    centerId: string;
+    centerName: string;
+    checkInTime?: Date;
+    source?: string;
+  }): Promise<void> {
+    const parentIds = await getParentsForStudent(params.studentId);
+    if (parentIds.length === 0) return;
+
+    const { studentId, studentName, centerId, centerName } = params;
+    const time = params.checkInTime || new Date();
+    const timeStr = new Date(time).toLocaleTimeString('ar-EG', {
+      timeZone: 'Africa/Cairo',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    const title = `${studentName} — وصل السنتر 🏢`;
+    const body = `تم تسجيل دخول ${studentName} إلى سنتر ${centerName} بسلام في تمام الساعة ${timeStr}.`;
+
+    const deepLink = buildDeepLink(studentId, 'attendance');
+    const datePart = new Date(time).toISOString().split('T')[0];
+    const eventId = `center_checkin:${studentId}:${centerId}:${datePart}`;
+    const pushData = { deepLink, studentId, tab: 'attendance', type: 'CENTER_CHECKIN' };
+
+    await Promise.allSettled(
+      parentIds.map(async (parentId) => {
+        await saveInAppNotification({
+          parentId,
+          studentId,
+          centerId,
+          type: ParentNotificationType.CENTER_CHECKIN,
+          title,
+          body,
+          deepLink,
+          data: pushData,
+          eventId,
+        });
+
+        await deliverToParent(parentId, {
+          title,
+          body,
+          data: pushData,
+        });
+      })
+    );
+  }
+
   /**
    * Notify parents when a student's attendance is recorded.
    * Fires-and-forgets — never throws so it cannot break the attendance flow.

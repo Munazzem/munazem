@@ -462,7 +462,8 @@ export class StudentService {
         const unpaidEnrollments = await CycleEnrollmentModel.find({
             teacherId,
             status: { $in: [CycleEnrollmentStatus.UNPAID, CycleEnrollmentStatus.PARTIALLY_PAID] },
-            remainingAmount: { $gt: 0 }
+            remainingAmount: { $gt: 0 },
+            isWaived: { $ne: true }
         }, { studentId: 1, groupId: 1, cycleNumber: 1, remainingAmount: 1 }).lean();
 
         const studentGroupMap = new Map<string, string>();
@@ -741,6 +742,7 @@ export class StudentService {
             studentId: student._id,
             status: { $in: [CycleEnrollmentStatus.UNPAID, CycleEnrollmentStatus.PARTIALLY_PAID] },
             remainingAmount: { $gt: 0 },
+            isWaived: { $ne: true }
         }).lean();
 
         let trueDebt = 0;

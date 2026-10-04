@@ -166,6 +166,67 @@ export interface ITeacherFinancialReport {
     transactionCount: number;
 }
 
+export interface ICenterTransaction {
+    _id: string;
+    studentId?: any;
+    studentName?: string;
+    studentCode?: string;
+    studentPhone?: string;
+    parentPhone?: string;
+    gradeLevel?: string;
+    category: 'CENTER_PACKAGE' | 'CENTER_PRIVATE' | 'CENTER_COMBINED';
+    centerTeacherId?: {
+        _id: string;
+        name: string;
+        subject?: string;
+    };
+    originalAmount: number;
+    discountAmount: number;
+    paidAmount: number;
+    remainingAmount: number;
+    description?: string;
+    date: string;
+    createdAt?: string;
+    createdBy?: {
+        _id: string;
+        name: string;
+        role?: string;
+    };
+}
+
+export interface IDailyTallyReport {
+    date: string;
+    totalPaid: number;
+    packageRevenue: number;
+    privateRevenue: number;
+    combinedRevenue: number;
+    totalDebt: number;
+    transactionCount: number;
+    transactions: ICenterTransaction[];
+}
+
+export interface IMonthlyTallyReport {
+    year: number;
+    month: number;
+    totalPaid: number;
+    packageRevenue: number;
+    privateRevenue: number;
+    combinedRevenue: number;
+    totalDebt: number;
+    transactionCount: number;
+    dailyBreakdown: Array<{
+        day: number;
+        date: string;
+        totalPaid: number;
+        packageRevenue: number;
+        privateRevenue: number;
+        combinedRevenue: number;
+        totalDebt: number;
+        count: number;
+    }>;
+    transactions: ICenterTransaction[];
+}
+
 // ── DTOs ──────────────────────────────────────────────────────────────────────
 
 export interface CreateCenterDTO {
@@ -268,7 +329,7 @@ export interface ICenterStudent {
 
 export interface CreateCenterStudentDTO {
     studentName: string;
-    parentName: string;
+    parentName?: string;
     studentPhone?: string | null;
     parentPhone?: string | null;
     gradeLevel: string;
@@ -279,3 +340,78 @@ export interface CreateCenterStudentDTO {
 export interface BulkCreateCenterStudentDTO {
     students: CreateCenterStudentDTO[];
 }
+
+export interface ICenterCheckIn {
+    _id: string;
+    centerId: string;
+    studentId: string | ICenterStudent;
+    date: string;
+    checkInTime: string;
+    source: 'QR_SCAN' | 'BARCODE' | 'MANUAL';
+    attendedGroups: Array<string | ICenterGroup>;
+    recordedBy?: { _id: string; name: string } | string;
+    notes?: string | null;
+    createdAt?: string;
+    updatedAt?: string;
+}
+
+export interface CenterCheckInGroupInfo {
+    _id: string;
+    name: string;
+    gradeLevel: string;
+    groupType: string;
+    centerTeacher?: { _id: string; name: string; subject: string } | null;
+    scheduleTime?: string | null;
+    schedule?: Array<{ day: string; time: string }>;
+    isAttended: boolean;
+}
+
+export interface CenterCheckInResponse {
+    student: ICenterStudent;
+    checkIn: ICenterCheckIn;
+    isNewCheckIn: boolean;
+    todayArabicDay: string;
+    scheduledTodayGroups: CenterCheckInGroupInfo[];
+    otherEnrolledGroups: CenterCheckInGroupInfo[];
+    attendedGroupIds: string[];
+    financialStatus: {
+        totalPaid: number;
+        totalRemaining: number;
+        hasDebt: boolean;
+        hasActiveEnrollment: boolean;
+        enrollmentType?: string | null;
+    };
+    enrollmentSummary?: {
+        type?: string | null;
+        packageName?: string | null;
+        privateTeachersSummary?: string[];
+    };
+}
+
+export interface EnrichedCenterCheckIn extends ICenterCheckIn {
+    studentId: ICenterStudent;
+    attendedGroups: ICenterGroup[];
+    enrollment?: {
+        _id: string;
+        type: CenterEnrollmentType;
+        packageId?: { _id: string; name: string } | null;
+        packageGroups?: Array<{ _id: string; name: string }>;
+        privateTeachers?: Array<{
+            centerTeacherId?: { _id: string; name: string; subject?: string };
+            groupId?: { _id: string; name: string };
+        }>;
+    } | null;
+    totalRemainingDebt?: number;
+}
+
+export interface DailyCheckInsResult {
+    checkIns: EnrichedCenterCheckIn[];
+    total: number;
+    stats: {
+        totalCheckedIn: number;
+        totalWithAttendedClasses: number;
+        totalGeneralOnly: number;
+    };
+}
+
+

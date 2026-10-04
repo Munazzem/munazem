@@ -88,21 +88,23 @@ export default function CardPortalPage({ params }: { params: { token: string } }
                         </Badge>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className={cn("grid gap-3", (student.totalDebt || 0) > 0 ? "grid-cols-2" : "grid-cols-1")}>
                         <div className="bg-gray-50 rounded-2xl p-4">
                             <p className="text-xs text-gray-500 mb-1 flex items-center gap-1.5 font-medium">
                                 <Calendar className="h-3.5 w-3.5" /> الحصص المتبقية
                             </p>
                             <p className="text-lg font-black text-gray-800">{student.remainingSessions}</p>
                         </div>
-                        <div className="bg-gray-50 rounded-2xl p-4">
-                            <p className="text-xs text-gray-500 mb-1 flex items-center gap-1.5 font-medium">
-                                <Wallet className="h-3.5 w-3.5" /> المديونية
-                            </p>
-                            <p className={cn('text-lg font-black', debtColor)}>
-                                {student.totalDebt} <span className="text-xs font-normal">ج.م</span>
-                            </p>
-                        </div>
+                        {(student.totalDebt || 0) > 0 && (
+                            <div className="bg-gray-50 rounded-2xl p-4">
+                                <p className="text-xs text-gray-500 mb-1 flex items-center gap-1.5 font-medium">
+                                    <Wallet className="h-3.5 w-3.5" /> المديونية
+                                </p>
+                                <p className={cn('text-lg font-black', debtColor)}>
+                                    {student.totalDebt} <span className="text-xs font-normal">ج.م</span>
+                                </p>
+                            </div>
+                        )}
                     </div>
 
                     {(student.lastAttendanceDate || student.lastPaymentDate) && (

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
     fetchCenterStudents,
@@ -22,7 +23,13 @@ import type {
     ICenterGroup,
     CenterEnrollmentType,
 } from '@/types/center.types';
-import { ALL_GRADES } from '@/lib/constants/grade.constants';
+import {
+    ALL_GRADES,
+    PRIMARY_GRADES,
+    PREPARATORY_GRADES,
+    SECONDARY_GRADES,
+} from '@/lib/constants/grade.constants';
+import { STAGE_SECTIONS } from '@/lib/constants/stage-sections';
 import { BranchSwitcher } from '@/components/center/BranchSwitcher';
 import { toast } from 'sonner';
 import {
@@ -47,6 +54,13 @@ import {
     BookOpen,
     Layers,
     Check,
+    ChevronDown,
+    ChevronUp,
+    ChevronsUpDown,
+    ChevronLeft,
+    X,
+    Calculator,
+    ArrowRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -69,11 +83,16 @@ interface BulkRow {
 
 export default function CenterStudentsPage() {
     const queryClient = useQueryClient();
+    const router = useRouter();
+    const searchParams = useSearchParams();
 
-    // Filters
-    const [search, setSearch] = useState('');
-    const [selectedGrade, setSelectedGrade] = useState('ALL');
-    const [page, setPage] = useState(1);
+    // Check if stage query param exists and redirect to dedicated page
+    useEffect(() => {
+        const stage = searchParams.get('stage');
+        if (stage) {
+            router.replace(`/center/students/stage/${stage.toLowerCase()}`);
+        }
+    }, [searchParams, router]);
 
     // Single Add / Edit Modal State
     const [isAddOpen, setIsAddOpen] = useState(false);
@@ -102,20 +121,26 @@ export default function CenterStudentsPage() {
     const [privateDiscountType, setPrivateDiscountType] = useState<'PERCENTAGE' | 'FIXED' | ''>('');
     const [privateDiscountVal, setPrivateDiscountVal] = useState('0');
 
-    // Packages, Teachers, Groups queries
+    // Packages, Teachers, Groups queries (lazy loaded only when Add/Edit modal is open)
     const { data: packages = [] } = useQuery<ICenterPackage[]>({
         queryKey: ['center', 'packages'],
         queryFn: () => fetchCenterPackages({ isActive: true }),
+        enabled: isAddOpen,
+        staleTime: 5 * 60 * 1000,
     });
 
     const { data: teachers = [] } = useQuery<ICenterTeacher[]>({
         queryKey: ['center', 'teachers'],
         queryFn: () => fetchCenterTeachers({ isActive: true }),
+        enabled: isAddOpen,
+        staleTime: 5 * 60 * 1000,
     });
 
     const { data: groups = [] } = useQuery<ICenterGroup[]>({
         queryKey: ['center', 'groups'],
         queryFn: () => fetchCenterGroups({ isActive: true }),
+        enabled: isAddOpen,
+        staleTime: 5 * 60 * 1000,
     });
 
     const handleSelectPackage = (newPkgId: string) => {
@@ -196,6 +221,17 @@ export default function CenterStudentsPage() {
         return isPrivateOrMixed && g.gradeLevel === gradeLevel;
     });
 
+    const instantPkgPrice = (enrollmentType === 'PACKAGE' || enrollmentType === 'BOTH') && selectedPkg
+        ? (selectedPkg.monthlyPrice || 0)
+        : 0;
+    const instantPrivatePrice = (enrollmentType === 'PRIVATE' || enrollmentType === 'BOTH')
+        ? selectedPrivateTeachers.reduce((sum, p) => {
+              const grp = groups.find((g) => g._id === p.groupId);
+              return sum + (grp?.privateMonthlyPrice ?? p.monthlyPrice ?? 0);
+          }, 0)
+        : 0;
+    const instantTotalPrice = instantPkgPrice + instantPrivatePrice;
+
     // Bulk Add Modal State
     const [isBulkOpen, setIsBulkOpen] = useState(false);
     const [bulkGradeLevel, setBulkGradeLevel] = useState<string>(ALL_GRADES[0]);
@@ -204,21 +240,61 @@ export default function CenterStudentsPage() {
         { id: '1', studentName: '', parentName: '', studentPhone: '', parentPhone: '' },
     ]);
 
-    // Query Students
-    const { data: studentsResponse, isLoading } = useQuery({
-        queryKey: ['center', 'students', search, selectedGrade, page],
-        queryFn: () =>
-            fetchCenterStudents({
-                search: search.trim() || undefined,
-                gradeLevel: selectedGrade !== 'ALL' ? selectedGrade : undefined,
-                page,
-                limit: 50,
-            }),
+    // Summary Stage Counts Query (Fetches counts only with 1-min cache, no full student list)
+    const { data: summaryResponse } = useQuery({
+        queryKey: ['center', 'students', 'stage-counts'],
+        queryFn: () => fetchCenterStudents({ limit: 1, includeCounts: 'true' as any }),
+        staleTime: 60000,
+        refetchOnWindowFocus: false,
     });
 
-    const students = studentsResponse?.data || [];
-    const totalCount = studentsResponse?.total || 0;
-    const totalPages = studentsResponse?.totalPages || 1;
+    const stageCounts = summaryResponse?.stageCounts || {
+        total: 0,
+        secondary: 0,
+        preparatory: 0,
+        primary: 0,
+    };
+
+    // Global Search State with 350ms debounce
+    const [globalSearch, setGlobalSearch] = useState('');
+    const [debouncedGlobalSearch, setDebouncedGlobalSearch] = useState('');
+
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            setDebouncedGlobalSearch(globalSearch.trim());
+        }, 350);
+        return () => clearTimeout(handler);
+    }, [globalSearch]);
+
+    const { data: globalSearchResults, isLoading: isSearchingGlobal } = useQuery({
+        queryKey: ['center', 'students', 'global-search', debouncedGlobalSearch],
+        queryFn: () => fetchCenterStudents({ search: debouncedGlobalSearch, limit: 15 }),
+        enabled: debouncedGlobalSearch.length >= 2,
+        staleTime: 30000,
+        refetchOnWindowFocus: false,
+    });
+
+    const handleOpenAddForStage = (targetGrade: string) => {
+        handleOpenAdd();
+        setGradeLevel(targetGrade);
+    };
+
+    const handleDeleteStudent = (st: ICenterStudent) => {
+        if (
+            confirm(
+                `هل أنت متأكد من حذف الطالب "${st.studentName}" نهائياً من السنتر؟ سيتم حذف جميع سجلاته واشتراكاته.`
+            )
+        ) {
+            deleteMutation.mutate(st._id);
+        }
+    };
+
+    const handleToggleActive = (st: ICenterStudent) => {
+        updateMutation.mutate({
+            id: st._id,
+            data: { isActive: !st.isActive } as any,
+        });
+    };
 
     // Mutations
     const createMutation = useMutation({
@@ -352,14 +428,18 @@ export default function CenterStudentsPage() {
 
     const handleSingleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!studentName.trim() || !parentName.trim()) {
-            toast.error('اسم الطالب واسم ولي الأمر مطلوبان');
+        if (!studentName.trim()) {
+            toast.error('اسم الطالب مطلوب');
             return;
         }
 
+        const trimmedStudentName = studentName.trim();
+        const parts = trimmedStudentName.split(/\s+/);
+        const derivedParentName = parentName.trim() || (parts.length > 1 ? parts.slice(1).join(' ') : `ولي أمر ${trimmedStudentName}`);
+
         const payload: CreateCenterStudentDTO = {
-            studentName: studentName.trim(),
-            parentName: parentName.trim(),
+            studentName: trimmedStudentName,
+            parentName: derivedParentName,
             gradeLevel,
             studentPhone: studentPhone.trim() || null,
             parentPhone: parentPhone.trim() || null,
@@ -464,13 +544,18 @@ export default function CenterStudentsPage() {
             return;
         }
 
-        const studentsPayload: CreateCenterStudentDTO[] = validRows.map((r) => ({
-            studentName: r.studentName.trim(),
-            parentName: r.parentName.trim() || `ولي أمر ${r.studentName.trim()}`,
-            studentPhone: r.studentPhone.trim() || null,
-            parentPhone: r.parentPhone.trim() || null,
-            gradeLevel: bulkGradeLevel,
-        }));
+        const studentsPayload: CreateCenterStudentDTO[] = validRows.map((r) => {
+            const sName = r.studentName.trim();
+            const parts = sName.split(/\s+/);
+            const pName = r.parentName.trim() || (parts.length > 1 ? parts.slice(1).join(' ') : `ولي أمر ${sName}`);
+            return {
+                studentName: sName,
+                parentName: pName,
+                studentPhone: r.studentPhone.trim() || null,
+                parentPhone: r.parentPhone.trim() || null,
+                gradeLevel: bulkGradeLevel,
+            };
+        });
 
         bulkMutation.mutate({ students: studentsPayload });
     };
@@ -508,266 +593,251 @@ export default function CenterStudentsPage() {
                 </div>
             </div>
 
-            {/* Filter and Search Bar */}
-            <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm space-y-3">
-                <div className="flex flex-col sm:flex-row items-center gap-3">
-                    <div className="relative flex-1 w-full">
-                        <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                        <Input
-                            value={search}
-                            onChange={(e) => {
-                                setSearch(e.target.value);
-                                setPage(1);
-                            }}
-                            placeholder="ابحث باسم الطالب، كود الطالب، رقم هاتف الطالب أو ولي الأمر، أو الباركود..."
-                            className="pr-10 border-gray-200 rounded-xl text-sm bg-gray-50/50 focus:bg-white"
-                        />
+            {/* ── STAGE KPI SUMMARY CARDS ─────────────────────────────────── */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {/* Total Center */}
+                <div
+                    className="p-4 rounded-2xl border border-gray-100 bg-white shadow-xs flex items-center justify-between"
+                >
+                    <div className="space-y-0.5">
+                        <span className="text-[11px] font-bold text-gray-500 block">إجمالي طلاب السنتر</span>
+                        <div className="text-2xl font-black text-gray-900">{stageCounts.total}</div>
+                        <span className="text-[10px] text-gray-400 font-medium block">
+                            جميع المراحل الدراسية المسجلة
+                        </span>
                     </div>
-
-                    <div className="w-full sm:w-auto">
-                        <select
-                            value={selectedGrade}
-                            onChange={(e) => {
-                                setSelectedGrade(e.target.value);
-                                setPage(1);
-                            }}
-                            className="w-full sm:w-48 text-xs font-bold border border-gray-200 rounded-xl px-3 py-2 bg-gray-50/50 focus:bg-white focus:outline-none"
-                        >
-                            <option value="ALL">جميع المراحل الدراسية</option>
-                            {ALL_GRADES.map((g) => (
-                                <option key={g} value={g}>
-                                    {g}
-                                </option>
-                            ))}
-                        </select>
+                    <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-bold shrink-0 shadow-xs">
+                        <Users className="w-6 h-6" />
                     </div>
                 </div>
 
-                <div className="flex items-center justify-between text-xs text-gray-500 pt-1 border-t border-gray-50">
-                    <span className="font-medium">
-                        إجمالي الطلاب: <strong className="text-gray-900 font-bold">{totalCount}</strong> طالب
-                    </span>
-                    {selectedGrade !== 'ALL' && (
-                        <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 text-[11px]">
-                            مصفى حسب: {selectedGrade}
-                        </Badge>
+                {/* Secondary Stage */}
+                <div
+                    onClick={() => router.push('/center/students/stage/secondary')}
+                    className="p-4 rounded-2xl border border-indigo-100 bg-white hover:bg-indigo-50/50 hover:border-indigo-300 shadow-xs flex items-center justify-between cursor-pointer transition-all group"
+                    title="اضغط للدخول إلى صفحة طلاب المرحلة الثانوية"
+                >
+                    <div className="space-y-0.5">
+                        <div className="flex items-center gap-1.5">
+                            <span className="text-[11px] font-bold text-indigo-700 block">المرحلة الثانوية</span>
+                            <span className="text-[9px] px-1.5 py-0.5 rounded font-bold bg-indigo-100 text-indigo-800">
+                                عرض الطلاب ←
+                            </span>
+                        </div>
+                        <div className="text-2xl font-black text-indigo-950">{stageCounts.secondary}</div>
+                        <span className="text-[10px] text-indigo-600/70 font-medium block">
+                            الصف 1 و 2 و 3 الثانوي
+                        </span>
+                    </div>
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold shrink-0 shadow-xs group-hover:scale-105 transition-transform">
+                        <GraduationCap className="w-6 h-6" />
+                    </div>
+                </div>
+
+                {/* Preparatory Stage */}
+                <div
+                    onClick={() => router.push('/center/students/stage/preparatory')}
+                    className="p-4 rounded-2xl border border-emerald-100 bg-white hover:bg-emerald-50/50 hover:border-emerald-300 shadow-xs flex items-center justify-between cursor-pointer transition-all group"
+                    title="اضغط للدخول إلى صفحة طلاب المرحلة الإعدادية"
+                >
+                    <div className="space-y-0.5">
+                        <div className="flex items-center gap-1.5">
+                            <span className="text-[11px] font-bold text-emerald-700 block">المرحلة الإعدادية</span>
+                            <span className="text-[9px] px-1.5 py-0.5 rounded font-bold bg-emerald-100 text-emerald-800">
+                                عرض الطلاب ←
+                            </span>
+                        </div>
+                        <div className="text-2xl font-black text-emerald-950">{stageCounts.preparatory}</div>
+                        <span className="text-[10px] text-emerald-600/70 font-medium block">
+                            الصف 1 و 2 و 3 الإعدادي
+                        </span>
+                    </div>
+                    <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold shrink-0 shadow-xs group-hover:scale-105 transition-transform">
+                        <BookOpen className="w-6 h-6" />
+                    </div>
+                </div>
+
+                {/* Primary Stage */}
+                <div
+                    onClick={() => router.push('/center/students/stage/primary')}
+                    className="p-4 rounded-2xl border border-amber-100 bg-white hover:bg-amber-50/50 hover:border-amber-300 shadow-xs flex items-center justify-between cursor-pointer transition-all group"
+                    title="اضغط للدخول إلى صفحة طلاب المرحلة الابتدائية"
+                >
+                    <div className="space-y-0.5">
+                        <div className="flex items-center gap-1.5">
+                            <span className="text-[11px] font-bold text-amber-700 block">المرحلة الابتدائية</span>
+                            <span className="text-[9px] px-1.5 py-0.5 rounded font-bold bg-amber-100 text-amber-800">
+                                عرض الطلاب ←
+                            </span>
+                        </div>
+                        <div className="text-2xl font-black text-amber-950">{stageCounts.primary}</div>
+                        <span className="text-[10px] text-amber-600/70 font-medium block">
+                            الصفوف الابتدائية (1 - 6)
+                        </span>
+                    </div>
+                    <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold shrink-0 shadow-xs group-hover:scale-105 transition-transform">
+                        <Layers className="w-6 h-6" />
+                    </div>
+                </div>
+            </div>
+
+            {/* ── Global Search ────────────────── */}
+            <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-gray-100 shadow-xs flex items-center justify-between gap-3">
+                <div className="relative flex-1 w-full">
+                    <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                        value={globalSearch}
+                        onChange={(e) => setGlobalSearch(e.target.value)}
+                        placeholder="بحث عام في كل المراحل بالاسم، كود الطالب، رقم الهاتف، أو الباركود..."
+                        className="pr-10 pl-9 border-gray-200 rounded-xl text-xs sm:text-sm bg-gray-50/60 focus:bg-white h-10 shadow-2xs"
+                    />
+                    {globalSearch && (
+                        <button
+                            type="button"
+                            onClick={() => setGlobalSearch('')}
+                            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1 cursor-pointer"
+                        >
+                            <X className="w-3.5 h-3.5" />
+                        </button>
                     )}
                 </div>
             </div>
 
-            {/* Students Table */}
-            {isLoading ? (
-                <div className="flex flex-col items-center justify-center p-16 bg-white rounded-2xl border border-gray-100 shadow-sm space-y-3">
-                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                    <p className="text-sm font-bold text-gray-500">جاري تحميل دليل الطلاب...</p>
-                </div>
-            ) : students.length === 0 ? (
-                <div className="flex flex-col items-center justify-center p-16 bg-white rounded-2xl border border-gray-100 shadow-sm text-center">
-                    <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-primary mb-4">
-                        <Users className="h-8 w-8" />
-                    </div>
-                    <h3 className="text-base font-bold text-gray-800">لا يوجد طلاب مسجلين بالسنتر بعد</h3>
-                    <p className="text-xs text-gray-400 mt-1 max-w-sm">
-                        ابدأ بإضافة أول طالب أو استورد دفعة كاملة من ملف إكسيل بكل سهولة.
-                    </p>
-                    <div className="flex gap-2 mt-4">
-                        <Button onClick={handleOpenAdd} size="sm" className="rounded-xl font-bold">
-                            <Plus className="h-4 w-4 ml-1" />
-                            إضافة أول طالب
-                        </Button>
-                        <Button onClick={handleOpenBulk} variant="outline" size="sm" className="rounded-xl font-bold">
-                            <FileSpreadsheet className="h-4 w-4 ml-1" />
-                            استيراد من إكسيل
+            {/* ── Search Results OR Stages Directory ───────────────────────── */}
+            {globalSearch.trim() ? (
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-xs p-5 space-y-4">
+                    <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                            <Search className="w-4 h-4 text-primary" />
+                            <span>نتائج البحث عن: "{globalSearch.trim()}"</span>
+                        </h3>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setGlobalSearch('')}
+                            className="text-xs text-gray-500 hover:text-gray-900"
+                        >
+                            إغلاق البحث
                         </Button>
                     </div>
-                </div>
-            ) : (
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-right text-xs">
-                            <thead className="bg-gray-50/75 border-b border-gray-100 text-gray-500 font-bold">
-                                <tr>
-                                    <th className="py-3.5 px-4">الطالب</th>
-                                    <th className="py-3.5 px-4">كود الطالب</th>
-                                    <th className="py-3.5 px-4">المرحلة الدراسية</th>
-                                    <th className="py-3.5 px-4">ولي الأمر والهواتف</th>
-                                    <th className="py-3.5 px-4">الباركود</th>
-                                    <th className="py-3.5 px-4">الحالة</th>
-                                    <th className="py-3.5 px-4 text-center">إجراءات</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
-                                {students.map((st) => (
-                                    <tr key={st._id} className="hover:bg-gray-50/50 transition-colors">
-                                        <td className="py-3.5 px-4 font-bold text-gray-900">
-                                            <Link
-                                                href={`/center/students/${st._id}`}
-                                                className="flex items-center gap-2 group hover:text-primary transition-colors cursor-pointer"
-                                                title="عرض بروفايل الطالب"
-                                            >
-                                                <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs group-hover:bg-primary group-hover:text-white transition-colors">
-                                                    {st.studentName.charAt(0)}
-                                                </div>
-                                                <div>
-                                                    <div className="text-gray-900 font-bold group-hover:text-primary transition-colors underline-offset-4 group-hover:underline">
-                                                        {st.studentName}
-                                                    </div>
-                                                    {st.notes && (
-                                                        <div className="text-[11px] text-gray-400 font-normal">
-                                                            ملاحظات: {st.notes}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </Link>
-                                        </td>
 
-                                        <td className="py-3.5 px-4">
-                                            <Badge variant="outline" className="font-mono font-bold bg-blue-50 text-blue-700 border-blue-200">
-                                                {st.studentCode}
-                                            </Badge>
-                                        </td>
-
-                                        <td className="py-3.5 px-4">
-                                            <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200 font-medium">
-                                                {st.gradeLevel}
-                                            </Badge>
-                                        </td>
-
-                                        <td className="py-3.5 px-4">
-                                            <div className="space-y-0.5">
-                                                <div className="text-gray-700 font-medium">{st.parentName}</div>
-                                                <div className="flex items-center gap-2 text-[11px] text-gray-500">
-                                                    {st.studentPhone && (
-                                                        <span className="flex items-center gap-1">
-                                                            <Phone className="h-3 w-3 text-gray-400" />
-                                                            طالب: {st.studentPhone}
-                                                        </span>
-                                                    )}
-                                                    {st.parentPhone && (
-                                                        <span className="flex items-center gap-1">
-                                                            <Phone className="h-3 w-3 text-gray-400" />
-                                                            ولي أمر: {st.parentPhone}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </td>
-
-                                        <td className="py-3.5 px-4 font-mono text-[11px] text-gray-500">
-                                            {st.barcode ? (
-                                                <span className="inline-flex items-center gap-1 bg-gray-100 px-2 py-0.5 rounded text-gray-700 font-mono">
-                                                    <Barcode className="h-3 w-3" />
-                                                    {st.barcode}
-                                                </span>
-                                            ) : (
-                                                <span className="text-gray-400">—</span>
-                                            )}
-                                        </td>
-
-                                        <td className="py-3.5 px-4">
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    updateMutation.mutate({
-                                                        id: st._id,
-                                                        data: { isActive: !st.isActive } as any,
-                                                    });
-                                                }}
-                                                title={`اضغط لـ ${st.isActive ? 'تعطيل' : 'تنشيط'} الطالب`}
-                                                className="cursor-pointer transition-transform hover:scale-105"
-                                            >
-                                                <Badge
-                                                    variant="outline"
-                                                    className={
-                                                        st.isActive
-                                                            ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100 font-bold'
-                                                            : 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100 font-bold'
-                                                    }
-                                                >
-                                                    {st.isActive ? 'نشط' : 'معطل'}
-                                                </Badge>
-                                            </button>
-                                        </td>
-
-                                        <td className="py-3.5 px-4">
-                                            <div className="flex items-center justify-center gap-1.5">
+                    {isSearchingGlobal ? (
+                        <div className="py-12 text-center space-y-2 text-gray-400">
+                            <Loader2 className="w-6 h-6 animate-spin mx-auto text-primary" />
+                            <p className="text-xs">جاري البحث...</p>
+                        </div>
+                    ) : (globalSearchResults?.data || []).length === 0 ? (
+                        <div className="py-12 text-center text-gray-400 text-xs">
+                            لا يوجد طلاب مطابقين للبحث
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-right text-xs">
+                                <thead className="bg-gray-50 text-gray-500 font-bold border-b">
+                                    <tr>
+                                        <th className="py-2.5 px-3">الطالب</th>
+                                        <th className="py-2.5 px-3">الكود</th>
+                                        <th className="py-2.5 px-3">المرحلة والصف</th>
+                                        <th className="py-2.5 px-3">الهاتف</th>
+                                        <th className="py-2.5 px-3 text-center">إجراءات</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {(globalSearchResults?.data || []).map((st: any) => (
+                                        <tr key={st._id} className="hover:bg-gray-50">
+                                            <td className="py-2.5 px-3 font-bold text-gray-900">{st.studentName}</td>
+                                            <td className="py-2.5 px-3 font-mono font-bold text-blue-600">{st.studentCode}</td>
+                                            <td className="py-2.5 px-3">{st.gradeLevel}</td>
+                                            <td className="py-2.5 px-3 font-mono">{st.parentPhone || st.studentPhone || '—'}</td>
+                                            <td className="py-2.5 px-3 text-center">
                                                 <Link
                                                     href={`/center/students/${st._id}`}
-                                                    title="عرض الملف التعريفي للطالب"
-                                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs transition-colors"
+                                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary/10 text-primary font-bold hover:bg-primary/20 text-xs"
                                                 >
-                                                    <User className="h-3.5 w-3.5" />
-                                                    <span>بروفايل</span>
+                                                    <User className="w-3 h-3" /> بروفايل
                                                 </Link>
-
-                                                <Link
-                                                    href={`/center/enrollments?studentId=${st._id}`}
-                                                    title="تسجيل اشتراك"
-                                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary font-bold text-xs transition-colors"
-                                                >
-                                                    <ClipboardList className="h-3.5 w-3.5" />
-                                                    <span>اشتراك</span>
-                                                </Link>
-
-                                                <Button
-                                                    size="icon"
-                                                    variant="ghost"
-                                                    onClick={() => handleOpenEdit(st)}
-                                                    className="h-7 w-7 text-gray-500 hover:text-gray-900 rounded-lg"
-                                                    title="تعديل البيانات"
-                                                >
-                                                    <Edit2 className="h-3.5 w-3.5" />
-                                                </Button>
-
-                                                <Button
-                                                    size="icon"
-                                                    variant="ghost"
-                                                    onClick={() => {
-                                                        if (confirm(`هل أنت متأكد من حذف الطالب ${st.studentName} نهائياً من السنتر؟ سيتم حذف جميع سجلاته واشتراكاته.`)) {
-                                                            deleteMutation.mutate(st._id);
-                                                        }
-                                                    }}
-                                                    className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg"
-                                                    title="حذف الطالب نهائياً"
-                                                >
-                                                    <Trash2 className="h-3.5 w-3.5" />
-                                                </Button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    {/* Pagination */}
-                    {totalPages > 1 && (
-                        <div className="p-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 bg-gray-50/50">
-                            <div>
-                                صفحة {page} من {totalPages}
-                            </div>
-                            <div className="flex gap-1">
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    disabled={page <= 1}
-                                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                                    className="h-7 text-xs rounded-lg"
-                                >
-                                    السابق
-                                </Button>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    disabled={page >= totalPages}
-                                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                                    className="h-7 text-xs rounded-lg"
-                                >
-                                    التالي
-                                </Button>
-                            </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
                         </div>
                     )}
+                </div>
+            ) : (
+                /* ── STAGE CARDS DIRECTORY (Clickable Hub to Dedicated Pages) ── */
+                <div className="space-y-4">
+                    {STAGE_SECTIONS.map((section) => {
+                        const StageIcon = section.icon;
+                        const theme = section.theme;
+                        const count =
+                            section.key === 'SECONDARY'
+                                ? stageCounts.secondary
+                                : section.key === 'PREPARATORY'
+                                ? stageCounts.preparatory
+                                : stageCounts.primary;
+
+                        return (
+                            <div
+                                key={section.key}
+                                onClick={() => router.push(`/center/students/stage/${section.slug}`)}
+                                className={`rounded-2xl border transition-all duration-200 overflow-hidden cursor-pointer group hover:shadow-md hover:scale-[1.002] active:scale-[0.999] ${theme.headerBg} ${theme.headerBorder}`}
+                            >
+                                <div className="p-4 sm:p-5 flex flex-wrap sm:flex-nowrap items-center justify-between gap-4 select-none">
+                                    {/* Right: Stage Icon & Titles */}
+                                    <div className="flex items-center gap-3.5 min-w-0">
+                                        <div
+                                            className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform ${theme.iconBg} ${theme.iconColor}`}
+                                        >
+                                            <StageIcon className="w-6 h-6" />
+                                        </div>
+                                        <div className="truncate">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <h2 className="text-base sm:text-lg font-black text-gray-900 tracking-tight group-hover:text-primary transition-colors">
+                                                    {section.title}
+                                                </h2>
+                                                <span
+                                                    className={`text-xs font-black px-2.5 py-0.5 rounded-full border shadow-2xs ${theme.badgeBg} ${theme.badgeText} ${theme.badgeBorder}`}
+                                                >
+                                                    {count} طالب
+                                                </span>
+                                            </div>
+                                            <p className="text-xs text-gray-500 font-medium mt-0.5 truncate">{section.subtitle}</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Left: Quick Add & Enter Stage Button */}
+                                    <div className="flex items-center gap-2.5 shrink-0 mr-auto sm:mr-0">
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleOpenAddForStage(section.defaultAddGrade);
+                                            }}
+                                            className="h-9 px-3 rounded-xl text-xs font-bold bg-white text-gray-800 hover:bg-gray-50 border border-gray-200 shadow-2xs gap-1.5 transition-all"
+                                        >
+                                            <Plus className="w-3.5 h-3.5 text-primary" />
+                                            <span>إضافة طالب للمرحلة</span>
+                                        </Button>
+
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                router.push(`/center/students/stage/${section.slug}`);
+                                            }}
+                                            className={`h-9 px-3.5 rounded-xl text-xs font-bold transition-all shadow-2xs gap-1.5 ${theme.badgeBg} ${theme.badgeText} border ${theme.badgeBorder} hover:brightness-95 group-hover:bg-primary group-hover:text-white group-hover:border-primary`}
+                                        >
+                                            <span>عرض طلاب المرحلة</span>
+                                            <ChevronLeft className="w-4 h-4 ml-0.5 group-hover:-translate-x-0.5 transition-transform" />
+                                        </Button>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
                 </div>
             )}
 
@@ -782,7 +852,7 @@ export default function CenterStudentsPage() {
 
                     <form onSubmit={handleSingleSubmit} className="space-y-3.5 py-2">
                         <div>
-                            <label className="text-xs font-bold text-gray-700 block mb-1">اسم الطالب رباعي *</label>
+                            <label className="text-xs font-bold text-gray-700 block mb-1">اسم الطالب *</label>
                             <Input
                                 value={studentName}
                                 onChange={(e) => setStudentName(e.target.value)}
@@ -792,42 +862,41 @@ export default function CenterStudentsPage() {
                             />
                         </div>
 
-                        <div>
-                            <label className="text-xs font-bold text-gray-700 block mb-1">اسم ولي الأمر *</label>
-                            <Input
-                                value={parentName}
-                                onChange={(e) => setParentName(e.target.value)}
-                                placeholder="مثال: محمد علي حسن"
-                                className="rounded-xl border-gray-200"
-                                required
-                            />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
+                        {editingStudent && (
                             <div>
-                                <label className="text-xs font-bold text-gray-700 block mb-1">المرحلة الدراسية *</label>
-                                <select
-                                    value={gradeLevel}
-                                    onChange={(e) => setGradeLevel(e.target.value)}
-                                    className="w-full text-xs font-bold border border-gray-200 rounded-xl px-3 py-2 bg-white focus:outline-none"
-                                >
-                                    {ALL_GRADES.map((g) => (
-                                        <option key={g} value={g}>
-                                            {g}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div>
-                                <label className="text-xs font-bold text-gray-700 block mb-1">الباركود (اختياري)</label>
+                                <label className="text-xs font-bold text-gray-700 block mb-1">اسم ولي الأمر (اختياري)</label>
                                 <Input
-                                    value={barcode}
-                                    onChange={(e) => setBarcode(e.target.value)}
-                                    placeholder="توليد تلقائي إن ترك فارغاً"
-                                    className="rounded-xl border-gray-200 font-mono text-xs"
+                                    value={parentName}
+                                    onChange={(e) => setParentName(e.target.value)}
+                                    placeholder="مثال: محمد علي حسن"
+                                    className="rounded-xl border-gray-200"
                                 />
                             </div>
+                        )}
+
+                        <div>
+                            <label className="text-xs font-bold text-gray-700 block mb-1">المرحلة الدراسية *</label>
+                            <select
+                                value={gradeLevel}
+                                onChange={(e) => setGradeLevel(e.target.value)}
+                                className="w-full text-xs font-bold border border-gray-200 rounded-xl px-3 py-2 bg-white focus:outline-none"
+                            >
+                                <optgroup label="المرحلة الثانوية">
+                                    {SECONDARY_GRADES.map((g) => (
+                                        <option key={g} value={g}>{g}</option>
+                                    ))}
+                                </optgroup>
+                                <optgroup label="المرحلة الإعدادية">
+                                    {PREPARATORY_GRADES.map((g) => (
+                                        <option key={g} value={g}>{g}</option>
+                                    ))}
+                                </optgroup>
+                                <optgroup label="المرحلة الابتدائية">
+                                    {PRIMARY_GRADES.map((g) => (
+                                        <option key={g} value={g}>{g}</option>
+                                    ))}
+                                </optgroup>
+                            </select>
                         </div>
 
                         <div className="grid grid-cols-2 gap-3">
@@ -1123,6 +1192,40 @@ export default function CenterStudentsPage() {
                                                 )}
                                             </div>
                                         )}
+
+                                        {/* Live Pricing Summary for Instant Enrollment */}
+                                        <div className="bg-gradient-to-br from-slate-900 to-gray-900 text-white p-3.5 rounded-xl shadow space-y-2 text-xs">
+                                            <div className="flex items-center justify-between border-b border-gray-700/60 pb-1.5">
+                                                <span className="font-bold flex items-center gap-1.5 text-gray-200">
+                                                    <Calculator className="h-3.5 w-3.5 text-emerald-400" />
+                                                    ملخص رسوم الاشتراك المحسوبة:
+                                                </span>
+                                                <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30 text-[10px]">
+                                                    تسعير معتمد
+                                                </Badge>
+                                            </div>
+                                            <div className="space-y-1 text-[11px] text-gray-300">
+                                                {(enrollmentType === 'PACKAGE' || enrollmentType === 'BOTH') && selectedPkg && (
+                                                    <div className="flex items-center justify-between">
+                                                        <span>سعر باقة السنتر ({selectedPkg.name}):</span>
+                                                        <span className="font-bold font-mono text-white">{instantPkgPrice} ج.م</span>
+                                                    </div>
+                                                )}
+                                                {(enrollmentType === 'PRIVATE' || enrollmentType === 'BOTH') && (
+                                                    <div className="flex items-center justify-between">
+                                                        <span>مجموع مجموعات البرايفت ({selectedPrivateTeachers.length} مجموعة):</span>
+                                                        <span className="font-bold font-mono text-white">{instantPrivatePrice} ج.م</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="pt-1.5 border-t border-gray-700/60 flex items-center justify-between text-xs">
+                                                <span className="font-bold text-gray-100">المبلغ المطلوب شهرياً:</span>
+                                                <div className="text-left">
+                                                    <span className="text-base font-black text-emerald-400 font-mono">{instantTotalPrice}</span>
+                                                    <span className="text-[10px] text-gray-300 mr-1">ج.م / شهرياً</span>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -1176,11 +1279,21 @@ export default function CenterStudentsPage() {
                                 onChange={(e) => setBulkGradeLevel(e.target.value)}
                                 className="w-full text-xs font-bold border border-emerald-200 rounded-lg px-3 py-2 bg-white focus:outline-none"
                             >
-                                {ALL_GRADES.map((g) => (
-                                    <option key={g} value={g}>
-                                        {g}
-                                    </option>
-                                ))}
+                                <optgroup label="المرحلة الثانوية">
+                                    {SECONDARY_GRADES.map((g) => (
+                                        <option key={g} value={g}>{g}</option>
+                                    ))}
+                                </optgroup>
+                                <optgroup label="المرحلة الإعدادية">
+                                    {PREPARATORY_GRADES.map((g) => (
+                                        <option key={g} value={g}>{g}</option>
+                                    ))}
+                                </optgroup>
+                                <optgroup label="المرحلة الابتدائية">
+                                    {PRIMARY_GRADES.map((g) => (
+                                        <option key={g} value={g}>{g}</option>
+                                    ))}
+                                </optgroup>
                             </select>
                             <p className="text-[11px] text-emerald-700">
                                 سيتم توليد أكواد متسلسلة للطلاب تلقائياً بناءً على هذه المرحلة.

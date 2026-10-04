@@ -2,6 +2,31 @@ import { Document, Types } from 'mongoose';
 import { CenterSupervisorType, CenterGroupType, CenterEnrollmentType, GradeLevel, AttendanceStatus } from '../common/enums/enum.service.js';
 
 // ── Center ──────────────────────────────────────────────────────────
+export interface ICenterCardTemplate {
+    frontImageUrl?: string | null;
+    backImageUrl?:  string | null;
+    frontDesignUrl?: string | null;
+    backDesignUrl?:  string | null;
+    themePreset?:    string;
+    showCenterLogo?: boolean;
+    showCenterName?: boolean;
+    showStudentPhoto?: boolean;
+    showStudentName?: boolean;
+    showBarcode?:    boolean;
+    showQrCode?:     boolean;
+    showInstructions?: boolean;
+    primaryColor?:   string;
+    showMonazemLogo?: boolean;
+    monazemLogoPosition?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center-top' | 'center-bottom';
+    monazemLogoSide?: 'front' | 'back' | 'both';
+    monazemLogoSize?: 'sm' | 'md' | 'lg';
+    qrX?:            number;
+    qrY?:            number;
+    qrSize?:         number;
+    showQrBg?:       boolean;
+    showCardNumber?: boolean;
+}
+
 export interface ICenter {
     name:            string;
     ownerId:         Types.ObjectId;
@@ -9,6 +34,7 @@ export interface ICenter {
     phone?:          string | null;
     address?:        string | null;
     parentCenterId?: Types.ObjectId | null; // null = main center
+    cardTemplate?:   ICenterCardTemplate;
     isActive:        boolean;
     createdAt?:      Date;
     updatedAt?:      Date;
@@ -90,7 +116,7 @@ export interface ICenterAttendance {
     studentId:   Types.ObjectId;
     date:        Date;
     status:      AttendanceStatus;
-    source:      'MANUAL' | 'QR_SCAN';
+    source:      'MANUAL' | 'QR_SCAN' | 'GATE_CHECKIN';
     scannedAt:   Date;
     recordedBy?: Types.ObjectId;
     notes?:      string;
@@ -98,6 +124,22 @@ export interface ICenterAttendance {
     updatedAt?:  Date;
 }
 export interface ICenterAttendanceDocument extends ICenterAttendance, Document {}
+
+// ── Center Daily Check-In ───────────────────────────────────────────
+export interface ICenterCheckIn {
+    centerId:        Types.ObjectId;
+    studentId:       Types.ObjectId;
+    date:            Date;
+    checkInTime:     Date;
+    source:          'QR_SCAN' | 'BARCODE' | 'MANUAL';
+    attendedGroups:  Types.ObjectId[];
+    recordedBy?:     Types.ObjectId;
+    notes?:          string | null;
+    createdAt?:      Date;
+    updatedAt?:      Date;
+}
+export interface ICenterCheckInDocument extends ICenterCheckIn, Document {}
+
 
 // ── Discount ────────────────────────────────────────────────────────
 export interface IDiscount {

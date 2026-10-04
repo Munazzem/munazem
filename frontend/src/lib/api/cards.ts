@@ -223,3 +223,26 @@ export const getCardBatchPvcPrintUrl = (batchId: string, mode: 'back_only' | 'du
     return `${API_BASE_URL}/cards/batch/${batchId}/print-pvc?mode=${mode}&token=${token}`;
 };
 
+// ── Simple Design Template (front/back image upload) ─────────────────────────
+
+export interface CardDesignTemplate {
+    frontImageUrl?: string | null;
+    backImageUrl?:  string | null;
+    qrX?:           number;
+    qrY?:           number;
+    qrSize?:        number;
+    showQrBg?:      boolean;
+    showCardNumber?: boolean;
+}
+
+/** Get teacher's simple card design (front/back images) */
+export const getCardDesignTemplate = async (): Promise<{ template: CardDesignTemplate; centerName: string; logoUrl: string | null }> => {
+    const res = await apiClient.get('/cards/template');
+    return (res as any).data;
+};
+
+/** Save teacher's card design images (base64) */
+export const updateCardDesignTemplate = async (data: CardDesignTemplate): Promise<CardDesignTemplate> => {
+    const res = await apiClient.put('/cards/template', data);
+    return (res as any).data;
+};

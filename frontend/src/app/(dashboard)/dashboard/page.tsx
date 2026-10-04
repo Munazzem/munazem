@@ -47,6 +47,7 @@ import { StudentsDistributionChart } from '@/components/dashboard/charts/Student
 import { ExpensesBreakdownChart } from '@/components/dashboard/charts/ExpensesBreakdownChart';
 import { DailySummary } from '@/components/dashboard/DailySummary';
 import { RecentActivity } from '@/components/dashboard/RecentActivity';
+import { TeacherDashboardCalendar } from '@/components/dashboard/TeacherDashboardCalendar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -387,7 +388,10 @@ export default function DashboardPage() {
                     {/* ── 3. Daily Executive Radar ── */}
                     {dailySummary && <DailySummary data={dailySummary} isTeacher={isTeacher} />}
 
-                    {/* ── 4. Today's Live Sessions Hub & Unpaid Widget (2-Column Grid) ── */}
+                    {/* ── 4. Interactive Calendar & Schedule Hub ── */}
+                    <TeacherDashboardCalendar groups={groupsData?.data || []} todaySessions={todaySessions} />
+
+                    {/* ── 5. Today's Live Sessions Hub & Unpaid Widget (2-Column Grid) ── */}
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 sm:gap-6 items-start">
                         {/* Column 1 & 2: Today's Sessions Interactive Hub */}
                         <div className="lg:col-span-2 bg-white rounded-3xl border border-gray-100/90 shadow-xs overflow-hidden">

@@ -895,7 +895,8 @@ export class PdfService {
         // 1. Fetch current cycle enrollments for subscriptions
         const enrollments = await CycleEnrollmentModel.find({
             studentId: { $in: studentIds },
-            cycleNumber: currentCycleNumber
+            cycleNumber: currentCycleNumber,
+            isWaived: { $ne: true }
         }).lean();
 
         const paidSubSet = new Set<string>();

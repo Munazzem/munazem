@@ -1,4 +1,5 @@
-import { apiClient } from './axios';
+import { apiClient, API_BASE_URL } from './axios';
+import Cookies from 'js-cookie';
 import type {
     ICenter,
     ICenterTeacher,
@@ -8,6 +9,9 @@ import type {
     ICenterAttendanceRecord,
     ICenterFinancialSummary,
     ITeacherFinancialReport,
+    ICenterTransaction,
+    IDailyTallyReport,
+    IMonthlyTallyReport,
     CreateCenterDTO,
     CreateBranchDTO,
     CreateTeacherDTO,
@@ -20,6 +24,8 @@ import type {
     ICenterStudent,
     CreateCenterStudentDTO,
     BulkCreateCenterStudentDTO,
+    CenterCheckInResponse,
+    DailyCheckInsResult,
 } from '@/types/center.types';
 
 // ── Centers & Branches ────────────────────────────────────────────────────────
@@ -181,9 +187,11 @@ export const updateEnrollment = async (id: string, data: any): Promise<ICenterEn
 export interface FetchCenterStudentsParams {
     search?: string;
     gradeLevel?: string;
+    stage?: 'ALL' | 'SECONDARY' | 'PREPARATORY' | 'PRIMARY' | 'OTHER';
     isActive?: boolean;
     page?: number;
     limit?: number;
+    includeCounts?: boolean | 'true' | 'false';
 }
 
 export interface FetchCenterStudentsResponse {
@@ -192,6 +200,12 @@ export interface FetchCenterStudentsResponse {
     page: number;
     limit: number;
     totalPages: number;
+    stageCounts?: {
+        total: number;
+        secondary: number;
+        preparatory: number;
+        primary: number;
+    };
 }
 
 export const fetchCenterStudents = async (params: FetchCenterStudentsParams = {}): Promise<FetchCenterStudentsResponse> => {
@@ -245,6 +259,38 @@ export const fetchStudentAttendanceHistory = async (studentId: string, params: {
     return (res as any).data;
 };
 
+// ── Gate / Reception Check-In ─────────────────────────────────────────────────
+
+export interface CheckInStudentDTO {
+    studentIdOrCode: string;
+    date?: string;
+    groupIds?: string[];
+    source?: 'QR_SCAN' | 'BARCODE' | 'MANUAL';
+    notes?: string;
+}
+
+export const checkInStudent = async (data: CheckInStudentDTO): Promise<CenterCheckInResponse> => {
+    const res = await apiClient.post('/centers/attendance/check-in', data);
+    return (res as any).data;
+};
+
+export const updateCheckInGroups = async (data: {
+    studentId: string;
+    date?: string;
+    groupIds: string[];
+}): Promise<any> => {
+    const res = await apiClient.put('/centers/attendance/check-in/groups', data);
+    return (res as any).data;
+};
+
+export const fetchDailyCheckIns = async (params: {
+    date?: string;
+    search?: string;
+} = {}): Promise<DailyCheckInsResult> => {
+    const res = await apiClient.get('/centers/attendance/check-ins', { params });
+    return (res as any).data;
+};
+
 // ── Financials & Reports ──────────────────────────────────────────────────────
 
 export const recordCenterPayment = async (data: RecordPaymentDTO): Promise<any> => {
@@ -262,6 +308,30 @@ export const fetchTeacherFinancialReport = async (teacherId: string, startDate?:
     return (res as any).data;
 };
 
+export const fetchCenterDailyTally = async (date?: string): Promise<IDailyTallyReport> => {
+    const res = await apiClient.get('/centers/financials/daily-tally', { params: { date } });
+    return (res as any).data;
+};
+
+export const fetchCenterMonthlyTally = async (year?: number, month?: number): Promise<IMonthlyTallyReport> => {
+    const res = await apiClient.get('/centers/financials/monthly-tally', { params: { year, month } });
+    return (res as any).data;
+};
+
+export const fetchCenterTransactions = async (params: {
+    startDate?: string;
+    endDate?: string;
+    date?: string;
+    category?: string;
+    centerTeacherId?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+} = {}): Promise<{ transactions: ICenterTransaction[]; total: number; page: number; limit: number; totalPages: number }> => {
+    const res = await apiClient.get('/centers/financials/transactions', { params });
+    return (res as any).data;
+};
+
 export interface IStudentFinancialReport {
     studentId: string;
     transactions: any[];
@@ -274,5 +344,229 @@ export interface IStudentFinancialReport {
 export const fetchStudentFinancialReport = async (studentId: string): Promise<IStudentFinancialReport> => {
     const res = await apiClient.get(`/centers/financials/student/${studentId}`);
     return (res as any).data;
+};
+
+// ── Comprehensive Reports ───────────────────────────────────────────────────
+
+export interface CenterReportsOverview {
+    revenue: {
+        totalRevenue: number;
+        packageRevenue: number;
+        privateRevenue: number;
+        combinedRevenue: number;
+        totalDebt: number;
+    };
+    students: {
+        total: number;
+        active: number;
+        secondary: number;
+        preparatory: number;
+        primary: number;
+    };
+    todayCheckIns: number;
+    recentTransactions: any[];
+}
+
+export interface CenterTeacherReportItem {
+    teacher: {
+        _id: string;
+        name: string;
+        subject: string;
+        phone: string;
+        commissionRate: number;
+    };
+    groupsCount: number;
+    enrolledStudentsCount: number;
+    revenue: number;
+    attendanceCount: number;
+}
+
+export interface CenterGroupReportItem {
+    group: {
+        _id: string;
+        name: string;
+        teacher: string;
+        subject: string;
+        gradeLevel: string;
+        groupType: string;
+        capacity?: number;
+        schedule?: { day: string; time: string }[];
+        privateMonthlyPrice?: number | null;
+    };
+    enrolledCount: number;
+    fillRate: number | null;
+    revenue: number;
+    attendance: {
+        totalRecords: number;
+        present: number;
+        absent: number;
+        attendanceRate: number;
+    };
+}
+
+export const fetchCenterReportsOverview = async (startDate?: string, endDate?: string): Promise<CenterReportsOverview> => {
+    const res = await apiClient.get('/centers/reports/overview', { params: { startDate, endDate } });
+    return (res as any).data;
+};
+
+export const fetchCenterTeachersReport = async (startDate?: string, endDate?: string): Promise<CenterTeacherReportItem[]> => {
+    const res = await apiClient.get('/centers/reports/teachers', { params: { startDate, endDate } });
+    return (res as any).data;
+};
+
+export const fetchCenterGroupsReport = async (): Promise<CenterGroupReportItem[]> => {
+    const res = await apiClient.get('/centers/reports/groups');
+    return (res as any).data;
+};
+
+// ── Smart Cards ─────────────────────────────────────────────────────────────
+
+export interface CenterCardStats {
+    total: number;
+    new: number;
+    linked: number;
+    disabled: number;
+}
+
+export interface ICenterCard {
+    _id: string;
+    cardNumber: string;
+    cardToken: string;
+    status: 'NEW' | 'LINKED' | 'DISABLED';
+    centerId: string;
+    centerStudentId?: {
+        _id: string;
+        name: string;
+        studentCode?: string;
+        phone?: string;
+        parentPhone?: string;
+        gradeLevel?: string;
+    } | null;
+    batchId?: string;
+    qrCodeUrl?: string;
+    assignedAt?: string;
+    disabledAt?: string;
+    disabledReason?: string;
+    createdAt: string;
+}
+
+export interface CenterCardTemplate {
+    frontImageUrl?: string;
+    backImageUrl?: string;
+    themePreset: 'dark' | 'emerald' | 'indigo' | 'gold' | 'minimal' | 'custom';
+    showCenterLogo: boolean;
+    showStudentPhoto: boolean;
+    showStudentName?: boolean;
+    showQrCode: boolean;
+    showBarcode: boolean;
+    showInstructions?: boolean;
+    customPrimaryColor?: string;
+    customTextColor?: string;
+    showMonazemLogo?: boolean;
+    monazemLogoPosition?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center-top' | 'center-bottom';
+    monazemLogoSide?: 'front' | 'back' | 'both';
+    monazemLogoSize?: 'sm' | 'md' | 'lg';
+    qrX?: number;
+    qrY?: number;
+    qrSize?: number;
+    showQrBg?: boolean;
+    showCardNumber?: boolean;
+}
+
+export interface ResolveCardResponse {
+    isLinked: boolean;
+    card: ICenterCard;
+    student?: any;
+    enrolledGroups?: any[];
+}
+
+export interface FetchCardsParams {
+    status?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+}
+
+export interface FetchCardsResponse {
+    cards: ICenterCard[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+}
+
+export const generateCenterCards = async (count: number): Promise<{ count: number; batchId: string; sample: string[] }> => {
+    const res = await apiClient.post('/centers/cards/generate', { count });
+    return (res as any).data;
+};
+
+export const fetchCenterCardsStats = async (): Promise<CenterCardStats> => {
+    const res = await apiClient.get('/centers/cards/stats');
+    return (res as any).data;
+};
+
+export const fetchCenterCards = async (params: FetchCardsParams = {}): Promise<FetchCardsResponse> => {
+    const res = await apiClient.get('/centers/cards', { params });
+    return (res as any).data;
+};
+
+export const resolveCenterCard = async (scanInput: string): Promise<ResolveCardResponse> => {
+    let clean = scanInput.trim();
+    if (clean.includes('/card/')) {
+        clean = clean.split('/card/').pop()?.split(/[?#]/)[0]?.trim() || clean;
+    }
+    const res = await apiClient.get('/centers/cards/resolve', {
+        params: { scanInput: clean }
+    });
+    return (res as any).data;
+};
+
+export const linkCenterCard = async (cardNumber: string, centerStudentId: string): Promise<any> => {
+    const res = await apiClient.post('/centers/cards/link', { cardNumber, centerStudentId });
+    return (res as any).data;
+};
+
+export const createStudentAndLinkCard = async (data: {
+    cardNumber: string;
+    name: string;
+    phone?: string;
+    parentPhone: string;
+    gradeLevel: string;
+    studentType?: string;
+    packageId?: string;
+    groupIds?: string[];
+}): Promise<any> => {
+    const res = await apiClient.post('/centers/cards/create-and-link', data);
+    return (res as any).data;
+};
+
+export const unlinkCenterCard = async (cardNumber: string): Promise<any> => {
+    const res = await apiClient.post('/centers/cards/unlink', { cardNumber });
+    return (res as any).data;
+};
+
+export const disableCenterCard = async (cardNumber: string, reason?: string): Promise<any> => {
+    const res = await apiClient.post('/centers/cards/disable', { cardNumber, reason });
+    return (res as any).data;
+};
+
+export const fetchCenterCardTemplate = async (): Promise<CenterCardTemplate> => {
+    const res = await apiClient.get('/centers/cards/template');
+    return (res as any).data;
+};
+
+export const updateCenterCardTemplate = async (template: Partial<CenterCardTemplate>): Promise<CenterCardTemplate> => {
+    const res = await apiClient.put('/centers/cards/template', template);
+    return (res as any).data;
+};
+
+export const fetchBatchPrintCards = async (batchId: string): Promise<{ batchId: string; count: number; cards: ICenterCard[] }> => {
+    const res = await apiClient.get(`/centers/cards/batch/${batchId}/print`);
+    return (res as any).data;
+};
+
+export const getCenterCardBatchPrintUrl = (batchId: string, mode: 'dual_sided' | 'back_only' | 'front_only' = 'dual_sided'): string => {
+    const token = Cookies.get('token') || '';
+    return `${API_BASE_URL}/centers/cards/batch/${batchId}/print?mode=${mode}&token=${token}`;
 };
 

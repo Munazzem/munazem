@@ -22,6 +22,7 @@ import {
     Layers,
     DollarSign,
     Calendar,
+    Calculator,
 } from 'lucide-react';
 import {
     fetchCenterEnrollments,
@@ -147,13 +148,17 @@ export default function CenterEnrollmentsPage() {
     });
 
     const handleQuickCreateStudent = () => {
-        if (!quickStudentName.trim() || !quickParentName.trim()) {
-            toast.error('اسم الطالب واسم ولي الأمر مطلوبان');
+        if (!quickStudentName.trim()) {
+            toast.error('اسم الطالب مطلوب');
             return;
         }
+        const trimmedStudent = quickStudentName.trim();
+        const parts = trimmedStudent.split(/\s+/);
+        const autoParentName = quickParentName.trim() || (parts.length > 1 ? parts.slice(1).join(' ') : `ولي أمر ${trimmedStudent}`);
+
         quickCreateMutation.mutate({
-            studentName: quickStudentName.trim(),
-            parentName: quickParentName.trim(),
+            studentName: trimmedStudent,
+            parentName: autoParentName,
             gradeLevel: quickGradeLevel,
             studentPhone: quickStudentPhone.trim() || null,
             parentPhone: quickParentPhone.trim() || null,
@@ -247,6 +252,50 @@ export default function CenterEnrollmentsPage() {
         if (!currentGradeLevel) return isPrivateOrMixed;
         return isPrivateOrMixed && g.gradeLevel === currentGradeLevel;
     });
+
+    // ── Live Pricing Calculation for Enrollment Modal ────────────────────
+    const pkgBasePrice = (enrollmentType === 'PACKAGE' || enrollmentType === 'BOTH') && selectedPkg
+        ? (selectedPkg.monthlyPrice || 0)
+        : 0;
+
+    let pkgDiscountAmount = 0;
+    if (packageDiscountType === 'PERCENTAGE') {
+        pkgDiscountAmount = (pkgBasePrice * (Number(packageDiscountVal) || 0)) / 100;
+    } else if (packageDiscountType === 'FIXED') {
+        pkgDiscountAmount = Number(packageDiscountVal) || 0;
+    }
+    const netPkgPrice = Math.max(0, pkgBasePrice - pkgDiscountAmount);
+
+    const privateBasePrice = (enrollmentType === 'PRIVATE' || enrollmentType === 'BOTH')
+        ? selectedPrivateTeachers.reduce((sum, p) => {
+              const grp = groups.find((g) => g._id === p.groupId);
+              return sum + (grp?.privateMonthlyPrice ?? p.monthlyPrice ?? 0);
+          }, 0)
+        : 0;
+
+    let privateDiscountAmount = 0;
+    if (privateDiscountType === 'PERCENTAGE') {
+        privateDiscountAmount = (privateBasePrice * (Number(privateDiscountVal) || 0)) / 100;
+    } else if (privateDiscountType === 'FIXED') {
+        privateDiscountAmount = Number(privateDiscountVal) || 0;
+    }
+    const netPrivatePrice = Math.max(0, privateBasePrice - privateDiscountAmount);
+
+    const grossCombinedPrice = pkgBasePrice + privateBasePrice;
+    let combinedDiscountAmount = 0;
+    if (enrollmentType === 'BOTH' && combinedDiscountType) {
+        if (combinedDiscountType === 'PERCENTAGE') {
+            combinedDiscountAmount = (grossCombinedPrice * (Number(combinedDiscountVal) || 0)) / 100;
+        } else if (combinedDiscountType === 'FIXED') {
+            combinedDiscountAmount = Number(combinedDiscountVal) || 0;
+        }
+    }
+
+    const totalEnrollmentPrice = enrollmentType === 'PACKAGE'
+        ? netPkgPrice
+        : enrollmentType === 'PRIVATE'
+        ? netPrivatePrice
+        : Math.max(0, grossCombinedPrice - (pkgDiscountAmount + privateDiscountAmount + combinedDiscountAmount));
 
     const enrollMutation = useMutation({
         mutationFn: enrollStudent,
@@ -620,17 +669,11 @@ export default function CenterEnrollmentsPage() {
                                         <Sparkles className="h-3.5 w-3.5 text-blue-600" />
                                         <span>إضافة طالب جديد للسنتر واختياره مباشرة:</span>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-2">
+                                    <div>
                                         <Input
                                             value={quickStudentName}
                                             onChange={(e) => setQuickStudentName(e.target.value)}
-                                            placeholder="اسم الطالب رباعي *"
-                                            className="h-8 text-xs bg-white rounded-lg border-blue-200"
-                                        />
-                                        <Input
-                                            value={quickParentName}
-                                            onChange={(e) => setQuickParentName(e.target.value)}
-                                            placeholder="اسم ولي الأمر *"
+                                            placeholder="اسم الطالب *"
                                             className="h-8 text-xs bg-white rounded-lg border-blue-200"
                                         />
                                     </div>
@@ -971,6 +1014,70 @@ export default function CenterEnrollmentsPage() {
                                 </div>
                             </div>
                         )}
+
+                        {/* Live Pricing Summary Banner */}
+                        <div className="bg-gradient-to-br from-slate-900 to-gray-900 text-white p-4 rounded-2xl shadow-md space-y-2.5">
+                            <div className="flex items-center justify-between border-b border-gray-700/60 pb-2">
+                                <div className="flex items-center gap-2">
+                                    <Calculator className="h-4 w-4 text-emerald-400" />
+                                    <span className="text-xs font-black text-gray-200">ملخص حساب الاشتراك المالي (تسعير آلي)</span>
+                                </div>
+                                <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30 text-[10px]">
+                                    تسعير معتمد
+                                </Badge>
+                            </div>
+
+                            <div className="space-y-1.5 text-xs">
+                                {(enrollmentType === 'PACKAGE' || enrollmentType === 'BOTH') && selectedPkg && (
+                                    <div className="flex items-center justify-between text-gray-300">
+                                        <span className="flex items-center gap-1.5">
+                                            <BookOpen className="h-3.5 w-3.5 text-blue-400" />
+                                            سعر الباقة ({selectedPkg.name}):
+                                        </span>
+                                        <span className="font-bold font-mono text-white">{pkgBasePrice} ج.م</span>
+                                    </div>
+                                )}
+
+                                {pkgDiscountAmount > 0 && (
+                                    <div className="flex items-center justify-between text-emerald-400 text-[11px]">
+                                        <span>خصم الباقة المطبق:</span>
+                                        <span className="font-mono font-bold">-{pkgDiscountAmount} ج.م</span>
+                                    </div>
+                                )}
+
+                                {(enrollmentType === 'PRIVATE' || enrollmentType === 'BOTH') && (
+                                    <div className="flex items-center justify-between text-gray-300">
+                                        <span className="flex items-center gap-1.5">
+                                            <GraduationCap className="h-3.5 w-3.5 text-purple-400" />
+                                            مجموع مجموعات البرايفت ({selectedPrivateTeachers.length} مجموعة):
+                                        </span>
+                                        <span className="font-bold font-mono text-white">{privateBasePrice} ج.م</span>
+                                    </div>
+                                )}
+
+                                {privateDiscountAmount > 0 && (
+                                    <div className="flex items-center justify-between text-purple-300 text-[11px]">
+                                        <span>خصم البرايفت المطبق:</span>
+                                        <span className="font-mono font-bold">-{privateDiscountAmount} ج.م</span>
+                                    </div>
+                                )}
+
+                                {combinedDiscountAmount > 0 && (
+                                    <div className="flex items-center justify-between text-amber-300 text-[11px]">
+                                        <span>الخصم المجمع الإضافي:</span>
+                                        <span className="font-mono font-bold">-{combinedDiscountAmount} ج.م</span>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="pt-2 border-t border-gray-700/60 flex items-center justify-between">
+                                <span className="font-extrabold text-xs sm:text-sm text-gray-100">المبلغ المطلوب سداده شهرياً:</span>
+                                <div className="text-left">
+                                    <span className="text-lg font-black text-emerald-400 font-mono">{totalEnrollmentPrice}</span>
+                                    <span className="text-xs text-gray-300 mr-1">ج.م / شهرياً</span>
+                                </div>
+                            </div>
+                        </div>
 
                         <DialogFooter className="gap-2 pt-2 sm:justify-start">
                             <Button

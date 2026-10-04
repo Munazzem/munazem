@@ -38,7 +38,7 @@ const centerAttendanceSchema = new Schema<ICenterAttendanceDocument>({
     // How the attendance was recorded
     source: {
         type: String,
-        enum: ['MANUAL', 'QR_SCAN'],
+        enum: ['MANUAL', 'QR_SCAN', 'GATE_CHECKIN'],
         default: 'MANUAL',
     },
     scannedAt: { type: Date, default: Date.now },

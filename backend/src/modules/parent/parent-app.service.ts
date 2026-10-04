@@ -13,9 +13,24 @@ import { TransactionModel } from '../../database/models/transaction.model.js';
 import { CycleEnrollmentModel } from '../../database/models/cycle-enrollment.model.js';
 import { ParentNotificationModel } from '../../database/models/parent-notification.model.js';
 import { ParentModel } from '../../database/models/parent.model.js';
+import { CenterStudentModel } from '../../database/models/center-student.model.js';
+import { CenterModel } from '../../database/models/center.model.js';
+import { CenterEnrollmentModel } from '../../database/models/center-enrollment.model.js';
+import { CenterCheckInModel } from '../../database/models/center-checkin.model.js';
+import { CenterAttendanceModel } from '../../database/models/center-attendance.model.js';
+import { CenterPackageModel } from '../../database/models/center-package.model.js';
+import { CenterGroupModel } from '../../database/models/center-group.model.js';
+import { CenterTeacherModel } from '../../database/models/center-teacher.model.js';
 import { assertParentStudentAccess } from '../../middlewares/parent-auth.middleware.js';
 import { NotFoundException } from '../../common/utils/response/error.responce.js';
 import { getPhoneSearchFilter } from './parent-auth.service.js';
+
+function formatCenterName(name?: string, fallback = 'السنتر'): string {
+  if (!name) return fallback;
+  const trimmed = name.trim();
+  if (trimmed.startsWith('سنتر')) return trimmed;
+  return `سنتر ${trimmed}`;
+}
 
 export class ParentAppService {
   /**
@@ -31,9 +46,10 @@ export class ParentAppService {
     })
       .populate({
         path: 'studentId',
+        strictPopulate: false,
         populate: [
-          { path: 'teacherId', select: 'name subject centerName' },
-          { path: 'groupId', select: 'name schedule' },
+          { path: 'teacherId', select: 'name subject centerName', strictPopulate: false },
+          { path: 'groupId', select: 'name schedule', strictPopulate: false },
         ],
       })
       .lean();
@@ -41,23 +57,45 @@ export class ParentAppService {
     // Auto-heal / Auto-sync: If no active links exist, look up matching students by parent.phone
     if (activeLinks.length === 0 && parent.phone) {
       const phoneFilter = getPhoneSearchFilter(parent.phone);
-      const matchingStudents = await StudentModel.find(phoneFilter).lean();
+      const [matchingStudents, matchingCenterStudents] = await Promise.all([
+        StudentModel.find(phoneFilter).lean(),
+        CenterStudentModel.find(phoneFilter).lean(),
+      ]);
 
-      if (matchingStudents.length > 0) {
-        const writes = matchingStudents.map((s) => ({
-          updateOne: {
-            filter: { parentId: parent._id, studentId: s._id },
-            update: {
-              $set: {
-                status: 'ACTIVE' as const,
-                verifiedVia: 'AUTO_CONFIRMED' as const,
-                linkedAt: new Date(),
-              },
+      const teacherWrites = matchingStudents.map((s) => ({
+        updateOne: {
+          filter: { parentId: parent._id, studentId: s._id },
+          update: {
+            $set: {
+              studentModelType: 'Student' as const,
+              status: 'ACTIVE' as const,
+              verifiedVia: 'AUTO_CONFIRMED' as const,
+              linkedAt: new Date(),
             },
-            upsert: true,
           },
-        }));
+          upsert: true,
+        },
+      }));
 
+      const centerWrites = matchingCenterStudents.map((s) => ({
+        updateOne: {
+          filter: { parentId: parent._id, studentId: s._id },
+          update: {
+            $set: {
+              studentModelType: 'CenterStudent' as const,
+              centerStudentId: s._id,
+              centerId: s.centerId,
+              status: 'ACTIVE' as const,
+              verifiedVia: 'AUTO_CONFIRMED' as const,
+              linkedAt: new Date(),
+            },
+          },
+          upsert: true,
+        },
+      }));
+
+      const writes = [...teacherWrites, ...centerWrites];
+      if (writes.length > 0) {
         await ParentStudentModel.bulkWrite(writes as any);
 
         activeLinks = await ParentStudentModel.find({
@@ -66,9 +104,10 @@ export class ParentAppService {
         })
           .populate({
             path: 'studentId',
+            strictPopulate: false,
             populate: [
-              { path: 'teacherId', select: 'name subject centerName' },
-              { path: 'groupId', select: 'name schedule' },
+              { path: 'teacherId', select: 'name subject centerName', strictPopulate: false },
+              { path: 'groupId', select: 'name schedule', strictPopulate: false },
             ],
           })
           .lean();
@@ -80,10 +119,180 @@ export class ParentAppService {
     let anyAbsenceToday = false;
 
     for (const link of activeLinks) {
-      const student = link.studentId as any;
+      let student = link.studentId as any;
+      const isCenter = link.studentModelType === 'CenterStudent' || !!link.centerId || !!student?.centerId;
+
+      if (isCenter && (!student || !student.studentName)) {
+        student = await CenterStudentModel.findById(link.studentId || link.centerStudentId).lean();
+      }
+
       if (!student || student.isActive === false) continue;
 
       const normalizedName = (student.studentName || '').trim();
+
+      // ── Handle Center Student ─────────────────────────────────────────────
+      if (isCenter) {
+        const centerId = link.centerId || student.centerId;
+        const center = centerId ? await CenterModel.findById(centerId).select('name address phone').lean() : null;
+        const enrollment = await CenterEnrollmentModel.findOne({
+          centerId,
+          studentId: student._id,
+          isActive: true,
+        }).lean();
+
+        const card = await CardModel.findOne({
+          centerStudentId: student._id,
+          status: 'LINKED',
+        }).lean();
+
+        const lastCheckIn = await CenterCheckInModel.findOne({
+          centerId,
+          studentId: student._id,
+        }).sort({ date: -1 }).lean();
+
+        const transactions = await TransactionModel.find({
+          centerId,
+          studentId: student._id,
+        }).lean();
+
+        const totalPaid = transactions.reduce((acc, t) => acc + (t.paidAmount || 0), 0);
+        const remainingAmount = transactions.reduce((acc, t) => acc + (t.remainingAmount || 0), 0);
+
+        totalDebt += remainingAmount;
+        const qrValue = card?.cardToken || student.barcode || student.studentCode;
+
+        if (!childrenMap.has(normalizedName)) {
+          let latestAttendance: any = null;
+          if (lastCheckIn) {
+            const timeStr = lastCheckIn.checkInTime
+              ? new Date(lastCheckIn.checkInTime).toLocaleTimeString('ar-EG', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: true,
+                  timeZone: 'Africa/Cairo',
+                })
+              : '';
+            latestAttendance = {
+              date: (lastCheckIn.date || lastCheckIn.checkInTime || lastCheckIn.createdAt)?.toISOString(),
+              status: 'PRESENT',
+              subject: 'حضور بالسنتر',
+              teacherName: formatCenterName(center?.name),
+              sessionTitle: `دخول بوابة السنتر${timeStr ? ` (${timeStr})` : ''}`,
+            };
+          }
+
+          childrenMap.set(normalizedName, {
+            id: student._id.toString(),
+            studentName: student.studentName,
+            gradeLevel: student.gradeLevel,
+            studentCode: student.studentCode || '',
+            barcode: student.barcode || '',
+            cardNumber: card?.cardNumber || null,
+            qrValue,
+            subjectsCount: 0,
+            subjects: [],
+            attendanceRate: 100,
+            latestAttendance,
+            latestExam: null,
+            financialSummary: {
+              hasOutstandingDebt: remainingAmount > 0,
+              remainingAmount,
+              hasActiveSubscription: remainingAmount <= 0,
+            },
+            isCenter: true,
+            centerName: center?.name || '',
+          });
+        }
+
+        const child = childrenMap.get(normalizedName);
+        let addedSubj = false;
+
+        if (enrollment?.packageId) {
+          const pkg = await CenterPackageModel.findById(enrollment.packageId)
+            .populate('teachers.teacherId', 'name subject')
+            .lean();
+
+          if (pkg && pkg.teachers && pkg.teachers.length > 0) {
+            for (const t of pkg.teachers) {
+              const tch = t.teacherId as any;
+              child.subjectsCount += 1;
+              child.subjects.push({
+                studentId: student._id.toString(),
+                teacherId: tch?._id?.toString() || '',
+                teacherName: tch?.name || 'مدرس الباقة',
+                subject: tch?.subject || 'مادة دراسية',
+                centerName: formatCenterName(center?.name),
+                groupName: pkg.name || 'باقة السنتر',
+                studentCode: student.studentCode,
+                barcode: student.barcode,
+                financialSummary: {
+                  hasOutstandingDebt: remainingAmount > 0,
+                  remainingAmount,
+                  hasActiveSubscription: remainingAmount <= 0,
+                },
+                isCenter: true,
+              });
+              addedSubj = true;
+            }
+          }
+        }
+
+        if (enrollment?.privateTeachers && enrollment.privateTeachers.length > 0) {
+          for (const pt of enrollment.privateTeachers) {
+            const tch = pt.centerTeacherId
+              ? await CenterTeacherModel.findById(pt.centerTeacherId).select('name subject').lean()
+              : null;
+            child.subjectsCount += 1;
+            child.subjects.push({
+              studentId: student._id.toString(),
+              teacherId: (tch as any)?._id?.toString() || '',
+              teacherName: (tch as any)?.name || 'المعلم',
+              subject: (tch as any)?.subject || 'مادة دراسية',
+              centerName: formatCenterName(center?.name),
+              groupName: 'مجموعة خاصة',
+              studentCode: student.studentCode,
+              barcode: student.barcode,
+              financialSummary: {
+                hasOutstandingDebt: remainingAmount > 0,
+                remainingAmount,
+                hasActiveSubscription: remainingAmount <= 0,
+              },
+              isCenter: true,
+            });
+            addedSubj = true;
+          }
+        }
+
+        if (!addedSubj) {
+          child.subjectsCount += 1;
+          child.subjects.push({
+            studentId: student._id.toString(),
+            teacherId: '',
+            teacherName: formatCenterName(center?.name),
+            subject: 'طالب سنتر عام',
+            centerName: formatCenterName(center?.name),
+            groupName: student.gradeLevel || 'السنتر',
+            studentCode: student.studentCode,
+            barcode: student.barcode,
+            financialSummary: {
+              hasOutstandingDebt: remainingAmount > 0,
+              remainingAmount,
+              hasActiveSubscription: remainingAmount <= 0,
+            },
+            isCenter: true,
+          });
+        }
+
+        if (remainingAmount > 0) {
+          child.financialSummary.hasOutstandingDebt = true;
+          child.financialSummary.remainingAmount = Math.max(child.financialSummary.remainingAmount, remainingAmount);
+          child.financialSummary.hasActiveSubscription = false;
+        }
+
+        continue;
+      }
+
+      // ── Handle Regular Teacher Student ────────────────────────────────────
       const teacher = student.teacherId || {};
       const group = student.groupId || {};
 
@@ -152,6 +361,7 @@ export class ParentAppService {
         // Enrich each subject with its own teacher-specific stats
         await Promise.all(
           child.subjects.map(async (subj: any) => {
+            if (subj.isCenter) return;
             const sid = new mongoose.Types.ObjectId(subj.studentId);
 
             // ── Same priority logic as ReportsService & getChildAttendance ────
@@ -289,8 +499,8 @@ export class ParentAppService {
           })
         );
 
-        // Fallback for default display (first subject or primary)
-        if (child.subjects.length > 0) {
+        // Fallback for default display (first subject or primary) for teacher students
+        if (!child.isCenter && child.subjects.length > 0) {
           const primary = child.subjects[0];
           child.attendanceRate = primary.attendanceRate;
           child.latestAttendance = primary.latestAttendance;
@@ -337,8 +547,112 @@ export class ParentAppService {
   static async getChildSubjects(parentId: string, studentId: string) {
     await assertParentStudentAccess(parentId, studentId);
 
-    const baseStudent = await StudentModel.findById(studentId).lean();
-    if (!baseStudent) throw NotFoundException({ message: 'الطالب غير موجود' });
+    const [baseStudent, baseCenterStudent] = await Promise.all([
+      StudentModel.findById(studentId).lean(),
+      CenterStudentModel.findById(studentId).lean(),
+    ]);
+
+    if (!baseStudent && !baseCenterStudent) throw NotFoundException({ message: 'الطالب غير موجود' });
+
+    if (baseCenterStudent) {
+      const center = await CenterModel.findById(baseCenterStudent.centerId).select('name').lean();
+      const enrollment = await CenterEnrollmentModel.findOne({
+        centerId: baseCenterStudent.centerId,
+        studentId: baseCenterStudent._id,
+        isActive: true,
+      }).lean();
+
+      const card = await CardModel.findOne({
+        centerStudentId: baseCenterStudent._id,
+        status: 'LINKED',
+      }).lean();
+
+      const subjects: any[] = [];
+
+      if (enrollment?.packageId) {
+        const pkg = await CenterPackageModel.findById(enrollment.packageId)
+          .populate('teachers.teacherId', 'name subject')
+          .lean();
+
+        const packageGroups = await CenterGroupModel.find({
+          _id: { $in: enrollment.packageGroups || [] },
+        }).lean();
+
+        if (pkg && pkg.teachers) {
+          for (const t of pkg.teachers) {
+            const tch = t.teacherId as any;
+            const grp = packageGroups.find((g) => {
+              const gTid = typeof g.centerTeacherId === 'object' ? (g.centerTeacherId as any)._id : g.centerTeacherId;
+              return gTid?.toString() === tch?._id?.toString();
+            });
+
+            subjects.push({
+              studentId: baseCenterStudent._id.toString(),
+              teacherId: tch?._id?.toString() || '',
+              teacherName: tch?.name || 'مدرس الباقة',
+              subject: tch?.subject || 'مادة دراسية',
+              centerName: formatCenterName(center?.name),
+              groupId: grp?._id?.toString() || '',
+              groupName: grp?.name || pkg.name || 'باقة السنتر',
+              schedule: grp?.schedule || [],
+              gradeLevel: baseCenterStudent.gradeLevel,
+              studentCode: baseCenterStudent.studentCode || '',
+              barcode: baseCenterStudent.barcode || '',
+              cardNumber: card?.cardNumber || null,
+              qrValue: card?.cardToken || baseCenterStudent.barcode || baseCenterStudent.studentCode,
+              isCenter: true,
+            });
+          }
+        }
+      }
+
+      if (enrollment?.privateTeachers && enrollment.privateTeachers.length > 0) {
+        for (const pt of enrollment.privateTeachers) {
+          const tch = pt.centerTeacherId
+            ? await CenterTeacherModel.findById(pt.centerTeacherId).select('name subject').lean()
+            : null;
+          const grp = pt.groupId ? await CenterGroupModel.findById(pt.groupId).select('name schedule').lean() : null;
+
+          subjects.push({
+            studentId: baseCenterStudent._id.toString(),
+            teacherId: (tch as any)?._id?.toString() || '',
+            teacherName: (tch as any)?.name || 'المعلم',
+            subject: (tch as any)?.subject || 'مادة دراسية',
+            centerName: formatCenterName(center?.name),
+            groupId: (grp as any)?._id?.toString() || '',
+            groupName: (grp as any)?.name || 'مجموعة خاصة',
+            schedule: (grp as any)?.schedule || [],
+            gradeLevel: baseCenterStudent.gradeLevel,
+            studentCode: baseCenterStudent.studentCode || '',
+            barcode: baseCenterStudent.barcode || '',
+            cardNumber: card?.cardNumber || null,
+            qrValue: card?.cardToken || baseCenterStudent.barcode || baseCenterStudent.studentCode,
+            isCenter: true,
+          });
+        }
+      }
+
+      if (subjects.length === 0) {
+        subjects.push({
+          studentId: baseCenterStudent._id.toString(),
+          teacherId: '',
+          teacherName: formatCenterName(center?.name),
+          subject: 'طالب سنتر عام',
+          centerName: formatCenterName(center?.name),
+          groupId: '',
+          groupName: baseCenterStudent.gradeLevel || 'السنتر',
+          schedule: [],
+          gradeLevel: baseCenterStudent.gradeLevel,
+          studentCode: baseCenterStudent.studentCode || '',
+          barcode: baseCenterStudent.barcode || '',
+          cardNumber: card?.cardNumber || null,
+          qrValue: card?.cardToken || baseCenterStudent.barcode || baseCenterStudent.studentCode,
+          isCenter: true,
+        });
+      }
+
+      return subjects;
+    }
 
     // Find all linked students sharing this child's name for this parent
     const links = await ParentStudentModel.find({
@@ -347,9 +661,10 @@ export class ParentAppService {
     })
       .populate({
         path: 'studentId',
+        strictPopulate: false,
         populate: [
-          { path: 'teacherId', select: 'name subject centerName' },
-          { path: 'groupId', select: 'name schedule' },
+          { path: 'teacherId', select: 'name subject centerName', strictPopulate: false },
+          { path: 'groupId', select: 'name schedule', strictPopulate: false },
         ],
       })
       .lean();
@@ -357,7 +672,7 @@ export class ParentAppService {
     const matchingEnrollments = await Promise.all(
       links
         .map(l => l.studentId as any)
-        .filter(s => s && s.studentName === baseStudent.studentName)
+        .filter(s => s && s.studentName === baseStudent!.studentName)
         .map(async (s) => {
           const card = await CardModel.findOne({
             studentId: s._id,
@@ -391,12 +706,40 @@ export class ParentAppService {
   static async getChildCard(parentId: string, studentId: string) {
     await assertParentStudentAccess(parentId, studentId);
 
-    const student = await StudentModel.findById(studentId)
-      .populate('teacherId', 'name subject centerName')
-      .populate('groupId', 'name schedule')
-      .lean() as any;
+    const [student, centerStudent] = await Promise.all([
+      StudentModel.findById(studentId)
+        .populate('teacherId', 'name subject centerName')
+        .populate('groupId', 'name schedule')
+        .lean() as any,
+      CenterStudentModel.findById(studentId).lean(),
+    ]);
 
-    if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
+    if (!student && !centerStudent) throw NotFoundException({ message: 'الطالب غير موجود' });
+
+    if (centerStudent) {
+      const center = await CenterModel.findById(centerStudent.centerId).select('name').lean();
+      const card = await CardModel.findOne({
+        centerStudentId: centerStudent._id,
+        status: 'LINKED',
+      }).lean();
+
+      const qrValue = card?.cardToken || centerStudent.barcode || centerStudent.studentCode;
+
+      return {
+        studentId: centerStudent._id.toString(),
+        studentName: centerStudent.studentName,
+        gradeLevel: centerStudent.gradeLevel,
+        studentCode: centerStudent.studentCode,
+        barcode: centerStudent.barcode,
+        cardNumber: card?.cardNumber || null,
+        qrValue,
+        teacherName: formatCenterName(center?.name),
+        subject: 'طالب سنتر',
+        centerName: formatCenterName(center?.name),
+        groupName: centerStudent.gradeLevel,
+        isCenter: true,
+      };
+    }
 
     const card = await CardModel.findOne({
       studentId: student._id,
@@ -428,11 +771,89 @@ export class ParentAppService {
   static async getChildAttendance(parentId: string, studentId: string, params?: { subjectId?: string; all?: string }) {
     await assertParentStudentAccess(parentId, studentId);
 
-    const baseStudent = await StudentModel.findById(studentId).lean();
-    if (!baseStudent) throw NotFoundException({ message: 'الطالب غير موجود' });
+    const [baseStudent, baseCenterStudent] = await Promise.all([
+      StudentModel.findById(studentId).lean(),
+      CenterStudentModel.findById(studentId).lean(),
+    ]);
+
+    if (!baseStudent && !baseCenterStudent) throw NotFoundException({ message: 'الطالب غير موجود' });
+
+    if (baseCenterStudent) {
+      const center = await CenterModel.findById(baseCenterStudent.centerId).select('name').lean();
+      const centerName = formatCenterName(center?.name);
+
+      // 1. Gate check-ins
+      const gateCheckIns = await CenterCheckInModel.find({
+        centerId: baseCenterStudent.centerId,
+        studentId: baseCenterStudent._id,
+      })
+        .sort({ date: -1, checkInTime: -1 })
+        .limit(100)
+        .lean();
+
+      // 2. Class attendance in center groups
+      const groupAttendances = await CenterAttendanceModel.find({
+        centerId: baseCenterStudent.centerId,
+        studentId: baseCenterStudent._id,
+      })
+        .sort({ date: -1 })
+        .limit(100)
+        .populate({
+          path: 'groupId',
+          select: 'name centerTeacherId',
+          populate: { path: 'centerTeacherId', select: 'name subject' },
+        })
+        .lean();
+
+      const combined: any[] = [];
+
+      for (const checkIn of gateCheckIns) {
+        const checkInDate = checkIn.checkInTime || checkIn.date;
+        const timeStr = checkIn.checkInTime
+          ? new Date(checkIn.checkInTime).toLocaleTimeString('ar-EG', {
+              hour: '2-digit',
+              minute: '2-digit',
+              timeZone: 'Africa/Cairo',
+            })
+          : '';
+
+        combined.push({
+          id: checkIn._id.toString(),
+          date: new Date(checkInDate).toISOString(),
+          status: 'PRESENT',
+          subject: 'دخول السنتر (البوابة)',
+          teacherName: centerName,
+          groupName: `بوابة السنتر (${checkIn.source || 'QR_SCAN'})`,
+          notes: timeStr ? `تم تسجيل الحضور في تمام ${timeStr}` : (checkIn.notes || 'تسجيل دخول السنتر'),
+        });
+      }
+
+      for (const att of groupAttendances as any[]) {
+        const grp = att.groupId || {};
+        const tch = grp.centerTeacherId || {};
+
+        let status = att.status;
+        if (status === 'PRESENT' || status === 'LATE') status = 'PRESENT';
+        else if (status === 'EXCUSED') status = 'EXCUSED';
+        else status = 'ABSENT';
+
+        combined.push({
+          id: att._id.toString(),
+          date: new Date(att.scannedAt || att.date).toISOString(),
+          status,
+          subject: tch.subject || 'مادة دراسية',
+          teacherName: tch.name || 'مدرس المادة',
+          groupName: grp.name || 'مجموعة دراسية',
+          notes: att.notes || (att.source === 'GATE_CHECKIN' ? 'تسجيل تلقائي عبر البوابة' : ''),
+        });
+      }
+
+      combined.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      return combined.slice(0, 100);
+    }
 
     // Build the set of studentIds to query
-    let targetStudentIds: mongoose.Types.ObjectId[] = [baseStudent._id as any];
+    let targetStudentIds: mongoose.Types.ObjectId[] = [baseStudent!._id as any];
 
     if (params?.all === 'true') {
       const links = await ParentStudentModel.find({
@@ -442,7 +863,7 @@ export class ParentAppService {
 
       targetStudentIds = links
         .map(l => l.studentId as any)
-        .filter(s => s && s.studentName === baseStudent.studentName)
+        .filter(s => s && s.studentName === baseStudent!.studentName)
         .map(s => s._id);
     } else if (params?.subjectId && params.subjectId !== 'ALL' && mongoose.Types.ObjectId.isValid(params.subjectId)) {
       targetStudentIds = [new mongoose.Types.ObjectId(params.subjectId)];
@@ -586,8 +1007,16 @@ export class ParentAppService {
   static async getChildExams(parentId: string, studentId: string, params?: { subjectId?: string; all?: string }) {
     await assertParentStudentAccess(parentId, studentId);
 
-    const baseStudent = await StudentModel.findById(studentId).lean();
-    if (!baseStudent) throw NotFoundException({ message: 'الطالب غير موجود' });
+    const [baseStudent, baseCenterStudent] = await Promise.all([
+      StudentModel.findById(studentId).lean(),
+      CenterStudentModel.findById(studentId).lean(),
+    ]);
+
+    if (!baseStudent && !baseCenterStudent) throw NotFoundException({ message: 'الطالب غير موجود' });
+
+    if (baseCenterStudent) {
+      return [];
+    }
 
     let query: any = {};
 
@@ -599,7 +1028,7 @@ export class ParentAppService {
 
       const childStudentIds = links
         .map(l => l.studentId as any)
-        .filter(s => s && s.studentName === baseStudent.studentName)
+        .filter(s => s && s.studentName === baseStudent!.studentName)
         .map(s => s._id);
 
       query = { studentId: { $in: childStudentIds } };
@@ -612,7 +1041,7 @@ export class ParentAppService {
       };
     } else {
       // Isolated to this teacher's student document
-      query = { studentId: baseStudent._id };
+      query = { studentId: baseStudent!._id };
     }
 
     const results = await ExamResultModel.find(query)
@@ -649,8 +1078,62 @@ export class ParentAppService {
   static async getChildFinancial(parentId: string, studentId: string, params?: { subjectId?: string; all?: string }) {
     await assertParentStudentAccess(parentId, studentId);
 
-    const baseStudent = await StudentModel.findById(studentId).lean();
-    if (!baseStudent) throw NotFoundException({ message: 'الطالب غير موجود' });
+    const [baseStudent, baseCenterStudent] = await Promise.all([
+      StudentModel.findById(studentId).lean(),
+      CenterStudentModel.findById(studentId).lean(),
+    ]);
+
+    if (!baseStudent && !baseCenterStudent) throw NotFoundException({ message: 'الطالب غير موجود' });
+
+    if (baseCenterStudent) {
+      const center = await CenterModel.findById(baseCenterStudent.centerId).select('name').lean();
+      const enrollment = await CenterEnrollmentModel.findOne({
+        centerId: baseCenterStudent.centerId,
+        studentId: baseCenterStudent._id,
+        isActive: true,
+      }).lean();
+
+      const transactions = await TransactionModel.find({
+        centerId: baseCenterStudent.centerId,
+        studentId: baseCenterStudent._id,
+      })
+        .sort({ date: -1 })
+        .lean();
+
+      const payments = transactions.map((t: any) => ({
+        id: t._id.toString(),
+        amount: t.paidAmount || 0,
+        discount: t.discountAmount || 0,
+        date: t.date?.toISOString() || t.createdAt?.toISOString(),
+        description: t.description || (t.category === 'CENTER_PACKAGE' ? 'اشتراك باقة سنتر' : 'سداد بالسنتر'),
+      }));
+
+      const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+      const totalDiscount = payments.reduce((sum, p) => sum + p.discount, 0);
+      const totalDebt = transactions.reduce((sum: number, t: any) => sum + (t.remainingAmount || 0), 0);
+
+      let fullPrice = totalPaid + totalDiscount + totalDebt;
+      if (enrollment?.packageMonthlyPrice && enrollment.packageMonthlyPrice > fullPrice) {
+        fullPrice = enrollment.packageMonthlyPrice;
+      }
+
+      return [
+        {
+          cycleNumber: 1,
+          cycleCapacity: 1,
+          sessionsConsumed: 1,
+          fullCyclePrice: fullPrice,
+          totalPaid,
+          totalDiscount,
+          settledAmount: totalPaid + totalDiscount,
+          remainingAmount: totalDebt,
+          status: totalDebt > 0 ? 'UNPAID' : 'PAID',
+          subject: enrollment?.packageId ? 'باقة السنتر الشهرية' : 'اشتراك السنتر',
+          teacherName: formatCenterName(center?.name, 'إدارة السنتر'),
+          payments,
+        },
+      ];
+    }
 
     let targetStudents: any[] = [];
 
@@ -660,19 +1143,20 @@ export class ParentAppService {
         status: 'ACTIVE',
       }).populate({
         path: 'studentId',
-        populate: { path: 'teacherId', select: 'name subject' },
+        strictPopulate: false,
+        populate: { path: 'teacherId', select: 'name subject', strictPopulate: false },
       }).lean();
 
       targetStudents = links
         .map(l => l.studentId as any)
-        .filter(s => s && s.studentName === baseStudent.studentName);
+        .filter(s => s && s.studentName === baseStudent!.studentName);
     } else if (params?.subjectId && params.subjectId !== 'ALL' && mongoose.Types.ObjectId.isValid(params.subjectId)) {
       const specific = await StudentModel.findById(params.subjectId)
         .populate('teacherId', 'name subject')
         .lean();
       if (specific) targetStudents = [specific];
     } else {
-      const specific = await StudentModel.findById(baseStudent._id)
+      const specific = await StudentModel.findById(baseStudent!._id)
         .populate('teacherId', 'name subject')
         .lean();
       if (specific) targetStudents = [specific];
@@ -683,6 +1167,11 @@ export class ParentAppService {
     for (const student of targetStudents) {
       const enrollments = await CycleEnrollmentModel.find({
         studentId: student._id,
+        isWaived: { $ne: true },
+        $or: [
+          { cycleCharge: { $gt: 0 } },
+          { totalPaid: { $gt: 0 } }
+        ]
       })
         .sort({ cycleNumber: -1 })
         .limit(10)

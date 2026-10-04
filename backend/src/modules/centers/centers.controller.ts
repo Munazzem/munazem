@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { CenterService } from './centers.service.js';
+import { CardBatchPdfService } from '../cards/card-batch-pdf.service.js';
 import { SuccessResponse } from '../../common/utils/response/success.responce.js';
 import { authenticate } from '../../middlewares/auth.middleware.js';
 import { authorizeRoles } from '../../middlewares/roles.middleware.js';
@@ -27,6 +28,8 @@ import {
     updateCenterEnrollmentSchema,
     recordCenterAttendanceSchema,
     bulkCenterAttendanceSchema,
+    centerCheckInSchema,
+    updateCheckInGroupsSchema,
 } from '../../validation/center.validation.js';
 
 class CenterController {
@@ -452,6 +455,46 @@ class CenterController {
         }
     }
 
+    // ── Gate Check-In ────────────────────────────────────────────────────────
+
+    static async checkInStudent(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const result = await CenterService.checkInStudent(centerId, user.userId, req.body);
+            return SuccessResponse({
+                res,
+                message: result.isNewCheckIn ? 'تم تسجيل دخول الطالب للسنتر بنجاح' : 'الطالب مسجل دخول بالفعل اليوم',
+                data: result,
+                status: result.isNewCheckIn ? 201 : 200,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async updateCheckInGroups(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const result = await CenterService.updateCheckInGroups(centerId, user.userId, req.body);
+            return SuccessResponse({ res, message: 'تم تحديث حصص الطالب بنجاح', data: result });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async getDailyCheckIns(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const result = await CenterService.getDailyCheckIns(centerId, req.query);
+            return SuccessResponse({ res, message: 'تم جلب سجل الدخول اليومي بنجاح', data: result });
+        } catch (error) {
+            next(error);
+        }
+    }
+
     // ── Financials & Reports ─────────────────────────────────────────────────
 
     static async recordPayment(req: Request, res: Response, next: NextFunction) {
@@ -481,6 +524,43 @@ class CenterController {
         }
     }
 
+    static async getDailyTally(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const tally = await CenterService.getDailyTally(centerId, req.query.date as string);
+            return SuccessResponse({ res, message: 'تم جلب تقرير الجرد اليومي للسنتر بنجاح', data: tally });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async getMonthlyTally(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const tally = await CenterService.getMonthlyTally(
+                centerId,
+                req.query.year ? Number(req.query.year) : undefined,
+                req.query.month ? Number(req.query.month) : undefined
+            );
+            return SuccessResponse({ res, message: 'تم جلب تقرير الجرد الشهري للسنتر بنجاح', data: tally });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async getTransactions(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const result = await CenterService.getCenterTransactions(centerId, req.query);
+            return SuccessResponse({ res, message: 'تم جلب حركات ومعاملات السنتر المالية', data: result });
+        } catch (error) {
+            next(error);
+        }
+    }
+
     static async getTeacherFinancialReport(req: Request, res: Response, next: NextFunction) {
         try {
             const user = (req as any).user;
@@ -503,6 +583,183 @@ class CenterController {
             const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
             const report = await CenterService.getStudentFinancialReport(centerId, req.params.studentId as string);
             return SuccessResponse({ res, message: 'تم جلب التقرير المالي للطالب بنجاح', data: report });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // ── Comprehensive Reports ──────────────────────────────────────────────────
+    static async getReportsOverview(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const data = await CenterService.getReportsOverview(
+                centerId,
+                req.query.startDate as string,
+                req.query.endDate as string
+            );
+            return SuccessResponse({ res, message: 'تم جلب التقرير الشامل للسنتر', data });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async getTeachersReport(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const data = await CenterService.getTeachersReport(
+                centerId,
+                req.query.startDate as string,
+                req.query.endDate as string
+            );
+            return SuccessResponse({ res, message: 'تم جلب تقارير المدرسين بنجاح', data });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async getGroupsReport(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const data = await CenterService.getGroupsReport(centerId);
+            return SuccessResponse({ res, message: 'تم جلب تقارير المجموعات الدراسية بنجاح', data });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // ── Smart Cards ────────────────────────────────────────────────────────────
+    static async generateCards(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const result = await CenterService.generateCards(centerId, Number(req.body.count), user.userId);
+            return SuccessResponse({ res, message: `تم إنشاء ${result.count} كارت بنجاح`, data: result, status: 201 });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async getCardsStats(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const stats = await CenterService.getCardsStats(centerId);
+            return SuccessResponse({ res, message: 'تم جلب إحصائيات الكروت الذكية', data: stats });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async getCards(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const result = await CenterService.getCards(centerId, req.query);
+            return SuccessResponse({ res, message: 'تم جلب قائمة الكروت الذكية', data: result });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async resolveCard(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const rawParam = (req.query.scanInput as string) || (req.params.scanInput as string) || '';
+            const result = await CenterService.resolveCard(centerId, rawParam ? decodeURIComponent(rawParam) : '');
+            return SuccessResponse({ res, message: 'تم فحص الكارت بنجاح', data: result });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async linkCard(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const result = await CenterService.linkCard(centerId, req.body.cardNumber, req.body.centerStudentId, user.userId);
+            return SuccessResponse({ res, message: 'تم ربط الكارت بالطالب بنجاح', data: result });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async createStudentAndLinkCard(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const result = await CenterService.createStudentAndLinkCard(centerId, req.body, user.userId);
+            return SuccessResponse({ res, message: 'تم إنشاء الطالب وربط الكارت به بنجاح', data: result, status: 201 });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async unlinkCard(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const result = await CenterService.unlinkCard(centerId, req.body.cardNumber);
+            return SuccessResponse({ res, message: 'تم فك ربط الكارت بنجاح', data: result });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async disableCard(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const result = await CenterService.disableCard(centerId, req.body.cardNumber, req.body.reason, user.userId);
+            return SuccessResponse({ res, message: 'تم تعطيل الكارت بنجاح', data: result });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async getCardTemplate(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const template = await CenterService.getCardTemplate(centerId);
+            return SuccessResponse({ res, message: 'تم جلب قالب الكارت بنجاح', data: template });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async updateCardTemplate(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const template = await CenterService.updateCardTemplate(centerId, req.body);
+            return SuccessResponse({ res, message: 'تم حفظ إعدادات قالب الكارت بنجاح', data: template });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async getBatchPrintCards(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const batchId = req.params.batchId as string;
+
+            if (req.headers.accept?.includes('application/json') && !req.query.token) {
+                const data = await CenterService.getBatchPrintCards(centerId, batchId);
+                return SuccessResponse({ res, message: 'تم جلب كروت الطباعة بنجاح', data });
+            }
+
+            const mode = (req.query.mode as string) || 'dual_sided';
+            const token = (req.query.token as string) || '';
+            const html = await CardBatchPdfService.generateCenterBatchHtml(batchId, centerId, mode, token, req.query);
+            res.setHeader('Content-Security-Policy',
+                "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:;");
+            res.setHeader('Content-Type', 'text/html; charset=utf-8');
+            return res.status(200).send(html);
         } catch (error) {
             next(error);
         }
@@ -566,10 +823,37 @@ router.post('/attendance/bulk', requireCenterPermission('canTakeAttendance'), va
 router.get('/attendance/group/:groupId', requireCenterPermission('canViewAttendance'), CenterController.getGroupAttendance);
 router.get('/attendance/student/:studentId', requireCenterPermission('canViewAttendance'), CenterController.getStudentAttendance);
 
-// ── Financials & Reports ─────────────────────────────────────────────────────
+// ── Gate Check-In Routes ────────────────────────────────────────────────────
+router.post('/attendance/check-in', requireCenterPermission('canTakeAttendance'), validate(centerCheckInSchema), CenterController.checkInStudent);
+router.put('/attendance/check-in/groups', requireCenterPermission('canTakeAttendance'), validate(updateCheckInGroupsSchema), CenterController.updateCheckInGroups);
+router.get('/attendance/check-ins', requireCenterPermission('canViewAttendance'), CenterController.getDailyCheckIns);
+
+// ── Financials & Payments ───────────────────────────────────────────────────
 router.post('/financials/payment', requireCenterPermission('canRecordPayments'), CenterController.recordPayment);
 router.get('/financials/summary', requireCenterPermission('canViewFinancials'), CenterController.getFinancialSummary);
+router.get('/financials/daily-tally', requireCenterPermission('canViewFinancials'), CenterController.getDailyTally);
+router.get('/financials/monthly-tally', requireCenterPermission('canViewFinancials'), CenterController.getMonthlyTally);
+router.get('/financials/transactions', requireCenterPermission('canViewFinancials'), CenterController.getTransactions);
 router.get('/financials/teacher/:teacherId', requireCenterPermission('canViewFinancials'), CenterController.getTeacherFinancialReport);
 router.get('/financials/student/:studentId', requireCenterPermission('canViewFinancials'), CenterController.getStudentFinancialReport);
+
+// ── Comprehensive Reports ───────────────────────────────────────────────────
+router.get('/reports/overview', requireCenterPermission('canViewFinancials'), CenterController.getReportsOverview);
+router.get('/reports/teachers', requireCenterPermission('canViewFinancials'), CenterController.getTeachersReport);
+router.get('/reports/groups', requireCenterPermission('canViewAttendance'), CenterController.getGroupsReport);
+
+// ── Smart Cards ─────────────────────────────────────────────────────────────
+router.post('/cards/generate', requireCenterPermission('canManageStudents'), CenterController.generateCards);
+router.get('/cards/stats', requireCenterPermission('canManageStudents'), CenterController.getCardsStats);
+router.get('/cards', requireCenterPermission('canManageStudents'), CenterController.getCards);
+router.get('/cards/resolve', requireCenterPermission('canManageStudents'), CenterController.resolveCard);
+router.get('/cards/resolve/:scanInput', requireCenterPermission('canManageStudents'), CenterController.resolveCard);
+router.post('/cards/link', requireCenterPermission('canManageStudents'), CenterController.linkCard);
+router.post('/cards/create-and-link', requireCenterPermission('canManageStudents'), CenterController.createStudentAndLinkCard);
+router.post('/cards/unlink', requireCenterPermission('canManageStudents'), CenterController.unlinkCard);
+router.post('/cards/disable', requireCenterPermission('canManageStudents'), CenterController.disableCard);
+router.get('/cards/template', requireCenterPermission('canManageStudents'), CenterController.getCardTemplate);
+router.put('/cards/template', requireCenterPermission('canManageStudents'), CenterController.updateCardTemplate);
+router.get('/cards/batch/:batchId/print', requireCenterPermission('canManageStudents'), CenterController.getBatchPrintCards);
 
 export default router;

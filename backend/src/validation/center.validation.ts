@@ -241,7 +241,7 @@ export const recordCenterAttendanceSchema = z.object({
         studentId: z.string().min(1, 'معرف الطالب مطلوب'),
         date: z.string().min(1, 'التاريخ مطلوب'),
         status: z.nativeEnum(AttendanceStatus, { message: 'حالة الحضور غير صحيحة' }),
-        source: z.enum(['MANUAL', 'QR_SCAN']).default('MANUAL'),
+        source: z.enum(['MANUAL', 'QR_SCAN', 'GATE_CHECKIN']).default('MANUAL'),
         notes: z.string().optional(),
     }),
 });
@@ -254,16 +254,35 @@ export const bulkCenterAttendanceSchema = z.object({
             studentId: z.string().min(1, 'معرف الطالب مطلوب'),
             status: z.nativeEnum(AttendanceStatus),
             notes: z.string().optional(),
-            source: z.enum(['MANUAL', 'QR_SCAN']).default('MANUAL'),
+            source: z.enum(['MANUAL', 'QR_SCAN', 'GATE_CHECKIN']).default('MANUAL'),
         })).min(1, 'يجب إرسال سجل حضور واحد على الأقل'),
     }),
 });
+
+export const centerCheckInSchema = z.object({
+    body: z.object({
+        studentIdOrCode: z.string().min(1, 'كود أو باركود أو هاتف الطالب مطلوب'),
+        date: z.string().optional(),
+        groupIds: z.array(z.string()).optional(),
+        source: z.enum(['QR_SCAN', 'BARCODE', 'MANUAL']).default('QR_SCAN'),
+        notes: z.string().optional(),
+    }),
+});
+
+export const updateCheckInGroupsSchema = z.object({
+    body: z.object({
+        studentId: z.string().min(1, 'معرف الطالب مطلوب'),
+        date: z.string().optional(),
+        groupIds: z.array(z.string()),
+    }),
+});
+
 
 // ── Center Students Validation ───────────────────────────────────────────────
 export const createCenterStudentSchema = z.object({
     body: z.object({
         studentName: z.string().min(2, 'اسم الطالب يجب أن يكون حرفين على الأقل'),
-        parentName: z.string().min(2, 'اسم ولي الأمر يجب أن يكون حرفين على الأقل'),
+        parentName: z.string().optional().nullable(),
         studentPhone: z.string().optional().nullable(),
         parentPhone: z.string().optional().nullable(),
         gradeLevel: z.nativeEnum(GradeLevel, { message: 'المرحلة الدراسية غير صحيحة' }),
@@ -276,7 +295,7 @@ export const bulkCreateCenterStudentSchema = z.object({
     body: z.object({
         students: z.array(z.object({
             studentName: z.string().min(2, 'اسم الطالب يجب أن يكون حرفين على الأقل'),
-            parentName: z.string().min(2, 'اسم ولي الأمر يجب أن يكون حرفين على الأقل'),
+            parentName: z.string().optional().nullable(),
             studentPhone: z.string().optional().nullable(),
             parentPhone: z.string().optional().nullable(),
             gradeLevel: z.nativeEnum(GradeLevel, { message: 'المرحلة الدراسية غير صحيحة' }),
@@ -289,7 +308,7 @@ export const bulkCreateCenterStudentSchema = z.object({
 export const updateCenterStudentSchema = z.object({
     body: z.object({
         studentName: z.string().min(2, 'اسم الطالب يجب أن يكون حرفين على الأقل').optional(),
-        parentName: z.string().min(2, 'اسم ولي الأمر يجب أن يكون حرفين على الأقل').optional(),
+        parentName: z.string().optional().nullable(),
         studentPhone: z.string().optional().nullable(),
         parentPhone: z.string().optional().nullable(),
         gradeLevel: z.nativeEnum(GradeLevel, { message: 'المرحلة الدراسية غير صحيحة' }).optional(),

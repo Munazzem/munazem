@@ -14,6 +14,15 @@ export interface IUser {
   isActive:  boolean;
   centerName?: string;              // اسم السنتر — للمدرسين فقط
   logoUrl?:    string;              // لوجو السنتر — للمدرسين فقط
+  cardTemplate?: {                  // تصميم الكارت الذكي — للمدرسين فقط
+    frontImageUrl?: string | null;
+    backImageUrl?:  string | null;
+    qrX?:           number;
+    qrY?:           number;
+    qrSize?:        number;
+    showQrBg?:      boolean;
+    showCardNumber?: boolean;
+  };
   assistantPermissions?: {
     canTakeAttendance: boolean;
     canEditAttendance: boolean;

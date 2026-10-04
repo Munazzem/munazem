@@ -29,12 +29,34 @@ const centerSchema = new Schema<ICenterDocument>({
         index: true,
     },
 
+    // ── Smart Card Template & Design ─────────────────────────────────
+    cardTemplate: {
+        frontDesignUrl:       { type: String, default: null },
+        backDesignUrl:        { type: String, default: null },
+        frontImageUrl:        { type: String, default: null },
+        backImageUrl:         { type: String, default: null },
+        themePreset:          { type: String, default: 'emerald' },
+        showCenterName:       { type: Boolean, default: true },
+        showCenterLogo:       { type: Boolean, default: true },
+        showStudentPhoto:     { type: Boolean, default: true },
+        showStudentName:      { type: Boolean, default: true },
+        showBarcode:          { type: Boolean, default: true },
+        showQrCode:           { type: Boolean, default: true },
+        showInstructions:     { type: Boolean, default: false },
+        primaryColor:         { type: String, default: '#059669' },
+        showMonazemLogo:      { type: Boolean, default: true },
+        monazemLogoPosition:  { type: String, default: 'top-left' },
+        monazemLogoSide:      { type: String, default: 'front' },
+        monazemLogoSize:      { type: String, default: 'md' },
+        qrX:                  { type: Number, default: 50 },
+        qrY:                  { type: Number, default: 70 },
+        qrSize:               { type: Number, default: 25 },
+        showQrBg:             { type: Boolean, default: true },
+        showCardNumber:       { type: Boolean, default: true },
+    },
+
     isActive: { type: Boolean, default: true },
 }, { timestamps: true });
-
-// Indexes
-centerSchema.index({ ownerId: 1 });
-centerSchema.index({ parentCenterId: 1 });
 
 export const CenterModel: Model<ICenterDocument> =
     mongoose.models.Center || mongoose.model<ICenterDocument>('Center', centerSchema);

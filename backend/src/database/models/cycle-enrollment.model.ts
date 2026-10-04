@@ -72,6 +72,11 @@ const cycleEnrollmentSchema = new Schema<ICycleEnrollmentDocument>({
         enum: Object.values(CycleEnrollmentStatus),
         required: true,
         default: CycleEnrollmentStatus.UNPAID
+    },
+    isWaived: {
+        type: Boolean,
+        default: false,
+        index: true
     }
 }, {
     timestamps: true

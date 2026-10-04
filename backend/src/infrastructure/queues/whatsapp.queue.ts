@@ -6,12 +6,11 @@ import { isTeacherPremium } from '../../common/utils/premium.util.js';
 import { MessageLogModel } from '../../database/models/message-log.model.js';
 import type { WhatsAppJobData, EmailJobData } from './queue.types.js';
 
-// ─── Redis connection options ─────────────────────────────────────────────────
-const connection = { url: envVars.redisUrl };
+import { redisConnectionOptions } from './redis.connection.js';
 
 // ─── WhatsApp Queue (Singleton) ───────────────────────────────────────────────
 export const whatsAppQueue = new Queue<WhatsAppJobData>('whatsapp', {
-    connection,
+    connection: redisConnectionOptions,
     defaultJobOptions: {
         attempts:    50,
         backoff: {
@@ -22,10 +21,11 @@ export const whatsAppQueue = new Queue<WhatsAppJobData>('whatsapp', {
         removeOnFail:     { count: 500 },
     },
 });
+whatsAppQueue.on('error', () => {});
 
 // ─── Email Queue (Singleton) ─────────────────────────────────────────────────
 export const emailQueue = new Queue<EmailJobData>('email', {
-    connection,
+    connection: redisConnectionOptions,
     defaultJobOptions: {
         attempts:    2,
         backoff: { type: 'exponential', delay: 10_000 },
@@ -33,6 +33,7 @@ export const emailQueue = new Queue<EmailJobData>('email', {
         removeOnFail:     { count: 200 },
     },
 });
+emailQueue.on('error', () => {});
 
 // ─── Typed enqueue helper (WhatsApp) ─────────────────────────────────────────
 /**

@@ -62,6 +62,17 @@ const userSchema = new Schema<IUserDocument>(
         logoUrl: {
             type: String,
         },
+        // ── Card design template (teacher only) ──────────────────────────────
+        cardTemplate: {
+            frontImageUrl:  { type: String, default: null },
+            backImageUrl:   { type: String, default: null },
+            qrX:            { type: Number, default: 50 },
+            qrY:            { type: Number, default: 70 },
+            qrSize:         { type: Number, default: 25 },
+            showQrBg:       { type: Boolean, default: true },
+            showCardNumber: { type: Boolean, default: true },
+        },
+
         // Assistant permissions configuration for the teacher
         assistantPermissions: {
             canTakeAttendance: { type: Boolean, default: true },

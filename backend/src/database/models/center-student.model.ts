@@ -22,7 +22,8 @@ const centerStudentSchema = new Schema<ICenterStudentDocument>({
     },
     parentName: {
         type: String,
-        required: [true, 'اسم ولي الأمر مطلوب'],
+        required: false,
+        default: '',
         trim: true,
     },
     studentPhone: { type: String, default: null },

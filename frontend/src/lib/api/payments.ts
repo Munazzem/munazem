@@ -210,4 +210,15 @@ export const payAllPastCycles = async (data: {
     return (res as any).data;
 };
 
+export const waiveDebt = async (data: {
+    studentId: string;
+    cycleNumber?: number;
+    waivePastOnly?: boolean;
+    amount?: number;
+    reason?: string;
+}): Promise<{ message: string; waivedAmount: number }> => {
+    const res = await apiClient.post('/payments/waive-debt', data);
+    return (res as any).data;
+};
+
 
