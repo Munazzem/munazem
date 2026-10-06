@@ -22,6 +22,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { useIsLocalDev } from '@/lib/use-local-dev';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -721,6 +722,13 @@ export default function CenterCardsPage() {
     const [showNewStudentModal, setShowNewStudentModal] = useState(false);
     const [tab, setTab] = useState<'scanner' | 'generate' | 'design'>('scanner');
     const qc = useQueryClient();
+    const isLocal = useIsLocalDev();
+
+    useEffect(() => {
+        if (!isLocal && tab === 'design') {
+            setTab('scanner');
+        }
+    }, [isLocal, tab]);
 
     const handleScan = useCallback(async (input: string) => {
         let clean = input.trim();
@@ -747,6 +755,12 @@ export default function CenterCardsPage() {
         onSuccess: () => { toast.success('تم فك ربط الكارت'); qc.invalidateQueries({ queryKey: ['center-cards-stats'] }); handleReset(); },
     });
 
+    const tabs = [
+        { key: 'scanner' as const, label: 'الماسح', icon: Scan },
+        { key: 'generate' as const, label: 'الكروت', icon: Package },
+        ...(isLocal ? [{ key: 'design' as const, label: 'التصميم', icon: Palette }] : []),
+    ];
+
     return (
         <div className="w-full max-w-xl mx-auto px-4 sm:px-0 space-y-5 animate-in fade-in duration-500 pb-10 min-w-0" dir="rtl">
             <div className="flex items-center justify-between">
@@ -760,15 +774,15 @@ export default function CenterCardsPage() {
             </div>
 
             <div className="flex rounded-xl bg-gray-100 p-1 gap-1">
-                {([['scanner', 'الماسح', Scan], ['generate', 'الكروت', Package], ['design', 'التصميم', Palette]] as const).map(([key, label, Icon]) => (
-                    <button key={key} onClick={() => { setTab(key as any); handleReset(); }}
+                {tabs.map(({ key, label, icon: Icon }) => (
+                    <button key={key} onClick={() => { setTab(key); handleReset(); }}
                         className={cn('flex-1 flex items-center justify-center gap-2 py-2 text-sm font-bold rounded-lg transition-all', tab === key ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700')}>
                         <Icon className="h-4 w-4" />{label}
                     </button>
                 ))}
             </div>
 
-            {tab === 'design' ? <DesignStudioPanel /> : tab === 'generate' ? <GenerateBatchPanel /> : (
+            {tab === 'design' && isLocal ? <DesignStudioPanel /> : tab === 'generate' ? <GenerateBatchPanel /> : (
                 <>
                     {view === 'scanner' && (
                         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
