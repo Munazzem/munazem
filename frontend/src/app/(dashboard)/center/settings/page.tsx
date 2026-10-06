@@ -119,21 +119,21 @@ export default function CenterSettingsPage() {
     return (
         <div className="space-y-6 pb-12" dir="rtl">
             {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white/70 backdrop-blur-md p-6 rounded-2xl border border-gray-100 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white/70 backdrop-blur-md p-4 sm:p-6 rounded-2xl border border-gray-100 shadow-sm">
                 <div>
-                    <h1 className="text-2xl font-black text-gray-900 flex items-center gap-2">
-                        <Settings className="h-6 w-6 text-primary" />
-                        إعدادات السنتر والفروع
+                    <h1 className="text-xl sm:text-2xl font-black text-gray-900 flex items-center gap-2">
+                        <Settings className="h-6 w-6 text-primary shrink-0" />
+                        <span>إعدادات السنتر والفروع</span>
                     </h1>
                     <p className="text-xs sm:text-sm text-gray-500 mt-1">
                         إدارة بيانات السنتر الرئيسي وإضافة وتعديل الفروع التابعة له.
                     </p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 w-full sm:w-auto shrink-0">
                     <BranchSwitcher />
-                    <Button onClick={handleOpenAddBranch} className="bg-primary hover:bg-primary/95 text-white gap-2 rounded-xl shadow-md shadow-primary/20 font-bold">
-                        <Plus className="h-4 w-4" />
-                        إضافة فرع جديد
+                    <Button onClick={handleOpenAddBranch} className="bg-primary hover:bg-primary/95 text-white gap-2 rounded-xl shadow-md shadow-primary/20 font-bold text-xs sm:text-sm h-10 w-full sm:w-auto">
+                        <Plus className="h-4 w-4 shrink-0" />
+                        <span>إضافة فرع جديد</span>
                     </Button>
                 </div>
             </div>

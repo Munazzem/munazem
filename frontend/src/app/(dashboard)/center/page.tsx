@@ -70,27 +70,27 @@ export default function CenterDashboardPage() {
     return (
         <div className="space-y-6 pb-12" dir="rtl">
             {/* ── Top Header & Greeting ── */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white/70 backdrop-blur-md p-6 rounded-2xl border border-gray-100 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white/70 backdrop-blur-md p-4 sm:p-6 rounded-2xl border border-gray-100 shadow-sm">
                 <div>
                     <div className="flex items-center gap-2">
                         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-primary/10 text-primary">
-                            <Sparkles className="h-3.5 w-3.5" />
+                            <Sparkles className="h-3.5 w-3.5 shrink-0" />
                             نظام إدارة المراكز التعليمية
                         </span>
                     </div>
-                    <h1 className="text-2xl sm:text-3xl font-black text-gray-900 mt-2">
+                    <h1 className="text-xl sm:text-3xl font-black text-gray-900 mt-2">
                         مرحباً بك، {user?.name}
                     </h1>
                     <p className="text-xs sm:text-sm text-gray-500 mt-1">
                         نظرة شاملة ومباشرة على أداء السنتر والفصول والماليات اليوم.
                     </p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 w-full sm:w-auto shrink-0">
                     <BranchSwitcher />
-                    <Link href="/center/attendance">
-                        <Button className="bg-primary hover:bg-primary/95 text-white gap-2 rounded-xl shadow-md shadow-primary/20 font-bold text-xs sm:text-sm">
-                            <QrCode className="h-4 w-4" />
-                            التحضير السريع
+                    <Link href="/center/attendance" className="w-full sm:w-auto">
+                        <Button className="bg-primary hover:bg-primary/95 text-white gap-2 rounded-xl shadow-md shadow-primary/20 font-bold text-xs sm:text-sm h-10 w-full sm:w-auto">
+                            <QrCode className="h-4 w-4 shrink-0" />
+                            <span>التحضير السريع</span>
                         </Button>
                     </Link>
                 </div>

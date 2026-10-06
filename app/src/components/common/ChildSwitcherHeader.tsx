@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
@@ -24,11 +24,11 @@ export const ChildSwitcherHeader: React.FC<ChildSwitcherHeaderProps> = ({
     activeOpacity={canSwitch ? 0.7 : 1}
   >
     <View style={styles.avatar}>
-      <Text style={styles.avatarText}>{studentName.charAt(0)}</Text>
+      <Text style={styles.avatarText}>{(studentName || 'ط').charAt(0)}</Text>
     </View>
     <View style={styles.info}>
-      <Text style={styles.name}>{studentName}</Text>
-      <Text style={styles.grade}>{grade}</Text>
+      <Text style={styles.name}>{studentName || 'طالب'}</Text>
+      <Text style={styles.grade}>{grade || ''}</Text>
     </View>
     {canSwitch && <ChevronDown size={18} color={colors.textMuted} />}
   </TouchableOpacity>

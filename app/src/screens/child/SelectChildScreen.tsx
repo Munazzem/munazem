@@ -71,21 +71,21 @@ export const SelectChildScreen: React.FC<Props> = ({ route, navigation }) => {
               >
                 {/* Avatar */}
                 <View style={[styles.avatar, isSelected && styles.avatarSelected]}>
-                  <Text style={styles.avatarText}>{child.studentName.charAt(0)}</Text>
+                  <Text style={styles.avatarText}>{(child.studentName || 'ط').charAt(0)}</Text>
                 </View>
 
                 {/* Info */}
                 <View style={styles.info}>
                   <Text style={[styles.name, isSelected && styles.nameSelected]}>
-                    {child.studentName}
+                    {child.studentName || 'طالب'}
                   </Text>
-                  <Text style={styles.grade}>{child.gradeLevel}</Text>
+                  <Text style={styles.grade}>{child.gradeLevel || ''}</Text>
 
                   {child.subjects?.length > 0 && (
                     <View style={styles.subjectRow}>
                       <BookOpen size={12} color={colors.skyBlue} />
                       <Text style={styles.subjectText}>
-                        {child.subjects[0].teacherName} — {child.subjects[0].subject}
+                        {child.subjects[0]?.teacherName || ''} — {child.subjects[0]?.subject || ''}
                       </Text>
                     </View>
                   )}
