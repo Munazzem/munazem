@@ -892,12 +892,6 @@ export class CardBatchPdfService {
             if (frontDesign) {
                 return `
                     <div class="card-item custom-artwork front">
-                        ${showStudentName && student?.studentName ? `
-                            <div class="custom-overlay-student">
-                                <div class="custom-name">${student.studentName}</div>
-                                ${student.gradeLevel ? `<div class="custom-grade">${student.gradeLevel}</div>` : ''}
-                            </div>
-                        ` : ''}
                         ${showCardNumber ? `<div class="card-num-overlay" dir="ltr">${card.cardNumber}</div>` : ''}
                     </div>
                 `;
