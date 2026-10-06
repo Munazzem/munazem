@@ -198,6 +198,10 @@ export default function CenterStudentsPage() {
             const matchingPkg = packages.find((p) => p.gradeLevel === gradeLevel);
             if (matchingPkg && matchingPkg._id !== packageId) {
                 handleSelectPackage(matchingPkg._id);
+            } else if (!matchingPkg) {
+                // No package for this grade level — clear selection
+                setPackageId('');
+                setSelectedPackageGroupIds([]);
             }
         }
     }, [gradeLevel, enrollImmediately, packages]);
@@ -957,7 +961,12 @@ export default function CenterStudentsPage() {
                                         setEnrollImmediately(next);
                                         if (next && gradeLevel && packages.length > 0) {
                                             const matchingPkg = packages.find((p) => p.gradeLevel === gradeLevel);
-                                            if (matchingPkg) handleSelectPackage(matchingPkg._id);
+                                            if (matchingPkg) {
+                                                handleSelectPackage(matchingPkg._id);
+                                            } else {
+                                                setPackageId('');
+                                                setSelectedPackageGroupIds([]);
+                                            }
                                         }
                                     }}
                                     className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
@@ -1032,17 +1041,25 @@ export default function CenterStudentsPage() {
                                                     <label className="text-xs font-bold text-blue-900 block mb-1">
                                                         اختيار الباقة التعليمية ({gradeLevel}) *
                                                     </label>
+                                                    {/* Warn if no package for selected grade */}
+                                                    {packages.length > 0 && !packages.find((p) => p.gradeLevel === gradeLevel) && (
+                                                        <div className="flex items-center gap-2 text-orange-600 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 text-xs font-bold">
+                                                            <span>⚠️ لا توجد باقة مرتبطة بمرحلة ({gradeLevel}) — يمكنك إضافة الطالب بدون باقة والتسجيل لاحقاً من قسم الاشتراكات.</span>
+                                                        </div>
+                                                    )}
                                                     <select
                                                         value={packageId}
                                                         onChange={(e) => handleSelectPackage(e.target.value)}
                                                         className="w-full h-9 px-3 rounded-lg border border-gray-200 bg-white text-xs font-bold"
                                                     >
-                                                        <option value="" disabled>اختر الباقة</option>
-                                                        {packages.map((pkg) => (
-                                                            <option key={pkg._id} value={pkg._id}>
-                                                                {pkg.name} ({pkg.gradeLevel}) — {pkg.monthlyPrice} ج.م/شهر
-                                                            </option>
-                                                        ))}
+                                                        <option value="">{packages.find((p) => p.gradeLevel === gradeLevel) ? 'اختر الباقة' : 'لا توجد باقة لهذه المرحلة'}</option>
+                                                        {packages
+                                                            .filter((pkg) => pkg.gradeLevel === gradeLevel)
+                                                            .map((pkg) => (
+                                                                <option key={pkg._id} value={pkg._id}>
+                                                                    {pkg.name} — {pkg.monthlyPrice} ج.م/شهر
+                                                                </option>
+                                                            ))}
                                                     </select>
                                                 </div>
 

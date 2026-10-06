@@ -76,5 +76,9 @@ centerEnrollmentSchema.index({ centerId: 1, studentId: 1 }, { unique: true });
 // Fast: list all students in a specific package
 centerEnrollmentSchema.index({ packageId: 1, isActive: 1 });
 
+// Fast: list and filter enrollments per center
+centerEnrollmentSchema.index({ centerId: 1, type: 1, isActive: 1 });
+centerEnrollmentSchema.index({ centerId: 1, createdAt: -1 });
+
 export const CenterEnrollmentModel: Model<ICenterEnrollmentDocument> =
     mongoose.models.CenterEnrollment || mongoose.model<ICenterEnrollmentDocument>('CenterEnrollment', centerEnrollmentSchema);

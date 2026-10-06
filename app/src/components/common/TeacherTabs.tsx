@@ -11,6 +11,8 @@ export interface TeacherTabItem {
   teacherName: string;
   subject: string;
   groupName?: string;
+  isPackage?: boolean;
+  isPrivate?: boolean;
 }
 
 interface TeacherTabsProps {
@@ -26,7 +28,7 @@ export const TeacherTabs: React.FC<TeacherTabsProps> = ({
   selectedSubjectId,
   onSelect,
   variant = 'navy',
-  title = 'المعلم والمادة:',
+  title = 'الاشتراكات والمواد:',
 }) => {
   if (!subjects || subjects.length <= 1) {
     return null;
@@ -49,6 +51,16 @@ export const TeacherTabs: React.FC<TeacherTabsProps> = ({
         {subjects.map((subj, idx) => {
           const isSelected =
             selectedSubjectId === subj.studentId || (!selectedSubjectId && idx === 0);
+
+          const displayName = subj.isPackage
+            ? '🏛️ باقة السنتر'
+            : subj.teacherName?.startsWith('أ.') || subj.teacherName?.startsWith('د.')
+            ? subj.teacherName
+            : `أ. ${subj.teacherName || 'المعلم'}`;
+
+          const subName = subj.isPackage
+            ? subj.groupName || 'اشتراك السنتر'
+            : subj.subject || subj.groupName || 'مادة دراسية';
 
           return (
             <TouchableOpacity
@@ -78,7 +90,7 @@ export const TeacherTabs: React.FC<TeacherTabsProps> = ({
                         (isNavy ? styles.tabNameActiveNavy : styles.tabNameActiveLight),
                     ]}
                   >
-                    {subj.teacherName ? `أ. ${subj.teacherName}` : 'المعلم'}
+                    {displayName}
                   </Text>
                   <Text
                     style={[
@@ -88,7 +100,7 @@ export const TeacherTabs: React.FC<TeacherTabsProps> = ({
                         (isNavy ? styles.tabSubActiveNavy : styles.tabSubActiveLight),
                     ]}
                   >
-                    {subj.subject || subj.groupName}
+                    {subName}
                   </Text>
                 </View>
               </View>

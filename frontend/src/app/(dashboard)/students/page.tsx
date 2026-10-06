@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
+import { useDebounce } from '@/lib/hooks/use-debounce';
 import { fetchStudents, deleteStudent } from '@/lib/api/students';
 import { fetchGroups } from '@/lib/api/groups';
 import type { StudentWithGroup } from '@/types/student.types';
@@ -176,8 +177,8 @@ function StudentsPageContent() {
 
     const queryClient = useQueryClient();
 
-    // Show students when: searching OR a group is selected
-    const isSearching = searchTerm.trim().length > 0;
+    const debouncedSearchTerm = useDebounce(searchTerm, 350);
+    const isSearching = debouncedSearchTerm.trim().length > 0;
     const showStudents = isSearching || !!selectedGroup;
 
     const { 
@@ -188,11 +189,11 @@ function StudentsPageContent() {
         hasNextPage,
         isFetchingNextPage
     } = useInfiniteQuery({
-        queryKey: QK.students.list({ limit, search: searchTerm, groupId: selectedGroup?._id }),
+        queryKey: QK.students.list({ limit, search: debouncedSearchTerm, groupId: selectedGroup?._id }),
         queryFn: ({ pageParam = 1 }) => fetchStudents({
             page: pageParam,
             limit,
-            search: searchTerm || undefined,
+            search: debouncedSearchTerm || undefined,
             groupId: selectedGroup?._id,
         }),
         getNextPageParam: (lastPage) => {
