@@ -166,19 +166,17 @@ export default function AnnouncementsSettings() {
                         return (
                             <div key={ann._id} className={`p-5 flex flex-col sm:flex-row gap-4 justify-between items-start hover:bg-gray-50/30 transition-colors ${isInvalid ? 'opacity-60' : ''}`}>
                                 <div className="flex gap-4">
-                                    <div className={`mt-1 p-2 rounded-xl border ${
-                                        ann.type === 'warning' ? 'bg-orange-50 border-orange-100' :
-                                        ann.type === 'success' ? 'bg-green-50 border-green-100' :
-                                        'bg-blue-50 border-blue-100'
-                                    }`}>
+                                    <div className={`mt-1 p-2 rounded-xl border ${ann.type === 'warning' ? 'bg-orange-50 border-orange-100' :
+                                            ann.type === 'success' ? 'bg-green-50 border-green-100' :
+                                                'bg-blue-50 border-blue-100'
+                                        }`}>
                                         {getTypeIcon(ann.type)}
                                     </div>
                                     <div>
                                         <div className="flex items-center gap-2">
                                             <h3 className="font-bold text-gray-900">{ann.title}</h3>
-                                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
-                                                ann.isActive && !isExpired ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
-                                            }`}>
+                                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${ann.isActive && !isExpired ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+                                                }`}>
                                                 {ann.isActive && !isExpired ? 'نشط ويظهر الآن' : isExpired ? 'منتهي الصلاحية' : 'معطل'}
                                             </span>
                                         </div>
@@ -191,18 +189,18 @@ export default function AnnouncementsSettings() {
                                     </div>
                                 </div>
                                 <div className="flex gap-2 shrink-0 w-full sm:w-auto justify-end mt-4 sm:mt-0">
-                                    <Button 
-                                        variant="outline" size="sm" 
+                                    <Button
+                                        variant="outline" size="sm"
                                         className={ann.isActive ? 'text-orange-600 hover:text-orange-700 hover:bg-orange-50' : 'text-green-600 hover:text-green-700 hover:bg-green-50'}
                                         onClick={() => toggleMutation.mutate(ann._id)}
                                         disabled={toggleMutation.isPending}
                                     >
                                         {ann.isActive ? <><PowerOff className="h-4 w-4 ml-1" /> إيقاف</> : <><Power className="h-4 w-4 ml-1" /> تفعيل</>}
                                     </Button>
-                                    <Button 
-                                        variant="outline" size="sm" 
+                                    <Button
+                                        variant="outline" size="sm"
                                         className="text-red-600 hover:text-red-700 hover:bg-red-50 px-2"
-                                        onClick={() => { if(confirm('هل أنت متأكد من حذف الإشعار؟')) deleteMutation.mutate(ann._id); }}
+                                        onClick={() => { if (confirm('هل أنت متأكد من حذف الإشعار؟')) deleteMutation.mutate(ann._id); }}
                                         disabled={deleteMutation.isPending}
                                         title="حذف نهائي"
                                     >

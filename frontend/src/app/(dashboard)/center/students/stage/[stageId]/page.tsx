@@ -583,7 +583,7 @@ export default function StageStudentsPage() {
                     </div>
 
                     {/* Left: Action Buttons */}
-                    <div className="flex items-center gap-2.5 flex-wrap shrink-0">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 w-full sm:w-auto shrink-0">
                         <Button
                             type="button"
                             variant="outline"
@@ -591,18 +591,18 @@ export default function StageStudentsPage() {
                                 setBulkGradeLevel(stageConfig.defaultAddGrade);
                                 setIsBulkOpen(true);
                             }}
-                            className="h-10 px-3.5 rounded-xl text-xs font-bold bg-white border-gray-200 text-gray-700 hover:bg-gray-50 gap-2 shadow-2xs"
+                            className="h-10 px-3.5 rounded-xl text-xs font-bold bg-white border-gray-200 text-gray-700 hover:bg-gray-50 gap-2 shadow-2xs w-full sm:w-auto justify-center"
                         >
-                            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                            <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
                             <span>إضافة دفعة طلاب</span>
                         </Button>
 
                         <Button
                             type="button"
                             onClick={() => handleOpenAdd()}
-                            className="h-10 px-4 rounded-xl text-xs font-bold bg-primary hover:bg-primary/95 text-white gap-2 shadow-md shadow-primary/20"
+                            className="h-10 px-4 rounded-xl text-xs font-bold bg-primary hover:bg-primary/95 text-white gap-2 shadow-md shadow-primary/20 w-full sm:w-auto justify-center"
                         >
-                            <Plus className="w-4 h-4" />
+                            <Plus className="w-4 h-4 shrink-0" />
                             <span>إضافة طالب جديد للمرحلة</span>
                         </Button>
                     </div>

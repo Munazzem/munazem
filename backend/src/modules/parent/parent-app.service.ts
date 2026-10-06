@@ -120,13 +120,24 @@ export class ParentAppService {
 
     for (const link of activeLinks) {
       let student = link.studentId as any;
-      const isCenter = link.studentModelType === 'CenterStudent' || !!link.centerId || !!student?.centerId;
+      let isCenter = link.studentModelType === 'CenterStudent' || !!link.centerId || !!student?.centerId;
 
-      if (isCenter && (!student || !student.studentName)) {
-        student = await CenterStudentModel.findById(link.studentId || link.centerStudentId).lean();
+      if (!student || !student.studentName) {
+        if (isCenter) {
+          student = await CenterStudentModel.findById(link.studentId || link.centerStudentId).lean();
+        } else {
+          student = await StudentModel.findById(link.studentId)
+            .populate({ path: 'teacherId', select: 'name subject centerName', strictPopulate: false })
+            .populate({ path: 'groupId', select: 'name schedule', strictPopulate: false })
+            .lean();
+          if (!student) {
+            student = await CenterStudentModel.findById(link.studentId).lean();
+            if (student) isCenter = true;
+          }
+        }
       }
 
-      if (!student || student.isActive === false) continue;
+      if (!student || student.isActive === false || !student.studentName) continue;
 
       const normalizedName = (student.studentName || '').trim();
 
@@ -671,8 +682,22 @@ export class ParentAppService {
 
     const matchingEnrollments = await Promise.all(
       links
-        .map(l => l.studentId as any)
-        .filter(s => s && s.studentName === baseStudent!.studentName)
+        .map(async (l) => {
+          let s = l.studentId as any;
+          if (!s || !s.studentName) {
+            s = await StudentModel.findById(l.studentId)
+              .populate('teacherId', 'name subject centerName')
+              .populate('groupId', 'name schedule')
+              .lean();
+          }
+          return s;
+        })
+    );
+    const validStudents = (matchingEnrollments.filter(Boolean) as any[])
+      .filter(s => s && s.studentName === baseStudent!.studentName);
+
+    const enrollments = await Promise.all(
+      validStudents
         .map(async (s) => {
           const card = await CardModel.findOne({
             studentId: s._id,
@@ -861,8 +886,17 @@ export class ParentAppService {
         status: 'ACTIVE',
       }).populate('studentId', 'studentName').lean();
 
-      targetStudentIds = links
-        .map(l => l.studentId as any)
+      const populatedStudents = await Promise.all(
+        links.map(async (l) => {
+          let s = l.studentId as any;
+          if (!s || !s.studentName) {
+            s = await StudentModel.findById(l.studentId).select('studentName').lean();
+          }
+          return s;
+        })
+      );
+
+      targetStudentIds = populatedStudents
         .filter(s => s && s.studentName === baseStudent!.studentName)
         .map(s => s._id);
     } else if (params?.subjectId && params.subjectId !== 'ALL' && mongoose.Types.ObjectId.isValid(params.subjectId)) {
@@ -1026,8 +1060,17 @@ export class ParentAppService {
         status: 'ACTIVE',
       }).populate('studentId', 'studentName').lean();
 
-      const childStudentIds = links
-        .map(l => l.studentId as any)
+      const populatedStudents = await Promise.all(
+        links.map(async (l) => {
+          let s = l.studentId as any;
+          if (!s || !s.studentName) {
+            s = await StudentModel.findById(l.studentId).select('studentName').lean();
+          }
+          return s;
+        })
+      );
+
+      const childStudentIds = populatedStudents
         .filter(s => s && s.studentName === baseStudent!.studentName)
         .map(s => s._id);
 
@@ -1147,8 +1190,19 @@ export class ParentAppService {
         populate: { path: 'teacherId', select: 'name subject', strictPopulate: false },
       }).lean();
 
-      targetStudents = links
-        .map(l => l.studentId as any)
+      const populatedStudents = await Promise.all(
+        links.map(async (l) => {
+          let s = l.studentId as any;
+          if (!s || !s.studentName) {
+            s = await StudentModel.findById(l.studentId)
+              .populate('teacherId', 'name subject')
+              .lean();
+          }
+          return s;
+        })
+      );
+
+      targetStudents = populatedStudents
         .filter(s => s && s.studentName === baseStudent!.studentName);
     } else if (params?.subjectId && params.subjectId !== 'ALL' && mongoose.Types.ObjectId.isValid(params.subjectId)) {
       const specific = await StudentModel.findById(params.subjectId)

@@ -1,21 +1,24 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-    resolveCard,
-    linkCard,
-    disableCard,
-    generateCardBatch,
-    getCardStats,
-    getCards,
-    getCardBatchPrintUrl,
-    unlinkCard,
-    getCardDesignTemplate,
-    updateCardDesignTemplate,
-} from '@/lib/api/cards';
-import type { CardResolveResult, CardStats, ICard, CardDesignTemplate } from '@/lib/api/cards';
-import { fetchStudents } from '@/lib/api/students';
+    resolveCenterCard,
+    linkCenterCard,
+    unlinkCenterCard,
+    disableCenterCard,
+    generateCenterCards,
+    fetchCenterCardsStats,
+    getCenterCardBatchPrintUrl,
+    fetchCenterStudents,
+    createStudentAndLinkCard,
+    fetchCenterPackages,
+    fetchCenterCardTemplate,
+    updateCenterCardTemplate,
+    type ResolveCardResponse,
+    type CenterCardStats,
+    type CenterCardTemplate,
+} from '@/lib/api/centers';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -23,231 +26,130 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { CreditCard, User, Users, Wallet, BookOpen, FileText,
-    MessageSquare, Printer, Unlink, CheckCircle2,
-    Loader2, Package, Scan, Link2, Hash, ExternalLink,
+import {
+    CreditCard, User, Users, Phone, GraduationCap,
+    Printer, Unlink, CheckCircle2,
+    Loader2, Package, Scan, Link2, ExternalLink, Ban, Search,
     Palette, Upload, Image as ImageIcon, Save, Eye,
-    Move, SlidersHorizontal, Sparkles, RefreshCw } from 'lucide-react';
+    Move, SlidersHorizontal, Sparkles, RefreshCw,
+} from 'lucide-react';
 import { QrScanner } from '@/components/scanner/QrScanner';
-import { SubscriptionModal } from '@/components/smart-card/SubscriptionModal';
-import { NotebookActionModal } from '@/components/smart-card/NotebookActionModal';
-import { AddGradeModal } from '@/components/smart-card/AddGradeModal';
 
-// ── Types ──────────────────────────────────────────────────────────────────────
-type View = 'scanner' | 'result' | 'link-choice' | 'link-student' | 'generate';
+type View = 'scanner' | 'result' | 'link-choice';
+type BatchHistoryEntry = { batchId: string; count: number; createdAt: string };
 
-// ── Student Summary Card ───────────────────────────────────────────────────────
-function StudentSummaryCard({ student }: { student: CardResolveResult['student'] }) {
+function StudentSummaryCard({ data }: { data: ResolveCardResponse }) {
+    const student = data.student;
     if (!student) return null;
-    const debtColor = student.totalDebt > 0 ? 'text-red-600' : 'text-green-600';
-    const subColor  = student.hasActiveSubscription ? 'text-green-600' : 'text-orange-500';
-
+    const name = student.studentName || student.name || '—';
+    const phone = student.studentPhone || student.phone || null;
     return (
         <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
-            {/* Header strip */}
             <div className="bg-primary px-5 py-4 text-white">
                 <div className="flex items-center gap-3">
                     <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-xl font-bold">
-                        {student.studentName.charAt(0)}
+                        {name.charAt(0)}
                     </div>
                     <div>
-                        <p className="text-lg font-bold">{student.studentName}</p>
+                        <p className="text-lg font-bold">{name}</p>
                         <p className="text-xs text-white/80">{student.studentCode} · {student.gradeLevel}</p>
                     </div>
                 </div>
             </div>
-
-            {/* Stats grid */}
             <div className="grid grid-cols-2 gap-3 p-4">
-                <Stat label="المجموعة"      value={student.groupName}                   />
-                <Stat label="الاشتراك"       value={student.hasActiveSubscription ? '✅ مشترك' : '❌ غير مشترك'} valueClass={subColor} />
-                <Stat label="رصيد الحصص"    value={`${student.remainingSessions} حصة`}  />
-                <Stat label="المديونية"      value={`${student.totalDebt} ج.م`}          valueClass={debtColor} />
-                {student.lastAttendanceDate && (
-                    <Stat label="آخر حضور" value={new Date(student.lastAttendanceDate).toLocaleDateString('en-GB')} />
-                )}
-                {student.lastPaymentAmount != null && (
-                    <Stat label="آخر دفعة" value={`${student.lastPaymentAmount} ج.م`} />
+                <InfoStat label="هاتف ولي الأمر" value={student.parentPhone || '—'} />
+                <InfoStat label="هاتف الطالب" value={phone || '—'} />
+                <InfoStat label="نوع الاشتراك" value={student.studentType === 'PACKAGE' ? 'باكيدج كامل' : 'حسب المجموعة'} />
+                <InfoStat label="رقم الكارت" value={data.card?.cardNumber || '—'} mono />
+                {data.enrolledGroups && data.enrolledGroups.length > 0 && (
+                    <div className="col-span-2 bg-gray-50 rounded-xl px-3 py-2.5">
+                        <p className="text-[10px] text-gray-500 mb-1.5">المجموعات المقيد بها</p>
+                        <div className="flex flex-wrap gap-1.5">
+                            {data.enrolledGroups.map((g: any) => (
+                                <Badge key={g._id} variant="secondary" className="text-xs bg-indigo-50 text-indigo-700 border border-indigo-100">
+                                    {g.name}
+                                </Badge>
+                            ))}
+                        </div>
+                    </div>
                 )}
             </div>
         </div>
     );
 }
 
-function Stat({ label, value, valueClass }: { label: string; value: string; valueClass?: string }) {
+function InfoStat({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
     return (
         <div className="bg-gray-50 rounded-xl px-3 py-2.5">
             <p className="text-[10px] text-gray-500 mb-0.5">{label}</p>
-            <p className={cn('text-sm font-bold', valueClass || 'text-gray-800')}>{value}</p>
+            <p className={cn('text-sm font-bold text-gray-800', mono && 'font-mono')}>{value}</p>
         </div>
     );
 }
 
-// ── Fast Actions ───────────────────────────────────────────────────────────────
-function FastActions({ student, cardNumber, onUnlink }: {
-    student: CardResolveResult['student'];
-    cardNumber: string | null;
-    onUnlink?: () => void;
-}) {
+function FastActions({ data, onUnlink }: { data: ResolveCardResponse; onUnlink?: () => void }) {
     const router = useRouter();
-    const [modal, setModal] = useState<'subscription' | 'sell' | 'reserve' | 'grade' | null>(null);
+    const student = data.student;
     if (!student) return null;
-
-    const waPhone = (student as any).parentPhone
-        ? `https://wa.me/${ ((student as any).parentPhone as string).replace(/[^0-9]/g, '') }`
-        : null;
-
+    const waPhone = student.parentPhone ? `https://wa.me/${student.parentPhone.replace(/[^0-9]/g, '')}` : null;
     const actions = [
-        {
-            icon: Wallet, label: 'تحصيل اشتراك', color: 'bg-green-50 text-green-700 border-green-200',
-            onClick: () => setModal('subscription'),
-        },
-        {
-            icon: BookOpen, label: 'بيع مذكرة', color: 'bg-blue-50 text-blue-700 border-blue-200',
-            onClick: () => setModal('sell'),
-        },
-        {
-            icon: BookOpen, label: 'حجز مذكرة', color: 'bg-purple-50 text-purple-700 border-purple-200',
-            onClick: () => setModal('reserve'),
-        },
-        {
-            icon: User, label: 'بروفايل الطالب', color: 'bg-gray-50 text-gray-700 border-gray-200',
-            onClick: () => router.push(`/students/${student.studentId}`),
-        },
-        {
-            icon: FileText, label: 'إضافة درجة', color: 'bg-orange-50 text-orange-700 border-orange-200',
-            onClick: () => setModal('grade'),
-        },
-        {
-            icon: MessageSquare, label: 'رسالة واتساب', color: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-            onClick: () => waPhone ? window.open(waPhone, '_blank') : null,
-            disabled: !waPhone,
-        },
-        ...(cardNumber ? [{
-            icon: Unlink, label: 'فك ربط الكارت', color: 'bg-red-50 text-red-700 border-red-200',
-            onClick: onUnlink,
-        }] : []),
+        { icon: User, label: 'بروفايل الطالب', color: 'bg-gray-50 text-gray-700 border-gray-200', onClick: () => router.push(`/center/students/${(student as any)._id || student.studentCode}`) },
+        { icon: Phone, label: 'رسالة واتساب', color: 'bg-emerald-50 text-emerald-700 border-emerald-200', onClick: () => waPhone ? window.open(waPhone, '_blank') : null, disabled: !waPhone },
+        ...(data.card?.cardNumber ? [{ icon: Unlink, label: 'فك ربط الكارت', color: 'bg-amber-50 text-amber-700 border-amber-200', onClick: onUnlink }] : []),
     ];
-
     return (
-        <>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {actions.map((action) => (
-                    <button
-                        key={action.label}
-                        onClick={action.onClick as any}
-                        disabled={(action as any).disabled}
-                        className={cn(
-                            'flex flex-col items-center gap-2 p-3 rounded-xl border text-sm font-semibold transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed',
-                            action.color
-                        )}
-                    >
-                        <action.icon className="h-5 w-5" />
-                        <span className="text-xs text-center">{action.label}</span>
-                    </button>
-                ))}
-            </div>
-
-            <SubscriptionModal
-                open={modal === 'subscription'}
-                onClose={() => setModal(null)}
-                studentId={student.studentId}
-                studentName={student.studentName}
-                gradeLevel={student.gradeLevel}
-            />
-            <NotebookActionModal
-                open={modal === 'sell'}
-                onClose={() => setModal(null)}
-                studentId={student.studentId}
-                studentName={student.studentName}
-                mode="sell"
-            />
-            <NotebookActionModal
-                open={modal === 'reserve'}
-                onClose={() => setModal(null)}
-                studentId={student.studentId}
-                studentName={student.studentName}
-                mode="reserve"
-            />
-            <AddGradeModal
-                open={modal === 'grade'}
-                onClose={() => setModal(null)}
-                studentId={student.studentId}
-                studentName={student.studentName}
-            />
-        </>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {actions.map((action) => (
+                <button key={action.label} onClick={action.onClick as any} disabled={(action as any).disabled}
+                    className={cn('flex flex-col items-center gap-2 p-3 rounded-xl border text-sm font-semibold transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed', action.color)}>
+                    <action.icon className="h-5 w-5" />
+                    <span className="text-xs text-center">{action.label}</span>
+                </button>
+            ))}
+        </div>
     );
 }
 
-
-
-// ── Link Student Modal ─────────────────────────────────────────────────────────
-function LinkStudentModal({ cardNumber, onLinked, onClose }: {
-    cardNumber: string;
-    onLinked: () => void;
-    onClose: () => void;
-}) {
+function LinkStudentModal({ cardNumber, onLinked, onClose }: { cardNumber: string; onLinked: () => void; onClose: () => void }) {
     const [search, setSearch] = useState('');
     const [selectedId, setSelectedId] = useState('');
     const qc = useQueryClient();
-
     const { data, isLoading } = useQuery({
-        queryKey: ['students-for-link', search],
-        queryFn: () => fetchStudents({ search: search || undefined, limit: 20 }),
-        enabled: search.length >= 1,
+        queryKey: ['center-students-link', search],
+        queryFn: () => fetchCenterStudents({ search: search.trim() || undefined, limit: 20 }),
     });
-
     const linkMutation = useMutation({
-        mutationFn: () => linkCard(cardNumber, selectedId),
-        onSuccess: () => {
-            toast.success('تم ربط الكارت بنجاح ✅');
-            qc.invalidateQueries({ queryKey: ['card-stats'] });
-            qc.invalidateQueries({ queryKey: ['cards'] });
-            onLinked();
-        },
+        mutationFn: () => linkCenterCard(cardNumber, selectedId),
+        onSuccess: () => { toast.success('تم ربط الكارت بنجاح'); qc.invalidateQueries({ queryKey: ['center-cards-stats'] }); onLinked(); },
+        onError: (err: any) => toast.error(err?.response?.data?.message || 'تعذر ربط الكارت'),
     });
-
-    const students = data?.data || [];
-
+    const students = (data as any)?.data || (data as any)?.students || [];
     return (
         <div className="space-y-4">
-            <Input
-                placeholder="ابحث بالاسم أو الكود..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                autoFocus
-            />
+            <div className="relative">
+                <Search className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2" />
+                <Input placeholder="ابحث بالاسم أو الهاتف أو الكود..." value={search} onChange={e => setSearch(e.target.value)} className="pr-9" autoFocus />
+            </div>
             {isLoading && <div className="text-center py-4"><Loader2 className="h-5 w-5 animate-spin mx-auto text-primary" /></div>}
             <div className="space-y-2 max-h-64 overflow-y-auto">
-                {students.map(s => (
-                    <button
-                        key={s._id}
-                        onClick={() => setSelectedId(s._id)}
-                        className={cn(
-                            'w-full flex items-center gap-3 p-3 rounded-xl border text-right transition-all',
-                            selectedId === s._id ? 'border-primary bg-primary/5' : 'border-gray-100 hover:border-primary/30'
-                        )}
-                    >
-                        <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-sm font-bold text-primary">
-                            {s.studentName.charAt(0)}
-                        </div>
-                        <div>
-                            <p className="text-sm font-bold text-gray-800">{s.studentName}</p>
-                            <p className="text-xs text-gray-400">{s.studentCode} · {s.gradeLevel}</p>
-                        </div>
-                    </button>
-                ))}
-                {search.length >= 1 && !isLoading && students.length === 0 && (
-                    <p className="text-center text-sm text-gray-400 py-4">لا يوجد نتائج</p>
-                )}
+                {students.map((s: any) => {
+                    const studentName = s.studentName || s.name || 'طالب';
+                    return (
+                        <button key={s._id} onClick={() => setSelectedId(s._id)}
+                            className={cn('w-full flex items-center gap-3 p-3 rounded-xl border text-right transition-all', selectedId === s._id ? 'border-primary bg-primary/5' : 'border-gray-100 hover:border-primary/30')}>
+                            <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-sm font-bold text-primary shrink-0">{studentName.charAt(0)}</div>
+                            <div className="text-right">
+                                <p className="text-sm font-bold text-gray-800">{studentName}</p>
+                                <p className="text-xs text-gray-400">{s.studentCode} · {s.gradeLevel}</p>
+                            </div>
+                        </button>
+                    );
+                })}
+                {!isLoading && students.length === 0 && <p className="text-center text-sm text-gray-400 py-4">لا يوجد طلاب مطابقين للبحث</p>}
             </div>
             <div className="flex gap-2">
                 <Button onClick={onClose} variant="outline" className="flex-1">إلغاء</Button>
-                <Button
-                    onClick={() => linkMutation.mutate()}
-                    disabled={!selectedId || linkMutation.isPending}
-                    className="flex-1"
-                >
+                <Button onClick={() => linkMutation.mutate()} disabled={!selectedId || linkMutation.isPending} className="flex-1">
                     {linkMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'ربط الكارت'}
                 </Button>
             </div>
@@ -255,143 +157,72 @@ function LinkStudentModal({ cardNumber, onLinked, onClose }: {
     );
 }
 
-// ── Generate Batch Panel ───────────────────────────────────────────────────────
-type BatchHistoryEntry = { batchId: string; count: number; createdAt: string };
-
-const HISTORY_KEY = 'cardBatchHistory';
-function loadHistory(): BatchHistoryEntry[] {
-    try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch { return []; }
-}
-function saveHistory(entries: BatchHistoryEntry[]) {
-    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(entries.slice(0, 20))); } catch { /* ignore */ }
-}
-
-function GenerateBatchPanel() {
-    const [count, setCount] = useState(50);
-    const [history, setHistory] = useState<BatchHistoryEntry[]>(loadHistory);
+function NewStudentLinkModal({ cardNumber, onLinked, onClose }: { cardNumber: string; onLinked: () => void; onClose: () => void }) {
     const qc = useQueryClient();
-
-    const generateMutation = useMutation({
-        mutationFn: () => generateCardBatch(count),
-        onSuccess: (data) => {
-            toast.success(`تم إنشاء ${data.count} كارت بنجاح ✅`);
-            const entry: BatchHistoryEntry = {
-                batchId: data.batchId,
-                count: data.count,
-                createdAt: new Date().toISOString(),
-            };
-            const updated = [entry, ...history];
-            setHistory(updated);
-            saveHistory(updated);
-            qc.invalidateQueries({ queryKey: ['card-stats'] });
-            qc.invalidateQueries({ queryKey: ['cards'] });
-        },
+    const [form, setForm] = useState({ name: '', phone: '', parentPhone: '', gradeLevel: 'الصف الأول الثانوي', studentType: 'PACKAGE', packageId: '' });
+    const { data: packagesList } = useQuery<any[]>({ queryKey: ['center-packages-list'], queryFn: () => fetchCenterPackages() as any });
+    const createAndLinkMutation = useMutation({
+        mutationFn: (d: any) => createStudentAndLinkCard(d),
+        onSuccess: () => { toast.success('تم إنشاء الطالب وربط الكارت'); qc.invalidateQueries({ queryKey: ['center-cards-stats'] }); qc.invalidateQueries({ queryKey: ['center-students'] }); onLinked(); },
+        onError: (err: any) => toast.error(err?.response?.data?.message || 'تعذر إنشاء الطالب'),
     });
-
-    const { data: stats } = useQuery<CardStats>({
-        queryKey: ['card-stats'],
-        queryFn: getCardStats,
-    });
-
     return (
-        <div className="space-y-6">
-            {/* Stats */}
-            {stats && (
-                <div className="grid grid-cols-3 gap-3">
-                    <StatCard label="جديدة"   value={stats.NEW}      color="text-blue-600 bg-blue-50"   />
-                    <StatCard label="مربوطة"  value={stats.LINKED}   color="text-green-600 bg-green-50" />
-                    <StatCard label="معطلة"   value={stats.DISABLED} color="text-red-600 bg-red-50"     />
+        <form onSubmit={(e) => {
+            e.preventDefault();
+            if (!form.name.trim() || !form.parentPhone.trim()) {
+                toast.error('اسم الطالب وهاتف ولي الأمر مطلوبان');
+                return;
+            }
+            createAndLinkMutation.mutate({
+                cardNumber,
+                studentName: form.name.trim(),
+                name: form.name.trim(),
+                studentPhone: form.phone.trim() || undefined,
+                phone: form.phone.trim() || undefined,
+                parentPhone: form.parentPhone.trim(),
+                gradeLevel: form.gradeLevel,
+                studentType: form.studentType,
+                packageId: form.packageId || undefined,
+            });
+        }} className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2"><label className="text-xs font-bold text-gray-700 mb-1 block">اسم الطالب *</label><Input placeholder="مثال: يوسف أحمد محمود" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required /></div>
+                <div><label className="text-xs font-bold text-gray-700 mb-1 block">هاتف ولي الأمر *</label><Input placeholder="01xxxxxxxxx" value={form.parentPhone} onChange={e => setForm({ ...form, parentPhone: e.target.value })} required /></div>
+                <div><label className="text-xs font-bold text-gray-700 mb-1 block">هاتف الطالب</label><Input placeholder="01xxxxxxxxx" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></div>
+                <div className="col-span-2">
+                    <label className="text-xs font-bold text-gray-700 mb-1 block">المرحلة الدراسية</label>
+                    <select value={form.gradeLevel} onChange={e => setForm({ ...form, gradeLevel: e.target.value })} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm bg-white">
+                        <option>الصف الأول الثانوي</option><option>الصف الثاني الثانوي</option><option>الصف الثالث الثانوي</option>
+                        <option>الصف الأول الإعدادي</option><option>الصف الثاني الإعدادي</option><option>الصف الثالث الإعدادي</option>
+                    </select>
                 </div>
-            )}
-
-            {/* Generate form */}
-            <div className="bg-gray-50 rounded-2xl p-5 space-y-4 border border-gray-100">
-                <div className="flex items-center justify-between">
-                    <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                        <Package className="h-5 w-5 text-primary" /> إنشاء batch جديد
-                    </h3>
-                </div>
-                <div className="flex items-center gap-3">
-                    <Input
-                        type="number"
-                        min={1} max={1000}
-                        value={count}
-                        onChange={e => setCount(Math.min(1000, Math.max(1, Number(e.target.value))))}
-                        className="w-28 text-center"
-                    />
-                    <span className="text-sm text-gray-500">كارت</span>
-                    <Button
-                        onClick={() => generateMutation.mutate()}
-                        disabled={generateMutation.isPending}
-                        className="flex-1"
-                    >
-                        {generateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : <Package className="h-4 w-4 ml-2" />}
-                        إنشاء الكروت
-                    </Button>
+                <div className="col-span-2 space-y-2">
+                    <label className="text-xs font-bold text-gray-700 block">نظام الاشتراك:</label>
+                    <div className="flex gap-4 text-xs">
+                        <label className="flex items-center gap-1.5 cursor-pointer"><input type="radio" name="stype" checked={form.studentType === 'PACKAGE'} onChange={() => setForm({ ...form, studentType: 'PACKAGE' })} /><span>باكيدج كامل</span></label>
+                        <label className="flex items-center gap-1.5 cursor-pointer"><input type="radio" name="stype" checked={form.studentType === 'PRIVATE'} onChange={() => setForm({ ...form, studentType: 'PRIVATE' })} /><span>حسب المجموعة</span></label>
+                    </div>
+                    {form.studentType === 'PACKAGE' && (
+                        <select value={form.packageId} onChange={e => setForm({ ...form, packageId: e.target.value })} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm bg-white">
+                            <option value="">اختر الباكيدج (اختياري)...</option>
+                            {(packagesList || []).map((pkg: any) => (<option key={pkg._id} value={pkg._id}>{pkg.name} ({pkg.monthlyPrice} ج.م)</option>))}
+                        </select>
+                    )}
                 </div>
             </div>
-
-            {/* Batch History */}
-            {history.length > 0 && (
-                <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                        <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2">
-                            <ExternalLink className="h-4 w-4 text-gray-400" /> سجل الـ Batches
-                        </h3>
-                        <button
-                            onClick={() => { setHistory([]); saveHistory([]); }}
-                            className="text-xs text-red-400 hover:text-red-600 transition-colors"
-                        >
-                            مسح السجل
-                        </button>
-                    </div>
-                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                        {history.map((entry, idx) => (
-                            <div
-                                key={entry.batchId}
-                                className={cn(
-                                    'flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl border transition-all',
-                                    idx === 0
-                                        ? 'bg-green-50 border-green-200'
-                                        : 'bg-white border-gray-100 hover:border-gray-200'
-                                )}
-                            >
-                                <div className="flex items-center gap-2 min-w-0">
-                                    {idx === 0
-                                        ? <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
-                                        : <Package className="h-4 w-4 text-gray-400 shrink-0" />
-                                    }
-                                    <div className="min-w-0">
-                                        <p className="text-xs font-bold text-gray-700">
-                                            {entry.count} كارت
-                                            {idx === 0 && <span className="mr-1.5 text-green-600">(آخر batch)</span>}
-                                        </p>
-                                        <p className="text-xs text-gray-400 font-mono">
-                                            {new Date(entry.createdAt).toLocaleString('ar-EG', {
-                                                day: '2-digit', month: '2-digit', year: '2-digit',
-                                                hour: '2-digit', minute: '2-digit',
-                                            })}
-                                        </p>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                    <Button
-                                        size="sm"
-                                        className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs h-7 px-3 font-bold shadow-sm"
-                                        onClick={() => window.open(getCardBatchPrintUrl(entry.batchId), '_blank')}
-                                        title="طباعة كروت بلاستيكية PVC (CR-80)"
-                                    >
-                                        <CreditCard className="h-3.5 w-3.5" /> طباعة PVC
-                                    </Button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
-        </div>
+            <div className="flex gap-2">
+                <Button type="button" onClick={onClose} variant="outline" className="flex-1">إلغاء</Button>
+                <Button type="submit" disabled={createAndLinkMutation.isPending} className="flex-1">
+                    {createAndLinkMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'إنشاء وربط الكارت'}
+                </Button>
+            </div>
+        </form>
     );
 }
+
+const HISTORY_KEY = 'centerCardBatchHistory';
+function loadHistory(): BatchHistoryEntry[] { try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch { return []; } }
+function saveHistory(entries: BatchHistoryEntry[]) { try { localStorage.setItem(HISTORY_KEY, JSON.stringify(entries.slice(0, 20))); } catch { /* ignore */ } }
 
 function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
     return (
@@ -402,8 +233,74 @@ function StatCard({ label, value, color }: { label: string; value: number; color
     );
 }
 
-// ── Design Panel ─────────────────────────────────────────────────────────────
-function DesignPanel() {
+function GenerateBatchPanel() {
+    const [count, setCount] = useState(50);
+    const [history, setHistory] = useState<BatchHistoryEntry[]>(loadHistory);
+    const qc = useQueryClient();
+    const generateMutation = useMutation({
+        mutationFn: () => generateCenterCards(count),
+        onSuccess: (data) => {
+            toast.success(`تم إنشاء ${data.count} كارت بنجاح`);
+            const entry: BatchHistoryEntry = { batchId: data.batchId, count: data.count, createdAt: new Date().toISOString() };
+            const updated = [entry, ...history];
+            setHistory(updated); saveHistory(updated);
+            qc.invalidateQueries({ queryKey: ['center-cards-stats'] });
+        },
+        onError: () => toast.error('حدث خطأ أثناء إنشاء دفعة الكروت'),
+    });
+    const { data: stats } = useQuery<CenterCardStats>({ queryKey: ['center-cards-stats'], queryFn: fetchCenterCardsStats });
+    return (
+        <div className="space-y-6">
+            {stats && (
+                <div className="grid grid-cols-3 gap-3">
+                    <StatCard label="جديدة" value={stats.new || 0} color="text-blue-600 bg-blue-50" />
+                    <StatCard label="مربوطة" value={stats.linked || 0} color="text-green-600 bg-green-50" />
+                    <StatCard label="معطلة" value={stats.disabled || 0} color="text-red-600 bg-red-50" />
+                </div>
+            )}
+            <div className="bg-gray-50 rounded-2xl p-5 space-y-4 border border-gray-100">
+                <h3 className="font-bold text-gray-800 flex items-center gap-2"><Package className="h-5 w-5 text-primary" /> إنشاء batch جديد</h3>
+                <div className="flex items-center gap-3">
+                    <Input type="number" min={1} max={1000} value={count} onChange={e => setCount(Math.min(1000, Math.max(1, Number(e.target.value))))} className="w-28 text-center" />
+                    <span className="text-sm text-gray-500">كارت</span>
+                    <Button onClick={() => generateMutation.mutate()} disabled={generateMutation.isPending} className="flex-1">
+                        {generateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : <Package className="h-4 w-4 ml-2" />}
+                        إنشاء الكروت
+                    </Button>
+                </div>
+            </div>
+            {history.length > 0 && (
+                <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2"><ExternalLink className="h-4 w-4 text-gray-400" /> سجل الـ Batches</h3>
+                        <button onClick={() => { setHistory([]); saveHistory([]); }} className="text-xs text-red-400 hover:text-red-600 transition-colors">مسح السجل</button>
+                    </div>
+                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                        {history.map((entry, idx) => (
+                            <div key={entry.batchId} className={cn('flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl border', idx === 0 ? 'bg-green-50 border-green-200' : 'bg-white border-gray-100 hover:border-gray-200')}>
+                                <div className="flex items-center gap-2 min-w-0">
+                                    {idx === 0 ? <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" /> : <Package className="h-4 w-4 text-gray-400 shrink-0" />}
+                                    <div className="min-w-0">
+                                        <p className="text-xs font-bold text-gray-700">{entry.count} كارت{idx === 0 && <span className="mr-1.5 text-green-600">(آخر batch)</span>}</p>
+                                        <p className="text-xs text-gray-400 font-mono">{new Date(entry.createdAt).toLocaleString('ar-EG', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</p>
+                                    </div>
+                                </div>
+                                <Button size="sm" className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-7 px-3 shrink-0 font-bold shadow-sm"
+                                    onClick={() => window.open(getCenterCardBatchPrintUrl(entry.batchId, 'dual_sided'), '_blank')}
+                                    title="طباعة كروت بلاستيكية PVC (CR-80)">
+                                    <CreditCard className="h-3.5 w-3.5" /> طباعة PVC
+                                </Button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ── Design Studio Panel ──────────────────────────────────────────────────────
+function DesignStudioPanel() {
     const qc = useQueryClient();
     const frontRef = useRef<HTMLInputElement>(null);
     const backRef = useRef<HTMLInputElement>(null);
@@ -421,29 +318,48 @@ function DesignPanel() {
     const [showCardNumber, setShowCardNumber] = useState<boolean>(true);
     const [isDragging, setIsDragging] = useState<boolean>(false);
 
-    const { data, isLoading } = useQuery({
-        queryKey: ['card-design-template'],
-        queryFn: getCardDesignTemplate,
+    const { data: templateData, isLoading } = useQuery({
+        queryKey: ['center-card-template'],
+        queryFn: fetchCenterCardTemplate,
     });
 
+    const [cardAspectRatio, setCardAspectRatio] = useState<string>('85.6 / 54');
+
     useEffect(() => {
-        if (data?.template) {
-            const t = data.template;
-            if (t.frontImageUrl) setFrontPreview(t.frontImageUrl);
-            if (t.backImageUrl)  setBackPreview(t.backImageUrl);
+        if (templateData) {
+            const t = (templateData as any).template || templateData;
+            if (t.frontImageUrl) {
+                setFrontPreview(t.frontImageUrl);
+                const sample = new Image();
+                sample.onload = () => {
+                    if (sample.naturalWidth && sample.naturalHeight) {
+                        setCardAspectRatio(`${sample.naturalWidth} / ${sample.naturalHeight}`);
+                    }
+                };
+                sample.src = t.frontImageUrl;
+            } else if (t.backImageUrl) {
+                const sample = new Image();
+                sample.onload = () => {
+                    if (sample.naturalWidth && sample.naturalHeight) {
+                        setCardAspectRatio(`${sample.naturalWidth} / ${sample.naturalHeight}`);
+                    }
+                };
+                sample.src = t.backImageUrl;
+            }
+            if (t.backImageUrl) setBackPreview(t.backImageUrl);
             if (t.qrX != null) setQrX(t.qrX);
             if (t.qrY != null) setQrY(t.qrY);
             if (t.qrSize != null) setQrSize(t.qrSize);
             if (t.showQrBg != null) setShowQrBg(t.showQrBg);
             if (t.showCardNumber != null) setShowCardNumber(t.showCardNumber);
         }
-    }, [data]);
+    }, [templateData]);
 
     const saveMutation = useMutation({
-        mutationFn: (payload: CardDesignTemplate) => updateCardDesignTemplate(payload),
+        mutationFn: (data: Partial<CenterCardTemplate>) => updateCenterCardTemplate(data),
         onSuccess: () => {
             toast.success('تم حفظ تصميم الكارت وموضع الـ QR بنجاح ✅');
-            qc.invalidateQueries({ queryKey: ['card-design-template'] });
+            qc.invalidateQueries({ queryKey: ['center-card-template'] });
         },
         onError: () => toast.error('تعذر حفظ التصميم'),
     });
@@ -451,13 +367,20 @@ function DesignPanel() {
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, side: 'front' | 'back') => {
         const file = e.target.files?.[0];
         if (!file) return;
-        if (file.size > 5 * 1024 * 1024) { toast.error('حجم الصورة كبير — الحد الأقصى 5 ميجا'); return; }
+        if (file.size > 5 * 1024 * 1024) { toast.error('حجم الصورة كبير، الحد الأقصى 5 ميجا'); return; }
         const reader = new FileReader();
         reader.onload = (ev) => {
-            const b64 = ev.target?.result as string;
-            if (side === 'front') setFrontPreview(b64);
-            else setBackPreview(b64);
-            toast.success(`تم تحميل الوجه ${side === 'front' ? 'الأمامي' : 'الخلفي'}`);
+            const base64 = ev.target?.result as string;
+            const img = new Image();
+            img.onload = () => {
+                if (img.naturalWidth && img.naturalHeight) {
+                    setCardAspectRatio(`${img.naturalWidth} / ${img.naturalHeight}`);
+                }
+                if (side === 'front') setFrontPreview(base64);
+                else setBackPreview(base64);
+                toast.success(`تم تحميل تصميم الوجه ${side === 'front' ? 'الأمامي' : 'الخلفي'}`);
+            };
+            img.src = base64;
         };
         reader.readAsDataURL(file);
         e.target.value = '';
@@ -493,8 +416,8 @@ function DesignPanel() {
     const handleSave = () => {
         if (!frontPreview && !backPreview) { toast.error('يرجى رفع تصميم واحد على الأقل'); return; }
         saveMutation.mutate({
-            ...(frontPreview ? { frontImageUrl: frontPreview } : {}),
-            ...(backPreview  ? { backImageUrl: backPreview }   : {}),
+            ...(frontPreview && { frontImageUrl: frontPreview }),
+            ...(backPreview && { backImageUrl: backPreview }),
             qrX,
             qrY,
             qrSize,
@@ -553,7 +476,7 @@ function DesignPanel() {
                     </Badge>
                 </div>
 
-                {/* ── Interactive Preview Area ── */}
+                {/* Interactive Preview Area */}
                 <div
                     ref={cardPreviewRef}
                     onPointerDown={handlePointerDown}
@@ -563,7 +486,7 @@ function DesignPanel() {
                         'relative w-full rounded-2xl overflow-hidden border-2 border-dashed border-gray-200 bg-slate-50 flex items-center justify-center select-none shadow-sm transition-all',
                         cardSide === 'back' ? 'cursor-crosshair' : 'cursor-pointer hover:border-primary/40'
                     )}
-                    style={{ aspectRatio: '85.6 / 54' }}
+                    style={{ aspectRatio: cardAspectRatio }}
                     onClick={() => {
                         if (cardSide === 'front') frontRef.current?.click();
                     }}
@@ -571,17 +494,17 @@ function DesignPanel() {
                     {/* Background Artwork or Placeholder */}
                     {cardSide === 'front' ? (
                         frontPreview ? (
-                            <img src={frontPreview} alt="front design" className="w-full h-full object-cover pointer-events-none" />
+                            <img src={frontPreview} alt="card front design preview" className="w-full h-full object-fill pointer-events-none" />
                         ) : (
                             <div className="flex flex-col items-center gap-2 text-gray-400 py-8 pointer-events-none">
                                 <Upload className="h-10 w-10 stroke-[1.5]" />
                                 <p className="text-sm font-bold text-gray-700">اضغط لرفع تصميم الوجه الأمامي</p>
-                                <p className="text-xs text-gray-400">JPG, PNG — الأبعاد المثالية: 856×540px</p>
+                                <p className="text-xs text-gray-400">JPG, PNG — يتم ضبط أبعاد الكارت تلقائياً لنفس أبعاد صورتك</p>
                             </div>
                         )
                     ) : (
                         backPreview ? (
-                            <img src={backPreview} alt="back design" className="w-full h-full object-cover pointer-events-none" />
+                            <img src={backPreview} alt="card back design preview" className="w-full h-full object-fill pointer-events-none" />
                         ) : (
                             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-gray-400 bg-gradient-to-br from-slate-100 to-slate-200 pointer-events-none p-4 text-center">
                                 <p className="text-xs font-bold text-gray-600">ارفع تصميم الوجه الخلفي بالزر أدناه، أو حدد موضع وحجم الـ QR مباشرة</p>
@@ -625,7 +548,7 @@ function DesignPanel() {
                             </div>
                             {showCardNumber && (
                                 <span className="text-[9px] font-mono font-bold text-slate-800 mt-0.5 tracking-wider pointer-events-none">
-                                    MNZ-123456
+                                    CNTR-123456
                                 </span>
                             )}
                             {/* Drag Indicator Tooltip */}
@@ -639,7 +562,7 @@ function DesignPanel() {
 
                 {/* Hidden file inputs */}
                 <input ref={frontRef} type="file" accept="image/*" className="hidden" onChange={e => handleImageUpload(e, 'front')} />
-                <input ref={backRef}  type="file" accept="image/*" className="hidden" onChange={e => handleImageUpload(e, 'back')} />
+                <input ref={backRef} type="file" accept="image/*" className="hidden" onChange={e => handleImageUpload(e, 'back')} />
 
                 {/* Upload Button */}
                 <Button
@@ -780,7 +703,7 @@ function DesignPanel() {
                 className="w-full gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-11 shadow-sm"
             >
                 {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                حفظ تصميم الكارت وإعدادات الـ QR
+                حفظ تصميم كارت السنتر وإعدادات الـ QR
             </Button>
 
             <p className="text-xs text-gray-400 text-center">
@@ -790,95 +713,63 @@ function DesignPanel() {
     );
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────────
-export default function SmartCardPage() {
+export default function CenterCardsPage() {
     const [view, setView] = useState<View>('scanner');
-    const [resolveResult, setResolveResult] = useState<CardResolveResult | null>(null);
+    const [resolvedData, setResolvedData] = useState<ResolveCardResponse | null>(null);
     const [resolving, setResolving] = useState(false);
     const [showLinkStudentModal, setShowLinkStudentModal] = useState(false);
-    const [showDisableModal, setShowDisableModal] = useState(false);
+    const [showNewStudentModal, setShowNewStudentModal] = useState(false);
     const [tab, setTab] = useState<'scanner' | 'generate' | 'design'>('scanner');
     const qc = useQueryClient();
-    const router = useRouter();
 
     const handleScan = useCallback(async (input: string) => {
+        let clean = input.trim();
+        if (!clean) return;
+        if (clean.includes('/card/')) {
+            clean = clean.split('/card/').pop()?.split(/[?#]/)[0]?.trim() || clean;
+        }
         setResolving(true);
         try {
-            const result = await resolveCard(input);
-            setResolveResult(result);
-            if (result.source === 'studentCode') {
-                setView('result');
-            } else if (result.cardStatus === 'NEW') {
-                setView('link-choice');
-            } else if (result.cardStatus === 'LINKED') {
-                setView('result');
-            } else if (result.cardStatus === 'DISABLED') {
-                setView('result');
-            }
+            const result = await resolveCenterCard(clean);
+            setResolvedData(result);
+            setView(result.isLinked ? 'result' : 'link-choice');
         } catch {
-            toast.error('لم يتم التعرف على الرمز أو الكارت');
+            toast.error('لم يتم التعرف على الكارت أو الطالب');
         } finally {
             setResolving(false);
         }
     }, []);
 
-    const handleReset = () => {
-        setView('scanner');
-        setResolveResult(null);
-    };
+    const handleReset = () => { setView('scanner'); setResolvedData(null); };
 
     const unlinkMutation = useMutation({
-        mutationFn: () => unlinkCard(resolveResult!.cardNumber!),
-        onSuccess: () => {
-            toast.success('تم فك ربط الكارت');
-            qc.invalidateQueries({ queryKey: ['card-stats'] });
-            handleReset();
-        },
+        mutationFn: () => unlinkCenterCard(resolvedData!.card!.cardNumber),
+        onSuccess: () => { toast.success('تم فك ربط الكارت'); qc.invalidateQueries({ queryKey: ['center-cards-stats'] }); handleReset(); },
     });
 
     return (
         <div className="w-full max-w-xl mx-auto px-4 sm:px-0 space-y-5 animate-in fade-in duration-500 pb-10 min-w-0" dir="rtl">
-            {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-black text-gray-900 flex items-center gap-2">
-                        <CreditCard className="h-6 w-6 text-primary" />
-                        الكارت الذكي
-                    </h1>
-                    <p className="text-sm text-gray-500 mt-0.5">امسح الكارت لتنفيذ الإجراءات السريعة</p>
+                    <h1 className="text-2xl font-black text-gray-900 flex items-center gap-2"><CreditCard className="h-6 w-6 text-primary" /> الكارت الذكي</h1>
+                    <p className="text-sm text-gray-500 mt-0.5">امسح كارت طالب لتنفيذ الإجراءات السريعة</p>
                 </div>
                 {view !== 'scanner' && (
-                    <Button variant="outline" size="sm" onClick={handleReset} className="gap-1.5 text-xs">
-                        <Scan className="h-4 w-4" /> مسح جديد
-                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleReset} className="gap-1.5 text-xs"><Scan className="h-4 w-4" /> مسح جديد</Button>
                 )}
             </div>
 
-            {/* Tabs */}
             <div className="flex rounded-xl bg-gray-100 p-1 gap-1">
                 {([['scanner', 'الماسح', Scan], ['generate', 'الكروت', Package], ['design', 'التصميم', Palette]] as const).map(([key, label, Icon]) => (
-                    <button
-                        key={key}
-                        onClick={() => { setTab(key as any); handleReset(); }}
-                        className={cn(
-                            'flex-1 flex items-center justify-center gap-2 py-2 text-sm font-bold rounded-lg transition-all',
-                            tab === key ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                        )}
-                    >
-                        <Icon className="h-4 w-4" />
-                        {label}
+                    <button key={key} onClick={() => { setTab(key as any); handleReset(); }}
+                        className={cn('flex-1 flex items-center justify-center gap-2 py-2 text-sm font-bold rounded-lg transition-all', tab === key ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700')}>
+                        <Icon className="h-4 w-4" />{label}
                     </button>
                 ))}
             </div>
 
-            {/* Tab Content */}
-            {tab === 'design' ? (
-                <DesignPanel />
-            ) : tab === 'generate' ? (
-                <GenerateBatchPanel />
-            ) : (
+            {tab === 'design' ? <DesignStudioPanel /> : tab === 'generate' ? <GenerateBatchPanel /> : (
                 <>
-                    {/* Scanner View */}
                     {view === 'scanner' && (
                         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
                             {resolving ? (
@@ -892,59 +783,35 @@ export default function SmartCardPage() {
                         </div>
                     )}
 
-                    {/* Result View */}
-                    {view === 'result' && resolveResult?.student && (
+                    {view === 'result' && resolvedData?.student && (
                         <div className="space-y-4">
-                            {/* Source badge */}
                             <div className="flex items-center gap-2">
-                                <Badge variant="outline" className="text-xs gap-1">
-                                    {resolveResult.source === 'card' ? <CreditCard className="h-3 w-3" /> : <Hash className="h-3 w-3" />}
-                                    {resolveResult.source === 'card' ? 'كارت ذكي' : resolveResult.source === 'barcode' ? 'باركود' : 'كود'}
-                                </Badge>
-                                {resolveResult.cardNumber && (
-                                    <span className="text-xs font-mono text-gray-400">{resolveResult.cardNumber}</span>
-                                )}
+                                <Badge variant="outline" className="text-xs gap-1"><CreditCard className="h-3 w-3" />كارت مربوط ونشط</Badge>
+                                {resolvedData.card?.cardNumber && <span className="text-xs font-mono text-gray-400">{resolvedData.card.cardNumber}</span>}
                             </div>
-
-                            <StudentSummaryCard student={resolveResult.student} />
-
+                            <StudentSummaryCard data={resolvedData} />
                             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
                                 <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">إجراءات سريعة</p>
-                                <FastActions
-                                    student={resolveResult.student}
-                                    cardNumber={resolveResult.cardNumber}
-                                    onUnlink={() => unlinkMutation.mutate()}
-                                />
+                                <FastActions data={resolvedData} onUnlink={() => { if (confirm('هل أنت متأكد من فك ربط الكارت؟')) unlinkMutation.mutate(); }} />
                             </div>
                         </div>
                     )}
 
-                    {/* Link Choice View */}
-                    {view === 'link-choice' && resolveResult?.cardNumber && (
+                    {view === 'link-choice' && (
                         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-5">
                             <div className="text-center space-y-2">
-                                <div className="w-14 h-14 rounded-full bg-blue-50 flex items-center justify-center mx-auto">
-                                    <CreditCard className="h-7 w-7 text-blue-600" />
-                                </div>
+                                <div className="w-14 h-14 rounded-full bg-blue-50 flex items-center justify-center mx-auto"><CreditCard className="h-7 w-7 text-blue-600" /></div>
                                 <h3 className="font-bold text-gray-800">كارت جديد غير مربوط</h3>
                                 <p className="text-sm text-gray-500">
-                                    <span className="font-mono font-bold text-gray-700">{resolveResult.cardNumber}</span>
+                                    <span className="font-mono font-bold text-gray-700">{resolvedData?.card?.cardNumber || (resolvedData as any)?.cardNumber || 'كارت جديد'}</span>
                                 </p>
                             </div>
                             <div className="grid grid-cols-2 gap-3">
-                                <button
-                                    onClick={() => setShowLinkStudentModal(true)}
-                                    className="flex flex-col items-center gap-3 p-5 rounded-2xl border-2 border-primary/30 bg-primary/5 hover:bg-primary/10 hover:border-primary transition-all"
-                                >
-                                    <Users className="h-7 w-7 text-primary" />
-                                    <span className="text-sm font-bold text-primary">ربط بطالب موجود</span>
+                                <button onClick={() => setShowLinkStudentModal(true)} className="flex flex-col items-center gap-3 p-5 rounded-2xl border-2 border-primary/30 bg-primary/5 hover:bg-primary/10 hover:border-primary transition-all">
+                                    <Users className="h-7 w-7 text-primary" /><span className="text-sm font-bold text-primary">ربط بطالب موجود</span>
                                 </button>
-                                <button
-                                    onClick={() => router.push(`/students?newCard=${resolveResult.cardNumber}`)}
-                                    className="flex flex-col items-center gap-3 p-5 rounded-2xl border-2 border-gray-200 bg-gray-50 hover:bg-gray-100 hover:border-gray-300 transition-all"
-                                >
-                                    <User className="h-7 w-7 text-gray-600" />
-                                    <span className="text-sm font-bold text-gray-700">إنشاء طالب جديد</span>
+                                <button onClick={() => setShowNewStudentModal(true)} className="flex flex-col items-center gap-3 p-5 rounded-2xl border-2 border-gray-200 bg-gray-50 hover:bg-gray-100 hover:border-gray-300 transition-all">
+                                    <User className="h-7 w-7 text-gray-600" /><span className="text-sm font-bold text-gray-700">إنشاء طالب جديد</span>
                                 </button>
                             </div>
                             <Button variant="outline" onClick={handleReset} className="w-full">إلغاء</Button>
@@ -953,33 +820,50 @@ export default function SmartCardPage() {
                 </>
             )}
 
-            {/* Link Student Modal */}
             <Dialog open={showLinkStudentModal} onOpenChange={setShowLinkStudentModal}>
                 <DialogContent onInteractOutside={(e) => e.preventDefault()} dir="rtl" className="max-w-md">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2">
-                            <Link2 className="h-5 w-5 text-primary" /> ربط الكارت بطالب
-                        </DialogTitle>
-                    </DialogHeader>
-                    {resolveResult?.cardNumber && (
-                        <LinkStudentModal
-                            cardNumber={resolveResult.cardNumber}
+                    <DialogHeader><DialogTitle className="flex items-center gap-2"><Link2 className="h-5 w-5 text-primary" /> ربط الكارت بطالب</DialogTitle></DialogHeader>
+                    {(resolvedData?.card?.cardNumber || (resolvedData as any)?.cardNumber) && (
+                        <LinkStudentModal cardNumber={resolvedData?.card?.cardNumber || (resolvedData as any)?.cardNumber}
                             onLinked={async () => {
                                 setShowLinkStudentModal(false);
-                                // Re-resolve the card so we can show the student result
                                 setResolving(true);
                                 try {
-                                    const updated = await resolveCard(resolveResult.cardNumber!);
-                                    setResolveResult(updated);
-                                    setView('result');
+                                    const cNum = resolvedData?.card?.cardNumber || (resolvedData as any)?.cardNumber;
+                                    const u = await resolveCenterCard(cNum);
+                                    setResolvedData(u);
+                                    setView(u.isLinked ? 'result' : 'link-choice');
                                 } catch {
                                     handleReset();
                                 } finally {
                                     setResolving(false);
                                 }
                             }}
-                            onClose={() => setShowLinkStudentModal(false)}
-                        />
+                            onClose={() => setShowLinkStudentModal(false)} />
+                    )}
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={showNewStudentModal} onOpenChange={setShowNewStudentModal}>
+                <DialogContent onInteractOutside={(e) => e.preventDefault()} dir="rtl" className="max-w-md">
+                    <DialogHeader><DialogTitle className="flex items-center gap-2"><GraduationCap className="h-5 w-5 text-primary" /> تسجيل طالب جديد وربط الكارت</DialogTitle></DialogHeader>
+                    {(resolvedData?.card?.cardNumber || (resolvedData as any)?.cardNumber) && (
+                        <NewStudentLinkModal cardNumber={resolvedData?.card?.cardNumber || (resolvedData as any)?.cardNumber}
+                            onLinked={async () => {
+                                setShowNewStudentModal(false);
+                                setResolving(true);
+                                try {
+                                    const cNum = resolvedData?.card?.cardNumber || (resolvedData as any)?.cardNumber;
+                                    const u = await resolveCenterCard(cNum);
+                                    setResolvedData(u);
+                                    setView(u.isLinked ? 'result' : 'link-choice');
+                                } catch {
+                                    handleReset();
+                                } finally {
+                                    setResolving(false);
+                                }
+                            }}
+                            onClose={() => setShowNewStudentModal(false)} />
                     )}
                 </DialogContent>
             </Dialog>
