@@ -183,7 +183,7 @@ export class ParentService {
         // Exam results
         const examResults = await ExamResultModel.find(
             { studentId, teacherId },
-            { examId: 1, score: 1, totalMarks: 1, passingMarks: 1, date: 1, isPassed: 1 }
+            { examId: 1, score: 1, totalMarks: 1, date: 1 }
         ).populate('examId', 'title').sort({ date: -1 }).lean();
 
         return {
@@ -212,11 +212,9 @@ export class ParentService {
             exams: examResults.slice(0, 10).map((e: any) => ({
                 examId: e.examId?._id?.toString() || e.examId?.toString(),
                 examName: e.examId?.title ?? 'امتحان بدون عنوان',
-                score: e.score,
+                score: e.score ?? null,
                 totalMarks: e.totalMarks,
-                passingMarks: e.passingMarks,
                 date: e.date,
-                isPassed: e.isPassed
             })),
         };
     }
