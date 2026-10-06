@@ -655,24 +655,24 @@ export default function CenterFinancialsPage() {
     return (
         <div className="space-y-6 pb-12 font-sans" dir="rtl">
             {/* Header Banner */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white/80 backdrop-blur-md p-6 rounded-2xl border border-gray-100 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white/80 backdrop-blur-md p-4 sm:p-6 rounded-2xl border border-gray-100 shadow-sm">
                 <div>
-                    <h1 className="text-2xl font-black text-gray-900 flex items-center gap-2.5">
-                        <Wallet className="h-6 w-6 text-primary" />
-                        الماليات وحسابات السنتر
+                    <h1 className="text-xl sm:text-2xl font-black text-gray-900 flex items-center gap-2.5">
+                        <Wallet className="h-6 w-6 text-primary shrink-0" />
+                        <span>الماليات وحسابات السنتر</span>
                     </h1>
                     <p className="text-xs sm:text-sm text-gray-500 mt-1">
                         تقفيل الجرد اليومي والشهري للخزينة، إيرادات الباقات والبرايفت، وسجل المقبوضات المعتمد.
                     </p>
                 </div>
-                <div className="flex items-center gap-2.5">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 w-full sm:w-auto shrink-0">
                     <BranchSwitcher />
                     <Button
                         onClick={handleOpenPayment}
-                        className="bg-primary hover:bg-primary/95 text-white gap-2 rounded-xl shadow-md shadow-primary/20 font-bold text-xs sm:text-sm h-10 px-4"
+                        className="bg-primary hover:bg-primary/95 text-white gap-2 rounded-xl shadow-md shadow-primary/20 font-bold text-xs sm:text-sm h-10 px-4 w-full sm:w-auto"
                     >
-                        <Plus className="h-4 w-4" />
-                        تسجيل دفعة نقدية
+                        <Plus className="h-4 w-4 shrink-0" />
+                        <span>تسجيل دفعة نقدية</span>
                     </Button>
                 </div>
             </div>

@@ -14,6 +14,7 @@ import * as Linking from 'expo-linking';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { NotificationService } from './src/services/notification.service';
 import { UpdateService } from './src/services/update.service';
+import { ErrorBoundary } from './src/components/common/ErrorBoundary';
 import { colors } from './src/theme/colors';
 import { RootStackParamList } from './src/navigation/types';
 
@@ -137,12 +138,14 @@ export default function App() {
   }
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <NavigationContainer ref={navigationRef} linking={linking}>
-        <StatusBar style="dark" backgroundColor={colors.background} />
-        <RootNavigator />
-      </NavigationContainer>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <NavigationContainer ref={navigationRef} linking={linking}>
+          <StatusBar style="dark" backgroundColor={colors.background} />
+          <RootNavigator />
+        </NavigationContainer>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 

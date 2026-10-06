@@ -16,8 +16,9 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
-export function BranchSwitcher() {
+export function BranchSwitcher({ className }: { className?: string }) {
     const user = useAuthStore((s) => s.user);
     const queryClient = useQueryClient();
     const [selectedBranchId, setSelectedBranchId] = useState<string>('');
@@ -53,9 +54,9 @@ export function BranchSwitcher() {
     // If only one center and not owner, don't show dropdown
     if (centers.length <= 1 && user?.role !== 'centerOwner') {
         return (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-primary/5 text-primary rounded-xl text-xs sm:text-sm font-bold border border-primary/10">
-                <Building2 className="h-4 w-4" />
-                <span>{currentCenter?.name}</span>
+            <div className={cn("flex items-center gap-2 px-3.5 py-2 bg-primary/5 text-primary rounded-xl text-xs sm:text-sm font-bold border border-primary/10 h-10 w-full sm:w-auto shrink-0", className)}>
+                <Building2 className="h-4 w-4 shrink-0" />
+                <span className="truncate">{currentCenter?.name}</span>
             </div>
         );
     }
@@ -65,11 +66,16 @@ export function BranchSwitcher() {
             <DropdownMenuTrigger asChild>
                 <Button 
                     variant="outline" 
-                    className="flex items-center gap-2 border-gray-200 bg-white hover:bg-gray-50 text-gray-800 rounded-xl px-3.5 py-2 h-auto text-xs sm:text-sm font-bold shadow-sm"
+                    className={cn(
+                        "flex items-center justify-between sm:justify-start gap-2 border-gray-200 bg-white hover:bg-gray-50 text-gray-800 rounded-xl px-3.5 h-10 text-xs sm:text-sm font-bold shadow-xs w-full sm:w-auto shrink-0",
+                        className
+                    )}
                 >
-                    <GitBranch className="h-4 w-4 text-primary" />
-                    <span className="truncate max-w-[140px] sm:max-w-[200px]">{currentCenter?.name}</span>
-                    <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
+                    <div className="flex items-center gap-2 min-w-0">
+                        <GitBranch className="h-4 w-4 text-primary shrink-0" />
+                        <span className="truncate max-w-[200px] sm:max-w-[200px]">{currentCenter?.name}</span>
+                    </div>
+                    <ChevronDown className="h-3.5 w-3.5 text-gray-400 shrink-0" />
                 </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56 rounded-xl p-1.5 text-right font-medium">

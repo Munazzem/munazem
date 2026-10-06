@@ -673,28 +673,27 @@ export default function CenterAttendancePage() {
     return (
         <div className="space-y-6 pb-16" dir="rtl">
             {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white/80 backdrop-blur-md p-6 rounded-2xl border border-gray-100 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white/80 backdrop-blur-md p-4 sm:p-6 rounded-2xl border border-gray-100 shadow-xs">
                 <div>
-                    <h1 className="text-2xl font-black text-gray-900 flex items-center gap-2.5">
-                        <CalendarCheck className="h-7 w-7 text-primary" />
-                        التحضير السريع لدخول السنتر
+                    <h1 className="text-xl sm:text-2xl font-black text-gray-900 flex items-center gap-2.5">
+                        <CalendarCheck className="h-7 w-7 text-primary shrink-0" />
+                        <span>التحضير السريع لدخول السنتر</span>
                     </h1>
                     <p className="text-xs sm:text-sm text-gray-500 mt-1">
                         تسجيل حضور ودخول الطلاب إلى السنتر فور مسح الكارت أو الباركود لحضور الحصص اليومية.
                     </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2.5">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 w-full sm:w-auto shrink-0">
+                    <BranchSwitcher />
                     <Button
                         type="button"
                         variant="outline"
-                        size="sm"
                         onClick={handlePrintDailySheet}
-                        className="rounded-xl border-gray-200 h-9 px-3 gap-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50 shadow-xs"
+                        className="rounded-xl border-gray-200 h-10 px-3.5 gap-2 text-xs sm:text-sm font-bold text-gray-700 hover:bg-gray-50 shadow-xs w-full sm:w-auto justify-center"
                     >
-                        <Printer className="w-4 h-4 text-primary" />
+                        <Printer className="w-4 h-4 text-primary shrink-0" />
                         <span>طباعة كشف حضور السنتر</span>
                     </Button>
-                    <BranchSwitcher />
                 </div>
             </div>
 

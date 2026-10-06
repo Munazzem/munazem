@@ -123,11 +123,11 @@ export const HomeScreen: React.FC = () => {
               >
                 <View style={styles.chipLeft}>
                   <View style={styles.chipAvatar}>
-                    <Text style={styles.chipAvatarText}>{child.studentName.charAt(0)}</Text>
+                    <Text style={styles.chipAvatarText}>{(child.studentName || 'ط').charAt(0)}</Text>
                   </View>
                   <View>
-                    <Text style={styles.chipName}>{child.studentName}</Text>
-                    <Text style={styles.chipGrade}>{child.gradeLevel}</Text>
+                    <Text style={styles.chipName}>{child.studentName || 'طالب'}</Text>
+                    <Text style={styles.chipGrade}>{child.gradeLevel || ''}</Text>
                   </View>
                 </View>
                 {canSwitch && (
@@ -205,7 +205,7 @@ export const HomeScreen: React.FC = () => {
                   onCta={() =>
                     navigation.navigate('FinanceDetail', {
                       studentId: activeSubject?.studentId ?? child.id,
-                      studentName: child.studentName,
+                      studentName: child.studentName || 'طالب',
                     })
                   }
                 >
@@ -226,13 +226,13 @@ export const HomeScreen: React.FC = () => {
                       )}
                     </View>
                   ) : child.subjects?.map((subj, i) => {
-                    const subjHasDebt = subj.financialSummary?.hasOutstandingDebt && (subj.financialSummary?.remainingAmount ?? 0) > 0;
-                    const subjRemain = subj.financialSummary?.remainingAmount ?? 0;
+                    const subjHasDebt = Boolean(subj?.financialSummary?.hasOutstandingDebt && (subj?.financialSummary?.remainingAmount ?? 0) > 0);
+                    const subjRemain = subj?.financialSummary?.remainingAmount ?? 0;
                     return (
                       <View key={i} style={styles.financeRow}>
                         <View style={styles.financeLabel}>
                           <BookOpen size={13} color={colors.textMuted} />
-                          <Text style={styles.financeLabelText}>{subj.subject}</Text>
+                          <Text style={styles.financeLabelText}>{subj?.subject || 'مادة دراسية'}</Text>
                         </View>
                         {subjHasDebt && (
                           <View style={[styles.debtBadge, { backgroundColor: colors.absentLight }]}>
@@ -244,7 +244,7 @@ export const HomeScreen: React.FC = () => {
                       </View>
                     );
                   })}
-                  {(!child.subjects || child.subjects.length === 0) && hasDebt && remaining > 0 && (
+                  {(!child.subjects || child.subjects.length === 0) && hasDebt && remaining > 0 ? (
                     <View style={styles.financeRow}>
                       <View style={[styles.debtBadge, { backgroundColor: colors.absentLight }]}>
                         <Text style={[styles.debtText, { color: colors.absent }]}>
@@ -252,7 +252,7 @@ export const HomeScreen: React.FC = () => {
                         </Text>
                       </View>
                     </View>
-                  )}
+                  ) : null}
                 </SectionCard>
 
                 {/* ── Grades Card ──────────────────────────────────── */}

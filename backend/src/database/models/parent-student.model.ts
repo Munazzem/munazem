@@ -66,6 +66,13 @@ const parentStudentSchema = new Schema<IParentStudentDocument>(
   }
 );
 
+// Ensure studentModelType is never missing
+parentStudentSchema.pre('validate', function () {
+  if (!this.studentModelType) {
+    this.studentModelType = (this.centerId || this.centerStudentId) ? 'CenterStudent' : 'Student';
+  }
+});
+
 // Compound Unique Index: Prevents duplicate links between same parent and student
 parentStudentSchema.index({ parentId: 1, studentId: 1 }, { unique: true });
 

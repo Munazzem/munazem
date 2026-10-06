@@ -195,21 +195,21 @@ export default function CenterReportsPage() {
                     </p>
                 </div>
 
-                <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto shrink-0">
                     <Button
                         variant="outline"
                         onClick={handlePrint}
-                        className="gap-2 border-gray-200 text-gray-700 hover:bg-gray-50"
+                        className="gap-2 border-gray-200 text-gray-700 hover:bg-gray-50 h-10 w-full sm:w-auto"
                     >
-                        <Printer className="w-4 h-4" />
+                        <Printer className="w-4 h-4 shrink-0" />
                         <span>طباعة التقرير</span>
                     </Button>
 
                     <Button
                         onClick={handleExportCsv}
-                        className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+                        className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm h-10 w-full sm:w-auto"
                     >
-                        <FileSpreadsheet className="w-4 h-4" />
+                        <FileSpreadsheet className="w-4 h-4 shrink-0" />
                         <span>تصدير Excel (CSV)</span>
                     </Button>
                 </div>
