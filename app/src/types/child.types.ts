@@ -57,6 +57,22 @@ export interface ChildCardSummary {
       remainingAmount: number;
       hasActiveSubscription: boolean;
     };
+    isCenter?: boolean;
+    isPackage?: boolean;
+    isPrivate?: boolean;
+    packageName?: string;
+    packageTeachers?: Array<{
+      id: string;
+      name: string;
+      subject: string;
+    }>;
+  }>;
+  hasPackage?: boolean;
+  packageName?: string;
+  packageTeachers?: Array<{
+    id: string;
+    name: string;
+    subject: string;
   }>;
   latestAttendance?: {
     date: string;

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useDebounce } from '@/lib/hooks/use-debounce';
 import { toast } from 'sonner';
 import {
     Wallet,
@@ -191,10 +192,11 @@ export default function CenterFinancialsPage() {
         queryFn: () => fetchCenterGroups({ isActive: true }),
     });
 
+    const debouncedStudentSearch = useDebounce(studentSearch, 350);
     const { data: searchedStudentsData } = useQuery({
-        queryKey: ['center', 'students', 'search', studentSearch],
-        queryFn: () => fetchCenterStudents({ search: studentSearch, limit: 8 }),
-        enabled: studentSearch.trim().length >= 2,
+        queryKey: ['center', 'students', 'search', debouncedStudentSearch],
+        queryFn: () => fetchCenterStudents({ search: debouncedStudentSearch, limit: 8 }),
+        enabled: debouncedStudentSearch.trim().length >= 2,
     });
     const studentOptions = searchedStudentsData?.data || [];
 

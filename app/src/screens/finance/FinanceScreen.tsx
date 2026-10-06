@@ -70,7 +70,7 @@ export const FinanceScreen: React.FC<Props> = ({ route }) => {
             <Text style={s.headerTitle}>المالية</Text>
             <Text style={s.headerSub}>
               {child?.studentName ?? studentName}
-              {activeSubject?.teacherName ? ` — أ. ${activeSubject.teacherName}` : ''}
+              {activeSubject ? ((activeSubject as any).isPackage ? ' — باقة السنتر' : (activeSubject.teacherName?.startsWith('أ.') ? ` — ${activeSubject.teacherName}` : ` — أ. ${activeSubject.teacherName}`)) : ''}
             </Text>
             {subjects.length > 1 && (
               <View style={s.tabsWrap}>

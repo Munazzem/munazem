@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
+import { useDebounce } from '@/lib/hooks/use-debounce';
 import { fetchGroups, deleteGroup } from '@/lib/api/groups';
 import type { Group } from '@/types/group.types';
 import { useAuthStore } from '@/lib/store/auth.store';
@@ -74,6 +75,7 @@ export default function GroupsPage() {
 
     const queryClient = useQueryClient();
 
+    const debouncedSearchTerm = useDebounce(searchTerm, 350);
     const { 
         data, 
         isLoading, 
@@ -82,8 +84,8 @@ export default function GroupsPage() {
         hasNextPage,
         isFetchingNextPage
     } = useInfiniteQuery({
-        queryKey: ['groups', { limit, search: searchTerm }],
-        queryFn: ({ pageParam = 1 }) => fetchGroups({ page: pageParam, limit, search: searchTerm }),
+        queryKey: ['groups', { limit, search: debouncedSearchTerm }],
+        queryFn: ({ pageParam = 1 }) => fetchGroups({ page: pageParam, limit, search: debouncedSearchTerm }),
         getNextPageParam: (lastPage) => {
             if (lastPage.pagination.page < lastPage.pagination.totalPages) {
                 return lastPage.pagination.page + 1;

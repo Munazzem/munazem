@@ -37,6 +37,7 @@ import {
   BookOpen,
   Calendar,
   Receipt,
+  Users,
 } from 'lucide-react-native';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ChildDetails'>;
@@ -189,7 +190,10 @@ export const ChildDetailsScreen: React.FC<Props> = ({ route }) => {
                       s.subject === sub.subject
                   ).length > 1;
 
-                const pillLabel = hasDuplicateSubjectTeacher
+                const isPkg = (sub as any).isPackage;
+                const pillLabel = isPkg
+                  ? `🏛️ ${(sub as any).groupName || 'باقة السنتر'}`
+                  : hasDuplicateSubjectTeacher
                   ? `${sub.subject} (${sub.teacherName} - ${
                       sub.studentCode ? `كود ${sub.studentCode}` : sub.groupName
                     })`
@@ -218,6 +222,34 @@ export const ChildDetailsScreen: React.FC<Props> = ({ route }) => {
                   </TouchableOpacity>
                 );
               })}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* Package Teachers Card */}
+        {((subjects.find((s: any) => s.packageTeachers?.length > 0) as any)?.packageTeachers || []).length > 0 && (
+          <View style={styles.pkgTeachersCard}>
+            <View style={styles.pkgTeachersHeader}>
+              <View style={styles.pkgTeachersHeaderRight}>
+                <Users size={15} color={colors.primary} />
+                <Text style={styles.pkgTeachersTitle}>مدرسو الباقة بالسنتر</Text>
+              </View>
+              <Text style={styles.pkgTeachersBadge}>
+                {(subjects.find((s: any) => s.isPackage) as any)?.groupName || 'الباقة التعليمية'}
+              </Text>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pkgTeachersScroll}>
+              {((subjects.find((s: any) => s.packageTeachers?.length > 0) as any)?.packageTeachers || []).map((tch: any, idx: number) => (
+                <View key={tch.id || idx} style={styles.pkgTeacherChip}>
+                  <View style={styles.pkgTeacherAvatar}>
+                    <Text style={styles.pkgTeacherAvatarText}>{(tch.name || 'م').charAt(0)}</Text>
+                  </View>
+                  <View>
+                    <Text style={styles.pkgTeacherName}>أ. {tch.name}</Text>
+                    <Text style={styles.pkgTeacherSubject}>{tch.subject || 'مادة'}</Text>
+                  </View>
+                </View>
+              ))}
             </ScrollView>
           </View>
         )}
@@ -789,5 +821,83 @@ const styles = StyleSheet.create({
     fontFamily: typography.regular,
     fontSize: 11,
     color: colors.textMuted,
+  },
+  // Package Teachers
+  pkgTeachersCard: {
+    backgroundColor: '#ffffff',
+    marginHorizontal: spacing.md,
+    marginTop: spacing.xs,
+    marginBottom: spacing.xs,
+    padding: spacing.sm,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 51, 102, 0.08)',
+  },
+  pkgTeachersHeader: {
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+    paddingBottom: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0, 0, 0, 0.04)',
+  },
+  pkgTeachersHeaderRight: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 4,
+  },
+  pkgTeachersTitle: {
+    fontFamily: typography.bold,
+    fontSize: 12,
+    color: colors.navy,
+  },
+  pkgTeachersBadge: {
+    fontFamily: typography.regular,
+    fontSize: 10,
+    color: colors.primary,
+    backgroundColor: 'rgba(0, 51, 102, 0.06)',
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 1,
+    borderRadius: 8,
+  },
+  pkgTeachersScroll: {
+    flexDirection: 'row-reverse',
+    gap: spacing.xs,
+    paddingVertical: 2,
+  },
+  pkgTeacherChip: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: 'rgba(0, 51, 102, 0.03)',
+    borderRadius: 8,
+    paddingVertical: 4,
+    paddingHorizontal: spacing.xs,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 51, 102, 0.08)',
+  },
+  pkgTeacherAvatar: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pkgTeacherAvatarText: {
+    fontFamily: typography.bold,
+    fontSize: 10,
+    color: '#ffffff',
+  },
+  pkgTeacherName: {
+    fontFamily: typography.bold,
+    fontSize: 11,
+    color: colors.text,
+  },
+  pkgTeacherSubject: {
+    fontFamily: typography.regular,
+    fontSize: 10,
+    color: colors.textSecondary,
   },
 });

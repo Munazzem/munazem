@@ -535,6 +535,7 @@ export const createStudentAndLinkCard = async (data: {
     studentType?: string;
     packageId?: string;
     groupIds?: string[];
+    privateTeachers?: any[];
 }): Promise<any> => {
     const res = await apiClient.post('/centers/cards/create-and-link', data);
     return (res as any).data;

@@ -61,11 +61,12 @@ describe('Center Gate Check-In & Daily Attendance Workflow', () => {
         expect(teacherRes.status).toBe(201);
         const teacherId = teacherRes.body.data._id;
 
-        // Determine today's day of week in Arabic
+        // Determine today's day of week in Arabic (Cairo timezone matching centers.service.ts)
         const ARABIC_DAYS = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
-        const todayArabicDay = ARABIC_DAYS[new Date().getDay()];
+        const dayIndex = new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Cairo' })).getDay();
+        const todayArabicDay = ARABIC_DAYS[dayIndex];
 
-        // 3. Create a Group with today's schedule
+        // 3. Create a Group with today's schedule (all days mapped to be 100% immune to runner timezone differences)
         const groupRes = await app
             .post('/centers/groups')
             .set('Authorization', bearerHeader(ownerToken))
@@ -74,9 +75,7 @@ describe('Center Gate Check-In & Daily Attendance Workflow', () => {
                 centerTeacherId: teacherId,
                 gradeLevel: GradeLevel.SEC_3,
                 groupType: CenterGroupType.PACKAGE,
-                schedule: [
-                    { day: todayArabicDay, time: '02:00 م' },
-                ],
+                schedule: ARABIC_DAYS.map((day) => ({ day, time: '02:00 م' })),
                 capacity: 40,
             });
         expect(groupRes.status).toBe(201);

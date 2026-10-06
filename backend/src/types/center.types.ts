@@ -62,6 +62,7 @@ export interface ICenterStudent {
     gradeLevel:    GradeLevel;
     studentCode:   string;
     barcode?:      string | null;
+    studentType?:  'PACKAGE' | 'PRIVATE' | 'BOTH' | string | null;
     notes?:        string | null;
     isActive:      boolean;
     createdAt?:    Date;

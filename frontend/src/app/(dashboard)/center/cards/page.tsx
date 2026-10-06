@@ -13,6 +13,7 @@ import {
     fetchCenterStudents,
     createStudentAndLinkCard,
     fetchCenterPackages,
+    fetchCenterGroups,
     fetchCenterCardTemplate,
     updateCenterCardTemplate,
     type ResolveCardResponse,
@@ -26,6 +27,7 @@ import { useIsLocalDev } from '@/lib/use-local-dev';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { useDebounce } from '@/lib/hooks/use-debounce';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
     CreditCard, User, Users, Phone, GraduationCap,
@@ -60,7 +62,18 @@ function StudentSummaryCard({ data }: { data: ResolveCardResponse }) {
             <div className="grid grid-cols-2 gap-3 p-4">
                 <InfoStat label="هاتف ولي الأمر" value={student.parentPhone || '—'} />
                 <InfoStat label="هاتف الطالب" value={phone || '—'} />
-                <InfoStat label="نوع الاشتراك" value={student.studentType === 'PACKAGE' ? 'باكيدج كامل' : 'حسب المجموعة'} />
+                <InfoStat
+                    label="نوع الاشتراك"
+                    value={
+                        (data as any)?.enrollment?.packageId?.name
+                            ? `باكيدج كامل (${(data as any).enrollment.packageId.name})`
+                            : student.studentType === 'PACKAGE' || (data as any)?.enrollment?.type === 'PACKAGE'
+                            ? 'باكيدج كامل'
+                            : student.studentType === 'BOTH' || (data as any)?.enrollment?.type === 'BOTH'
+                            ? 'باكيدج + مجموعات خاصة'
+                            : 'حسب المجموعة'
+                    }
+                />
                 <InfoStat label="رقم الكارت" value={data.card?.cardNumber || '—'} mono />
                 {data.enrolledGroups && data.enrolledGroups.length > 0 && (
                     <div className="col-span-2 bg-gray-50 rounded-xl px-3 py-2.5">
@@ -114,10 +127,11 @@ function FastActions({ data, onUnlink }: { data: ResolveCardResponse; onUnlink?:
 function LinkStudentModal({ cardNumber, onLinked, onClose }: { cardNumber: string; onLinked: () => void; onClose: () => void }) {
     const [search, setSearch] = useState('');
     const [selectedId, setSelectedId] = useState('');
+    const debouncedSearch = useDebounce(search, 350);
     const qc = useQueryClient();
     const { data, isLoading } = useQuery({
-        queryKey: ['center-students-link', search],
-        queryFn: () => fetchCenterStudents({ search: search.trim() || undefined, limit: 20 }),
+        queryKey: ['center-students-link', debouncedSearch],
+        queryFn: () => fetchCenterStudents({ search: debouncedSearch.trim() || undefined, limit: 20 }),
     });
     const linkMutation = useMutation({
         mutationFn: () => linkCenterCard(cardNumber, selectedId),
@@ -161,57 +175,310 @@ function LinkStudentModal({ cardNumber, onLinked, onClose }: { cardNumber: strin
 function NewStudentLinkModal({ cardNumber, onLinked, onClose }: { cardNumber: string; onLinked: () => void; onClose: () => void }) {
     const qc = useQueryClient();
     const [form, setForm] = useState({ name: '', phone: '', parentPhone: '', gradeLevel: 'الصف الأول الثانوي', studentType: 'PACKAGE', packageId: '' });
-    const { data: packagesList } = useQuery<any[]>({ queryKey: ['center-packages-list'], queryFn: () => fetchCenterPackages() as any });
+    const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
+
+    const { data: packagesList } = useQuery<any[]>({
+        queryKey: ['center-packages-list'],
+        queryFn: () => fetchCenterPackages() as any,
+    });
+
+    const { data: groupsList = [], isLoading: isLoadingGroups } = useQuery<any[]>({
+        queryKey: ['center-groups-list'],
+        queryFn: () => fetchCenterGroups({ isActive: true }) as any,
+    });
+
     const createAndLinkMutation = useMutation({
         mutationFn: (d: any) => createStudentAndLinkCard(d),
-        onSuccess: () => { toast.success('تم إنشاء الطالب وربط الكارت'); qc.invalidateQueries({ queryKey: ['center-cards-stats'] }); qc.invalidateQueries({ queryKey: ['center-students'] }); onLinked(); },
+        onSuccess: () => {
+            toast.success('تم إنشاء الطالب وربط الكارت بنجاح');
+            qc.invalidateQueries({ queryKey: ['center-cards-stats'] });
+            qc.invalidateQueries({ queryKey: ['center-students'] });
+            qc.invalidateQueries({ queryKey: ['center-enrollments'] });
+            onLinked();
+        },
         onError: (err: any) => toast.error(err?.response?.data?.message || 'تعذر إنشاء الطالب'),
     });
-    return (
-        <form onSubmit={(e) => {
-            e.preventDefault();
-            if (!form.name.trim() || !form.parentPhone.trim()) {
-                toast.error('اسم الطالب وهاتف ولي الأمر مطلوبان');
+
+    const matchingPackages = (packagesList || []).filter((pkg: any) => pkg.gradeLevel === form.gradeLevel);
+
+    const matchingPrivateGroups = (groupsList || []).filter((g: any) => {
+        const isPrivateOrMixed = g.groupType === 'PRIVATE' || g.groupType === 'MIXED' || !g.groupType;
+        return isPrivateOrMixed && g.gradeLevel === form.gradeLevel && g.isActive !== false;
+    });
+
+    const togglePrivateGroup = (groupId: string) => {
+        setSelectedGroupIds((prev) =>
+            prev.includes(groupId) ? prev.filter((id) => id !== groupId) : [...prev, groupId]
+        );
+    };
+
+    const totalPrivatePrice = matchingPrivateGroups
+        .filter((g: any) => selectedGroupIds.includes(g._id))
+        .reduce((sum: number, g: any) => sum + (g.privateMonthlyPrice || 0), 0);
+
+    const handleGradeLevelChange = (newGrade: string) => {
+        const nextMatching = (packagesList || []).filter((pkg: any) => pkg.gradeLevel === newGrade);
+        setForm({
+            ...form,
+            gradeLevel: newGrade,
+            packageId: nextMatching[0]?._id || '',
+        });
+        setSelectedGroupIds([]);
+    };
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!form.name.trim() || !form.parentPhone.trim()) {
+            toast.error('اسم الطالب وهاتف ولي الأمر مطلوبان');
+            return;
+        }
+
+        if (form.studentType === 'PACKAGE') {
+            if (matchingPackages.length === 0) {
+                toast.error(`لا توجد باقة تعليمية لمرحلة (${form.gradeLevel})، يرجى اختيار "حسب المجموعة" أو إضافة باقة أولاً`);
                 return;
             }
-            createAndLinkMutation.mutate({
-                cardNumber,
-                studentName: form.name.trim(),
-                name: form.name.trim(),
-                studentPhone: form.phone.trim() || undefined,
-                phone: form.phone.trim() || undefined,
-                parentPhone: form.parentPhone.trim(),
-                gradeLevel: form.gradeLevel,
-                studentType: form.studentType,
-                packageId: form.packageId || undefined,
-            });
-        }} className="space-y-4">
+            if (!form.packageId) {
+                toast.error('يرجى اختيار الباقة التعليمية');
+                return;
+            }
+        } else if (form.studentType === 'PRIVATE') {
+            if (matchingPrivateGroups.length === 0) {
+                toast.error(`لا توجد مجموعات أو مدرسين برايفت مسجلين لمرحلة (${form.gradeLevel})`);
+                return;
+            }
+            if (selectedGroupIds.length === 0) {
+                toast.error('يرجى اختيار مجموعة أو مدرس واحد على الأقل');
+                return;
+            }
+        }
+
+        const selectedGroups = matchingPrivateGroups.filter((g: any) => selectedGroupIds.includes(g._id));
+        const privateTeachers = selectedGroups.map((g: any) => {
+            const teacherId = typeof g.centerTeacherId === 'object' ? g.centerTeacherId?._id : g.centerTeacherId;
+            const teacherObj = typeof g.centerTeacherId === 'object' ? g.centerTeacherId : null;
+            return {
+                centerTeacherId: teacherId,
+                groupId: g._id,
+                subject: teacherObj?.subject || undefined,
+                monthlyPrice: g.privateMonthlyPrice ?? 0,
+                sessionsPerWeek: g.schedule?.length || 1,
+            };
+        });
+
+        createAndLinkMutation.mutate({
+            cardNumber,
+            studentName: form.name.trim(),
+            name: form.name.trim(),
+            studentPhone: form.phone.trim() || undefined,
+            phone: form.phone.trim() || undefined,
+            parentPhone: form.parentPhone.trim(),
+            gradeLevel: form.gradeLevel,
+            studentType: form.studentType,
+            packageId: form.studentType === 'PACKAGE' ? form.packageId : undefined,
+            groupIds: form.studentType === 'PRIVATE' ? selectedGroupIds : undefined,
+            privateTeachers: form.studentType === 'PRIVATE' ? privateTeachers : undefined,
+        });
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
-                <div className="col-span-2"><label className="text-xs font-bold text-gray-700 mb-1 block">اسم الطالب *</label><Input placeholder="مثال: يوسف أحمد محمود" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required /></div>
-                <div><label className="text-xs font-bold text-gray-700 mb-1 block">هاتف ولي الأمر *</label><Input placeholder="01xxxxxxxxx" value={form.parentPhone} onChange={e => setForm({ ...form, parentPhone: e.target.value })} required /></div>
-                <div><label className="text-xs font-bold text-gray-700 mb-1 block">هاتف الطالب</label><Input placeholder="01xxxxxxxxx" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></div>
+                <div className="col-span-2">
+                    <label className="text-xs font-bold text-gray-700 mb-1 block">اسم الطالب *</label>
+                    <Input
+                        placeholder="مثال: يوسف أحمد محمود"
+                        value={form.name}
+                        onChange={e => setForm({ ...form, name: e.target.value })}
+                        required
+                    />
+                </div>
+                <div>
+                    <label className="text-xs font-bold text-gray-700 mb-1 block">هاتف ولي الأمر *</label>
+                    <Input
+                        placeholder="01xxxxxxxxx"
+                        value={form.parentPhone}
+                        onChange={e => setForm({ ...form, parentPhone: e.target.value })}
+                        required
+                    />
+                </div>
+                <div>
+                    <label className="text-xs font-bold text-gray-700 mb-1 block">هاتف الطالب</label>
+                    <Input
+                        placeholder="01xxxxxxxxx"
+                        value={form.phone}
+                        onChange={e => setForm({ ...form, phone: e.target.value })}
+                    />
+                </div>
                 <div className="col-span-2">
                     <label className="text-xs font-bold text-gray-700 mb-1 block">المرحلة الدراسية</label>
-                    <select value={form.gradeLevel} onChange={e => setForm({ ...form, gradeLevel: e.target.value })} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm bg-white">
+                    <select
+                        value={form.gradeLevel}
+                        onChange={e => handleGradeLevelChange(e.target.value)}
+                        className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm bg-white"
+                    >
                         <option>الصف الأول الثانوي</option><option>الصف الثاني الثانوي</option><option>الصف الثالث الثانوي</option>
                         <option>الصف الأول الإعدادي</option><option>الصف الثاني الإعدادي</option><option>الصف الثالث الإعدادي</option>
                     </select>
                 </div>
-                <div className="col-span-2 space-y-2">
-                    <label className="text-xs font-bold text-gray-700 block">نظام الاشتراك:</label>
-                    <div className="flex gap-4 text-xs">
-                        <label className="flex items-center gap-1.5 cursor-pointer"><input type="radio" name="stype" checked={form.studentType === 'PACKAGE'} onChange={() => setForm({ ...form, studentType: 'PACKAGE' })} /><span>باكيدج كامل</span></label>
-                        <label className="flex items-center gap-1.5 cursor-pointer"><input type="radio" name="stype" checked={form.studentType === 'PRIVATE'} onChange={() => setForm({ ...form, studentType: 'PRIVATE' })} /><span>حسب المجموعة</span></label>
+                <div className="col-span-2 space-y-3">
+                    <div>
+                        <label className="text-xs font-bold text-gray-700 block mb-1.5">نظام الاشتراك:</label>
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                            <label
+                                className={cn(
+                                    'flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition-all',
+                                    form.studentType === 'PACKAGE'
+                                        ? 'border-primary bg-primary/5 text-primary font-bold'
+                                        : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                                )}
+                            >
+                                <input
+                                    type="radio"
+                                    name="stype"
+                                    checked={form.studentType === 'PACKAGE'}
+                                    onChange={() => setForm({ ...form, studentType: 'PACKAGE' })}
+                                    className="text-primary focus:ring-primary"
+                                />
+                                <span>باكيدج كامل</span>
+                            </label>
+
+                            <label
+                                className={cn(
+                                    'flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition-all',
+                                    form.studentType === 'PRIVATE'
+                                        ? 'border-primary bg-primary/5 text-primary font-bold'
+                                        : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                                )}
+                            >
+                                <input
+                                    type="radio"
+                                    name="stype"
+                                    checked={form.studentType === 'PRIVATE'}
+                                    onChange={() => setForm({ ...form, studentType: 'PRIVATE' })}
+                                    className="text-primary focus:ring-primary"
+                                />
+                                <span>حسب المجموعة</span>
+                            </label>
+                        </div>
                     </div>
+
                     {form.studentType === 'PACKAGE' && (
-                        <select value={form.packageId} onChange={e => setForm({ ...form, packageId: e.target.value })} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm bg-white">
-                            <option value="">اختر الباكيدج (اختياري)...</option>
-                            {(packagesList || []).map((pkg: any) => (<option key={pkg._id} value={pkg._id}>{pkg.name} ({pkg.monthlyPrice} ج.م)</option>))}
-                        </select>
+                        <div className="space-y-2">
+                            {matchingPackages.length === 0 && (
+                                <div className="flex items-center gap-2 text-orange-600 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 text-xs font-bold">
+                                    <span>⚠️ لا توجد باقة تعليمية مرتبطة بمرحلة ({form.gradeLevel}) — يمكنك اختيار نظام "حسب المجموعة" أو إنشاء باقة لهذه المرحلة أولاً.</span>
+                                </div>
+                            )}
+                            <select
+                                value={form.packageId}
+                                onChange={e => setForm({ ...form, packageId: e.target.value })}
+                                className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm bg-white"
+                            >
+                                <option value="">{matchingPackages.length > 0 ? 'اختر الباكيدج...' : 'لا توجد باقة لهذه المرحلة'}</option>
+                                {matchingPackages.map((pkg: any) => (
+                                    <option key={pkg._id} value={pkg._id}>
+                                        {pkg.name} ({pkg.monthlyPrice} ج.م/شهر)
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+
+                    {form.studentType === 'PRIVATE' && (
+                        <div className="space-y-2.5">
+                            <div className="flex items-center justify-between">
+                                <label className="text-xs font-bold text-gray-700">
+                                    المدرسين والمجموعات المتاحة لمرحلة ({form.gradeLevel}):
+                                </label>
+                                {selectedGroupIds.length > 0 && (
+                                    <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20 text-[11px] font-bold">
+                                        تم اختيار {selectedGroupIds.length}
+                                    </Badge>
+                                )}
+                            </div>
+
+                            {isLoadingGroups ? (
+                                <div className="flex items-center justify-center p-6 text-gray-400 gap-2 text-xs">
+                                    <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                                    <span>جاري تحميل المدرسين والمجموعات...</span>
+                                </div>
+                            ) : matchingPrivateGroups.length === 0 ? (
+                                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 space-y-1">
+                                    <p className="font-bold flex items-center gap-1.5">
+                                        <span>⚠️</span>
+                                        <span>لا توجد مجموعات أو مدرسين برايفت مسجلين لمرحلة ({form.gradeLevel}).</span>
+                                    </p>
+                                    <p className="text-[11px] text-amber-700 leading-relaxed">
+                                        يمكنك إضافة مجموعات لهذه المرحلة من قسم &quot;المجموعات&quot; في القائمة الجانبية أو اختيار مرحلة أخرى.
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                                    {matchingPrivateGroups.map((group: any) => {
+                                        const isSelected = selectedGroupIds.includes(group._id);
+                                        const teacherObj = typeof group.centerTeacherId === 'object' ? group.centerTeacherId : null;
+
+                                        return (
+                                            <div
+                                                key={group._id}
+                                                onClick={() => togglePrivateGroup(group._id)}
+                                                className={cn(
+                                                    'p-2.5 rounded-xl border text-xs cursor-pointer transition-all flex items-start justify-between gap-2.5 select-none',
+                                                    isSelected
+                                                        ? 'border-primary bg-primary/5 ring-1 ring-primary/40'
+                                                        : 'border-gray-200 bg-white hover:bg-gray-50/80 hover:border-gray-300'
+                                                )}
+                                            >
+                                                <div className="flex items-start gap-2.5 min-w-0">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={isSelected}
+                                                        onChange={() => {}}
+                                                        className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer shrink-0"
+                                                    />
+                                                    <div className="min-w-0">
+                                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                                            <span className="font-bold text-gray-900 text-xs">{group.name}</span>
+                                                            {teacherObj?.subject && (
+                                                                <span className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-bold">
+                                                                    {teacherObj.subject}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <div className="text-[11px] text-gray-500 mt-0.5 flex flex-wrap items-center gap-2">
+                                                            <span className="font-medium text-gray-700">المدرس: {teacherObj?.name || 'مدرس بالسنتر'}</span>
+                                                            {group.schedule && group.schedule.length > 0 && (
+                                                                <span className="text-gray-400">
+                                                                    • {group.schedule.map((s: any) => `${s.day} ${s.time}`).join('، ')}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="text-left shrink-0">
+                                                    <span className="font-black text-primary text-xs block">
+                                                        {group.privateMonthlyPrice ? `${group.privateMonthlyPrice} ج.م` : 'مجاناً'}
+                                                    </span>
+                                                    <span className="text-[9px] text-gray-400">شهرياً</span>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+
+                            {selectedGroupIds.length > 0 && (
+                                <div className="flex items-center justify-between p-2.5 rounded-xl bg-gray-50 border border-gray-200 text-xs">
+                                    <span className="text-gray-600 font-medium">إجمالي الاشتراك الشهري للمجموعات:</span>
+                                    <span className="font-black text-gray-900 text-sm">{totalPrivatePrice} ج.م / شهر</span>
+                                </div>
+                            )}
+                        </div>
                     )}
                 </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 pt-2">
                 <Button type="button" onClick={onClose} variant="outline" className="flex-1">إلغاء</Button>
                 <Button type="submit" disabled={createAndLinkMutation.isPending} className="flex-1">
                     {createAndLinkMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'إنشاء وربط الكارت'}
@@ -859,7 +1126,7 @@ export default function CenterCardsPage() {
             </Dialog>
 
             <Dialog open={showNewStudentModal} onOpenChange={setShowNewStudentModal}>
-                <DialogContent onInteractOutside={(e) => e.preventDefault()} dir="rtl" className="max-w-md">
+                <DialogContent onInteractOutside={(e) => e.preventDefault()} dir="rtl" className="max-w-md sm:max-w-lg max-h-[90vh] overflow-y-auto">
                     <DialogHeader><DialogTitle className="flex items-center gap-2"><GraduationCap className="h-5 w-5 text-primary" /> تسجيل طالب جديد وربط الكارت</DialogTitle></DialogHeader>
                     {(resolvedData?.card?.cardNumber || (resolvedData as any)?.cardNumber) && (
                         <NewStudentLinkModal cardNumber={resolvedData?.card?.cardNumber || (resolvedData as any)?.cardNumber}

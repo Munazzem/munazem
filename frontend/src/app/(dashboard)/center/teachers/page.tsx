@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useDebounce } from '@/lib/hooks/use-debounce';
 import { toast } from 'sonner';
 import {
     GraduationCap,
@@ -43,9 +44,10 @@ export default function CenterTeachersPage() {
     const [name, setName] = useState('');
     const [subject, setSubject] = useState('');
 
+    const debouncedSearch = useDebounce(search, 350);
     const { data: teachers = [], isLoading } = useQuery<ICenterTeacher[]>({
-        queryKey: ['center', 'teachers', search],
-        queryFn: () => fetchCenterTeachers({ search }),
+        queryKey: ['center', 'teachers', debouncedSearch],
+        queryFn: () => fetchCenterTeachers({ search: debouncedSearch }),
     });
 
     const createMutation = useMutation({

@@ -65,7 +65,7 @@ export const GradesScreen: React.FC = () => {
             {child && (
               <Text style={styles.headerSub}>
                 {child.studentName}
-                {activeSubject?.teacherName ? ` — أ. ${activeSubject.teacherName}` : ''}
+                {activeSubject ? ((activeSubject as any).isPackage ? ' — باقة السنتر' : (activeSubject.teacherName?.startsWith('أ.') ? ` — ${activeSubject.teacherName}` : ` — أ. ${activeSubject.teacherName}`)) : ''}
               </Text>
             )}
             {subjects.length > 1 && (

@@ -714,14 +714,16 @@ export class CenterService {
 
         if (query.search) {
             const s = query.search.trim();
-            const regex = new RegExp(s, 'i');
+            const escaped = s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const anywhereRegex = new RegExp(escaped, 'i');
+            const prefixRegex = new RegExp(`^${escaped}`, 'i');
             filter.$or = [
-                { studentName: regex },
-                { parentName: regex },
-                { studentCode: regex },
-                { studentPhone: regex },
-                { parentPhone: regex },
-                { barcode: regex },
+                { studentName: anywhereRegex },
+                { parentName: anywhereRegex },
+                { studentCode: prefixRegex },
+                { studentPhone: prefixRegex },
+                { parentPhone: prefixRegex },
+                { barcode: prefixRegex },
             ];
         }
 
@@ -825,11 +827,14 @@ export class CenterService {
             studentId: data.studentId,
         });
 
-        // ── Package: snapshot price from package ─────────────────────────
         let packageMonthlyPrice: number | null = null;
         if (data.packageId) {
             const pkg = await CenterPackageModel.findOne({ _id: data.packageId, centerId, isActive: true }).lean();
             if (!pkg) throw NotFoundException({ message: 'الباكيدج المحدد غير موجود' });
+            const studentDoc = await CenterStudentModel.findById(data.studentId).lean();
+            if (studentDoc && pkg.gradeLevel !== studentDoc.gradeLevel) {
+                throw BadRequestException({ message: `الباكيدج المحدد (${pkg.gradeLevel}) لا يطابق المرحلة الدراسية للطالب (${studentDoc.gradeLevel})` });
+            }
             packageMonthlyPrice = pkg.monthlyPrice;
         }
 
@@ -855,6 +860,8 @@ export class CenterService {
             );
         }
 
+        const derivedType = data.type === CenterEnrollmentType.PACKAGE ? 'PACKAGE' : (data.type === CenterEnrollmentType.BOTH ? 'BOTH' : 'PRIVATE');
+
         if (existingEnrollment) {
             existingEnrollment.type = data.type;
             if (data.packageId !== undefined) existingEnrollment.packageId = data.packageId;
@@ -866,10 +873,11 @@ export class CenterService {
             if (data.combinedDiscount) existingEnrollment.combinedDiscount = data.combinedDiscount;
             existingEnrollment.isActive = true;
             await existingEnrollment.save();
+            await CenterStudentModel.findByIdAndUpdate(data.studentId, { studentType: derivedType });
             return existingEnrollment;
         }
 
-        return await CenterEnrollmentModel.create({
+        const newEnrollment = await CenterEnrollmentModel.create({
             centerId,
             studentId: data.studentId,
             type: data.type,
@@ -883,6 +891,8 @@ export class CenterService {
             isActive: true,
             startDate: new Date(),
         });
+        await CenterStudentModel.findByIdAndUpdate(data.studentId, { studentType: derivedType });
+        return newEnrollment;
     }
 
     static async getEnrollments(centerId: string, query: any = {}) {
@@ -2256,12 +2266,26 @@ export class CenterService {
                 }
             }
 
+            let activeEnrollment: any = null;
             if (studentData) {
-                enrolledGroups = await CenterGroupModel.find({
-                    centerId: centerObjId,
-                    'students.studentId': studentData._id,
-                    isActive: true,
-                }).select('name gradeLevel groupType').lean();
+                const [groups, enrollment] = await Promise.all([
+                    CenterGroupModel.find({
+                        centerId: centerObjId,
+                        'students.studentId': studentData._id,
+                        isActive: true,
+                    }).select('name gradeLevel groupType').lean(),
+                    CenterEnrollmentModel.findOne({
+                        centerId: centerObjId,
+                        studentId: studentData._id,
+                        isActive: true,
+                    }).populate('packageId', 'name gradeLevel monthlyPrice').lean(),
+                ]);
+                enrolledGroups = groups;
+                activeEnrollment = enrollment;
+                studentData = {
+                    ...studentData,
+                    studentType: activeEnrollment?.type || studentData.studentType || (activeEnrollment ? 'PACKAGE' : 'PRIVATE'),
+                };
             }
 
             return {
@@ -2275,6 +2299,7 @@ export class CenterService {
                     centerId: card.centerId,
                 },
                 student: studentData,
+                enrollment: activeEnrollment,
                 enrolledGroups,
             };
         }
@@ -2290,14 +2315,24 @@ export class CenterService {
         }).lean();
 
         if (directStudent) {
-            const [existingCard, enrolledGroups] = await Promise.all([
+            const [existingCard, groups, enrollment] = await Promise.all([
                 CardModel.findOne({ centerStudentId: directStudent._id, centerId: centerObjId }).lean(),
                 CenterGroupModel.find({
                     centerId: centerObjId,
                     'students.studentId': directStudent._id,
                     isActive: true,
                 }).select('name gradeLevel groupType').lean(),
+                CenterEnrollmentModel.findOne({
+                    centerId: centerObjId,
+                    studentId: directStudent._id,
+                    isActive: true,
+                }).populate('packageId', 'name gradeLevel monthlyPrice').lean(),
             ]);
+
+            const enrichedDirectStudent = {
+                ...directStudent,
+                studentType: enrollment?.type || directStudent.studentType || (enrollment ? 'PACKAGE' : 'PRIVATE'),
+            };
 
             return {
                 source: directStudent.barcode === resolvedInput ? 'barcode' : 'studentCode',
@@ -2309,8 +2344,9 @@ export class CenterService {
                     status: existingCard.status,
                     centerId: existingCard.centerId,
                 } : null,
-                student: directStudent,
-                enrolledGroups,
+                student: enrichedDirectStudent,
+                enrollment,
+                enrolledGroups: groups,
             };
         }
 
@@ -2376,8 +2412,19 @@ export class CenterService {
             parentName = parts.length > 1 ? parts.slice(1).join(' ') : `ولي أمر ${studentName}`;
         }
 
+        const finalStudentType = rest.studentType || (rest.packageId ? 'PACKAGE' : 'PRIVATE');
+        let matchedPkg: any = null;
+        if (rest.packageId && finalStudentType === 'PACKAGE') {
+            matchedPkg = await CenterPackageModel.findOne({ _id: rest.packageId, centerId: centerObjId, isActive: true }).lean();
+            if (!matchedPkg) throw NotFoundException({ message: 'الباكيدج المحدد غير موجود' });
+            if (matchedPkg.gradeLevel !== rest.gradeLevel) {
+                throw BadRequestException({ message: `الباكيدج المحدد (${matchedPkg.gradeLevel}) لا يطابق المرحلة الدراسية للطالب (${rest.gradeLevel})` });
+            }
+        }
+
         const student = await CenterStudentModel.create({
             ...rest,
+            studentType: finalStudentType,
             studentName,
             parentName,
             studentPhone: studentPhone || undefined,
@@ -2401,15 +2448,61 @@ export class CenterService {
         await card.save();
 
         // If packageId provided and studentType is PACKAGE, create enrollment
-        if (rest.packageId && rest.studentType === 'PACKAGE') {
+        if (rest.packageId && finalStudentType === 'PACKAGE') {
+            const pkgTeacherIds = (matchedPkg?.teachers || []).map((t: any) =>
+                typeof t.teacherId === 'object' ? t.teacherId?._id : t.teacherId
+            ).filter(Boolean);
+
+            const autoGroups = await CenterGroupModel.find({
+                centerId: centerObjId,
+                centerTeacherId: { $in: pkgTeacherIds },
+                gradeLevel: rest.gradeLevel,
+                groupType: { $in: ['PACKAGE', 'MIXED'] },
+                isActive: true,
+            }).select('_id').lean();
+
             await CenterEnrollmentModel.create({
                 centerId: centerObjId,
                 studentId: student._id,
                 type: CenterEnrollmentType.PACKAGE,
                 packageId: new Types.ObjectId(rest.packageId),
+                packageMonthlyPrice: matchedPkg?.monthlyPrice ?? null,
+                packageGroups: autoGroups.map((g) => g._id),
                 startDate: new Date(),
                 isActive: true,
             });
+        } else if (finalStudentType === 'PRIVATE') {
+            let pts = rest.privateTeachers || [];
+            if ((!pts || pts.length === 0) && rest.groupIds && rest.groupIds.length > 0) {
+                pts = rest.groupIds.map((gid: string) => ({ groupId: gid }));
+            } else if ((!pts || pts.length === 0) && rest.groupId) {
+                pts = [{ groupId: rest.groupId }];
+            }
+
+            if (pts.length > 0) {
+                const resolvedPrivate = await Promise.all(
+                    pts.map(async (pt: any) => {
+                        const group = await CenterGroupModel.findOne({ _id: pt.groupId, centerId: centerObjId }).lean();
+                        if (!group) throw NotFoundException({ message: 'المجموعة المحددة غير موجودة' });
+                        return {
+                            centerTeacherId: pt.centerTeacherId || group.centerTeacherId,
+                            groupId: group._id,
+                            subject: pt.subject || null,
+                            monthlyPrice: pt.monthlyPrice ?? group.privateMonthlyPrice ?? 0,
+                            sessionsPerWeek: pt.sessionsPerWeek || 1,
+                        };
+                    })
+                );
+
+                await CenterEnrollmentModel.create({
+                    centerId: centerObjId,
+                    studentId: student._id,
+                    type: CenterEnrollmentType.PRIVATE,
+                    privateTeachers: resolvedPrivate,
+                    startDate: new Date(),
+                    isActive: true,
+                });
+            }
         }
 
         return { card, student };

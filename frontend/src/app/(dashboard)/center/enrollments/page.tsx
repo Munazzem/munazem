@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useDebounce } from '@/lib/hooks/use-debounce';
 import { toast } from 'sonner';
 import {
     ClipboardList,
@@ -122,10 +123,11 @@ export default function CenterEnrollmentsPage() {
         }
     }, [urlStudentId]);
 
+    const debouncedStudentSearch = useDebounce(studentSearch, 350);
     const { data: searchedStudentsData } = useQuery({
-        queryKey: ['center', 'students', 'search', studentSearch],
-        queryFn: () => fetchCenterStudents({ search: studentSearch, limit: 15 }),
-        enabled: studentSearch.trim().length >= 2,
+        queryKey: ['center', 'students', 'search', debouncedStudentSearch],
+        queryFn: () => fetchCenterStudents({ search: debouncedStudentSearch, limit: 15 }),
+        enabled: debouncedStudentSearch.trim().length >= 2,
     });
     const studentOptions = searchedStudentsData?.data || [];
 
@@ -229,6 +231,10 @@ export default function CenterEnrollmentsPage() {
             const matchingPkg = packages.find((p) => p.gradeLevel === currentGradeLevel);
             if (matchingPkg && matchingPkg._id !== packageId) {
                 handleSelectPackage(matchingPkg._id);
+            } else if (!matchingPkg) {
+                // No package for this grade level — clear
+                setPackageId('');
+                setSelectedPackageGroupIds([]);
             }
         }
     }, [currentGradeLevel, packages]);
@@ -314,13 +320,9 @@ export default function CenterEnrollmentsPage() {
         setSelectedStudentId('');
         setStudentSearch('');
         setEnrollmentType('PACKAGE');
-        const defaultPkg = packages[0];
-        setPackageId(defaultPkg?._id || '');
-        if (defaultPkg?._id) {
-            handleSelectPackage(defaultPkg._id);
-        } else {
-            setSelectedPackageGroupIds([]);
-        }
+        // Don't pre-select a package — wait for student selection to know grade level
+        setPackageId('');
+        setSelectedPackageGroupIds([]);
         setPackageDiscountType('');
         setPackageDiscountVal('0');
         setSelectedPrivateTeachers([]);
@@ -759,17 +761,32 @@ export default function CenterEnrollmentsPage() {
                             <div className="p-3.5 bg-blue-50/50 border border-blue-100 rounded-xl space-y-3">
                                 <div>
                                     <label className="text-xs font-bold text-blue-900 block mb-1">
-                                        اختيار الباقة التعليمية *
+                                        اختيار الباقة التعليمية {currentGradeLevel ? `(${currentGradeLevel})` : ''} *
                                     </label>
+                                    {/* Warn if no package for this grade */}
+                                    {currentGradeLevel && packages.length > 0 && !packages.find((p) => p.gradeLevel === currentGradeLevel) && (
+                                        <div className="flex items-center gap-2 text-orange-600 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 text-xs font-bold mb-2">
+                                            <span>⚠️ لا توجد باقة مرتبطة بمرحلة ({currentGradeLevel}) — يمكنك تسجيل الطالب كـ برايفت فقط، أو إنشاء باقة لهذه المرحلة أولاً.</span>
+                                        </div>
+                                    )}
                                     <select
                                         value={packageId}
                                         onChange={(e) => handleSelectPackage(e.target.value)}
                                         className="w-full h-10 px-3 rounded-xl border border-gray-200 bg-white text-xs font-bold"
                                     >
-                                        <option value="" disabled>اختر الباقة</option>
-                                        {packages.map((pkg) => (
+                                        <option value="">
+                                            {!currentGradeLevel
+                                                ? 'اختر الطالب أولاً لمعرفة المرحلة'
+                                                : packages.find((p) => p.gradeLevel === currentGradeLevel)
+                                                ? 'اختر الباقة'
+                                                : 'لا توجد باقة لهذه المرحلة'}
+                                        </option>
+                                        {(currentGradeLevel
+                                            ? packages.filter((pkg) => pkg.gradeLevel === currentGradeLevel)
+                                            : packages
+                                        ).map((pkg) => (
                                             <option key={pkg._id} value={pkg._id}>
-                                                {pkg.name} ({pkg.gradeLevel}) — {pkg.monthlyPrice} ج.م/شهر
+                                                {pkg.name} — {pkg.monthlyPrice} ج.م/شهر
                                             </option>
                                         ))}
                                     </select>
