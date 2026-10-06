@@ -223,29 +223,46 @@ export class ParentAppService {
             .populate('teachers.teacherId', 'name subject')
             .lean();
 
+          const packageTeachers: any[] = [];
           if (pkg && pkg.teachers && pkg.teachers.length > 0) {
             for (const t of pkg.teachers) {
               const tch = t.teacherId as any;
-              child.subjectsCount += 1;
-              child.subjects.push({
-                studentId: student._id.toString(),
-                teacherId: tch?._id?.toString() || '',
-                teacherName: tch?.name || 'مدرس الباقة',
-                subject: tch?.subject || 'مادة دراسية',
-                centerName: formatCenterName(center?.name),
-                groupName: pkg.name || 'باقة السنتر',
-                studentCode: student.studentCode,
-                barcode: student.barcode,
-                financialSummary: {
-                  hasOutstandingDebt: remainingAmount > 0,
-                  remainingAmount,
-                  hasActiveSubscription: remainingAmount <= 0,
-                },
-                isCenter: true,
-              });
-              addedSubj = true;
+              if (tch) {
+                packageTeachers.push({
+                  id: tch._id?.toString() || '',
+                  name: tch.name || 'مدرس',
+                  subject: tch.subject || 'مادة دراسية',
+                });
+              }
             }
           }
+
+          child.hasPackage = true;
+          child.packageName = pkg?.name || 'باقة السنتر';
+          child.packageTeachers = packageTeachers;
+
+          // Single subject representing the Center Package
+          child.subjectsCount += 1;
+          child.subjects.push({
+            studentId: student._id.toString(),
+            teacherId: '',
+            teacherName: formatCenterName(center?.name, 'إدارة السنتر'),
+            subject: pkg?.name ? `باقة السنتر (${pkg.name})` : 'باقة السنتر',
+            centerName: formatCenterName(center?.name),
+            groupName: pkg?.name || 'باقة السنتر',
+            studentCode: student.studentCode,
+            barcode: student.barcode,
+            financialSummary: {
+              hasOutstandingDebt: remainingAmount > 0,
+              remainingAmount,
+              hasActiveSubscription: remainingAmount <= 0,
+            },
+            isCenter: true,
+            isPackage: true,
+            packageName: pkg?.name || 'باقة السنتر',
+            packageTeachers,
+          });
+          addedSubj = true;
         }
 
         if (enrollment?.privateTeachers && enrollment.privateTeachers.length > 0) {
@@ -253,22 +270,25 @@ export class ParentAppService {
             const tch = pt.centerTeacherId
               ? await CenterTeacherModel.findById(pt.centerTeacherId).select('name subject').lean()
               : null;
+            const tchIdStr = (tch as any)?._id?.toString() || pt.centerTeacherId?.toString() || '';
             child.subjectsCount += 1;
             child.subjects.push({
-              studentId: student._id.toString(),
-              teacherId: (tch as any)?._id?.toString() || '',
+              studentId: `${student._id.toString()}_private_${tchIdStr}`,
+              rawStudentId: student._id.toString(),
+              teacherId: tchIdStr,
               teacherName: (tch as any)?.name || 'المعلم',
               subject: (tch as any)?.subject || 'مادة دراسية',
               centerName: formatCenterName(center?.name),
-              groupName: 'مجموعة خاصة',
+              groupName: 'مجموعة خاصة (برايفت)',
               studentCode: student.studentCode,
               barcode: student.barcode,
               financialSummary: {
-                hasOutstandingDebt: remainingAmount > 0,
-                remainingAmount,
-                hasActiveSubscription: remainingAmount <= 0,
+                hasOutstandingDebt: false,
+                remainingAmount: 0,
+                hasActiveSubscription: true,
               },
               isCenter: true,
+              isPrivate: true,
             });
             addedSubj = true;
           }
@@ -585,36 +605,38 @@ export class ParentAppService {
           .populate('teachers.teacherId', 'name subject')
           .lean();
 
-        const packageGroups = await CenterGroupModel.find({
-          _id: { $in: enrollment.packageGroups || [] },
-        }).lean();
-
+        const packageTeachers: any[] = [];
         if (pkg && pkg.teachers) {
           for (const t of pkg.teachers) {
             const tch = t.teacherId as any;
-            const grp = packageGroups.find((g) => {
-              const gTid = typeof g.centerTeacherId === 'object' ? (g.centerTeacherId as any)._id : g.centerTeacherId;
-              return gTid?.toString() === tch?._id?.toString();
-            });
-
-            subjects.push({
-              studentId: baseCenterStudent._id.toString(),
-              teacherId: tch?._id?.toString() || '',
-              teacherName: tch?.name || 'مدرس الباقة',
-              subject: tch?.subject || 'مادة دراسية',
-              centerName: formatCenterName(center?.name),
-              groupId: grp?._id?.toString() || '',
-              groupName: grp?.name || pkg.name || 'باقة السنتر',
-              schedule: grp?.schedule || [],
-              gradeLevel: baseCenterStudent.gradeLevel,
-              studentCode: baseCenterStudent.studentCode || '',
-              barcode: baseCenterStudent.barcode || '',
-              cardNumber: card?.cardNumber || null,
-              qrValue: card?.cardToken || baseCenterStudent.barcode || baseCenterStudent.studentCode,
-              isCenter: true,
-            });
+            if (tch) {
+              packageTeachers.push({
+                id: tch._id?.toString() || '',
+                name: tch.name || 'مدرس',
+                subject: tch.subject || 'مادة دراسية',
+              });
+            }
           }
         }
+
+        subjects.push({
+          studentId: baseCenterStudent._id.toString(),
+          teacherId: '',
+          teacherName: formatCenterName(center?.name, 'إدارة السنتر'),
+          subject: pkg?.name ? `باقة السنتر (${pkg.name})` : 'باقة السنتر',
+          centerName: formatCenterName(center?.name),
+          groupId: '',
+          groupName: pkg?.name || 'باقة السنتر',
+          schedule: [],
+          gradeLevel: baseCenterStudent.gradeLevel,
+          studentCode: baseCenterStudent.studentCode || '',
+          barcode: baseCenterStudent.barcode || '',
+          cardNumber: card?.cardNumber || null,
+          qrValue: card?.cardToken || baseCenterStudent.barcode || baseCenterStudent.studentCode,
+          isCenter: true,
+          isPackage: true,
+          packageTeachers,
+        });
       }
 
       if (enrollment?.privateTeachers && enrollment.privateTeachers.length > 0) {

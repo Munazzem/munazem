@@ -44,6 +44,11 @@ const centerStudentSchema = new Schema<ICenterStudentDocument>({
         sparse: true,
         index: true,
     },
+    studentType: {
+        type: String,
+        enum: ['PACKAGE', 'PRIVATE', 'BOTH'],
+        default: 'PRIVATE',
+    },
     notes: { type: String, default: null },
     isActive: { type: Boolean, default: true },
 }, { timestamps: true });
@@ -56,6 +61,14 @@ centerStudentSchema.index({ centerId: 1, gradeLevel: 1, isActive: 1 });
 centerStudentSchema.index(
     { centerId: 1, studentPhone: 1 },
     { sparse: true, name: 'idx_center_student_phone' }
+);
+centerStudentSchema.index(
+    { centerId: 1, parentPhone: 1 },
+    { sparse: true, name: 'idx_center_parent_phone' }
+);
+centerStudentSchema.index(
+    { centerId: 1, barcode: 1 },
+    { sparse: true, name: 'idx_center_student_barcode' }
 );
 
 export const CenterStudentModel: Model<ICenterStudentDocument> =

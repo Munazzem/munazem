@@ -6,7 +6,6 @@ import "./globals.css";
 import { OfflineIndicator } from "@/components/ui/offline-indicator";
 import { PWAEventListener } from "@/components/pwa/PWAEventListener";
 import { InstallPrompt } from "@/components/ui/InstallPrompt";
-import { CacheWarmer } from "@/components/pwa/CacheWarmer";
 import { OfflineSyncWorker } from "@/components/pwa/OfflineSyncWorker";
 
 const cairo = Cairo({
@@ -60,7 +59,6 @@ export default function RootLayout({
         <Providers>
           {children}
           <PWAEventListener />
-          <CacheWarmer />
           <OfflineSyncWorker />
           <OfflineIndicator />
           <InstallPrompt />

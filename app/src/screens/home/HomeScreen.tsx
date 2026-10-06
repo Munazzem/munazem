@@ -161,6 +161,34 @@ export const HomeScreen: React.FC = () => {
               </View>
             ) : child ? (
               <>
+                {/* ── Package Teachers Card (for Center Package Students) ── */}
+                {((activeSubject as any)?.packageTeachers?.length > 0 || (child as any)?.packageTeachers?.length > 0) && (
+                  <View style={styles.packageCardWrap}>
+                    <View style={styles.packageCardHeader}>
+                      <View style={styles.packageCardHeaderLeft}>
+                        <Users size={16} color={colors.primary} />
+                        <Text style={styles.packageCardTitle}>معلمو الباقة بالسنتر</Text>
+                      </View>
+                      <Text style={styles.packageCardSubtitle}>
+                        {(activeSubject as any)?.packageName || (child as any)?.packageName || 'الباقة التعليمية'}
+                      </Text>
+                    </View>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.packageTeachersScroll}>
+                      {((activeSubject as any)?.packageTeachers || (child as any)?.packageTeachers || []).map((tch: any, idx: number) => (
+                        <View key={tch.id || idx} style={styles.packageTeacherItem}>
+                          <View style={styles.packageTeacherAvatar}>
+                            <Text style={styles.packageTeacherAvatarText}>{(tch.name || 'م').charAt(0)}</Text>
+                          </View>
+                          <View style={styles.packageTeacherInfo}>
+                            <Text style={styles.packageTeacherName} numberOfLines={1}>أ. {tch.name}</Text>
+                            <Text style={styles.packageTeacherSubject} numberOfLines={1}>{tch.subject || 'مادة دراسية'}</Text>
+                          </View>
+                        </View>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+
                 {/* ── Attendance Card ──────────────────────────────── */}
                 <SectionCard
                   icon={<CalendarCheck size={18} color={colors.primary} />}
@@ -177,11 +205,15 @@ export const HomeScreen: React.FC = () => {
                       <View style={styles.attendanceSimpleLabel}>
                         <BookOpen size={13} color={colors.textMuted} />
                         <Text style={styles.attendanceSimpleLabelText}>
-                          {activeSubject.subject} (أ. {activeSubject.teacherName})
+                          {(activeSubject as any)?.isPackage
+                            ? `حضور وغياب السنتر (${(activeSubject as any)?.groupName || 'الباقة'})`
+                            : `${activeSubject.subject} (أ. ${activeSubject.teacherName})`}
                         </Text>
                       </View>
                       <View style={styles.attendanceSimpleBadge}>
-                        <Text style={styles.attendanceSimpleBadgeText}>سجل الحصص</Text>
+                        <Text style={styles.attendanceSimpleBadgeText}>
+                          {(activeSubject as any)?.isPackage ? 'سجل السنتر' : 'سجل الحصص'}
+                        </Text>
                       </View>
                     </TouchableOpacity>
                   ) : (
@@ -204,7 +236,7 @@ export const HomeScreen: React.FC = () => {
                   ctaLabel="عرض التفاصيل"
                   onCta={() =>
                     navigation.navigate('FinanceDetail', {
-                      studentId: activeSubject?.studentId ?? child.id,
+                      studentId: (activeSubject as any)?.rawStudentId ?? activeSubject?.studentId ?? child.id,
                       studentName: child.studentName || 'طالب',
                     })
                   }
@@ -214,7 +246,9 @@ export const HomeScreen: React.FC = () => {
                       <View style={styles.financeLabel}>
                         <BookOpen size={13} color={colors.textMuted} />
                         <Text style={styles.financeLabelText}>
-                          {activeSubject?.subject ?? 'المادة'} (أ. {activeSubject?.teacherName ?? 'المعلم'})
+                          {(activeSubject as any)?.isPackage
+                            ? `اشتراك باقة السنتر (${(activeSubject as any)?.groupName || 'الباقة'})`
+                            : `${activeSubject?.subject ?? 'المادة'} (أ. ${activeSubject?.teacherName ?? 'المعلم'})`}
                         </Text>
                       </View>
                       {hasDebt && remaining > 0 && (
@@ -626,6 +660,88 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textMuted,
     textAlign: 'right',
+  },
+  // Package Teachers Card
+  packageCardWrap: {
+    backgroundColor: '#ffffff',
+    borderRadius: borderRadius.xl,
+    padding: spacing.md,
+    ...shadows.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 51, 102, 0.08)',
+  },
+  packageCardHeader: {
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+    paddingBottom: spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0, 0, 0, 0.04)',
+  },
+  packageCardHeaderLeft: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  packageCardTitle: {
+    fontFamily: typography.bold,
+    fontSize: 13,
+    color: colors.navy,
+  },
+  packageCardSubtitle: {
+    fontFamily: typography.regular,
+    fontSize: 11,
+    color: colors.primary,
+    backgroundColor: 'rgba(0, 51, 102, 0.06)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.full,
+  },
+  packageTeachersScroll: {
+    flexDirection: 'row-reverse',
+    gap: spacing.sm,
+    paddingVertical: 2,
+  },
+  packageTeacherItem: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: 'rgba(0, 51, 102, 0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 51, 102, 0.08)',
+    borderRadius: borderRadius.lg,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    minWidth: 130,
+  },
+  packageTeacherAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  packageTeacherAvatarText: {
+    fontFamily: typography.bold,
+    fontSize: 12,
+    color: '#ffffff',
+  },
+  packageTeacherInfo: {
+    flex: 1,
+    alignItems: 'flex-end',
+  },
+  packageTeacherName: {
+    fontFamily: typography.bold,
+    fontSize: 11,
+    color: colors.text,
+  },
+  packageTeacherSubject: {
+    fontFamily: typography.regular,
+    fontSize: 10,
+    color: colors.textSecondary,
+    marginTop: 1,
   },
   // Teacher Tabs
   teacherTabsWrapper: {

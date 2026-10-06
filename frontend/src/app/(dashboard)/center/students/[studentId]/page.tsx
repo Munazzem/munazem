@@ -534,7 +534,7 @@ export default function CenterStudentProfilePage() {
                             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-white font-bold text-xs hover:bg-primary/90 transition-all shadow-sm shadow-primary/20"
                         >
                             <Layers className="h-4 w-4" />
-                            <span>تعديل أو تسجيل باقة</span>
+                            <span>{enrollment ? 'تعديل الاشتراك' : 'تسجيل اشتراك الطالب'}</span>
                         </Link>
 
                         <Button

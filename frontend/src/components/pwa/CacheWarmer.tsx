@@ -19,7 +19,9 @@ export function CacheWarmer() {
     const user = useAuthStore((state) => state.user);
 
     useEffect(() => {
-        if (!isAuthenticated || !user || user.role === UserRole.superAdmin) return;
+        if (!isAuthenticated || !user) return;
+        // Only pre-fetch teacher-specific data if the user is a teacher or assistant
+        if (user.role !== UserRole.teacher && user.role !== UserRole.assistant) return;
 
         console.log('🔥 Warming up offline cache...');
 
