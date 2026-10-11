@@ -10,6 +10,8 @@ import {
     generateCenterCards,
     fetchCenterCardsStats,
     getCenterCardBatchPrintUrl,
+    fetchCenterBatchCards,
+    fetchCenterCardBatches,
     fetchCenterStudents,
     createStudentAndLinkCard,
     fetchCenterPackages,
@@ -30,13 +32,14 @@ import { Badge } from '@/components/ui/badge';
 import { useDebounce } from '@/lib/hooks/use-debounce';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
-    CreditCard, User, Users, Phone, GraduationCap,
+    CreditCard, User, Users, Phone, GraduationCap, FileSpreadsheet,
     Printer, Unlink, CheckCircle2,
     Loader2, Package, Scan, Link2, ExternalLink, Ban, Search,
     Palette, Upload, Image as ImageIcon, Save, Eye,
     Move, SlidersHorizontal, Sparkles, RefreshCw,
 } from 'lucide-react';
 import { QrScanner } from '@/components/scanner/QrScanner';
+import { exportCardsToExcel } from '@/lib/utils/export-cards-excel';
 
 type View = 'scanner' | 'result' | 'link-choice';
 type BatchHistoryEntry = { batchId: string; count: number; createdAt: string };
@@ -488,9 +491,10 @@ function NewStudentLinkModal({ cardNumber, onLinked, onClose }: { cardNumber: st
     );
 }
 
-const HISTORY_KEY = 'centerCardBatchHistory';
-function loadHistory(): BatchHistoryEntry[] { try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch { return []; } }
-function saveHistory(entries: BatchHistoryEntry[]) { try { localStorage.setItem(HISTORY_KEY, JSON.stringify(entries.slice(0, 20))); } catch { /* ignore */ } }
+// Clear legacy global localStorage on load to avoid leaking across centers on the same device
+if (typeof window !== 'undefined') {
+    try { localStorage.removeItem('centerCardBatchHistory'); } catch {}
+}
 
 function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
     return (
@@ -503,20 +507,60 @@ function StatCard({ label, value, color }: { label: string; value: number; color
 
 function GenerateBatchPanel() {
     const [count, setCount] = useState(50);
-    const [history, setHistory] = useState<BatchHistoryEntry[]>(loadHistory);
+    const { data: history = [] } = useQuery<BatchHistoryEntry[]>({
+        queryKey: ['center-card-batches'],
+        queryFn: fetchCenterCardBatches,
+    });
+    const [autoExportExcel, setAutoExportExcel] = useState(true);
+    const [exportingBatchId, setExportingBatchId] = useState<string | null>(null);
+    const [lastCreatedBatch, setLastCreatedBatch] = useState<{
+        batchId: string;
+        count: number;
+        cards: { cardNumber: string; cardToken: string }[];
+    } | null>(null);
     const qc = useQueryClient();
+
+    const handleExportBatchExcel = async (batchId: string, batchCount?: number) => {
+        try {
+            setExportingBatchId(batchId);
+            const cards = await fetchCenterBatchCards(batchId);
+            if (!cards || cards.length === 0) {
+                toast.error('لم يتم العثور على كروت لهذه الدفعة');
+                return;
+            }
+            exportCardsToExcel(cards, batchId, batchCount);
+            toast.success('تم تحميل شيت Excel بنجاح 📊');
+        } catch (err: any) {
+            console.error('Failed to export batch cards to excel:', err);
+            toast.error(err?.response?.data?.message || err?.message || 'فشل تصدير ملف الإكسيل');
+        } finally {
+            setExportingBatchId(null);
+        }
+    };
+
     const generateMutation = useMutation({
         mutationFn: () => generateCenterCards(count),
-        onSuccess: (data) => {
-            toast.success(`تم إنشاء ${data.count} كارت بنجاح`);
-            const entry: BatchHistoryEntry = { batchId: data.batchId, count: data.count, createdAt: new Date().toISOString() };
-            const updated = [entry, ...history];
-            setHistory(updated); saveHistory(updated);
+        onSuccess: (data: any) => {
+            toast.success(`تم إنشاء ${data.count} كارت بنجاح ✅`);
+            qc.invalidateQueries({ queryKey: ['center-card-batches'] });
+            setLastCreatedBatch(data);
             qc.invalidateQueries({ queryKey: ['center-cards-stats'] });
+
+            // If auto export is enabled, trigger Excel download immediately
+            if (autoExportExcel && data.cards && data.cards.length > 0) {
+                try {
+                    exportCardsToExcel(data.cards, data.batchId, data.count);
+                    toast.info('تم تحميل شيت Excel بأكواد الـ QR للمطبعة 📥');
+                } catch (e) {
+                    console.error('Error auto-exporting excel:', e);
+                }
+            }
         },
         onError: () => toast.error('حدث خطأ أثناء إنشاء دفعة الكروت'),
     });
+
     const { data: stats } = useQuery<CenterCardStats>({ queryKey: ['center-cards-stats'], queryFn: fetchCenterCardsStats });
+
     return (
         <div className="space-y-6">
             {stats && (
@@ -526,38 +570,140 @@ function GenerateBatchPanel() {
                     <StatCard label="معطلة" value={stats.disabled || 0} color="text-red-600 bg-red-50" />
                 </div>
             )}
+
+            {/* Generate form */}
             <div className="bg-gray-50 rounded-2xl p-5 space-y-4 border border-gray-100">
-                <h3 className="font-bold text-gray-800 flex items-center gap-2"><Package className="h-5 w-5 text-primary" /> إنشاء batch جديد</h3>
+                <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                    <Package className="h-5 w-5 text-primary" /> إنشاء batch جديد
+                </h3>
                 <div className="flex items-center gap-3">
-                    <Input type="number" min={1} max={1000} value={count} onChange={e => setCount(Math.min(1000, Math.max(1, Number(e.target.value))))} className="w-28 text-center" />
+                    <Input
+                        type="number"
+                        min={1} max={1000}
+                        value={count}
+                        onChange={e => setCount(Math.min(1000, Math.max(1, Number(e.target.value))))}
+                        className="w-28 text-center"
+                    />
                     <span className="text-sm text-gray-500">كارت</span>
-                    <Button onClick={() => generateMutation.mutate()} disabled={generateMutation.isPending} className="flex-1">
+                    <Button
+                        onClick={() => generateMutation.mutate()}
+                        disabled={generateMutation.isPending}
+                        className="flex-1"
+                    >
                         {generateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : <Package className="h-4 w-4 ml-2" />}
                         إنشاء الكروت
                     </Button>
                 </div>
+
+                {/* Auto Excel Option */}
+                <div className="pt-2 border-t border-gray-200/60 flex items-center justify-between">
+                    <label className="flex items-center gap-2.5 cursor-pointer select-none text-xs text-gray-700 hover:text-gray-900">
+                        <input
+                            type="checkbox"
+                            checked={autoExportExcel}
+                            onChange={e => setAutoExportExcel(e.target.checked)}
+                            className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 h-4 w-4 cursor-pointer"
+                        />
+                        <span className="font-semibold flex items-center gap-1.5">
+                            <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+                            تحميل شيت Excel تلقائياً بعد الإنشاء (لإرساله للمطبعة)
+                        </span>
+                    </label>
+                </div>
             </div>
+
+            {/* Last Generated Batch Banner */}
+            {lastCreatedBatch && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-300">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0">
+                            <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                        </div>
+                        <div>
+                            <p className="text-sm font-bold text-emerald-950">
+                                تم إنشاء الدفعة بنجاح ({lastCreatedBatch.count} كارت)
+                            </p>
+                            <p className="text-xs text-emerald-700">
+                                جاهزة للطباعة أو إرسال كود الـ QR للمطبعة
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                        <Button
+                            size="sm"
+                            onClick={() => exportCardsToExcel(lastCreatedBatch.cards, lastCreatedBatch.batchId, lastCreatedBatch.count)}
+                            className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8 px-3 font-bold shadow-sm"
+                        >
+                            <FileSpreadsheet className="h-3.5 w-3.5" />
+                            تصدير Excel للمطبعة
+                        </Button>
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => window.open(getCenterCardBatchPrintUrl(lastCreatedBatch.batchId, 'dual_sided'), '_blank')}
+                            className="gap-1.5 border-blue-200 text-blue-700 bg-white hover:bg-blue-50 text-xs h-8 px-3 font-bold shadow-sm"
+                        >
+                            <CreditCard className="h-3.5 w-3.5" />
+                            طباعة PVC
+                        </Button>
+                    </div>
+                </div>
+            )}
+
+            {/* Batch History */}
             {history.length > 0 && (
                 <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                        <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2"><ExternalLink className="h-4 w-4 text-gray-400" /> سجل الـ Batches</h3>
-                        <button onClick={() => { setHistory([]); saveHistory([]); }} className="text-xs text-red-400 hover:text-red-600 transition-colors">مسح السجل</button>
+                        <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                            <ExternalLink className="h-4 w-4 text-gray-400" /> سجل الـ Batches
+                        </h3>
+                        
                     </div>
                     <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                         {history.map((entry, idx) => (
-                            <div key={entry.batchId} className={cn('flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl border', idx === 0 ? 'bg-green-50 border-green-200' : 'bg-white border-gray-100 hover:border-gray-200')}>
+                            <div
+                                key={entry.batchId}
+                                className={cn(
+                                    'flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl border transition-all',
+                                    idx === 0 ? 'bg-green-50 border-green-200' : 'bg-white border-gray-100 hover:border-gray-200'
+                                )}
+                            >
                                 <div className="flex items-center gap-2 min-w-0">
                                     {idx === 0 ? <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" /> : <Package className="h-4 w-4 text-gray-400 shrink-0" />}
                                     <div className="min-w-0">
-                                        <p className="text-xs font-bold text-gray-700">{entry.count} كارت{idx === 0 && <span className="mr-1.5 text-green-600">(آخر batch)</span>}</p>
-                                        <p className="text-xs text-gray-400 font-mono">{new Date(entry.createdAt).toLocaleString('ar-EG', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</p>
+                                        <p className="text-xs font-bold text-gray-700">
+                                            {entry.count} كارت{idx === 0 && <span className="mr-1.5 text-green-600">(آخر batch)</span>}
+                                        </p>
+                                        <p className="text-xs text-gray-400 font-mono">
+                                            {new Date(entry.createdAt).toLocaleString('ar-EG', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                        </p>
                                     </div>
                                 </div>
-                                <Button size="sm" className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-7 px-3 shrink-0 font-bold shadow-sm"
-                                    onClick={() => window.open(getCenterCardBatchPrintUrl(entry.batchId, 'dual_sided'), '_blank')}
-                                    title="طباعة كروت بلاستيكية PVC (CR-80)">
-                                    <CreditCard className="h-3.5 w-3.5" /> طباعة PVC
-                                </Button>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="gap-1.5 border-emerald-500/40 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 text-xs h-7 px-2.5 font-bold shadow-sm"
+                                        onClick={() => handleExportBatchExcel(entry.batchId, entry.count)}
+                                        disabled={exportingBatchId === entry.batchId}
+                                        title="تصدير شيت Excel لأكواد الـ QR للدفعة (لإرساله للمطبعة)"
+                                    >
+                                        {exportingBatchId === entry.batchId ? (
+                                            <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-600" />
+                                        ) : (
+                                            <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
+                                        )}
+                                        Excel للمطبعة
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs h-7 px-3 font-bold shadow-sm"
+                                        onClick={() => window.open(getCenterCardBatchPrintUrl(entry.batchId, 'dual_sided'), '_blank')}
+                                        title="طباعة كروت بلاستيكية PVC (CR-80)"
+                                    >
+                                        <CreditCard className="h-3.5 w-3.5" /> طباعة PVC
+                                    </Button>
+                                </div>
                             </div>
                         ))}
                     </div>

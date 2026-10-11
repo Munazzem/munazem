@@ -212,6 +212,8 @@ export class StudentService {
             // ── Auto-link Smart Card if barcode was provided ─────────────────────
             if (data.barcode) {
                 let cardIdentifier = data.barcode.trim();
+                cardIdentifier = cardIdentifier.replace(/^\*+|\*+$/g, '').trim();
+
                 if (cardIdentifier.includes('/card/')) {
                     const token = cardIdentifier.split('/card/').pop()?.split('?')[0]?.trim();
                     if (token) {
@@ -246,6 +248,24 @@ export class StudentService {
 
                     await cache.del(CacheKeys.card(card.cardNumber));
                     await cache.del(CacheKeys.cardToken(card.cardToken));
+                } else {
+                    const newCard = await CardModel.create({
+                        cardNumber: cardIdentifier,
+                        cardToken:  crypto.randomUUID(),
+                        teacherId:  new mongoose.Types.ObjectId(teacherId),
+                        studentId:  student._id,
+                        status:     'LINKED',
+                        linkedAt:   new Date(),
+                        linkedBy:   new mongoose.Types.ObjectId(teacherId),
+                    });
+
+                    if (student.barcode !== newCard.cardNumber) {
+                        await StudentModel.findByIdAndUpdate(student._id, { barcode: newCard.cardNumber });
+                        student.barcode = newCard.cardNumber;
+                    }
+
+                    await cache.del(CacheKeys.card(newCard.cardNumber));
+                    await cache.del(CacheKeys.cardToken(newCard.cardToken));
                 }
             }
 
@@ -895,6 +915,8 @@ export class StudentService {
             // If barcode was updated, also link/sync matching CardModel
             if (data.barcode) {
                 let cardIdentifier = data.barcode.trim();
+                cardIdentifier = cardIdentifier.replace(/^\*+|\*+$/g, '').trim();
+
                 if (cardIdentifier.includes('/card/')) {
                     const token = cardIdentifier.split('/card/').pop()?.split('?')[0]?.trim();
                     if (token) {
@@ -935,6 +957,30 @@ export class StudentService {
 
                     await cache.del(CacheKeys.card(card.cardNumber));
                     await cache.del(CacheKeys.cardToken(card.cardToken));
+                } else {
+                    // Unlink any prior card this student had
+                    await CardModel.updateMany(
+                        { studentId: new mongoose.Types.ObjectId(studentId), teacherId: new mongoose.Types.ObjectId(teacherId) },
+                        { $set: { status: 'NEW', studentId: null, linkedAt: null, linkedBy: null } }
+                    );
+
+                    const newCard = await CardModel.create({
+                        cardNumber: cardIdentifier,
+                        cardToken:  crypto.randomUUID(),
+                        teacherId:  new mongoose.Types.ObjectId(teacherId),
+                        studentId:  new mongoose.Types.ObjectId(studentId),
+                        status:     'LINKED',
+                        linkedAt:   new Date(),
+                        linkedBy:   new mongoose.Types.ObjectId(teacherId),
+                    });
+
+                    if (updatedStudent.barcode !== newCard.cardNumber) {
+                        await StudentModel.findByIdAndUpdate(studentId, { barcode: newCard.cardNumber });
+                        (updatedStudent as any).barcode = newCard.cardNumber;
+                    }
+
+                    await cache.del(CacheKeys.card(newCard.cardNumber));
+                    await cache.del(CacheKeys.cardToken(newCard.cardToken));
                 }
             }
 

@@ -1,4 +1,5 @@
 import { AttendanceModel }         from '../../database/models/attendance.model.js';
+import { CardModel }               from '../../database/models/card.model.js';
 import { AttendanceSnapshotModel }  from '../../database/models/attendance-snapshot.model.js';
 import { SessionModel }             from '../../database/models/session.model.js';
 import { StudentModel }             from '../../database/models/student.model.js';
@@ -121,16 +122,30 @@ export class AttendanceService {
         }
 
         // Resolve student — scoped to this teacher to prevent cross-tenant scan
-        const isObjectId = mongoose.Types.ObjectId.isValid(data.studentId) && data.studentId.length === 24;
-        const student = isObjectId
-            ? await StudentModel.findOne({ _id: data.studentId, teacherId }).lean()
+        const cleanInput = (data.studentId || '').replace(/^\*+|\*+$/g, '').trim();
+        const isObjectId = mongoose.Types.ObjectId.isValid(cleanInput) && cleanInput.length === 24;
+        let student = isObjectId
+            ? await StudentModel.findOne({ _id: cleanInput, teacherId }).lean()
             : await StudentModel.findOne({
                 teacherId,
                 $or: [
-                    { studentCode: data.studentId },
-                    { barcode: data.studentId },
+                    { studentCode: cleanInput },
+                    { barcode: cleanInput },
                 ],
               }).lean();
+
+        // Fallback: check CardModel if cleanInput matches a linked card
+        if (!student && !isObjectId) {
+            const card = await CardModel.findOne({
+                cardNumber: cleanInput,
+                teacherId: new mongoose.Types.ObjectId(teacherId),
+                status: 'LINKED',
+            }).lean();
+            if (card?.studentId) {
+                student = await StudentModel.findOne({ _id: card.studentId, teacherId }).lean();
+            }
+        }
+
         if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
 
         // ── Step 1: Grade-level enforcement ──────────────────────────────────

@@ -13,6 +13,7 @@ import {
     unlinkCardSchema,
     disableCardSchema,
     replaceCardSchema,
+    importCardRangeSchema,
 } from '../../validation/card.validation.js';
 
 const cardsRouter = Router();
@@ -31,6 +32,25 @@ cardsRouter.post(
             const teacherId = resolveTeacherId((req as any).user);
             const result = await CardsService.generateBatch(teacherId, req.body);
             return SuccessResponse({ res, data: result, message: `تم إنشاء ${result.count} كارت بنجاح`, status: 201 });
+        } catch (error) { next(error); }
+    }
+);
+
+// ─── POST /cards/import-range — Import pre-printed card range ─────────────────
+cardsRouter.post(
+    '/import-range',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    validate(importCardRangeSchema),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = resolveTeacherId((req as any).user);
+            const result = await CardsService.importCardRange(teacherId, req.body);
+            return SuccessResponse({ 
+                res, 
+                data: result, 
+                message: `تم استيراد ${result.createdCount} كارت بنجاح${result.skippedCount > 0 ? ` (تم تخطي ${result.skippedCount} كارت مسجل مسبقاً)` : ''}`, 
+                status: 201 
+            });
         } catch (error) { next(error); }
     }
 );
@@ -146,6 +166,33 @@ cardsRouter.get(
             const groupId   = req.params['groupId'] as string;
             const result = await CardsService.getLinkedCardsByGroup(groupId, teacherId);
             return SuccessResponse({ res, data: result, message: 'تم جلب كروت المجموعة بنجاح' });
+        } catch (error) { next(error); }
+    }
+);
+
+// ─── GET /cards/batches — Get batch history for teacher ──────────────────────
+cardsRouter.get(
+    '/batches',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = resolveTeacherId((req as any).user);
+            const data = await CardsService.getBatches(teacherId);
+            return SuccessResponse({ res, data, message: 'تم جلب سجل الدفعات بنجاح' });
+        } catch (error) { next(error); }
+    }
+);
+
+// ─── GET /cards/batch/:batchId/cards — Get all cards in a batch (for Excel export) ───
+cardsRouter.get(
+    '/batch/:batchId/cards',
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = resolveTeacherId((req as any).user);
+            const batchId   = req.params['batchId'] as string;
+            const cards = await CardsService.getCardsByBatch(batchId, teacherId);
+            return SuccessResponse({ res, data: cards, message: 'تم جلب كروت الدفعة بنجاح' });
         } catch (error) { next(error); }
     }
 );
