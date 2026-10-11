@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
@@ -7,13 +8,17 @@ import {
     linkCard,
     disableCard,
     generateCardBatch,
+    importCardRange,
     getCardStats,
     getCards,
     getCardBatchPrintUrl,
     unlinkCard,
     getCardDesignTemplate,
     updateCardDesignTemplate,
+    getCardsByBatch,
+    getCardBatches,
 } from '@/lib/api/cards';
+import { exportCardsToExcel } from '@/lib/utils/export-cards-excel';
 import type { CardResolveResult, CardStats, ICard, CardDesignTemplate } from '@/lib/api/cards';
 import { fetchStudents } from '@/lib/api/students';
 import { useRouter } from 'next/navigation';
@@ -24,11 +29,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { CreditCard, User, Users, Wallet, BookOpen, FileText,
+import {
+    CreditCard, User, Users, Wallet, FileSpreadsheet, BookOpen, FileText,
     MessageSquare, Printer, Unlink, CheckCircle2,
     Loader2, Package, Scan, Link2, Hash, ExternalLink,
     Palette, Upload, Image as ImageIcon, Save, Eye,
-    Move, SlidersHorizontal, Sparkles, RefreshCw } from 'lucide-react';
+    Move, SlidersHorizontal, Sparkles, RefreshCw, Barcode
+} from 'lucide-react';
 import { QrScanner } from '@/components/scanner/QrScanner';
 import { SubscriptionModal } from '@/components/smart-card/SubscriptionModal';
 import { NotebookActionModal } from '@/components/smart-card/NotebookActionModal';
@@ -41,7 +48,7 @@ type View = 'scanner' | 'result' | 'link-choice' | 'link-student' | 'generate';
 function StudentSummaryCard({ student }: { student: CardResolveResult['student'] }) {
     if (!student) return null;
     const debtColor = student.totalDebt > 0 ? 'text-red-600' : 'text-green-600';
-    const subColor  = student.hasActiveSubscription ? 'text-green-600' : 'text-orange-500';
+    const subColor = student.hasActiveSubscription ? 'text-green-600' : 'text-orange-500';
 
     return (
         <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
@@ -60,10 +67,10 @@ function StudentSummaryCard({ student }: { student: CardResolveResult['student']
 
             {/* Stats grid */}
             <div className="grid grid-cols-2 gap-3 p-4">
-                <Stat label="المجموعة"      value={student.groupName}                   />
-                <Stat label="الاشتراك"       value={student.hasActiveSubscription ? '✅ مشترك' : '❌ غير مشترك'} valueClass={subColor} />
-                <Stat label="رصيد الحصص"    value={`${student.remainingSessions} حصة`}  />
-                <Stat label="المديونية"      value={`${student.totalDebt} ج.م`}          valueClass={debtColor} />
+                <Stat label="المجموعة" value={student.groupName} />
+                <Stat label="الاشتراك" value={student.hasActiveSubscription ? '✅ مشترك' : '❌ غير مشترك'} valueClass={subColor} />
+                <Stat label="رصيد الحصص" value={`${student.remainingSessions} حصة`} />
+                <Stat label="المديونية" value={`${student.totalDebt} ج.م`} valueClass={debtColor} />
                 {student.lastAttendanceDate && (
                     <Stat label="آخر حضور" value={new Date(student.lastAttendanceDate).toLocaleDateString('en-GB')} />
                 )}
@@ -95,7 +102,7 @@ function FastActions({ student, cardNumber, onUnlink }: {
     if (!student) return null;
 
     const waPhone = (student as any).parentPhone
-        ? `https://wa.me/${ ((student as any).parentPhone as string).replace(/[^0-9]/g, '') }`
+        ? `https://wa.me/${((student as any).parentPhone as string).replace(/[^0-9]/g, '')}`
         : null;
 
     const actions = [
@@ -259,33 +266,107 @@ function LinkStudentModal({ cardNumber, onLinked, onClose }: {
 // ── Generate Batch Panel ───────────────────────────────────────────────────────
 type BatchHistoryEntry = { batchId: string; count: number; createdAt: string };
 
-const HISTORY_KEY = 'cardBatchHistory';
-function loadHistory(): BatchHistoryEntry[] {
-    try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch { return []; }
-}
-function saveHistory(entries: BatchHistoryEntry[]) {
-    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(entries.slice(0, 20))); } catch { /* ignore */ }
+// Clear legacy global localStorage on load to avoid leaking across teachers on the same device
+if (typeof window !== 'undefined') {
+    try { localStorage.removeItem('cardBatchHistory'); } catch {}
 }
 
 function GenerateBatchPanel() {
+    const [mode, setMode] = useState<'generate' | 'import-range'>('generate');
     const [count, setCount] = useState(50);
-    const [history, setHistory] = useState<BatchHistoryEntry[]>(loadHistory);
+
+    // Range import state
+    const [startNumber, setStartNumber] = useState('');
+    const [endNumber, setEndNumber] = useState('');
+    const [prefix, setPrefix] = useState('');
+    const [padding, setPadding] = useState<number>(0);
+
+    const parsedStart = parseInt(startNumber, 10);
+    const parsedEnd = parseInt(endNumber, 10);
+    const isValidRange = !isNaN(parsedStart) && !isNaN(parsedEnd) && parsedStart > 0 && parsedEnd >= parsedStart;
+    const rangeCount = isValidRange ? parsedEnd - parsedStart + 1 : 0;
+
+    const formatSample = (num: number) => {
+        const padded = padding > 0 ? String(num).padStart(padding, '0') : String(num);
+        return prefix.trim() ? `${prefix.trim()}${padded}` : padded;
+    };
+
+    const { data: history = [] } = useQuery<BatchHistoryEntry[]>({
+        queryKey: ['card-batches'],
+        queryFn: getCardBatches,
+    });
+    const [autoExportExcel, setAutoExportExcel] = useState(true);
+    const [exportingBatchId, setExportingBatchId] = useState<string | null>(null);
+    const [lastCreatedBatch, setLastCreatedBatch] = useState<{
+        batchId: string;
+        count: number;
+        cards: { cardNumber: string; cardToken: string }[];
+    } | null>(null);
     const qc = useQueryClient();
+
+    const handleExportBatchExcel = async (batchId: string, batchCount?: number) => {
+        try {
+            setExportingBatchId(batchId);
+            const cards = await getCardsByBatch(batchId);
+            if (!cards || cards.length === 0) {
+                toast.error('لم يتم العثور على كروت لهذه الدفعة');
+                return;
+            }
+            exportCardsToExcel(cards, batchId, batchCount);
+            toast.success('تم تحميل شيت Excel بنجاح 📊');
+        } catch (err: any) {
+            console.error('Failed to export batch cards to excel:', err);
+            toast.error(err?.response?.data?.message || err?.message || 'فشل تصدير ملف الإكسيل');
+        } finally {
+            setExportingBatchId(null);
+        }
+    };
 
     const generateMutation = useMutation({
         mutationFn: () => generateCardBatch(count),
         onSuccess: (data) => {
             toast.success(`تم إنشاء ${data.count} كارت بنجاح ✅`);
-            const entry: BatchHistoryEntry = {
-                batchId: data.batchId,
-                count: data.count,
-                createdAt: new Date().toISOString(),
-            };
-            const updated = [entry, ...history];
-            setHistory(updated);
-            saveHistory(updated);
+            setLastCreatedBatch(data);
+            qc.invalidateQueries({ queryKey: ['card-batches'] });
             qc.invalidateQueries({ queryKey: ['card-stats'] });
             qc.invalidateQueries({ queryKey: ['cards'] });
+
+            // If auto export is enabled, trigger Excel download immediately
+            if (autoExportExcel && data.cards && data.cards.length > 0) {
+                try {
+                    exportCardsToExcel(data.cards, data.batchId, data.count);
+                    toast.info('تم تحميل شيت Excel بأكواد الـ QR للمطبعة 📥');
+                } catch (e) {
+                    console.error('Error auto-exporting excel:', e);
+                }
+            }
+        },
+        onError: (err: any) => {
+            toast.error(err?.response?.data?.message || 'فشل إنشاء الكروت');
+        },
+    });
+
+    const importMutation = useMutation({
+        mutationFn: () => importCardRange({
+            startNumber: parsedStart,
+            endNumber: parsedEnd,
+            prefix: prefix.trim() || undefined,
+            padding: padding > 0 ? padding : undefined,
+        }),
+        onSuccess: (data) => {
+            let msg = `تم استيراد ${data.createdCount} كارت بنجاح ✅`;
+            if (data.skippedCount > 0) {
+                msg += ` (تم تخطي ${data.skippedCount} كارت موجود مسبقاً)`;
+            }
+            toast.success(msg);
+            qc.invalidateQueries({ queryKey: ['card-batches'] });
+            qc.invalidateQueries({ queryKey: ['card-stats'] });
+            qc.invalidateQueries({ queryKey: ['cards'] });
+            setStartNumber('');
+            setEndNumber('');
+        },
+        onError: (err: any) => {
+            toast.error(err?.response?.data?.message || 'فشل استيراد الكروت');
         },
     });
 
@@ -299,37 +380,163 @@ function GenerateBatchPanel() {
             {/* Stats */}
             {stats && (
                 <div className="grid grid-cols-3 gap-3">
-                    <StatCard label="جديدة"   value={stats.NEW}      color="text-blue-600 bg-blue-50"   />
-                    <StatCard label="مربوطة"  value={stats.LINKED}   color="text-green-600 bg-green-50" />
-                    <StatCard label="معطلة"   value={stats.DISABLED} color="text-red-600 bg-red-50"     />
+                    <StatCard label="جديدة" value={stats.NEW} color="text-blue-600 bg-blue-50" />
+                    <StatCard label="مربوطة" value={stats.LINKED} color="text-green-600 bg-green-50" />
+                    <StatCard label="معطلة" value={stats.DISABLED} color="text-red-600 bg-red-50" />
                 </div>
             )}
 
-            {/* Generate form */}
-            <div className="bg-gray-50 rounded-2xl p-5 space-y-4 border border-gray-100">
-                <div className="flex items-center justify-between">
-                    <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                        <Package className="h-5 w-5 text-primary" /> إنشاء batch جديد
-                    </h3>
-                </div>
-                <div className="flex items-center gap-3">
-                    <Input
-                        type="number"
-                        min={1} max={1000}
-                        value={count}
-                        onChange={e => setCount(Math.min(1000, Math.max(1, Number(e.target.value))))}
-                        className="w-28 text-center"
-                    />
-                    <span className="text-sm text-gray-500">كارت</span>
-                    <Button
-                        onClick={() => generateMutation.mutate()}
-                        disabled={generateMutation.isPending}
-                        className="flex-1"
+            {/* Mode Selector & Forms */}
+            <div className="bg-gray-50 rounded-2xl p-5 space-y-4 border border-gray-100 shadow-sm">
+                {/* Tabs */}
+                <div className="flex bg-gray-200/70 p-1 rounded-xl gap-1">
+                    <button
+                        type="button"
+                        onClick={() => setMode('generate')}
+                        className={cn(
+                            'flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all',
+                            mode === 'generate'
+                                ? 'bg-white text-gray-900 shadow-sm'
+                                : 'text-gray-600 hover:text-gray-900'
+                        )}
                     >
-                        {generateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : <Package className="h-4 w-4 ml-2" />}
-                        إنشاء الكروت
-                    </Button>
+                        <Package className="h-4 w-4 text-primary" />
+                        إنشاء دفعة كروت منظّم (MNZ)
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setMode('import-range')}
+                        className={cn(
+                            'flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all',
+                            mode === 'import-range'
+                                ? 'bg-white text-gray-900 shadow-sm'
+                                : 'text-gray-600 hover:text-gray-900'
+                        )}
+                    >
+                        <Barcode className="h-4 w-4 text-primary" />
+                        استيراد كروت مطبوعة مسبقاً (Range)
+                    </button>
                 </div>
+
+                {mode === 'generate' ? (
+                    /* Existing generate form */
+                    <div className="space-y-3 pt-1">
+                        <div className="flex items-center justify-between">
+                            <h3 className="font-bold text-gray-800 text-sm flex items-center gap-2">
+                                <Package className="h-4 w-4 text-primary" /> تحديد عدد الكروت المطلوبة
+                            </h3>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <Input
+                                type="number"
+                                min={1} max={1000}
+                                value={count}
+                                onChange={e => setCount(Math.min(1000, Math.max(1, Number(e.target.value))))}
+                                className="w-28 text-center bg-white font-mono"
+                            />
+                            <span className="text-sm text-gray-500">كارت</span>
+                            <Button
+                                onClick={() => generateMutation.mutate()}
+                                disabled={generateMutation.isPending}
+                                className="flex-1"
+                            >
+                                {generateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : <Package className="h-4 w-4 ml-2" />}
+                                إنشاء الكروت
+                            </Button>
+                        </div>
+                        <p className="text-[11px] text-gray-400">
+                            يتم توليد أرقام كروت موحدة مع توكن مشفر وQR Code جاهز للطباعة وتصدير الإكسيل للمطبعة.
+                        </p>
+                    </div>
+                ) : (
+                    /* Range Import form */
+                    <div className="space-y-4 pt-1">
+                        <div className="bg-blue-50/60 border border-blue-100 rounded-xl p-3 text-xs text-blue-800 leading-relaxed">
+                            💡 <strong>استيراد كروت خارجية مطبوعة:</strong> أدخل نطاق الأرقام التسلسلية المطبوعة على الكروت (مثلاً من 10001 إلى 10200) ليتم تسجيلها في حسابك ككروت جديدة غير مربوطة، وتكون جاهزة للربط الفوري بالطلاب.
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-gray-700">من رقم (Start Number):</label>
+                                <Input
+                                    type="number"
+                                    placeholder="مثال: 10001"
+                                    value={startNumber}
+                                    onChange={e => setStartNumber(e.target.value)}
+                                    className="bg-white font-mono"
+                                />
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-gray-700">إلى رقم (End Number):</label>
+                                <Input
+                                    type="number"
+                                    placeholder="مثال: 10200"
+                                    value={endNumber}
+                                    onChange={e => setEndNumber(e.target.value)}
+                                    className="bg-white font-mono"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-medium text-gray-600">بادئة قبل الرقم (اختياري - Prefix):</label>
+                                <Input
+                                    type="text"
+                                    placeholder="مثال: فارغ أو A-"
+                                    value={prefix}
+                                    onChange={e => setPrefix(e.target.value)}
+                                    className="bg-white font-mono"
+                                />
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-medium text-gray-600">عدد الخانات (Padding - اختياري):</label>
+                                <Input
+                                    type="number"
+                                    min={0}
+                                    max={10}
+                                    placeholder="مثال: 5 لتصبح 00001"
+                                    value={padding || ''}
+                                    onChange={e => setPadding(Number(e.target.value) || 0)}
+                                    className="bg-white font-mono"
+                                />
+                            </div>
+                        </div>
+
+                        {isValidRange && (
+                            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                                <div>
+                                    <span className="font-bold text-emerald-800">إجمالي الكروت: </span>
+                                    <Badge variant="outline" className="bg-emerald-100 text-emerald-800 font-bold font-mono">
+                                        {rangeCount} كارت
+                                    </Badge>
+                                </div>
+                                <div className="text-emerald-700 font-mono text-[11px] truncate">
+                                    معاينة: {formatSample(parsedStart)} ... {formatSample(parsedEnd)}
+                                </div>
+                            </div>
+                        )}
+
+                        {rangeCount > 5000 && (
+                            <p className="text-xs text-red-600 font-bold">
+                                ⚠️ الحد الأقصى للاستيراد في المرة الواحدة هو 5,000 كارت.
+                            </p>
+                        )}
+
+                        <Button
+                            onClick={() => importMutation.mutate()}
+                            disabled={!isValidRange || rangeCount > 5000 || importMutation.isPending}
+                            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-10 shadow-sm"
+                        >
+                            {importMutation.isPending ? (
+                                <Loader2 className="h-4 w-4 animate-spin ml-2" />
+                            ) : (
+                                <CheckCircle2 className="h-4 w-4 ml-2" />
+                            )}
+                            استيراد {isValidRange ? `${rangeCount} كارت` : 'الكروت'} إلى حساب المدرس
+                        </Button>
+                    </div>
+                )}
             </div>
 
             {/* Batch History */}
@@ -339,12 +546,7 @@ function GenerateBatchPanel() {
                         <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2">
                             <ExternalLink className="h-4 w-4 text-gray-400" /> سجل الـ Batches
                         </h3>
-                        <button
-                            onClick={() => { setHistory([]); saveHistory([]); }}
-                            className="text-xs text-red-400 hover:text-red-600 transition-colors"
-                        >
-                            مسح السجل
-                        </button>
+                        
                     </div>
                     <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                         {history.map((entry, idx) => (
@@ -431,7 +633,7 @@ function DesignPanel() {
         if (data?.template) {
             const t = data.template;
             if (t.frontImageUrl) setFrontPreview(t.frontImageUrl);
-            if (t.backImageUrl)  setBackPreview(t.backImageUrl);
+            if (t.backImageUrl) setBackPreview(t.backImageUrl);
             if (t.qrX != null) setQrX(t.qrX);
             if (t.qrY != null) setQrY(t.qrY);
             if (t.qrSize != null) setQrSize(t.qrSize);
@@ -488,14 +690,14 @@ function DesignPanel() {
     const handlePointerUp = (e: React.PointerEvent) => {
         if (!isDragging) return;
         setIsDragging(false);
-        try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
+        try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { }
     };
 
     const handleSave = () => {
         if (!frontPreview && !backPreview) { toast.error('يرجى رفع تصميم واحد على الأقل'); return; }
         saveMutation.mutate({
             ...(frontPreview ? { frontImageUrl: frontPreview } : {}),
-            ...(backPreview  ? { backImageUrl: backPreview }   : {}),
+            ...(backPreview ? { backImageUrl: backPreview } : {}),
             qrX,
             qrY,
             qrSize,
@@ -640,7 +842,7 @@ function DesignPanel() {
 
                 {/* Hidden file inputs */}
                 <input ref={frontRef} type="file" accept="image/*" className="hidden" onChange={e => handleImageUpload(e, 'front')} />
-                <input ref={backRef}  type="file" accept="image/*" className="hidden" onChange={e => handleImageUpload(e, 'back')} />
+                <input ref={backRef} type="file" accept="image/*" className="hidden" onChange={e => handleImageUpload(e, 'back')} />
 
                 {/* Upload Button */}
                 <Button

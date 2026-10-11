@@ -2576,6 +2576,28 @@ export class CenterService {
         return (center as any).cardTemplate;
     }
 
+    static async getBatches(centerId: string) {
+        const centerObjId = new Types.ObjectId(centerId);
+        const batches = await CardModel.aggregate([
+            { $match: { centerId: centerObjId, batchId: { $ne: null } } },
+            {
+                $group: {
+                    _id: '$batchId',
+                    count: { $sum: 1 },
+                    createdAt: { $first: '$createdAt' },
+                },
+            },
+            { $sort: { createdAt: -1 } },
+            { $limit: 30 },
+        ]);
+
+        return batches.map((b) => ({
+            batchId: b._id,
+            count: b.count,
+            createdAt: b.createdAt,
+        }));
+    }
+
     static async getBatchPrintCards(centerId: string, batchId: string) {
         const centerObjId = new Types.ObjectId(centerId);
         const [center, cards] = await Promise.all([

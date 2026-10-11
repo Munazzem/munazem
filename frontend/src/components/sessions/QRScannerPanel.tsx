@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Camera, CameraOff, Search, UserCheck, Loader2, QrCode, Volume2, VolumeX, AlertTriangle, CheckCircle2 } from 'lucide-react';
-import { Html5Qrcode } from 'html5-qrcode';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -73,6 +73,18 @@ export function QRScannerPanel({
 
         try {
             const scanner = new Html5Qrcode(SCANNER_ID, {
+                formatsToSupport: [
+                    Html5QrcodeSupportedFormats.QR_CODE,
+                    Html5QrcodeSupportedFormats.CODE_39,
+                    Html5QrcodeSupportedFormats.CODE_128,
+                    Html5QrcodeSupportedFormats.EAN_13,
+                    Html5QrcodeSupportedFormats.EAN_8,
+                    Html5QrcodeSupportedFormats.UPC_A,
+                    Html5QrcodeSupportedFormats.UPC_E,
+                    Html5QrcodeSupportedFormats.CODE_93,
+                    Html5QrcodeSupportedFormats.CODABAR,
+                    Html5QrcodeSupportedFormats.ITF,
+                ],
                 experimentalFeatures: {
                     useBarCodeDetectorIfSupported: true,
                 },
@@ -83,29 +95,21 @@ export function QRScannerPanel({
             await scanner.start(
                 { facingMode: 'environment' },
                 {
-                    fps: 24,
-                    qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-                        const vw = viewfinderWidth > 0 ? viewfinderWidth : 320;
-                        const vh = viewfinderHeight > 50 ? viewfinderHeight : Math.floor(vw * 0.75);
-                        const minEdge = Math.min(vw, vh);
-                        const isPortrait = vh >= vw;
-                        const boxWidth = Math.floor(vw * (isPortrait ? 0.92 : 0.88));
-                        const boxHeight = Math.floor(vh * (isPortrait ? 0.65 : 0.80));
-                        return {
-                            width: Math.max(boxWidth, Math.floor(minEdge * 0.90), 200),
-                            height: Math.max(boxHeight, Math.floor(minEdge * 0.70), 180),
-                        };
-                    },
+                    fps: 25,
                     videoConstraints: {
-                        facingMode: 'environment',
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 },
+                        facingMode: { ideal: 'environment' },
+                        width:  { ideal: 1920, min: 640 },
+                        height: { ideal: 1080, min: 480 },
+                        focusMode: { ideal: 'continuous' } as any,
                     },
-                },
+                } as any,
                 async (decodedText: string) => {
-                    // Debounce — ignore same QR within 3 seconds
-                    if (lastScannedRef.current === decodedText) return;
-                    lastScannedRef.current = decodedText;
+                    const cleanCode = (decodedText || '').replace(/^\*+|\*+$/g, '').trim();
+                    if (!cleanCode) return;
+
+                    // Debounce — ignore same code within 3 seconds
+                    if (lastScannedRef.current === cleanCode) return;
+                    lastScannedRef.current = cleanCode;
                     setTimeout(() => { lastScannedRef.current = null; }, 3000);
 
                     // Haptic feedback on mobile if supported
@@ -113,10 +117,10 @@ export function QRScannerPanel({
                         try { navigator.vibrate(80); } catch {}
                     }
 
-                    setLastScanned(decodedText);
+                    setLastScanned(cleanCode);
                     setIsProcessing(true);
                     try {
-                        await onScan(decodedText);
+                        await onScan(cleanCode);
                     } finally {
                         setIsProcessing(false);
                     }

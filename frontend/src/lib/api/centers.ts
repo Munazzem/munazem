@@ -566,6 +566,16 @@ export const fetchBatchPrintCards = async (batchId: string): Promise<{ batchId: 
     return (res as any).data;
 };
 
+export const fetchCenterCardBatches = async (): Promise<{ batchId: string; count: number; createdAt: string }[]> => {
+    const res = await apiClient.get('/centers/cards/batches');
+    return (res as any).data;
+};
+
+export const fetchCenterBatchCards = async (batchId: string): Promise<any[]> => {
+    const res = await apiClient.get(`/centers/cards/batch/${batchId}/cards`);
+    return (res as any).data;
+};
+
 export const getCenterCardBatchPrintUrl = (batchId: string, mode: 'dual_sided' | 'back_only' | 'front_only' = 'dual_sided'): string => {
     const token = Cookies.get('token') || '';
     return `${API_BASE_URL}/centers/cards/batch/${batchId}/print?mode=${mode}&token=${token}`;
