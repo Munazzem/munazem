@@ -65,6 +65,23 @@ export const generateCardBatch = async (count: number): Promise<BatchGenerateRes
     return (res as any).data;
 };
 
+/** Import a range of pre-printed cards (e.g. 10001 to 10500) */
+export const importCardRange = async (data: {
+    startNumber: number;
+    endNumber: number;
+    prefix?: string;
+    padding?: number;
+}): Promise<{
+    batchId: string;
+    totalRequested: number;
+    createdCount: number;
+    skippedCount: number;
+    sampleCards?: string[];
+}> => {
+    const res = await apiClient.post('/cards/import-range', data);
+    return (res as any).data;
+};
+
 /** Resolve any QR scan input (URL, token, cardNumber, barcode, studentCode) */
 export const resolveCard = async (scanInput: string): Promise<CardResolveResult> => {
     const encoded = encodeURIComponent(scanInput);
@@ -126,6 +143,17 @@ export const getCardStats = async (): Promise<CardStats> => {
 export const getStudentByCardToken = async (cardToken: string): Promise<StudentQuickSummary> => {
     // This hits the public parent endpoint
     const res = await apiClient.get(`/parent/card/${cardToken}`);
+    return (res as any).data;
+};
+
+/** Get all cards in a batch (for Excel export) */
+export const getCardBatches = async (): Promise<{ batchId: string; count: number; createdAt: string }[]> => {
+    const res = await apiClient.get('/cards/batches');
+    return (res as any).data;
+};
+
+export const getCardsByBatch = async (batchId: string): Promise<ICard[]> => {
+    const res = await apiClient.get(`/cards/batch/${batchId}/cards`);
     return (res as any).data;
 };
 

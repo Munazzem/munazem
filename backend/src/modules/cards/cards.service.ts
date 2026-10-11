@@ -62,6 +62,63 @@ export class CardsService {
         };
     }
 
+    // ─── Import pre-printed card range for a teacher ──────────────────────────
+    static async importCardRange(teacherId: string, dto: {
+        startNumber: number;
+        endNumber: number;
+        prefix?: string;
+        padding?: number;
+    }) {
+        const { startNumber, endNumber, prefix = '', padding } = dto;
+        const count = endNumber - startNumber + 1;
+        const batchId = `import-${Date.now()}`;
+
+        const padLen = padding !== undefined ? padding : (String(startNumber).length > 1 ? String(startNumber).length : 0);
+
+        const candidateNumbers: string[] = [];
+        for (let i = startNumber; i <= endNumber; i++) {
+            const numStr = padLen > 0 ? String(i).padStart(padLen, '0') : String(i);
+            candidateNumbers.push(`${prefix}${numStr}`);
+        }
+
+        // Check already existing cards for this teacher
+        const existingCards = await CardModel.find({
+            cardNumber: { $in: candidateNumbers },
+            teacherId: new mongoose.Types.ObjectId(teacherId),
+        }, { cardNumber: 1 }).lean();
+
+        const existingSet = new Set(existingCards.map(c => c.cardNumber));
+        const newNumbers = candidateNumbers.filter(n => !existingSet.has(n));
+
+        if (newNumbers.length === 0) {
+            return {
+                batchId,
+                totalRequested: count,
+                createdCount: 0,
+                skippedCount: candidateNumbers.length,
+                cards: [],
+            };
+        }
+
+        const docs = newNumbers.map(cardNumber => ({
+            cardNumber,
+            cardToken:  crypto.randomUUID(),
+            teacherId:  new mongoose.Types.ObjectId(teacherId),
+            batchId,
+            status:     'NEW' as const,
+        }));
+
+        const created = await CardModel.insertMany(docs, { ordered: false });
+
+        return {
+            batchId,
+            totalRequested: count,
+            createdCount: created.length,
+            skippedCount: existingSet.size,
+            sampleCards: created.slice(0, 10).map(c => c.cardNumber),
+        };
+    }
+
     // ─── Unified resolution: card token → student summary ─────────────────────
     // Used by the parent portal (no auth — public access via cardToken)
     static async resolveByToken(cardToken: string): Promise<StudentQuickSummary> {
@@ -83,8 +140,11 @@ export class CardsService {
         // e.g. "https://monazem.app/card/uuid-here" → "uuid-here"
         const uuidRegex = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
         const uuidMatch = rawInput.match(uuidRegex);
-        const looksLikeToken = uuidMatch !== null;
-        const resolvedInput  = looksLikeToken ? uuidMatch![0]! : rawInput.trim();
+        const looksLikeToken = !!uuidMatch;
+        let resolvedInput  = looksLikeToken ? uuidMatch![0]! : rawInput.trim();
+        if (!looksLikeToken) {
+            resolvedInput = resolvedInput.replace(/^\*+|\*+$/g, '').trim();
+        }
 
         // ── Priority 1: Card Collection — by cardToken (from QR URL) ────────────
         if (looksLikeToken) {
@@ -320,6 +380,36 @@ export class CardsService {
             data: cards,
             pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
         };
+    }
+
+    // ─── Get batch history for teacher ───────────────────────────────────
+    static async getBatches(teacherId: string) {
+        const batches = await CardModel.aggregate([
+            { $match: { teacherId: new mongoose.Types.ObjectId(teacherId), batchId: { $ne: null } } },
+            {
+                $group: {
+                    _id: '$batchId',
+                    count: { $sum: 1 },
+                    createdAt: { $first: '$createdAt' },
+                },
+            },
+            { $sort: { createdAt: -1 } },
+            { $limit: 30 },
+        ]);
+
+        return batches.map((b) => ({
+            batchId: b._id,
+            count: b.count,
+            createdAt: b.createdAt,
+        }));
+    }
+
+    // ─── Get all cards in a batch (for Excel export / printing) ───────────
+    static async getCardsByBatch(batchId: string, teacherId: string) {
+        return CardModel.find({ batchId, teacherId: new mongoose.Types.ObjectId(teacherId) })
+            .populate('studentId', 'studentName studentCode gradeLevel')
+            .sort({ cardNumber: 1 })
+            .lean();
     }
 
     // ─── Get quick stats ───────────────────────────────────────────────────────

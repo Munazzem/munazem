@@ -11,7 +11,7 @@ import { fetchGroups } from '@/lib/api/groups';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { getAllowedGrades } from '@/lib/utils/grades';
 import { toast } from 'sonner';
-import { Plus, Loader2, AlertTriangle, Users } from 'lucide-react';
+import { Plus, Loader2, AlertTriangle, Users, CreditCard } from 'lucide-react';
 import { QK } from '@/lib/query-keys';
 import { checkDuplicateStudent, type DuplicateCheckResult } from '@/lib/api/students';
 
@@ -311,6 +311,37 @@ export function AddStudentModal() {
                 )}
                 />
             </div>
+
+            {/* Smart Card / Barcode */}
+            <FormField
+              control={form.control}
+              name="barcode"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 font-bold text-gray-700">
+                      <CreditCard className="h-4 w-4 text-primary" />
+                      كود الكارت / الباركود <span className="text-xs text-gray-400 font-normal">(اختياري)</span>
+                    </span>
+                    {field.value && (
+                      <span className="text-xs text-emerald-600 font-bold">✓ كارت محدد</span>
+                    )}
+                  </FormLabel>
+                  <FormControl>
+                    <Input 
+                      placeholder="مثال: 10001 (أو امسح الباركود مباشرة)" 
+                      dir="ltr"
+                      className="text-right font-mono"
+                      {...field} 
+                    />
+                  </FormControl>
+                  <FormMessage />
+                  <p className="text-[11px] text-gray-400">
+                    يمكنك كتابة رقم الكارت المطبوع يدوياً أو قراءته بسكانر الباركود لربطه فوراً بالطالب
+                  </p>
+                </FormItem>
+              )}
+            />
 
             {/* Duplicate Student Alert */}
             {duplicateResult?.isDuplicate && (

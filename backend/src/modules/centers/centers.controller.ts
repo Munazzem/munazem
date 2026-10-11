@@ -742,6 +742,29 @@ class CenterController {
         }
     }
 
+    static async getBatches(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const data = await CenterService.getBatches(centerId);
+            return SuccessResponse({ res, message: 'تم جلب سجل الدفعات بنجاح', data });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async getBatchCards(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const batchId = req.params.batchId as string;
+            const data = await CenterService.getBatchPrintCards(centerId, batchId);
+            return SuccessResponse({ res, message: 'تم جلب كروت الدفعة بنجاح', data: data.cards });
+        } catch (error) {
+            next(error);
+        }
+    }
+
     static async getBatchPrintCards(req: Request, res: Response, next: NextFunction) {
         try {
             const user = (req as any).user;
@@ -854,6 +877,8 @@ router.post('/cards/unlink', requireCenterPermission('canManageStudents'), Cente
 router.post('/cards/disable', requireCenterPermission('canManageStudents'), CenterController.disableCard);
 router.get('/cards/template', requireCenterPermission('canManageStudents'), CenterController.getCardTemplate);
 router.put('/cards/template', requireCenterPermission('canManageStudents'), CenterController.updateCardTemplate);
+router.get('/cards/batches', requireCenterPermission('canManageStudents'), CenterController.getBatches);
+router.get('/cards/batch/:batchId/cards', requireCenterPermission('canManageStudents'), CenterController.getBatchCards);
 router.get('/cards/batch/:batchId/print', requireCenterPermission('canManageStudents'), CenterController.getBatchPrintCards);
 
 export default router;

@@ -282,9 +282,9 @@ export function EditStudentModal({ student, open, onOpenChange }: EditStudentMod
                 name="barcode"
                 render={({ field }) => (
                     <FormItem>
-                    <FormLabel>الباركود (اختياري)</FormLabel>
+                    <FormLabel>كود الكارت / الباركود</FormLabel>
                     <FormControl>
-                        <Input dir="ltr" className="text-right" disabled placeholder="STU-XXX" {...field} />
+                        <Input dir="ltr" className="text-right font-mono" placeholder="مثال: 10001" {...field} />
                     </FormControl>
                     <FormMessage />
                     </FormItem>

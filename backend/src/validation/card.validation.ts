@@ -39,3 +39,19 @@ export const replaceCardSchema = z.object({
         newCardNumber: z.string().min(1, 'رقم الكارت الجديد مطلوب').trim(),
     }),
 });
+
+export const importCardRangeSchema = z.object({
+    body: z.object({
+        startNumber: z.coerce.number({ message: 'بداية النطاق يجب أن تكون رقماً' }).int().min(1, 'بداية النطاق يجب أن تكون رقماً موجباً'),
+        endNumber:   z.coerce.number({ message: 'نهاية النطاق يجب أن تكون رقماً' }).int().min(1, 'نهاية النطاق يجب أن تكون رقماً موجباً'),
+        prefix:      z.string().trim().max(10).optional().default(''),
+        padding:     z.coerce.number().int().min(0).max(10).optional(),
+    }).refine(data => data.endNumber >= data.startNumber, {
+        message: 'نهاية النطاق يجب أن تكون أكبر من أو تساوي البداية',
+        path: ['endNumber']
+    }).refine(data => (data.endNumber - data.startNumber + 1) <= 5000, {
+        message: 'الحد الأقصى للاستيراد في المرة الواحدة هو 5000 كارت',
+        path: ['endNumber']
+    }),
+});
+
