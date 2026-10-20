@@ -18,6 +18,7 @@ import mongoose from 'mongoose';
 import { startOfDayEgyptMs, getEgyptParts, egyptDayBounds, formatTimeEgypt, format24hToEgypt12h, formatDateEgypt } from '../../common/utils/date.util.js';
 import { CardsService } from '../cards/cards.service.js';
 import { ParentPushService } from '../parent/parent-push.service.js';
+import { StudentService } from '../students/students.service.js';
 
 // ─── Date helper ─────────────────────────────────────────────────────────────
 // Centralized in common/utils/date.util.ts — returns midnight Egypt time as ms
@@ -370,11 +371,20 @@ export class AttendanceService {
             if (student.groupId) {
                 const group = await GroupModel.findById(student.groupId, { 'cycle.currentCycleNumber': 1, customPrice: 1 }).lean();
                 const currentCycle = group?.cycle?.currentCycleNumber || 1;
-                const enrollment = await CycleEnrollmentModel.findOne({
+                let enrollment = await CycleEnrollmentModel.findOne({
                     studentId: student._id,
                     groupId: student.groupId,
                     cycleNumber: currentCycle,
                 }).lean();
+
+                if (!enrollment) {
+                    await StudentService.ensureStudentCycleEnrollments(student._id, teacherId).catch(() => {});
+                    enrollment = await CycleEnrollmentModel.findOne({
+                        studentId: student._id,
+                        groupId: student.groupId,
+                        cycleNumber: currentCycle,
+                    }).lean();
+                }
 
                 if (!enrollment || enrollment.status === CycleEnrollmentStatus.UNPAID || (enrollment.remainingAmount && enrollment.remainingAmount > 0)) {
                     hasUnpaidCurrentCycle = true;
@@ -1003,6 +1013,20 @@ export class AttendanceService {
             }
         }
 
+        // Reconcile student debt for ALL students in the list (including advance-compensated) so live attendance list displays 100% accurate debt
+        const studentIdsToReconcile = filtered
+            .map(r => ((r.studentId as any)?._id || r.studentId)?.toString())
+            .filter(Boolean);
+        if (studentIdsToReconcile.length > 0) {
+            const trueDebtMap = await StudentService.reconcileStudentsDebt(studentIdsToReconcile, teacherId);
+            for (const r of filtered) {
+                const sid = ((r.studentId as any)?._id || r.studentId)?.toString();
+                if (sid && trueDebtMap.has(sid) && r.studentId && typeof r.studentId === 'object') {
+                    (r.studentId as any).totalDebt = trueDebtMap.get(sid);
+                }
+            }
+        }
+
         // Ensure relatedSessionId and relatedGroupName are populated for guest and compensated records
         const guestOrCompRecords = filtered.filter(r => r.isGuest || r.status === AttendanceStatus.EXCUSED || (r as any).isCompensated);
         if (guestOrCompRecords.length > 0) {
@@ -1568,17 +1592,39 @@ export class AttendanceService {
                 );
             }
 
-            if (cycleRolledOver || (!group.cycle?.startedAt && sessionSessionNumber === 1)) {
-                const studentDebtUpdates = activeStudents.map(student => {
-                    // @ts-ignore
-                    const fullMonthPrice = (priceSnapshot instanceof Map ? priceSnapshot.get(student.gradeLevel) : priceSnapshot?.[student.gradeLevel]) || 0;
-                    return {
-                        updateOne: {
-                            filter: { _id: student._id },
-                            update: { $inc: { totalDebt: fullMonthPrice } }
-                        }
-                    };
-                });
+            if (sessionSessionNumber === 1) {
+                // Fetch enrollments for this cycle to check who is actually unpaid
+                const cycleEnrollments = await CycleEnrollmentModel.find({
+                    studentId: { $in: activeStudents.map(s => s._id) },
+                    cycleNumber: sessionCycleNumber,
+                    teacherId: session.teacherId
+                }, { studentId: 1, remainingAmount: 1, status: 1 }).session(dbSession).lean();
+
+                const enrollmentMap = new Map<string, any>();
+                for (const e of cycleEnrollments) {
+                    enrollmentMap.set(e.studentId.toString(), e);
+                }
+
+                const studentDebtUpdates: any[] = [];
+                for (const student of activeStudents) {
+                    const enr = enrollmentMap.get(student._id.toString());
+                    // If enrollment is already PAID (remainingAmount === 0), do NOT add any debt!
+                    if (enr && (enr.status === CycleEnrollmentStatus.PAID || enr.remainingAmount === 0)) {
+                        continue;
+                    }
+                    const amountToAdd = enr?.remainingAmount != null ? enr.remainingAmount : (
+                        // @ts-ignore
+                        (priceSnapshot instanceof Map ? priceSnapshot.get(student.gradeLevel) : priceSnapshot?.[student.gradeLevel]) || 0
+                    );
+                    if (amountToAdd > 0) {
+                        studentDebtUpdates.push({
+                            updateOne: {
+                                filter: { _id: student._id },
+                                update: { $inc: { totalDebt: amountToAdd } }
+                            }
+                        });
+                    }
+                }
                 if (studentDebtUpdates.length > 0) {
                     await StudentModel.bulkWrite(studentDebtUpdates, { session: dbSession });
                 }
@@ -1662,6 +1708,9 @@ export class AttendanceService {
 
             return { updatedSession, snapshot };
         });
+
+        // Auto-reconcile all active students' debt for this group post session completion
+        StudentService.reconcileStudentsDebt(allStudents.map(s => s._id), session.teacherId).catch(() => {});
 
         trackEvent('session_completed', {
             tenantId: teacherId,
