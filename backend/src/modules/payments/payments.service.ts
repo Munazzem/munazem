@@ -17,6 +17,7 @@ import { cache, CacheKeys, CacheTTL } from '../../infrastructure/cache/cache.ser
 import { startOfDayEgypt, resolveTransactionDate, getEgyptYearMonth } from '../../common/utils/date.util.js';
 import type { IPriceSetting } from '../../types/price-settings.types.js';
 import { ParentPushService } from '../parent/parent-push.service.js';
+import { StudentService } from '../students/students.service.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────
 // Date helpers (startOfDayEgypt, resolveTransactionDate) are imported from common/utils/date.util.ts
@@ -495,12 +496,18 @@ export class PaymentsService {
             const studentUpdatePayload: any = {};
             let debtChange = 0;
 
-            const wasAlreadyPartiallyPaid = !enrollmentCreatedNow && enrollment.totalPaid > 0;
-            if (wasAlreadyPartiallyPaid) {
-                debtChange = - (paidAmount + discountAmount);
-            } else {
+            if (enrollmentCreatedNow) {
+                // Newly created enrollment: only unpaid remaining portion adds to debt
                 if (newRemainingAmount > 0) {
                     debtChange = newRemainingAmount;
+                }
+            } else {
+                // Existing enrollment: payment + discount reduces existing debt
+                const debtReduction = paidAmount + discountAmount;
+                const currentDebt = (student as any).totalDebt || 0;
+                const actualReduction = Math.min(currentDebt, debtReduction);
+                if (actualReduction > 0) {
+                    debtChange = -actualReduction;
                 }
             }
 
@@ -525,6 +532,9 @@ export class PaymentsService {
 
             return tx;
         });
+
+        // Ensure student total debt is 100% reconciled with true enrollment & transaction reality
+        await StudentService.reconcileStudentDebt(student._id, teacherId);
 
         // Track after successful commit (fire-and-forget, outside transaction)
         trackEvent('payment_recorded', {
