@@ -564,18 +564,22 @@ export class StudentService {
             StudentModel.countDocuments(filter)
         ]);
 
-        // Determine active subscription status dynamically
+        // Determine active subscription status and reconcile debt dynamically
         const studentIds = students.map((s: any) => s._id.toString());
         let paidIdsList: string[] = [];
+        let trueDebtMap = new Map<string, number>();
         if (studentIds.length > 0) {
-            paidIdsList = await StudentService.getPaidStudentIds(teacherId);
+            [paidIdsList, trueDebtMap] = await Promise.all([
+                StudentService.getPaidStudentIds(teacherId),
+                StudentService.reconcileStudentsDebt(studentIds, teacherId)
+            ]);
         }
         const paidSet = new Set(paidIdsList);
 
         const data = students.map((s: any) => ({
             ...s,
             hasActiveSubscription: paidSet.has(s._id.toString()),
-            totalDebt: s.totalDebt || 0,
+            totalDebt: trueDebtMap.has(s._id.toString()) ? trueDebtMap.get(s._id.toString())! : (s.totalDebt || 0),
         }));
 
         return {
@@ -749,15 +753,14 @@ export class StudentService {
         }
     }
 
-    static async getStudentById(studentId: string, teacherId: string) {
-        await StudentService.ensureStudentCycleEnrollments(studentId, teacherId);
+    /**
+     * Auto-reconcile a student's totalDebt with true enrollment debts across all cycles (both past and current)
+     * and unpaid notebook sales. Updates database and returns true debt.
+     */
+    static async reconcileStudentDebt(studentId: string | Types.ObjectId, teacherId: string | Types.ObjectId): Promise<number> {
+        const student = await StudentModel.findOne({ _id: studentId, teacherId }, { totalDebt: 1 }).lean();
+        if (!student) return 0;
 
-        const student = await StudentModel.findOne({ _id: studentId, teacherId })
-                        .populate('groupId', 'name schedule')
-                        .lean();
-        if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
-
-        // Auto-reconcile totalDebt with true enrollment debts across all cycles (both past and current)
         const unpaidEnrollments = await CycleEnrollmentModel.find({
             studentId: student._id,
             status: { $in: [CycleEnrollmentStatus.UNPAID, CycleEnrollmentStatus.PARTIALLY_PAID] },
@@ -817,10 +820,52 @@ export class StudentService {
             }
         }
 
+        // Include any unpaid notebook transactions if applicable
+        const notebookTxs = await TransactionModel.find({
+            teacherId,
+            studentId: student._id,
+            category: TransactionCategory.NOTEBOOK_SALE,
+            remainingAmount: { $gt: 0 }
+        }, { remainingAmount: 1 }).lean();
+        for (const nb of notebookTxs) {
+            trueDebt += nb.remainingAmount || 0;
+        }
+
         if (student.totalDebt !== trueDebt) {
             await StudentModel.updateOne({ _id: student._id }, { $set: { totalDebt: trueDebt } });
-            student.totalDebt = trueDebt;
         }
+
+        return trueDebt;
+    }
+
+    /**
+     * Batch reconcile debt for a list of students
+     */
+    static async reconcileStudentsDebt(studentIds: (string | Types.ObjectId)[], teacherId: string | Types.ObjectId): Promise<Map<string, number>> {
+        const resultMap = new Map<string, number>();
+        if (!studentIds || studentIds.length === 0) return resultMap;
+
+        const uniqueIds = [...new Set(studentIds.map(id => id.toString()))];
+        await Promise.all(
+            uniqueIds.map(async (sid) => {
+                const debt = await StudentService.reconcileStudentDebt(sid, teacherId);
+                resultMap.set(sid, debt);
+            })
+        );
+
+        return resultMap;
+    }
+
+    static async getStudentById(studentId: string, teacherId: string) {
+        await StudentService.ensureStudentCycleEnrollments(studentId, teacherId);
+
+        const student = await StudentModel.findOne({ _id: studentId, teacherId })
+                        .populate('groupId', 'name schedule')
+                        .lean();
+        if (!student) throw NotFoundException({ message: 'الطالب غير موجود' });
+
+        const trueDebt = await StudentService.reconcileStudentDebt(student._id, teacherId);
+        student.totalDebt = trueDebt;
 
         return student;
     }

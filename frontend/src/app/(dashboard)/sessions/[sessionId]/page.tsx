@@ -1097,6 +1097,29 @@ export default function SessionDetailPage() {
                             <ul className="divide-y divide-gray-50">
                                 {sortedAttendanceRecords.map((record) => {
                                     const student = record.studentId as any;
+                                    const isUnsubscribed = subscriptionMap.get(student?._id ?? '') === false;
+                                    const debt = Number((record as any).financialStatus?.debtAmount || (record as any).financialStatus?.totalDebt || student?.totalDebt || 0);
+
+                                    const renderUnsubscribedBadge = () => (
+                                        <span
+                                            title="غير مشترك هذا الشهر"
+                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200 shrink-0 whitespace-nowrap"
+                                        >
+                                            <AlertCircle className="h-2.5 w-2.5" />
+                                            غير مشترك
+                                        </span>
+                                    );
+
+                                    const renderDebtBadge = () => (
+                                        <span
+                                            title={`متبقي مديونية: ${debt} ج.م`}
+                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200 shrink-0 whitespace-nowrap"
+                                        >
+                                            <AlertTriangle className="h-2.5 w-2.5" />
+                                            عليه {debt} ج.م
+                                        </span>
+                                    );
+
                                     return (
                                         <li
                                             key={record._id}
@@ -1120,17 +1143,17 @@ export default function SessionDetailPage() {
                                                 )}
                                             </div>
                                             <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex items-center gap-1.5 flex-wrap">
                                                     {student?._id ? (
                                                         <Link
                                                             href={`/students/${student._id}`}
-                                                            className="text-sm font-medium text-gray-800 hover:text-primary transition-colors truncate hover:underline"
-                                                            title="عرض ملف الطالب"
+                                                            className="text-sm font-semibold text-gray-800 hover:text-primary transition-colors truncate max-w-[210px] sm:max-w-none hover:underline"
+                                                            title={student?.studentName ?? 'عرض ملف الطالب'}
                                                         >
                                                             {student?.studentName ?? '—'}
                                                         </Link>
                                                     ) : (
-                                                        <p className="text-sm font-medium text-gray-800 truncate">
+                                                        <p className="text-sm font-semibold text-gray-800 truncate max-w-[210px] sm:max-w-none">
                                                             {student?.studentName ?? '—'}
                                                         </p>
                                                     )}
@@ -1144,35 +1167,27 @@ export default function SessionDetailPage() {
                                                             معوّض
                                                         </Badge>
                                                     )}
-                                                    {subscriptionMap.get(student?._id ?? '') === false && (
-                                                        <span
-                                                            title="غير مشترك هذا الشهر"
-                                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200 shrink-0"
-                                                        >
-                                                            <AlertCircle className="h-2.5 w-2.5" />
-                                                            غير مشترك
-                                                        </span>
-                                                    )}
-                                                    {(() => {
-                                                        const debt = Number((record as any).financialStatus?.debtAmount || (record as any).financialStatus?.totalDebt || student?.totalDebt || 0);
-                                                        if (debt <= 0) return null;
-                                                        return (
-                                                            <span
-                                                                title={`متبقي مديونية: ${debt} ج.م`}
-                                                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200 shrink-0"
-                                                            >
-                                                                <AlertTriangle className="h-2.5 w-2.5" />
-                                                                عليه {debt} ج.م
-                                                            </span>
-                                                        );
-                                                    })()}
+                                                    {/* On desktop: show financial badges inline with name */}
+                                                    <div className="hidden sm:inline-flex items-center gap-1.5">
+                                                        {isUnsubscribed && renderUnsubscribedBadge()}
+                                                        {debt > 0 && renderDebtBadge()}
+                                                    </div>
                                                 </div>
-                                                <p className="text-xs text-gray-400">
-                                                    {student?.studentCode} · {' '}
-                                                    {new Date(record.scannedAt).toLocaleTimeString('ar-EG', {
-                                                        hour: '2-digit',
-                                                        minute: '2-digit',
-                                                    })}
+                                                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-400 mt-0.5">
+                                                    <span>
+                                                        {student?.studentCode} · {' '}
+                                                        {new Date(record.scannedAt).toLocaleTimeString('ar-EG', {
+                                                            hour: '2-digit',
+                                                            minute: '2-digit',
+                                                        })}
+                                                    </span>
+
+                                                    {/* On mobile: show financial badges here in the second line where ample space exists */}
+                                                    <div className="sm:hidden inline-flex items-center gap-1.5">
+                                                        {isUnsubscribed && renderUnsubscribedBadge()}
+                                                        {debt > 0 && renderDebtBadge()}
+                                                    </div>
+
                                                     {record.notes ? (
                                                         <span className="text-gray-500 mr-1.5 text-[11px]">
                                                             ({record.notes})
@@ -1198,17 +1213,17 @@ export default function SessionDetailPage() {
                                                         </span>
                                                     ) : null}
                                                     {record._syncStatus === 'QUEUED' || record._id.toString().startsWith('temp-') ? (
-                                                        <span className="inline-flex items-center gap-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-medium shrink-0 mr-2">
+                                                        <span className="inline-flex items-center gap-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-medium shrink-0">
                                                             <Clock className="h-2.5 w-2.5 text-amber-600 animate-pulse" />
                                                             معلق محلياً
                                                         </span>
                                                     ) : record._syncStatus === 'SYNCING' ? (
-                                                        <span className="inline-flex items-center gap-1 text-[10px] text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded font-medium shrink-0 mr-2">
+                                                        <span className="inline-flex items-center gap-1 text-[10px] text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded font-medium shrink-0">
                                                             <Loader2 className="h-2.5 w-2.5 text-blue-600 animate-spin" />
                                                             جاري الحفظ
                                                         </span>
                                                     ) : null}
-                                                </p>
+                                                </div>
                                             </div>
                                             <div className="flex items-center gap-1.5 shrink-0 min-w-0">
                                                 {/* Homework Tracking Toggle Button */}
