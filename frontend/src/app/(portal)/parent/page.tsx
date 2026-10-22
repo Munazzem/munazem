@@ -30,7 +30,7 @@ import { cn } from '@/lib/utils';
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface AttendanceEntry { date: string; status: 'PRESENT' | 'ABSENT' | 'GUEST' | 'EXCUSED' | 'LATE'; homeworkDone?: boolean | null }
 interface PaymentEntry    { date: string; paidAmount: number; discountAmount: number; category: string }
-interface ExamEntry       { examId: string; examName: string; score: number; totalMarks: number; passingMarks: number; date: string; isPassed: boolean }
+interface ExamEntry       { examId: string; examName: string; score: number | null; totalMarks: number; date: string }
 
 interface StudentSummary {
     studentId:            string;
@@ -335,16 +335,14 @@ function UnifiedChildCard({ childGroup }: { childGroup: ChildGroup }) {
                                         </p>
                                         <p className="text-xs text-gray-400 mt-1">{formatDate(e.date)}</p>
                                     </div>
-                                    <div className="text-left" dir="ltr">
-                                        <p className="text-sm font-extrabold text-[#1e3a6e]">
-                                            {e.score} <span className="text-gray-400 text-xs font-normal">/ {e.totalMarks}</span>
-                                        </p>
-                                        <span className={cn(
-                                            'text-[10px] font-bold px-2 py-0.5 rounded-full inline-block mt-0.5',
-                                            e.isPassed ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-600'
-                                        )}>
-                                            {e.isPassed ? 'ناجح' : 'راسب'}
-                                        </span>
+                                    <div className="flex items-center shrink-0" dir="ltr">
+                                        {e.score === null || e.score === undefined ? (
+                                            <span className="text-sm font-bold text-gray-400">—</span>
+                                        ) : (
+                                            <p className="text-sm font-extrabold text-[#1e3a6e]">
+                                                {e.score} <span className="text-gray-400 text-xs font-normal">/ {e.totalMarks}</span>
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
                             ))
