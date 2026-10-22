@@ -186,21 +186,7 @@ export class AttendanceService {
             });
 
             // ── Step 3: Parent Push Notification ─────────────────────────────────
-            // Non-blocking: fetch teacher name and fire-and-forget push notification
-            UserModel.findById(teacherId, { name: 1, subject: 1 }).lean().then((teacherDoc) => {
-                const rawName = (teacherDoc as any)?.name ?? '';
-                const subject = (teacherDoc as any)?.subject;
-                const teacherName = subject ? `${rawName} (${subject})` : rawName;
-                ParentPushService.notifyAttendance({
-                    studentId:   student._id.toString(),
-                    studentName: student.studentName,
-                    teacherId,
-                    teacherName,
-                    sessionDate: session.date,
-                    status:      data.status as 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED',
-                    isGuest,
-                });
-            }).catch(() => {/* ignore */});
+            // Deferred: All attendance notifications are now dispatched upon session completion (completeSession)
 
             // ── Step 4: Retroactive Compensation ──────────────────────────────
             // If student was marked ABSENT in their own group earlier,
@@ -273,20 +259,6 @@ export class AttendanceService {
                         });
                     }
 
-                    // ── Notify Parent of Compensation (Push & In-App) ──────────────
-                    UserModel.findById(teacherId, { name: 1, subject: 1 }).lean().then((teacherDoc) => {
-                        const rawName = (teacherDoc as any)?.name ?? '';
-                        const subject = (teacherDoc as any)?.subject;
-                        const teacherName = subject ? `${rawName} (${subject})` : rawName;
-                        ParentPushService.notifyCompensation({
-                            studentId:   student._id.toString(),
-                            studentName: student.studentName,
-                            teacherId,
-                            teacherName,
-                            missedSessionDate: pastAbsentRecord.scannedAt || pastAbsentRecord.createdAt || session.date,
-                            hostGroupName,
-                        });
-                    }).catch(() => {/* ignore */});
                 } else if (student.groupId) {
                     // Check if there was a past session in student's home group within window
                     const recentPastSession = await SessionModel.findOne({
@@ -345,20 +317,6 @@ export class AttendanceService {
                             await pastSnapshot.save();
                         }
 
-                        // ── Notify Parent of Compensation (Push & In-App) ──────────────
-                        UserModel.findById(teacherId, { name: 1, subject: 1 }).lean().then((teacherDoc) => {
-                            const rawName = (teacherDoc as any)?.name ?? '';
-                            const subject = (teacherDoc as any)?.subject;
-                            const teacherName = subject ? `${rawName} (${subject})` : rawName;
-                            ParentPushService.notifyCompensation({
-                                studentId:   student._id.toString(),
-                                studentName: student.studentName,
-                                teacherId,
-                                teacherName,
-                                missedSessionDate: recentPastSession.date,
-                                hostGroupName,
-                            });
-                        }).catch(() => {/* ignore */});
                     }
                 }
             }
@@ -606,30 +564,6 @@ export class AttendanceService {
             }
         }
 
-        // ── Parent Push Notifications for batch (non-blocking) ───────────────────
-        // Fetch teacher name once, then notify per student
-        UserModel.findById(teacherId, { name: 1, subject: 1 }).lean().then((teacherDoc) => {
-            const rawName = (teacherDoc as any)?.name ?? '';
-            const subject = (teacherDoc as any)?.subject;
-            const teacherName = subject ? `${rawName} (${subject})` : rawName;
-            // Fetch student names for all records in the batch
-            const studentIds = data.records.map(r => r.studentId);
-            StudentModel.find({ _id: { $in: studentIds }, teacherId }, { _id: 1, studentName: 1 }).lean().then((students) => {
-                const nameMap = new Map(students.map(s => [s._id.toString(), s.studentName]));
-                for (const r of data.records) {
-                    const studentName = nameMap.get(r.studentId) ?? 'الطالب';
-                    ParentPushService.notifyAttendance({
-                        studentId:   r.studentId,
-                        studentName,
-                        teacherId,
-                        teacherName,
-                        subject,
-                        sessionDate: session.date,
-                        status:      r.status as 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED',
-                    });
-                }
-            }).catch(() => {/* ignore */});
-        }).catch(() => {/* ignore */});
 
         return { inserted: totalInserted, total: docs.length };
     }
@@ -828,26 +762,6 @@ export class AttendanceService {
             upsertedCount = result.upsertedCount;
             matchedCount  = result.matchedCount;
 
-            // ── Parent Push Notifications for newly upserted batch items ─────────────
-            if (upsertedCount > 0) {
-                UserModel.findById(teacherId, { name: 1, subject: 1 }).lean().then((teacherDoc) => {
-                    const rawName = (teacherDoc as any)?.name ?? '';
-                    const subject = (teacherDoc as any)?.subject;
-                    const teacherName = subject ? `${rawName} (${subject})` : rawName;
-                    for (const rec of resolved) {
-                        const student = studentMap.get(rec.studentId.toString());
-                        if (!student) continue;
-                        ParentPushService.notifyAttendance({
-                            studentId:   rec.studentId.toString(),
-                            studentName: (student as any).studentName || 'الطالب',
-                            teacherId,
-                            teacherName,
-                            sessionDate: session.date,
-                            status:      rec.status as any,
-                        });
-                    }
-                }).catch(() => {/* ignore */});
-            }
         }
 
         // ── Step 4: Retroactive guest compensation ───────────────────────────────
@@ -1974,7 +1888,16 @@ export class AttendanceService {
         const updateFields: any = {
             scannedBy: new mongoose.Types.ObjectId(updatedBy),
         };
-        if (status) updateFields.status = status;
+        if (status) {
+            updateFields.status = status;
+            // Q2: When status transitions from ABSENT or EXCUSED to PRESENT or LATE during open session,
+            // update scannedAt to now so the actual arrival time is accurately reflected when session completes
+            const wasAbsentOrExcused = record.status === AttendanceStatus.ABSENT || record.status === AttendanceStatus.EXCUSED;
+            const isNowPresentOrLate = status === AttendanceStatus.PRESENT || status === AttendanceStatus.LATE;
+            if (wasAbsentOrExcused && isNowPresentOrLate) {
+                updateFields.scannedAt = new Date();
+            }
+        }
         if (notes !== undefined) updateFields.notes = notes;
         if (homeworkDone !== undefined) updateFields.homeworkDone = homeworkDone;
 
@@ -1983,29 +1906,6 @@ export class AttendanceService {
             updateFields,
             { new: true, runValidators: true }
         ).lean();
-
-        // ── Parent Push Notification on status change (non-blocking) ─────────
-        if (status && status !== record.status && teacherId) {
-            Promise.all([
-                record.sessionId ? SessionModel.findById(record.sessionId, { date: 1 }).lean() : Promise.resolve(null),
-                StudentModel.findById(record.studentId, { studentName: 1 }).lean(),
-                UserModel.findById(teacherId, { name: 1, subject: 1 }).lean(),
-            ]).then(([sessionDoc, studentDoc, teacherDoc]) => {
-                if (!studentDoc) return;
-                const rawName = (teacherDoc as any)?.name ?? '';
-                const subject = (teacherDoc as any)?.subject;
-                const teacherName = subject ? `${rawName} (${subject})` : rawName;
-                const sessionDate = sessionDoc?.date || record.scannedAt || new Date();
-                ParentPushService.notifyAttendance({
-                    studentId:   record.studentId.toString(),
-                    studentName: studentDoc.studentName,
-                    teacherId,
-                    teacherName,
-                    sessionDate,
-                    status:      status as any,
-                });
-            }).catch(() => {/* ignore */});
-        }
 
         return updated;
     }
