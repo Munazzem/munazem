@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import QRCode from 'qrcode';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
@@ -9,8 +9,7 @@ import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { recordSubscription, payDebt, waiveDebt } from '@/lib/api/payments';
 import { fetchStudentReport, fetchStudentReportHtml } from '@/lib/api/reports';
-import { fetchGroups } from '@/lib/api/groups';
-import { updateStudent, fetchStudentById } from '@/lib/api/students';
+import { fetchStudentById } from '@/lib/api/students';
 import { printHtmlContent } from '@/lib/utils/print';
 import { generateIdCardsHtml } from '@/lib/utils/printIdCard';
 import { StudentProfileTab } from '@/components/students/profile/StudentProfileTab';
@@ -27,7 +26,6 @@ import {
     DialogHeader,
     DialogTitle,
     DialogDescription,
-    DialogFooter,
 } from '@/components/ui/dialog';
 import {
     Tabs,
@@ -36,33 +34,30 @@ import {
     TabsTrigger,
 } from '@/components/ui/tabs';
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/select';
+    DropdownMenu,
+    DropdownMenuTrigger,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
 import {
-    Check,
     QrCode,
     CreditCard,
     Loader2,
-    Phone,
     User,
-    Hash,
     Printer,
     AlertCircle,
     Receipt,
-    History,
-    FileText,
-    ArrowRightLeft,
-    TrendingUp,
     Calendar,
     BookOpen,
     ArrowRight,
     GraduationCap,
     Trash2,
     Wallet,
+    ChevronLeft,
+    ChevronRight,
+    MoreVertical,
+    MessageCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -73,6 +68,7 @@ export default function StudentProfilePage() {
     const router = useRouter();
     const studentId = params.studentId as string;
 
+    const [activeTab, setActiveTab] = useState<string>('profile');
     const [qrDataUrl, setQrDataUrl] = useState<string>('');
     const user = useAuthStore((s) => s.user);
     const canWrite = user?.role === 'assistant' || user?.role === 'teacher';
@@ -115,6 +111,55 @@ export default function StudentProfilePage() {
         staleTime: 0,
         refetchOnMount: 'always',
     });
+
+    // Tabs Horizontal Scroll Controls
+    const tabsContainerRef = useRef<HTMLDivElement>(null);
+    const [canScrollLeft, setCanScrollLeft] = useState(false);
+    const [canScrollRight, setCanScrollRight] = useState(true);
+
+    // Check tabs horizontal scroll capacity
+    const updateScrollIndicators = () => {
+        const el = tabsContainerRef.current;
+        if (!el) return;
+        const { scrollLeft, scrollWidth, clientWidth } = el;
+        const maxScroll = scrollWidth - clientWidth;
+        if (maxScroll <= 5) {
+            setCanScrollLeft(false);
+            setCanScrollRight(false);
+            return;
+        }
+        const currentScroll = Math.abs(scrollLeft);
+        setCanScrollLeft(currentScroll > 8);
+        setCanScrollRight(currentScroll < maxScroll - 8);
+    };
+
+    useEffect(() => {
+        const el = tabsContainerRef.current;
+        if (!el) return;
+        updateScrollIndicators();
+        const timer = setTimeout(updateScrollIndicators, 200);
+        el.addEventListener('scroll', updateScrollIndicators, { passive: true });
+        window.addEventListener('resize', updateScrollIndicators);
+        return () => {
+            clearTimeout(timer);
+            el.removeEventListener('scroll', updateScrollIndicators);
+            window.removeEventListener('resize', updateScrollIndicators);
+        };
+    }, [reportLoading, studentLoading]);
+
+    // وظيفة سهم اليسار: الرجوع للتبويبات السابقة يساراً
+    const handleScrollLeft = () => {
+        const el = tabsContainerRef.current;
+        if (!el) return;
+        el.scrollBy({ left: -200, behavior: 'smooth' });
+    };
+
+    // وظيفة سهم اليمين: التقدم نحو التبويبات التالية يميناً
+    const handleScrollRight = () => {
+        const el = tabsContainerRef.current;
+        if (!el) return;
+        el.scrollBy({ left: 200, behavior: 'smooth' });
+    };
 
     const subscribeMutation = useMutation({
         mutationFn: () => recordSubscription({ studentId: studentId }),
@@ -239,141 +284,397 @@ export default function StudentProfilePage() {
     const hasActiveSub = report?.student?.hasActiveSubscription ?? student.hasActiveSubscription;
     const totalDebtAmount = Math.max(student?.totalDebt || 0, report?.payments?.pastCyclesDebt || 0);
 
+    // Quick Contacts
+    const parentPhone = student?.parentPhone || (student as any)?.phone;
+
+    const formatWhatsAppUrl = (phone?: string, name?: string) => {
+        if (!phone) return '#';
+        let clean = phone.replace(/\D/g, '');
+        if (clean.startsWith('0')) clean = '2' + clean;
+        const text = encodeURIComponent(`السلام عليكم، بخصوص الطالب ${name || ''}: `);
+        return `https://wa.me/${clean}?text=${text}`;
+    };
+
+    // Bento Pulse Metrics
+    const recentSessions = (
+        report?.attendance?.history?.length
+            ? report.attendance.history
+            : (report?.attendance?.cycles?.[0]?.sessions || report?.student?.monthlySessions || [])
+    ).slice(0, 5);
+    const attendanceRate = report?.attendance?.attendanceRate || '—';
+    const presentCount = report?.attendance?.presentCount ?? 0;
+    const totalSessions = report?.attendance?.totalSessions ?? 0;
+
+    const gradesHistory: any[] = report?.grades?.history || report?.grades?.gradesHistory || [];
+    const examsCount = report?.grades?.total ?? gradesHistory.length;
+    const passedCount = gradesHistory.filter((g: any) => g.passed).length;
+    const failedCount = gradesHistory.length - passedCount;
+    const latestExam = gradesHistory[0];
+
     return (
-        <div className="min-h-screen bg-gray-50/30 p-3 sm:p-4 lg:p-6" dir="rtl">
-            <div className="mb-4 sm:mb-6 max-w-4xl mx-auto flex items-center gap-3">
-                <Button variant="outline" size="icon" onClick={handleBack} className="shrink-0" title="رجوع">
-                    <ArrowRight className="h-4 w-4" />
-                </Button>
-                <div>
-                    <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">ملف الطالب</h1>
-                    <p className="text-sm text-gray-500">{student?.studentName || '—'}</p>
+        <div className="space-y-4 max-w-5xl mx-auto" dir="rtl">
+            {/* ── 1. Top Command Bar ── */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3 sm:px-4 sm:py-3 rounded-2xl border border-gray-100 shadow-xs">
+                <div className="flex items-center gap-3 min-w-0">
+                    <Button variant="outline" size="icon" onClick={handleBack} className="h-9 w-9 shrink-0 rounded-xl border-gray-200 hover:bg-gray-100" title="رجوع">
+                        <ArrowRight className="h-4 w-4" />
+                    </Button>
+                    <div className="h-10 w-10 rounded-xl bg-[#0f4c81]/10 border border-[#0f4c81]/15 flex items-center justify-center shrink-0">
+                        <span className="text-base font-extrabold text-[#0f4c81]">
+                            {student?.studentName?.charAt(0) || '؟'}
+                        </span>
+                    </div>
+                    <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <h1 className="text-base sm:text-lg font-bold text-gray-900 tracking-tight truncate">{student?.studentName || '—'}</h1>
+                            <Badge className={cn('text-[10px] font-bold px-1.5 py-0.2 border-0', student.isActive ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-600')}>
+                                {student.isActive ? 'نشط' : 'موقوف'}
+                            </Badge>
+                            {hasActiveSub === true ? (
+                                <Badge className="text-[10px] font-bold px-1.5 py-0.2 border-0 bg-blue-100 text-blue-700">
+                                    مشترك
+                                </Badge>
+                            ) : (
+                                <Badge className="text-[10px] font-bold px-1.5 py-0.2 border-0 bg-red-100 text-red-600">
+                                    غير مشترك
+                                </Badge>
+                            )}
+                        </div>
+                        <p className="text-xs text-gray-400 truncate">
+                            {student.gradeLevel || 'غير محدد'} • مجموعة: <strong className="text-gray-700 font-semibold">{groupName}</strong>
+                            {student.studentCode && ` • كود: ${student.studentCode}`}
+                        </p>
+                    </div>
+                </div>
+
+                {/* Instant Actions */}
+                <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                    {parentPhone && (
+                        <a
+                            href={formatWhatsAppUrl(parentPhone, student?.studentName)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 h-8.5 px-3 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-xs transition-all"
+                            title="مراسلة ولي الأمر عبر واتساب"
+                        >
+                            <MessageCircle className="h-3.5 w-3.5" />
+                            <span>واتساب</span>
+                        </a>
+                    )}
+
+                    {canWrite && hasActiveSub === false && (
+                        <Button
+                            size="sm"
+                            className="h-8.5 text-xs gap-1.5 bg-[#0f4c81] hover:bg-[#0f4c81]/90 text-white font-bold shadow-xs px-3 rounded-xl transition-all"
+                            disabled={subscribeMutation.isPending}
+                            onClick={() => setConfirmSubscribeOpen(true)}
+                        >
+                            {subscribeMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CreditCard className="h-3.5 w-3.5" />}
+                            <span>تسجيل اشتراك</span>
+                        </Button>
+                    )}
+
+                    <DropdownMenu dir="rtl">
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="outline" size="icon" className="h-8.5 w-8.5 rounded-xl border-gray-200 text-gray-700 hover:bg-gray-100 shadow-xs" title="خيارات إضافية">
+                                <MoreVertical className="h-4 w-4" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-56 text-right p-1.5">
+                            <DropdownMenuItem
+                                onClick={handlePrintCard}
+                                disabled={cardLoading || !studentId}
+                                className="cursor-pointer gap-2 py-2 px-2.5 text-xs font-semibold rounded-lg"
+                            >
+                                {cardLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" /> : <QrCode className="h-3.5 w-3.5 text-gray-500" />}
+                                <span>طباعة كارت الطالب (QR)</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                onClick={handleDownloadPdf}
+                                disabled={pdfLoading || !studentId}
+                                className="cursor-pointer gap-2 py-2 px-2.5 text-xs font-semibold rounded-lg"
+                            >
+                                {pdfLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" /> : <Printer className="h-3.5 w-3.5 text-gray-500" />}
+                                <span>طباعة التقرير الشامل</span>
+                            </DropdownMenuItem>
+
+                            {canWrite && totalDebtAmount > 0 && (
+                                <>
+                                    <DropdownMenuSeparator className="my-1" />
+                                    <DropdownMenuItem
+                                        onClick={() => setPayDebtOpen(true)}
+                                        className="cursor-pointer gap-2 py-2 px-2.5 text-xs font-semibold text-amber-800 focus:text-amber-900 focus:bg-amber-50 rounded-lg"
+                                    >
+                                        <Wallet className="h-3.5 w-3.5 text-amber-600" />
+                                        <span>سداد مديونية ({totalDebtAmount} ج)</span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                        onClick={() => {
+                                            setWaiveAllDebt(true);
+                                            setWaiveDebtAmount('');
+                                            setWaiveDebtOpen(true);
+                                        }}
+                                        className="cursor-pointer gap-2 py-2 px-2.5 text-xs font-semibold text-rose-600 focus:text-rose-700 focus:bg-rose-50 rounded-lg"
+                                    >
+                                        <Trash2 className="h-3.5 w-3.5 text-rose-500" />
+                                        <span>حذف المديونية بالكامل</span>
+                                    </DropdownMenuItem>
+                                </>
+                            )}
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                 </div>
             </div>
 
-            <div className="max-w-4xl mx-auto bg-white rounded-2xl shadow-[0_0_40px_-15px_rgba(0,0,0,0.1)] overflow-hidden border border-gray-100 flex flex-col">
-                {/* Header Section */}
-                <div className="px-4 py-4 sm:px-6 sm:py-5 flex flex-wrap items-center justify-between gap-4 border-b border-gray-100 bg-[#f0f6ff]/40">
-                    <div className="flex items-center gap-4">
-                        <div className="h-12 w-12 sm:h-14 sm:w-14 rounded-2xl bg-[#0f4c81]/10 flex items-center justify-center shrink-0 border border-blue-100 shadow-sm">
-                            <span className="text-xl sm:text-2xl font-extrabold text-[#0f4c81] drop-shadow-sm">
-                                {student?.studentName?.charAt(0) || '؟'}
-                            </span>
-                        </div>
-                        <div>
-                            <h2 className="text-lg sm:text-xl font-bold text-[#0f4c81] tracking-tight">{student?.studentName || '—'}</h2>
-                            <div className="flex items-center gap-2 mt-1 sm:mt-1.5 flex-wrap">
-                                <Badge className={cn('text-[10px] sm:text-xs font-bold px-2.5 py-0.5 border-0 shadow-sm', student.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600')}>
-                                    {student.isActive ? 'نشط' : 'موقوف'}
-                                </Badge>
-                                <span className="text-[11px] sm:text-xs font-semibold text-gray-500 bg-white px-2 py-0.5 rounded-full border border-gray-200 shadow-sm">
-                                    {student.gradeLevel}
-                                </span>
-                                {(report?.payments?.pastCyclesDebt ?? 0) > 0 && (
-                                    <Badge className="text-[10px] sm:text-xs font-bold px-2.5 py-0.5 border-0 shadow-sm bg-red-100 text-red-700 flex items-center gap-1">
-                                        <AlertCircle className="h-3 w-3 text-red-600" />
-                                        مديونية دورات سابقة: {report?.payments?.pastCyclesDebt} ج
-                                    </Badge>
-                                )}
+            {/* ── 2. The 3 Bento Pulse Cards ── */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {/* Bento Card 1: Attendance Pulse */}
+                <div
+                    onClick={() => setActiveTab('attendance')}
+                    className={cn(
+                        "group cursor-pointer bg-white rounded-2xl p-4 border transition-all shadow-xs flex flex-col justify-between hover:border-emerald-300 hover:shadow-md",
+                        activeTab === 'attendance' ? "border-emerald-400 ring-2 ring-emerald-50" : "border-gray-100"
+                    )}
+                >
+                    <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2.5">
+                            <div className="h-9 w-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold border border-emerald-100">
+                                <Calendar className="h-4 w-4" />
+                            </div>
+                            <div>
+                                <h3 className="text-xs font-bold text-gray-500">نبض الحضور</h3>
+                                <p className="text-sm font-extrabold text-gray-900">{presentCount} من {totalSessions} حصة</p>
                             </div>
                         </div>
+                        <span className="text-xl font-black text-emerald-600">{attendanceRate}</span>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto mt-2 sm:mt-0">
-                        <Button
-                            variant="outline"
-                            className="flex-1 sm:flex-none h-9 text-xs gap-1.5 text-gray-700 bg-white border-gray-200 hover:bg-gray-50 font-bold shadow-sm"
-                            disabled={cardLoading || !studentId}
-                            onClick={handlePrintCard}
-                        >
-                            {cardLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <QrCode className="h-3.5 w-3.5" />}
-                            طباعة الكارت
-                        </Button>
-                        <Button
-                            variant="outline"
-                            className="flex-1 sm:flex-none h-9 text-xs gap-1.5 text-[#0f4c81] border-blue-200 hover:bg-blue-50 font-bold shadow-sm"
-                            disabled={pdfLoading || !studentId}
-                            onClick={handleDownloadPdf}
-                        >
-                            {pdfLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />}
-                            طباعة التقرير
-                        </Button>
+                    <div className="flex items-center justify-between pt-2.5 border-t border-gray-50 text-[11px] text-gray-500">
+                        <span>آخر 5 حصص:</span>
+                        <div className="flex items-center gap-1.5" dir="ltr">
+                            {recentSessions.length > 0 ? (
+                                recentSessions.map((s: any, idx: number) => {
+                                    const isPresent = s.status === 'PRESENT' || s.status === 'LATE';
+                                    const isAbsent = s.status === 'ABSENT';
+                                    const isExcused = s.status === 'EXCUSED';
+                                    return (
+                                        <span
+                                            key={idx}
+                                            title={`${s.date ? new Date(s.date).toLocaleDateString('ar-EG') : ''}: ${isPresent ? 'حاضر' : isAbsent ? 'غائب' : isExcused ? 'مستأذن' : s.status}`}
+                                            className={cn(
+                                                "h-2.5 w-2.5 rounded-full transition-transform group-hover:scale-125",
+                                                isPresent && "bg-emerald-500 shadow-2xs",
+                                                isAbsent && "bg-rose-500 shadow-2xs",
+                                                isExcused && "bg-amber-400 shadow-2xs",
+                                                !isPresent && !isAbsent && !isExcused && "bg-blue-400"
+                                            )}
+                                        />
+                                    );
+                                })
+                            ) : (
+                                <span className="text-[10px] text-gray-400">لا توجد حصص مسجلة</span>
+                            )}
+                        </div>
+                    </div>
+                </div>
 
-                        {canWrite && hasActiveSub === false && (
-                            <Button
-                                className="flex-1 sm:flex-none h-9 text-xs gap-1.5 bg-[#0f4c81] hover:bg-[#0f4c81]/90 font-bold shadow-md"
-                                disabled={subscribeMutation.isPending}
-                                onClick={() => setConfirmSubscribeOpen(true)}
-                            >
-                                {subscribeMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CreditCard className="h-3.5 w-3.5" />}
-                                تسجيل اشتراك
-                            </Button>
-                        )}
-                        {hasActiveSub === false && (
-                            <Badge className="text-xs font-bold px-2.5 py-1 border-0 flex items-center gap-1 bg-red-50 text-red-600">
-                                <AlertCircle className="h-3 w-3" /> غير مشترك
-                            </Badge>
-                        )}
-                        {hasActiveSub === true && (
-                            <Badge className="text-xs font-bold px-2.5 py-1 border-0 flex items-center gap-1 bg-blue-50 text-blue-700">
-                                <CreditCard className="h-3 w-3" /> مشترك
-                            </Badge>
-                        )}
+                {/* Bento Card 2: Financial Health */}
+                <div
+                    onClick={() => setActiveTab('subscriptions')}
+                    className={cn(
+                        "group cursor-pointer bg-white rounded-2xl p-4 border transition-all shadow-xs flex flex-col justify-between hover:border-blue-300 hover:shadow-md",
+                        activeTab === 'subscriptions' || activeTab === 'payments' ? "border-blue-400 ring-2 ring-blue-50" : "border-gray-100"
+                    )}
+                >
+                    <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2.5">
+                            <div className={cn(
+                                "h-9 w-9 rounded-xl flex items-center justify-center font-bold border",
+                                hasActiveSub ? "bg-blue-50 text-[#0f4c81] border-blue-100" : "bg-red-50 text-red-600 border-red-100"
+                            )}>
+                                <CreditCard className="h-4 w-4" />
+                            </div>
+                            <div>
+                                <h3 className="text-xs font-bold text-gray-500">الدورة الحالية</h3>
+                                <p className="text-sm font-extrabold text-gray-900">
+                                    {hasActiveSub ? 'مشترك بالدورة' : 'غير مشترك'}
+                                </p>
+                            </div>
+                        </div>
+                        <Badge className={cn(
+                            "text-[10px] font-bold px-2 py-0.5 border-0 shadow-2xs",
+                            hasActiveSub ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-700"
+                        )}>
+                            {hasActiveSub ? 'مسدد بالكامل ✅' : 'مستحق الاشتراك ⚠️'}
+                        </Badge>
+                    </div>
 
-                        {canWrite && totalDebtAmount > 0 && (
-                            <>
-                                <Button
-                                    variant="outline"
-                                    className="flex-1 sm:flex-none h-9 text-xs gap-1.5 text-amber-800 border-amber-300 bg-amber-50/80 hover:bg-amber-100 font-bold shadow-sm"
-                                    onClick={() => setPayDebtOpen(true)}
-                                >
-                                    <Wallet className="h-3.5 w-3.5 text-amber-700" />
-                                    سداد مديونية ({totalDebtAmount} ج)
-                                </Button>
-                                <Button
-                                    variant="outline"
-                                    className="flex-1 sm:flex-none h-9 text-xs gap-1.5 text-rose-700 border-rose-200 bg-rose-50/80 hover:bg-rose-100 hover:text-rose-800 font-bold shadow-sm"
-                                    onClick={() => {
-                                        setWaiveAllDebt(true);
-                                        setWaiveDebtAmount('');
-                                        setWaiveDebtOpen(true);
-                                    }}
-                                >
-                                    <Trash2 className="h-3.5 w-3.5 text-rose-600" />
-                                    حذف المديونية
-                                </Button>
-                            </>
+                    <div className="flex items-center justify-between pt-2.5 border-t border-gray-50 text-[11px]">
+                        {totalDebtAmount > 0 ? (
+                            <div className="flex items-center justify-between w-full text-amber-900 font-bold">
+                                <span>مديونية دورات سابقة:</span>
+                                <div className="flex items-center gap-1.5">
+                                    <span className="text-amber-700 font-black">{totalDebtAmount} ج</span>
+                                    {canWrite && (
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setPayDebtOpen(true);
+                                            }}
+                                            className="text-[10px] bg-amber-100 hover:bg-amber-200 text-amber-900 px-2 py-0.5 rounded-md font-bold"
+                                        >
+                                            سداد
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex items-center justify-between w-full text-gray-400 font-medium">
+                                <span>المديونية السابقة:</span>
+                                <span className="text-emerald-600 font-bold">خالي من المديونية (0 ج)</span>
+                            </div>
                         )}
                     </div>
                 </div>
 
-                {/* Tabs */}
-                <Tabs defaultValue="profile" className="w-full flex-1 flex flex-col min-h-[400px]">
-                    <TabsList className="w-full rounded-none border-b border-gray-100 bg-gray-50/50 px-4 h-auto flex flex-wrap justify-start gap-1 py-1">
-                        <TabsTrigger value="profile" className="text-xs gap-1.5 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md py-2">
-                            <User className="h-3.5 w-3.5" /> البيانات الأساسية
-                        </TabsTrigger>
-                        {canWrite && (
-                            <TabsTrigger value="attendance" className="text-xs gap-1.5 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md py-2">
-                                <Calendar className="h-3.5 w-3.5" /> الحضور والغياب
-                            </TabsTrigger>
+                {/* Bento Card 3: Academic Pulse */}
+                <div
+                    onClick={() => setActiveTab('grades')}
+                    className={cn(
+                        "group cursor-pointer bg-white rounded-2xl p-4 border transition-all shadow-xs flex flex-col justify-between hover:border-purple-300 hover:shadow-md",
+                        activeTab === 'grades' ? "border-purple-400 ring-2 ring-purple-50" : "border-gray-100"
+                    )}
+                >
+                    <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2.5">
+                            <div className="h-9 w-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold border border-purple-100">
+                                <GraduationCap className="h-4 w-4" />
+                            </div>
+                            <div>
+                                <h3 className="text-xs font-bold text-gray-500">سجل الاختبارات</h3>
+                                <p className="text-sm font-extrabold text-gray-900">
+                                    {examsCount > 0 ? `${examsCount} اختبارات` : 'لا توجد اختبارات'}
+                                </p>
+                            </div>
+                        </div>
+                        {examsCount > 0 && (
+                            <div className="flex items-center gap-1.5 text-xs font-bold">
+                                <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full text-[11px] shadow-2xs">
+                                    {passedCount} ناجح
+                                </span>
+                                {failedCount > 0 && (
+                                    <span className="bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full text-[11px] shadow-2xs">
+                                        {failedCount} راسب
+                                    </span>
+                                )}
+                            </div>
                         )}
-                        {canWrite && (
-                            <TabsTrigger value="subscriptions" className="text-xs gap-1.5 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md py-2">
-                                <BookOpen className="h-3.5 w-3.5" /> الاشتراكات
-                            </TabsTrigger>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2.5 border-t border-gray-50 text-[11px] text-gray-500">
+                        <span>آخر اختبار:</span>
+                        {latestExam ? (
+                            <span className="font-bold text-gray-800 truncate max-w-[180px]">
+                                {latestExam.examTitle} ({latestExam.score}/{latestExam.totalMarks})
+                                {latestExam.grade && ` • ${latestExam.grade}`}
+                            </span>
+                        ) : (
+                            <span className="text-gray-400">لم يسجل بعد</span>
                         )}
-                        {canWrite && (
-                            <TabsTrigger value="payments" className="text-xs gap-1.5 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md py-2">
-                                <Receipt className="h-3.5 w-3.5" /> المدفوعات للمنصة
-                            </TabsTrigger>
-                        )}
-                        {canWrite && (
-                            <TabsTrigger value="grades" className="text-xs gap-1.5 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md py-2">
-                                <GraduationCap className="h-3.5 w-3.5" /> الدرجات
-                            </TabsTrigger>
-                        )}
-                    </TabsList>
+                    </div>
+                </div>
+            </div>
+
+            {/* ── 3. Tabs Navigation & Hub Content ── */}
+            <div className="bg-white rounded-2xl shadow-[0_0_40px_-15px_rgba(0,0,0,0.06)] overflow-hidden border border-gray-100 flex flex-col">
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex-1 flex flex-col min-h-[420px]">
+                    <div className="relative w-full border-b border-gray-100 bg-gray-50/70 p-1 sm:p-1.5">
+                        {/* Left Arrow */}
+                        <button
+                            type="button"
+                            onClick={handleScrollLeft}
+                            disabled={!canScrollLeft}
+                            className={cn(
+                                "absolute left-0 top-0 bottom-0 z-20 w-8 flex items-center justify-center bg-gradient-to-r from-gray-50 via-gray-50/90 to-transparent transition-opacity duration-200",
+                                canScrollLeft ? "text-gray-700 hover:text-primary cursor-pointer opacity-100" : "opacity-0 pointer-events-none"
+                            )}
+                            title="الرجوع للتبويبات السابقة يساراً"
+                        >
+                            <div className="w-6 h-6 rounded-full bg-white shadow-xs border border-gray-200 flex items-center justify-center hover:bg-gray-100">
+                                <ChevronLeft className="h-3.5 w-3.5 text-gray-600" />
+                            </div>
+                        </button>
+
+                        {/* Native Scrollable Container with guaranteed ref */}
+                        <div
+                            ref={tabsContainerRef}
+                            onScroll={updateScrollIndicators}
+                            className="w-full overflow-x-auto no-scrollbar scroll-smooth flex items-center"
+                        >
+                            <TabsList className="w-full sm:w-auto flex justify-between sm:justify-start gap-1 p-0 bg-transparent h-auto">
+                                <TabsTrigger
+                                    value="profile"
+                                    className="flex-1 sm:flex-initial text-xs gap-1 py-1.5 sm:py-2 px-1.5 sm:px-3.5 data-[state=active]:bg-white data-[state=active]:text-[#0f4c81] data-[state=active]:shadow-xs rounded-lg font-bold transition-all shrink-0 justify-center"
+                                >
+                                    <User className="h-3.5 w-3.5" />
+                                    <span>البيانات</span>
+                                </TabsTrigger>
+                                {canWrite && (
+                                    <TabsTrigger
+                                        value="attendance"
+                                        className="flex-1 sm:flex-initial text-xs gap-1 py-1.5 sm:py-2 px-1.5 sm:px-3.5 data-[state=active]:bg-white data-[state=active]:text-[#0f4c81] data-[state=active]:shadow-xs rounded-lg font-bold transition-all shrink-0 justify-center"
+                                    >
+                                        <Calendar className="h-3.5 w-3.5" />
+                                        <span>الحضور</span>
+                                    </TabsTrigger>
+                                )}
+                                {canWrite && (
+                                    <TabsTrigger
+                                        value="subscriptions"
+                                        className="flex-1 sm:flex-initial text-xs gap-1 py-1.5 sm:py-2 px-1.5 sm:px-3.5 data-[state=active]:bg-white data-[state=active]:text-[#0f4c81] data-[state=active]:shadow-xs rounded-lg font-bold transition-all shrink-0 justify-center"
+                                    >
+                                        <BookOpen className="h-3.5 w-3.5" />
+                                        <span>الاشتراك</span>
+                                    </TabsTrigger>
+                                )}
+                                {canWrite && (
+                                    <TabsTrigger
+                                        value="payments"
+                                        className="flex-1 sm:flex-initial text-xs gap-1 py-1.5 sm:py-2 px-1.5 sm:px-3.5 data-[state=active]:bg-white data-[state=active]:text-[#0f4c81] data-[state=active]:shadow-xs rounded-lg font-bold transition-all shrink-0 justify-center"
+                                    >
+                                        <Receipt className="h-3.5 w-3.5" />
+                                        <span>المالية</span>
+                                    </TabsTrigger>
+                                )}
+                                {canWrite && (
+                                    <TabsTrigger
+                                        value="grades"
+                                        className="flex-1 sm:flex-initial text-xs gap-1 py-1.5 sm:py-2 px-1.5 sm:px-3.5 data-[state=active]:bg-white data-[state=active]:text-[#0f4c81] data-[state=active]:shadow-xs rounded-lg font-bold transition-all shrink-0 justify-center"
+                                    >
+                                        <GraduationCap className="h-3.5 w-3.5" />
+                                        <span>الدرجات</span>
+                                    </TabsTrigger>
+                                )}
+                            </TabsList>
+                        </div>
+
+                        {/* Right Arrow */}
+                        <button
+                            type="button"
+                            onClick={handleScrollRight}
+                            disabled={!canScrollRight}
+                            className={cn(
+                                "absolute right-0 top-0 bottom-0 z-20 w-8 flex items-center justify-center bg-gradient-to-l from-gray-50 via-gray-50/90 to-transparent transition-opacity duration-200",
+                                canScrollRight ? "text-primary hover:text-primary/80 cursor-pointer opacity-100" : "opacity-0 pointer-events-none"
+                            )}
+                            title="المزيد من التبويبات يميناً"
+                        >
+                            <div className="w-6 h-6 rounded-full bg-white shadow-xs border border-primary/30 flex items-center justify-center hover:bg-gray-100 text-primary">
+                                <ChevronRight className="h-3.5 w-3.5 text-primary" />
+                            </div>
+                        </button>
+                    </div>
 
                     {/* ── Tab 1: Profile + QR ── */}
                     <TabsContent value="profile" className="m-0 flex-1">

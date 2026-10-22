@@ -239,7 +239,7 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
 
                                 <div className={cn(
                                     "grid gap-1.5 text-center bg-gray-50/80 rounded-lg p-2 text-xs",
-                                    (cycle.totalDiscount || 0) > 0 ? "grid-cols-4" : "grid-cols-3"
+                                    (cycle.totalDiscount || 0) > 0 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3"
                                 )}>
                                     <div>
                                         <p className="text-[10px] text-gray-400 font-medium">سعر الدورة</p>
@@ -499,18 +499,19 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                         </div>
                     )}
 
-                    <DialogFooter className="gap-2 sm:gap-0">
+                    <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 pt-3 border-t border-gray-100">
                         <Button
                             variant="outline"
                             onClick={() => setSelectedCycle(null)}
                             disabled={payCycleMutation.isPending}
+                            className="w-full sm:w-auto h-10"
                         >
                             إلغاء
                         </Button>
                         <Button
                             onClick={handleConfirmPayCycle}
                             disabled={payCycleMutation.isPending || !cyclePaidAmount}
-                            className="bg-amber-600 hover:bg-amber-700 text-white font-bold"
+                            className="w-full sm:flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold h-10"
                         >
                             {payCycleMutation.isPending ? (
                                 <><Loader2 className="h-4 w-4 animate-spin ml-2" /> جاري السداد...</>
@@ -576,18 +577,19 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                         </div>
                     </div>
 
-                    <DialogFooter className="gap-2 sm:gap-0">
+                    <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 pt-3 border-t border-gray-100">
                         <Button
                             variant="outline"
                             onClick={() => setPayAllOpen(false)}
                             disabled={payAllMutation.isPending}
+                            className="w-full sm:w-auto h-10"
                         >
                             إلغاء
                         </Button>
                         <Button
                             onClick={handleConfirmPayAll}
                             disabled={payAllMutation.isPending || !allPaidAmount}
-                            className="bg-amber-600 hover:bg-amber-700 text-white font-bold"
+                            className="w-full sm:flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold h-10"
                         >
                             {payAllMutation.isPending ? (
                                 <><Loader2 className="h-4 w-4 animate-spin ml-2" /> جاري السداد...</>
@@ -650,13 +652,13 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                         </div>
                     </div>
 
-                    <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-gray-100">
+                    <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 pt-3 border-t border-gray-100">
                         <Button
                             type="button"
                             variant="outline"
                             onClick={() => setWaiveCycle(null)}
                             disabled={waiveCycleMutation.isPending}
-                            className="text-xs font-semibold"
+                            className="w-full sm:w-auto h-10 text-xs font-semibold"
                         >
                             إلغاء
                         </Button>
@@ -664,7 +666,7 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                             type="button"
                             onClick={() => waiveCycleMutation.mutate()}
                             disabled={waiveCycleMutation.isPending}
-                            className="text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white gap-1.5"
+                            className="w-full sm:flex-1 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white gap-1.5 h-10"
                         >
                             {waiveCycleMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                             تأكيد إسقاط مديونية الدورة
@@ -720,13 +722,13 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                         </div>
                     </div>
 
-                    <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-gray-100">
+                    <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 pt-3 border-t border-gray-100">
                         <Button
                             type="button"
                             variant="outline"
                             onClick={() => setWaiveAllPastOpen(false)}
                             disabled={waiveAllPastMutation.isPending}
-                            className="text-xs font-semibold"
+                            className="w-full sm:w-auto h-10 text-xs font-semibold"
                         >
                             إلغاء
                         </Button>
@@ -734,7 +736,7 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                             type="button"
                             onClick={() => waiveAllPastMutation.mutate()}
                             disabled={waiveAllPastMutation.isPending}
-                            className="text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white gap-1.5"
+                            className="w-full sm:flex-1 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white gap-1.5 h-10"
                         >
                             {waiveAllPastMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                             تأكيد إسقاط كافة المديونيات

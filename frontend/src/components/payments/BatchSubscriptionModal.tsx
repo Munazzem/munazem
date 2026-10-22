@@ -246,17 +246,17 @@ export function BatchSubscriptionModal({
                     /* ── Results screen ── */
                     <div className="flex flex-col flex-1 overflow-hidden">
                         <div className="p-5 overflow-y-auto space-y-4 flex-1">
-                            <div className="grid grid-cols-3 gap-3 text-center">
-                                <div className="bg-emerald-50/70 border border-emerald-100 rounded-xl p-3">
-                                    <p className="text-2xl font-black text-emerald-700">{results.filter(r => r.status === 'success').length}</p>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 text-center">
+                                <div className="bg-emerald-50/70 border border-emerald-100 rounded-xl p-2.5 sm:p-3">
+                                    <p className="text-xl sm:text-2xl font-black text-emerald-700">{results.filter(r => r.status === 'success').length}</p>
                                     <p className="text-xs text-emerald-600 font-medium mt-0.5">تم بنجاح</p>
                                 </div>
-                                <div className="bg-red-50/70 border border-red-100 rounded-xl p-3">
-                                    <p className="text-2xl font-black text-red-600">{results.filter(r => r.status === 'error').length}</p>
+                                <div className="bg-red-50/70 border border-red-100 rounded-xl p-2.5 sm:p-3">
+                                    <p className="text-xl sm:text-2xl font-black text-red-600">{results.filter(r => r.status === 'error').length}</p>
                                     <p className="text-xs text-red-500 font-medium mt-0.5">فشل</p>
                                 </div>
-                                <div className="bg-blue-50/70 border border-blue-100 rounded-xl p-3">
-                                    <p className="text-xl font-black text-blue-700">
+                                <div className="bg-blue-50/70 border border-blue-100 rounded-xl p-2.5 sm:p-3">
+                                    <p className="text-lg sm:text-xl font-black text-blue-700">
                                         {results.filter(r => r.status === 'success').reduce((s, r) => s + r.paidAmount, 0).toLocaleString('ar-EG')}
                                     </p>
                                     <p className="text-xs text-blue-600 font-medium mt-0.5">إجمالي المدفوع (ج)</p>
@@ -289,20 +289,20 @@ export function BatchSubscriptionModal({
                         </div>
 
                         {/* Results Footer */}
-                        <div className="p-4 border-t border-gray-100 bg-gray-50/60 flex items-center justify-between gap-3 shrink-0">
+                        <div className="p-4 border-t border-gray-100 bg-gray-50/60 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-2.5 shrink-0">
                             <Button
                                 variant="outline"
                                 size="sm"
                                 onClick={() => { setResults(null); setSelectedIds(new Set()); }}
-                                className="text-xs font-semibold rounded-xl"
+                                className="text-xs font-semibold rounded-xl w-full sm:w-auto"
                             >
                                 تسجيل اشتراكات أخرى
                             </Button>
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                                 {results.some(r => r.status === 'success') && (
                                     <Button
                                         size="sm"
-                                        className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm"
+                                        className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm w-full sm:w-auto"
                                         onClick={() => {
                                             const successfulReceipts = results.filter(r => r.status === 'success').map(r => ({
                                                 teacherName: user?.name || 'السنتر',
@@ -318,7 +318,7 @@ export function BatchSubscriptionModal({
                                         طباعة الوصلات
                                     </Button>
                                 )}
-                                <Button size="sm" onClick={() => handleClose(false)} className="text-xs font-semibold rounded-xl">
+                                <Button size="sm" onClick={() => handleClose(false)} className="text-xs font-semibold rounded-xl w-full sm:w-auto">
                                     إغلاق
                                 </Button>
                             </div>
@@ -388,12 +388,14 @@ export function BatchSubscriptionModal({
                             {groupId && (
                                 <div className="bg-gray-50/40 border border-gray-200/80 rounded-2xl p-3.5 space-y-2.5">
                                     {/* List Header */}
-                                    <div className="flex items-center justify-between px-1">
-                                        <div className="flex items-center gap-2">
-                                            <Users size={15} className="text-emerald-600" />
-                                            <span className="text-xs font-bold text-gray-800">
-                                                الطلاب في المجموعة
-                                            </span>
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <div className="flex items-center gap-1.5">
+                                                <Users size={15} className="text-emerald-600" />
+                                                <span className="text-xs font-bold text-gray-800">
+                                                    الطلاب في المجموعة
+                                                </span>
+                                            </div>
                                             {students.length > 0 && (
                                                 <span className="text-[11px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
                                                     {students.length} طالب ({paidCount} دافع — {unpaidCount} غير دافع)
@@ -404,7 +406,7 @@ export function BatchSubscriptionModal({
                                             <button
                                                 type="button"
                                                 onClick={toggleAll}
-                                                className="text-xs font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1.5 transition-colors"
+                                                className="text-xs font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1.5 transition-colors self-end sm:self-auto"
                                             >
                                                 {allSelected
                                                     ? <><CheckSquare size={15} className="text-emerald-600" /> إلغاء تحديد الكل</>
@@ -570,19 +572,19 @@ export function BatchSubscriptionModal({
                         </div>
 
                         {/* Fixed Footer */}
-                        <div className="p-4 border-t border-gray-100 bg-gray-50/60 flex items-center justify-end gap-2.5 shrink-0">
+                        <div className="p-4 border-t border-gray-100 bg-gray-50/60 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2.5 shrink-0">
                             <Button
                                 variant="outline"
                                 onClick={() => handleClose(false)}
                                 disabled={mutation.isPending}
-                                className="h-10 text-xs font-semibold rounded-xl"
+                                className="h-10 text-xs font-semibold rounded-xl w-full sm:w-auto"
                             >
                                 إلغاء
                             </Button>
                             <Button
                                 onClick={handleSubmit}
                                 disabled={mutation.isPending || selectedIds.size === 0}
-                                className="h-10 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl gap-2 shadow-sm"
+                                className="h-10 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl gap-2 shadow-sm w-full sm:w-auto"
                             >
                                 {mutation.isPending ? (
                                     <><Loader2 className="h-4 w-4 animate-spin" /> جاري الحفظ...</>

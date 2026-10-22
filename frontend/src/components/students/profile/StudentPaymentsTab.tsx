@@ -58,10 +58,10 @@ export function StudentPaymentsTab({ reportLoading, report }: Props) {
         : history.filter((tx: any) => tx.category === typeFilter);
 
     return (
-        <div className="space-y-5">
+        <div className="space-y-4 sm:space-y-5">
 
             {/* ── Stats Cards ── */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
                 {/* Total Paid */}
                 <div className="bg-gradient-to-br from-green-50 to-green-100/50 rounded-2xl p-3 sm:p-4 border border-green-100 relative overflow-hidden">
                     <div className="absolute left-[-8px] bottom-[-8px] opacity-10">
@@ -69,7 +69,7 @@ export function StudentPaymentsTab({ reportLoading, report }: Props) {
                     </div>
                     <div className="relative z-10">
                         <p className="text-[10px] font-bold text-green-800/60 mb-1">إجمالي المدفوع</p>
-                        <p className="text-lg sm:text-2xl font-extrabold text-green-700 leading-none">
+                        <p className="text-base sm:text-2xl font-extrabold text-green-700 leading-none">
                             {totalPaid.toLocaleString('ar-EG')}
                             <span className="text-[10px] font-bold opacity-70 mr-1">ج.م</span>
                         </p>
@@ -83,7 +83,7 @@ export function StudentPaymentsTab({ reportLoading, report }: Props) {
                     </div>
                     <div className="relative z-10">
                         <p className="text-[10px] font-bold text-orange-800/60 mb-1">إجمالي الخصومات</p>
-                        <p className="text-lg sm:text-2xl font-extrabold text-orange-600 leading-none">
+                        <p className="text-base sm:text-2xl font-extrabold text-orange-600 leading-none">
                             {totalDiscount.toLocaleString('ar-EG')}
                             <span className="text-[10px] font-bold opacity-70 mr-1">ج.م</span>
                         </p>
@@ -97,7 +97,7 @@ export function StudentPaymentsTab({ reportLoading, report }: Props) {
                     </div>
                     <div className="relative z-10">
                         <p className="text-[10px] font-bold text-blue-800/60 mb-1">الاشتراكات</p>
-                        <p className="text-lg sm:text-2xl font-extrabold text-blue-700 leading-none">
+                        <p className="text-base sm:text-2xl font-extrabold text-blue-700 leading-none">
                             {subscriptionsCount}
                             <span className="text-[10px] font-bold opacity-70 mr-1">اشتراك</span>
                         </p>
@@ -111,7 +111,7 @@ export function StudentPaymentsTab({ reportLoading, report }: Props) {
                     </div>
                     <div className="relative z-10">
                         <p className="text-[10px] font-bold text-purple-800/60 mb-1">مذكرات</p>
-                        <p className="text-lg sm:text-2xl font-extrabold text-purple-700 leading-none">
+                        <p className="text-base sm:text-2xl font-extrabold text-purple-700 leading-none">
                             {notebookSalesCount}
                             <span className="text-[10px] font-bold opacity-70 mr-1">مذكرة</span>
                         </p>
@@ -120,7 +120,7 @@ export function StudentPaymentsTab({ reportLoading, report }: Props) {
             </div>
 
             {/* ── Filter Tabs ── */}
-            <div className="flex gap-2 flex-wrap">
+            <div className="flex gap-2 overflow-x-auto no-scrollbar py-1 flex-nowrap sm:flex-wrap">
                 {[
                     { key: 'all',           label: 'الكل' },
                     { key: 'SUBSCRIPTION',  label: 'اشتراكات' },
@@ -130,7 +130,7 @@ export function StudentPaymentsTab({ reportLoading, report }: Props) {
                         key={key}
                         onClick={() => setTypeFilter(key)}
                         className={cn(
-                            'px-3 py-1 rounded-full text-xs font-bold transition-all border',
+                            'px-3 py-1.5 rounded-full text-xs font-bold transition-all border shrink-0',
                             typeFilter === key
                                 ? 'bg-[#0f4c81] text-white border-[#0f4c81]'
                                 : 'bg-white text-gray-500 border-gray-200 hover:border-[#0f4c81]/30'
@@ -144,7 +144,7 @@ export function StudentPaymentsTab({ reportLoading, report }: Props) {
             {/* ── Transaction History ── */}
             <div>
                 <h3 className="text-sm font-bold text-gray-700 mb-3 px-1">سجل المعاملات</h3>
-                <div className="grid gap-3">
+                <div className="grid gap-2.5 sm:gap-3">
                     {filtered.length === 0 ? (
                         <div className="text-center py-10 text-gray-400">
                             <Receipt className="h-8 w-8 mx-auto mb-2 text-gray-200" />
@@ -159,40 +159,40 @@ export function StudentPaymentsTab({ reportLoading, report }: Props) {
                             return (
                                 <div
                                     key={i}
-                                    className="flex items-center justify-between bg-white border border-gray-100 rounded-2xl px-4 py-3 shadow-sm hover:shadow-md transition-shadow"
+                                    className="flex items-center justify-between bg-white border border-gray-100 rounded-2xl p-3 sm:px-4 sm:py-3 shadow-xs hover:shadow-md transition-shadow gap-3"
                                 >
-                                    <div className="flex items-center gap-3">
-                                        <div className={cn('h-10 w-10 rounded-xl flex items-center justify-center shrink-0 border', colorClass)}>
-                                            <Icon className="h-5 w-5" />
+                                    <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+                                        <div className={cn('h-9 w-9 sm:h-10 sm:w-10 rounded-xl flex items-center justify-center shrink-0 border', colorClass)}>
+                                            <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
                                         </div>
-                                        <div>
-                                            <p className="text-sm font-bold text-gray-800">
+                                        <div className="min-w-0 flex-1">
+                                            <p className="text-xs sm:text-sm font-bold text-gray-800 truncate">
                                                 {CATEGORY_LABELS[tx.category] ?? tx.category}
                                             </p>
-                                            <p className="text-xs text-gray-400 mt-0.5 font-medium">
+                                            <p className="text-[11px] sm:text-xs text-gray-400 mt-0.5 font-medium">
                                                 {new Date(tx.date).toLocaleDateString('ar-EG', {
                                                     year: 'numeric', month: 'short', day: 'numeric',
                                                 })}
                                             </p>
                                             {tx.description && (
-                                                <p className="text-[11px] text-gray-400 mt-0.5 italic">{tx.description}</p>
+                                                <p className="text-[10px] sm:text-[11px] text-gray-400 mt-0.5 italic truncate">{tx.description}</p>
                                             )}
                                         </div>
                                     </div>
 
                                     {/* Amounts */}
                                     <div className="text-left shrink-0">
-                                        <p className="text-[15px] font-bold text-gray-900">
+                                        <p className="text-sm sm:text-[15px] font-bold text-gray-900">
                                             {(tx.paidAmount ?? 0).toLocaleString('ar-EG')} ج
                                         </p>
                                         {hasDiscount && (
-                                            <p className="text-[11px] text-orange-500 font-medium flex items-center gap-0.5 justify-end">
+                                            <p className="text-[10px] sm:text-[11px] text-orange-500 font-medium flex items-center gap-0.5 justify-end">
                                                 <ArrowDownLeft className="h-3 w-3" />
                                                 خصم {(tx.discountAmount).toLocaleString('ar-EG')} ج
                                             </p>
                                         )}
                                         {tx.originalAmount && tx.originalAmount !== tx.paidAmount && (
-                                            <p className="text-[10px] text-gray-300 line-through text-left">
+                                            <p className="text-[9px] sm:text-[10px] text-gray-300 line-through text-left">
                                                 {(tx.originalAmount).toLocaleString('ar-EG')} ج
                                             </p>
                                         )}

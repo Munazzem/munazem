@@ -285,7 +285,7 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                 </div>
 
                 {canWrite && (
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                         <BatchSubscriptionModal />
                         <CenterDeductionModal onSuccess={() => refetch()} />
                         <AddTransactionModal onSuccess={() => refetch()} />
@@ -794,7 +794,7 @@ export default function PaymentsPage() {
     ];
 
     return (
-        <div className="min-h-screen bg-gray-50/30 p-3 sm:p-4 lg:p-6" dir="rtl">
+        <div className="space-y-4 sm:space-y-6" dir="rtl">
             {/* Header */}
             <div className="mb-4 sm:mb-6">
                 <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-2">

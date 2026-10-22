@@ -124,18 +124,18 @@ export function QuickNotebookSaleModal({ open, onOpenChange }: Props) {
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-md bg-white rounded-2xl p-0 overflow-hidden gap-0" dir="rtl">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-md bg-white rounded-2xl p-0 overflow-hidden gap-0 flex flex-col max-h-[calc(100dvh-2rem)]" dir="rtl">
                 {/* Accent bar */}
-                <div className="h-1 w-full bg-linear-to-r from-purple-500 to-indigo-400" />
+                <div className="h-1 w-full bg-linear-to-r from-purple-500 to-indigo-400 shrink-0" />
 
-                <DialogHeader className="px-6 pt-5 pb-4 border-b border-gray-100">
-                    <DialogTitle className="text-lg font-bold flex items-center gap-2">
+                <DialogHeader className="px-5 sm:px-6 pt-4 sm:pt-5 pb-3 sm:pb-4 border-b border-gray-100 shrink-0">
+                    <DialogTitle className="text-base sm:text-lg font-bold flex items-center gap-2">
                         <BookOpen className="h-5 w-5 text-purple-600" />
                         حجز مذكرة جديد
                     </DialogTitle>
                 </DialogHeader>
 
-                <div className="px-6 py-5 space-y-5">
+                <div className="px-5 sm:px-6 py-4 sm:py-5 space-y-4 sm:space-y-5 flex-1 overflow-y-auto">
 
                     {/* Step 1 — Student search */}
                     <div>
@@ -174,23 +174,23 @@ export function QuickNotebookSaleModal({ open, onOpenChange }: Props) {
                                     autoFocus
                                 />
                                 {/* Dropdown */}
-                                        {(studentsLoading || (studentResults?.length ?? 0) > 0) && (
-                                            <div className="absolute top-full mt-1 right-0 left-0 bg-white border border-gray-100 rounded-xl shadow-lg z-50 overflow-hidden">
-                                                {studentsLoading ? (
-                                                    <div className="flex items-center gap-2 px-4 py-3 text-sm text-gray-400">
-                                                        <Loader2 className="h-4 w-4 animate-spin" /> جاري البحث...
-                                                    </div>
-                                                ) : (
-                                                    studentResults?.map(s => (
+                                {(studentsLoading || (studentResults?.length ?? 0) > 0) && (
+                                    <div className="absolute top-full mt-1 right-0 left-0 bg-white border border-gray-100 rounded-xl shadow-lg z-50 overflow-y-auto max-h-48">
+                                        {studentsLoading ? (
+                                            <div className="flex items-center gap-2 px-4 py-3 text-sm text-gray-400">
+                                                <Loader2 className="h-4 w-4 animate-spin" /> جاري البحث...
+                                            </div>
+                                        ) : (
+                                            studentResults?.map(s => (
                                                 <button
                                                     key={s._id}
                                                     onClick={() => { setSelectedStudent(s); setSearch(''); }}
-                                                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors text-right"
+                                                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors text-right border-b border-gray-50 last:border-0"
                                                 >
                                                     <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                                                         <span className="text-xs font-bold text-primary">{s.studentName.charAt(0)}</span>
                                                     </div>
-                                                    <div className="min-w-0">
+                                                    <div className="min-w-0 flex-1">
                                                         <p className="text-sm font-medium text-gray-900 truncate">{s.studentName}</p>
                                                         <p className="text-xs text-gray-400">{s.gradeLevel}</p>
                                                     </div>
@@ -247,7 +247,7 @@ export function QuickNotebookSaleModal({ open, onOpenChange }: Props) {
                     {/* Step 3 — Quantity & discount */}
                     {selectedStudent && notebookId && (
                         <>
-                            <div className="grid grid-cols-2 gap-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div>
                                     <label className="text-sm font-medium text-gray-700 block mb-1.5">الكمية</label>
                                     <Input
@@ -296,14 +296,14 @@ export function QuickNotebookSaleModal({ open, onOpenChange }: Props) {
                 </div>
 
                 {/* Footer */}
-                <div className="px-6 py-4 border-t border-gray-100 flex gap-2">
-                    <Button variant="outline" onClick={() => onOpenChange(false)} className="flex-1">
+                <div className="px-5 sm:px-6 py-3.5 sm:py-4 border-t border-gray-100 flex flex-col-reverse sm:flex-row gap-2 shrink-0">
+                    <Button variant="outline" onClick={() => onOpenChange(false)} className="w-full sm:flex-1 h-10">
                         إلغاء
                     </Button>
                     <Button
                         onClick={() => mutation.mutate()}
                         disabled={!canSubmit}
-                        className="flex-1 gap-2 bg-purple-600 hover:bg-purple-700"
+                        className="w-full sm:flex-1 gap-2 bg-purple-600 hover:bg-purple-700 h-10"
                     >
                         {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
                         تأكيد الحجز

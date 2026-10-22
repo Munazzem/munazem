@@ -389,34 +389,35 @@ export function AddTransactionModal({
                     </Button>
                 </DialogTrigger>
             )}
-            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-[480px]" dir="rtl">
-                <DialogHeader>
-                    <DialogTitle>{dialogTitle}</DialogTitle>
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-[500px] max-h-[calc(100dvh-2rem)] flex flex-col p-4 sm:p-6" dir="rtl">
+                <DialogHeader className="shrink-0">
+                    <DialogTitle className="text-base sm:text-lg font-bold">{dialogTitle}</DialogTitle>
                 </DialogHeader>
 
                 {/* Mode Selector — hidden in edit mode */}
                 {!isEditMode && (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-1">
-                        {(Object.keys(MODE_LABELS) as TxMode[]).map((m) => (
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 sm:gap-2 mb-1 shrink-0">
+                        {(Object.keys(MODE_LABELS) as TxMode[]).map((m, idx) => (
                             <button
                                 key={m}
                                 type="button"
                                 onClick={() => { setMode(m); resetForm(); setDate(new Date().toISOString().split('T')[0]!); }}
                                 className={cn(
-                                    'flex flex-col items-center gap-1.5 rounded-xl border p-3 text-xs font-medium transition-all',
+                                    'flex flex-col items-center justify-center gap-1.5 rounded-xl border p-2.5 sm:p-2 text-xs font-semibold transition-all',
+                                    idx === 4 ? 'col-span-2 sm:col-span-1' : '',
                                     mode === m
-                                        ? 'border-primary bg-primary/5 text-primary'
-                                        : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                                        ? 'border-primary bg-primary/10 text-primary shadow-xs font-bold'
+                                        : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50/60'
                                 )}
                             >
                                 {MODE_ICONS[m]}
-                                {MODE_LABELS[m]}
+                                <span className="leading-tight text-center">{MODE_LABELS[m]}</span>
                             </button>
                         ))}
                     </div>
                 )}
 
-                <form onSubmit={handleSubmit} className="space-y-3 pt-1">
+                <form onSubmit={handleSubmit} className="space-y-3 pt-1 overflow-y-auto flex-1 pr-0.5">
                     {/* Student (subscription, notebook & reservation) */}
                     {(mode === 'subscription' || mode === 'notebook' || mode === 'notebook_reservation' || mode === 'pay_debt') && (
                         <div>
@@ -446,20 +447,20 @@ export function AddTransactionModal({
                                 </div>
                             ) : (
                                 <div className="relative">
-                                    <Search className="absolute right-3 top-2.5 h-4 w-4 text-gray-400" />
+                                    <Search className="absolute right-3 top-2.5 h-4 w-4 text-gray-400 pointer-events-none" />
                                     <Input
                                         placeholder="ابحث عن طالب..."
                                         value={studentSearch}
                                         onChange={(e) => setStudentSearch(e.target.value)}
-                                        className="pr-9"
+                                        className="pr-9 h-10 rounded-xl"
                                     />
                                     {students?.length > 0 && (
-                                        <div className="absolute z-10 top-full mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+                                        <div className="absolute z-30 top-full mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-xl max-h-48 overflow-y-auto divide-y divide-gray-50">
                                             {students?.map((s: any) => (
                                                 <button
                                                     key={s._id}
                                                     type="button"
-                                                    className="w-full flex items-center justify-between px-3 py-2.5 text-sm hover:bg-gray-50 transition-colors text-right"
+                                                    className="w-full flex items-center justify-between px-3.5 py-2.5 text-sm hover:bg-gray-50 transition-colors text-right"
                                                     onClick={() => {
                                                         setSelectedStudentId(s._id);
                                                         setSelectedStudentName(s.studentName);
@@ -697,13 +698,13 @@ export function AddTransactionModal({
                         </div>
                     )}
 
-                    <div className="flex justify-end gap-2 pt-1">
-                        <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={isPending}>
+                    <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-3 border-t border-gray-100 mt-2 shrink-0">
+                        <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={isPending} className="w-full sm:w-auto h-10 rounded-xl text-xs font-semibold">
                             إلغاء
                         </Button>
-                        <Button type="submit" disabled={isPending}>
+                        <Button type="submit" disabled={isPending} className="w-full sm:w-auto h-10 rounded-xl text-xs font-bold">
                             {isPending && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
-                            {isEditMode ? 'حفظ التعديلات' : 'تسجيل'}
+                            {isEditMode ? 'حفظ التعديلات' : 'تسجيل المعاملة'}
                         </Button>
                     </div>
                 </form>

@@ -116,7 +116,7 @@ export function StudentAttendanceTab({
                                     لا توجد حصص مسجلة في هذه الدورة بعد
                                 </div>
                             ) : (
-                                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2.5 sm:gap-3">
+                                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2 sm:gap-3">
                                     {cycle.sessions.map((h: any, i: number) => {
                                         const isPresent = h.status === 'PRESENT' || h.status === 'LATE';
                                         const isAbsent = h.status === 'ABSENT';
@@ -136,7 +136,7 @@ export function StudentAttendanceTab({
                                                     homeworkDone: typeof h.homeworkDone === 'boolean' ? h.homeworkDone : null,
                                                 })}
                                                 className={cn(
-                                                    'flex flex-col items-center justify-center p-2.5 rounded-2xl border transition-all duration-200 select-none',
+                                                    'flex flex-col items-center justify-center p-2 sm:p-2.5 rounded-xl sm:rounded-2xl border transition-all duration-200 select-none text-center',
                                                     canWrite && h.sessionId && 'cursor-pointer hover:scale-[1.04] hover:shadow-md active:scale-95',
                                                     isPresent ? 'bg-emerald-50/80 border-emerald-200 text-emerald-800 hover:bg-emerald-100/80' :
                                                     isAbsent  ? 'bg-red-50/80 border-red-200 text-red-800 hover:bg-red-100/80' :
@@ -146,21 +146,21 @@ export function StudentAttendanceTab({
                                                 )}
                                             >
                                                 {/* Status Badge */}
-                                                <div className="flex items-center gap-1.5 mb-1.5">
+                                                <div className="flex items-center gap-1 sm:gap-1.5 mb-1 sm:mb-1.5">
                                                     <div className={cn(
-                                                        "w-5 h-5 rounded-full flex items-center justify-center shrink-0 shadow-2xs",
+                                                        "w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center shrink-0 shadow-2xs",
                                                         isPresent ? "bg-emerald-500 text-white" :
                                                         isAbsent  ? "bg-red-500 text-white" :
                                                         isExcused ? "bg-blue-500 text-white" :
                                                         isGuest   ? "bg-amber-500 text-white" :
                                                         "bg-gray-400 text-white"
                                                     )}>
-                                                        {isPresent ? <Check className="h-3 w-3 stroke-[3]" /> :
-                                                         isAbsent  ? <X className="h-3 w-3 stroke-[3]" /> :
-                                                         isExcused ? <Clock className="h-3 w-3" /> :
-                                                         isGuest   ? <UserCheck className="h-3 w-3" /> : null}
+                                                        {isPresent ? <Check className="h-2.5 w-2.5 sm:h-3 sm:w-3 stroke-[3]" /> :
+                                                         isAbsent  ? <X className="h-2.5 w-2.5 sm:h-3 sm:w-3 stroke-[3]" /> :
+                                                         isExcused ? <Clock className="h-2.5 w-2.5 sm:h-3 sm:w-3" /> :
+                                                         isGuest   ? <UserCheck className="h-2.5 w-2.5 sm:h-3 sm:w-3" /> : null}
                                                     </div>
-                                                    <span className="text-[11px] font-bold">
+                                                    <span className="text-[10px] sm:text-[11px] font-bold">
                                                         {isPresent ? 'حاضر' : isAbsent ? 'غائب' : isExcused ? 'معوض' : isGuest ? 'زائر' : '—'}
                                                     </span>
                                                 </div>
@@ -168,7 +168,7 @@ export function StudentAttendanceTab({
                                                 {/* Homework Badge if applicable */}
                                                 {hasHomework && (
                                                     <span className={cn(
-                                                        "text-[9px] font-bold px-1.5 py-0.5 rounded-full border mb-1.5 leading-none shrink-0",
+                                                        "text-[8px] sm:text-[9px] font-bold px-1.5 py-0.5 rounded-full border mb-1 sm:mb-1.5 leading-none shrink-0",
                                                         h.homeworkDone
                                                             ? "bg-emerald-100/90 text-emerald-800 border-emerald-300"
                                                             : "bg-rose-100/90 text-rose-800 border-rose-300"
@@ -179,7 +179,7 @@ export function StudentAttendanceTab({
 
                                                 {/* Divider */}
                                                 <div className={cn(
-                                                    "w-full h-px mb-1.5 opacity-60",
+                                                    "w-full h-px mb-1 sm:mb-1.5 opacity-60",
                                                     isPresent ? "bg-emerald-200" :
                                                     isAbsent  ? "bg-red-200" :
                                                     isExcused ? "bg-blue-200" :
@@ -188,8 +188,8 @@ export function StudentAttendanceTab({
                                                 )} />
 
                                                 {/* Day & Date */}
-                                                <span className="text-[10px] font-semibold opacity-75 leading-none mb-0.5">{dayName}</span>
-                                                <span className="text-xs font-black tracking-tight">{dateFormatted}</span>
+                                                <span className="text-[9px] sm:text-[10px] font-semibold opacity-75 leading-none mb-0.5">{dayName}</span>
+                                                <span className="text-[11px] sm:text-xs font-black tracking-tight">{dateFormatted}</span>
                                             </div>
                                         );
                                     })}
@@ -228,7 +228,7 @@ export function StudentAttendanceTab({
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2.5 sm:gap-3">
+                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2 sm:gap-3">
                         {report.attendance.history.map((h: any, i: number) => {
                             const isPresent = h.status === 'PRESENT' || h.status === 'LATE';
                             const isAbsent = h.status === 'ABSENT';
@@ -248,7 +248,7 @@ export function StudentAttendanceTab({
                                         homeworkDone: typeof h.homeworkDone === 'boolean' ? h.homeworkDone : null,
                                     })}
                                     className={cn(
-                                        'flex flex-col items-center justify-center p-2.5 rounded-2xl border transition-all duration-200 select-none',
+                                        'flex flex-col items-center justify-center p-2 sm:p-2.5 rounded-xl sm:rounded-2xl border transition-all duration-200 select-none text-center',
                                         canWrite && h.sessionId && 'cursor-pointer hover:scale-[1.04] hover:shadow-md active:scale-95',
                                         isPresent ? 'bg-emerald-50/80 border-emerald-200 text-emerald-800 hover:bg-emerald-100/80' :
                                         isAbsent  ? 'bg-red-50/80 border-red-200 text-red-800 hover:bg-red-100/80' :
@@ -258,21 +258,21 @@ export function StudentAttendanceTab({
                                     )}
                                 >
                                     {/* Status Badge */}
-                                    <div className="flex items-center gap-1.5 mb-1.5">
+                                    <div className="flex items-center gap-1 sm:gap-1.5 mb-1 sm:mb-1.5">
                                         <div className={cn(
-                                            "w-5 h-5 rounded-full flex items-center justify-center shrink-0 shadow-2xs",
+                                            "w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center shrink-0 shadow-2xs",
                                             isPresent ? "bg-emerald-500 text-white" :
                                             isAbsent  ? "bg-red-500 text-white" :
                                             isExcused ? "bg-blue-500 text-white" :
                                             isGuest   ? "bg-amber-500 text-white" :
                                             "bg-gray-400 text-white"
                                         )}>
-                                            {isPresent ? <Check className="h-3 w-3 stroke-[3]" /> :
-                                             isAbsent  ? <X className="h-3 w-3 stroke-[3]" /> :
-                                             isExcused ? <Clock className="h-3 w-3" /> :
-                                             isGuest   ? <UserCheck className="h-3 w-3" /> : null}
+                                            {isPresent ? <Check className="h-2.5 w-2.5 sm:h-3 sm:w-3 stroke-[3]" /> :
+                                             isAbsent  ? <X className="h-2.5 w-2.5 sm:h-3 sm:w-3 stroke-[3]" /> :
+                                             isExcused ? <Clock className="h-2.5 w-2.5 sm:h-3 sm:w-3" /> :
+                                             isGuest   ? <UserCheck className="h-2.5 w-2.5 sm:h-3 sm:w-3" /> : null}
                                         </div>
-                                        <span className="text-[11px] font-bold">
+                                        <span className="text-[10px] sm:text-[11px] font-bold">
                                             {isPresent ? 'حاضر' : isAbsent ? 'غائب' : isExcused ? 'معوض' : isGuest ? 'زائر' : '—'}
                                         </span>
                                     </div>
@@ -280,7 +280,7 @@ export function StudentAttendanceTab({
                                     {/* Homework Badge if applicable */}
                                     {hasHomework && (
                                         <span className={cn(
-                                            "text-[9px] font-bold px-1.5 py-0.5 rounded-full border mb-1.5 leading-none shrink-0",
+                                            "text-[8px] sm:text-[9px] font-bold px-1.5 py-0.5 rounded-full border mb-1 sm:mb-1.5 leading-none shrink-0",
                                             h.homeworkDone
                                                 ? "bg-emerald-100/90 text-emerald-800 border-emerald-300"
                                                 : "bg-rose-100/90 text-rose-800 border-rose-300"
@@ -291,7 +291,7 @@ export function StudentAttendanceTab({
 
                                     {/* Divider */}
                                     <div className={cn(
-                                        "w-full h-px mb-1.5 opacity-60",
+                                        "w-full h-px mb-1 sm:mb-1.5 opacity-60",
                                         isPresent ? "bg-emerald-200" :
                                         isAbsent  ? "bg-red-200" :
                                         isExcused ? "bg-blue-200" :
@@ -300,8 +300,8 @@ export function StudentAttendanceTab({
                                     )} />
 
                                     {/* Day & Date */}
-                                    <span className="text-[10px] font-semibold opacity-75 leading-none mb-0.5">{dayName}</span>
-                                    <span className="text-xs font-black tracking-tight">{dateFormatted}</span>
+                                    <span className="text-[9px] sm:text-[10px] font-semibold opacity-75 leading-none mb-0.5">{dayName}</span>
+                                    <span className="text-[11px] sm:text-xs font-black tracking-tight">{dateFormatted}</span>
                                 </div>
                             );
                         })}
