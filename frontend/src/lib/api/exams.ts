@@ -131,3 +131,9 @@ export const aiProxy = async (prompt: string): Promise<{ text: string }> => {
     return (res as any).data ?? res;
 };
 
+export const fetchStudentExamResults = async (studentId: string): Promise<any[]> => {
+    const res = await apiClient.get(`/exams/student/${studentId}`);
+    return (res as any).data ?? res;
+};
+
+

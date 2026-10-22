@@ -10,18 +10,23 @@ interface Props {
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
-    SUBSCRIPTION:  'اشتراك منصة',
+    SUBSCRIPTION:  'اشتراك دورة',
+    DEBT_PAYMENT:  'سداد مديونية',
     NOTEBOOK_SALE: 'شراء مذكرة',
+    NOTEBOOK_RESERVATION: 'حجز مذكرة',
+    NOTEBOOK_DELIVERY:    'استلام مذكرة',
     EXPENSE:       'مصروف',
 };
 
 const CATEGORY_ICONS: Record<string, any> = {
     SUBSCRIPTION:  CreditCard,
+    DEBT_PAYMENT:  CreditCard,
     NOTEBOOK_SALE: BookOpen,
 };
 
 const CATEGORY_COLORS: Record<string, string> = {
     SUBSCRIPTION:  'bg-blue-50 border-blue-100 text-blue-600',
+    DEBT_PAYMENT:  'bg-amber-50 border-amber-100 text-amber-700',
     NOTEBOOK_SALE: 'bg-purple-50 border-purple-100 text-purple-600',
     EXPENSE:       'bg-gray-50 border-gray-100 text-gray-600',
 };
@@ -124,6 +129,7 @@ export function StudentPaymentsTab({ reportLoading, report }: Props) {
                 {[
                     { key: 'all',           label: 'الكل' },
                     { key: 'SUBSCRIPTION',  label: 'اشتراكات' },
+                    { key: 'DEBT_PAYMENT',  label: 'سداد مديونيات' },
                     { key: 'NOTEBOOK_SALE', label: 'مذكرات' },
                 ].map(({ key, label }) => (
                     <button

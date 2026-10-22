@@ -402,6 +402,11 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                                                 دورة {sub.cycleNumber}
                                             </Badge>
                                         )}
+                                        {sub.category === 'DEBT_PAYMENT' && (
+                                            <Badge variant="outline" className="text-[10px] text-amber-700 bg-amber-50 border-amber-200 py-0 font-bold">
+                                                سداد مديونية
+                                            </Badge>
+                                        )}
                                     </div>
                                     {sub.description && (
                                         <p className="text-[11px] text-gray-500 mt-1 font-medium bg-gray-50 inline-block px-2 py-0.5 rounded-md">
@@ -410,9 +415,9 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                                     )}
                                 </div>
                                 <div className="text-left bg-green-50/60 px-3 py-1.5 rounded-xl border border-green-100">
-                                    <p className="text-xs font-bold text-green-700">{sub.paidAmount.toLocaleString('ar-EG')} ج.م</p>
-                                    {sub.discountAmount > 0 && (
-                                        <p className="text-[10px] text-green-600/80 font-medium">خصم {sub.discountAmount.toLocaleString('ar-EG')}</p>
+                                    <p className="text-xs font-bold text-green-700">{(sub.paidAmount ?? 0).toLocaleString('ar-EG')} ج.م</p>
+                                    {(sub.discountAmount || 0) > 0 && (
+                                        <p className="text-[10px] text-green-600/80 font-medium">خصم {(sub.discountAmount ?? 0).toLocaleString('ar-EG')}</p>
                                     )}
                                 </div>
                             </div>

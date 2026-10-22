@@ -166,7 +166,10 @@ export class ParentService {
         ).sort({ date: -1 }).lean();
 
         const totalPaid     = payments.reduce((sum, p) => sum + p.paidAmount, 0);
-        const subscriptions = payments.filter(p => p.category === TransactionCategory.SUBSCRIPTION);
+        const subscriptions = payments.filter(p => 
+            p.category === TransactionCategory.SUBSCRIPTION || 
+            p.category === TransactionCategory.DEBT_PAYMENT
+        );
 
         // Active subscription for current cycle?
         const currentCycleNumber = (group as any)?.cycle?.currentCycleNumber || 1;

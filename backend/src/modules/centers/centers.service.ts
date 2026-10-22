@@ -708,6 +708,23 @@ export class CenterService {
             }
         }
 
+        if (query.groupId) {
+            try {
+                const groupObjId = new Types.ObjectId(query.groupId);
+                const enrollments = await CenterEnrollmentModel.find({
+                    centerId: centerObjId,
+                    $or: [
+                        { packageGroups: groupObjId },
+                        { 'privateTeachers.groupId': groupObjId },
+                    ],
+                }).select('studentId').lean();
+                const studentIds = enrollments.map(e => e.studentId);
+                filter._id = { $in: studentIds };
+            } catch (e) {
+                // Ignore invalid ObjectId
+            }
+        }
+
         if (query.isActive !== undefined) {
             filter.isActive = query.isActive === 'true' || query.isActive === true;
         }

@@ -8,8 +8,11 @@ import { useAuthStore } from '@/lib/store/auth.store';
 import { EditGradeModal } from '@/components/exams/EditGradeModal';
 
 interface Props {
-    reportLoading: boolean;
-    report: any;
+    reportLoading?: boolean;
+    report?: any;
+    grades?: any[];
+    studentName?: string;
+    studentId?: string;
 }
 
 const GRADE_COLORS: Record<string, string> = {
@@ -21,9 +24,19 @@ const GRADE_COLORS: Record<string, string> = {
     'F':  'bg-red-50 text-red-600 border-red-200',
 };
 
-export function StudentGradesTab({ reportLoading, report }: Props) {
+export function StudentGradesTab({
+    reportLoading,
+    report,
+    grades: customGrades,
+    studentName: customStudentName,
+    studentId: customStudentId,
+}: Props) {
     const user = useAuthStore((s) => s.user);
-    const canWrite = user?.role === 'assistant' || user?.role === 'teacher';
+    const canWrite =
+        user?.role === 'assistant' ||
+        user?.role === 'teacher' ||
+        user?.role === 'centerOwner' ||
+        user?.role === 'centerSupervisor';
     const [editingGrade, setEditingGrade] = useState<any | null>(null);
 
     if (reportLoading) {
@@ -34,10 +47,10 @@ export function StudentGradesTab({ reportLoading, report }: Props) {
         );
     }
 
-    const grades: any[] = report?.grades?.history ?? [];
-    const total          = report?.grades?.total ?? 0;
-    const studentName    = report?.student?.studentName ?? '';
-    const studentId      = report?.student?._id ?? '';
+    const grades: any[] = customGrades ?? report?.grades?.history ?? [];
+    const total = customGrades ? customGrades.length : (report?.grades?.total ?? grades.length);
+    const studentName = customStudentName || report?.student?.studentName || '';
+    const studentId = customStudentId || report?.student?._id || '';
 
     if (grades.length === 0) {
         return (

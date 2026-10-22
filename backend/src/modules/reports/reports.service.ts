@@ -295,7 +295,9 @@ export class ReportsService {
 
         const totalPaid     = paymentTotals.reduce((sum: number, p: any) => sum + p.total, 0);
         const totalDiscount = paymentTotals.reduce((sum: number, p: any) => sum + p.totalDiscount, 0);
-        const subscriptionsCount = paymentTotals.find((p: any) => p._id === TransactionCategory.SUBSCRIPTION)?.count ?? 0;
+        const subscriptionsCount = paymentTotals
+            .filter((p: any) => p._id === TransactionCategory.SUBSCRIPTION || p._id === TransactionCategory.DEBT_PAYMENT)
+            .reduce((sum: number, p: any) => sum + p.count, 0);
         const notebookSalesCount = paymentTotals.find((p: any) => p._id === TransactionCategory.NOTEBOOK_SALE)?.count ?? 0;
 
         // Active subscription and cycle enrollments
@@ -343,8 +345,11 @@ export class ReportsService {
         const sortedDeduplicatedEnrollments = Array.from(deduplicatedEnrollmentsMap.values())
             .sort((a, b) => b.cycleNumber - a.cycleNumber);
 
-        // Pre-group subscription payments by cycleNumber
-        const subTxs = payments.filter((p: any) => p.category === TransactionCategory.SUBSCRIPTION);
+        // Pre-group subscription payments by cycleNumber (including cycle debt payments)
+        const subTxs = payments.filter((p: any) => 
+            p.category === TransactionCategory.SUBSCRIPTION || 
+            p.category === TransactionCategory.DEBT_PAYMENT
+        );
         const subTxsByCycle = new Map<number, any[]>();
         const unassignedSubs: any[] = [];
         for (const p of subTxs) {
@@ -800,7 +805,10 @@ export class ReportsService {
                 subscriptionsCount,
                 notebookSalesCount,
                 history: payments,
-                subscriptions: payments.filter((p: any) => p.category === TransactionCategory.SUBSCRIPTION),
+                subscriptions: payments.filter((p: any) => 
+                    p.category === TransactionCategory.SUBSCRIPTION || 
+                    p.category === TransactionCategory.DEBT_PAYMENT
+                ),
                 cycleEnrollments,
                 allCycleEnrollments: cycleEnrollments,
                 pastUnpaidCycles,

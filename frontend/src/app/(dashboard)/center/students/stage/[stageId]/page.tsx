@@ -937,14 +937,7 @@ export default function StageStudentsPage() {
                                                     <span>بروفايل</span>
                                                 </Link>
 
-                                                <Link
-                                                    href={`/center/enrollments?studentId=${st._id}`}
-                                                    title="تسجيل اشتراك"
-                                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary font-bold text-xs transition-colors"
-                                                >
-                                                    <ClipboardList className="h-3.5 w-3.5" />
-                                                    <span>اشتراك</span>
-                                                </Link>
+
 
                                                 <Button
                                                     size="icon"

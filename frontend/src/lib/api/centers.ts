@@ -192,6 +192,7 @@ export interface FetchCenterStudentsParams {
     page?: number;
     limit?: number;
     includeCounts?: boolean | 'true' | 'false';
+    groupId?: string;
 }
 
 export interface FetchCenterStudentsResponse {

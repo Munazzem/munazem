@@ -48,6 +48,8 @@ import {
     recordCenterPayment,
     fetchMyCenters,
 } from '@/lib/api/centers';
+import { fetchStudentExamResults } from '@/lib/api/exams';
+import { StudentGradesTab } from '@/components/students/profile/StudentGradesTab';
 import { ALL_GRADES } from '@/lib/constants/grade.constants';
 import { ICenterStudent, ICenterEnrollment, ICenterAttendanceRecord } from '@/types/center.types';
 import { printHtmlContent } from '@/lib/utils/print';
@@ -135,6 +137,13 @@ export default function CenterStudentProfilePage() {
         queryFn: fetchMyCenters,
     });
     const currentCenter = centers.find(c => c._id === student?.centerId) || centers[0];
+
+    // 6. Fetch Student Exam Results
+    const { data: examResults = [], isLoading: examsLoading } = useQuery<any[]>({
+        queryKey: ['student-exams', studentId],
+        queryFn: () => fetchStudentExamResults(studentId),
+        enabled: !!studentId,
+    });
 
     // Generate QR code for student
     useEffect(() => {
@@ -529,13 +538,7 @@ export default function CenterStudentProfilePage() {
 
                     {/* Quick Action Badges / CTA */}
                     <div className="flex flex-wrap items-center gap-2 self-stretch md:self-auto justify-end">
-                        <Link
-                            href={`/center/enrollments?studentId=${student._id}`}
-                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-white font-bold text-xs hover:bg-primary/90 transition-all shadow-sm shadow-primary/20"
-                        >
-                            <Layers className="h-4 w-4" />
-                            <span>{enrollment ? 'تعديل الاشتراك' : 'تسجيل اشتراك الطالب'}</span>
-                        </Link>
+
 
                         <Button
                             onClick={() => setIsPaymentOpen(true)}
@@ -709,6 +712,18 @@ export default function CenterStudentProfilePage() {
                         <QrCode className="h-4 w-4 ml-1.5" />
                         الكارنيه والباركود
                     </TabsTrigger>
+                    <TabsTrigger
+                        value="grades"
+                        className="rounded-xl px-4 py-2 font-bold text-xs sm:text-sm data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm transition-all"
+                    >
+                        <GraduationCap className="h-4 w-4 ml-1.5" />
+                        الامتحانات والدرجات
+                        {examResults && examResults.length > 0 && (
+                            <span className="mr-1.5 bg-gray-200/80 text-gray-700 px-1.5 py-0.2 rounded-full text-[10px]">
+                                {examResults.length}
+                            </span>
+                        )}
+                    </TabsTrigger>
                 </TabsList>
 
                 {/* TAB 1: OVERVIEW & ENROLLMENTS */}
@@ -881,13 +896,6 @@ export default function CenterStudentProfilePage() {
                                     قم بتسجيل الطالب في باقة مركز كاملة أو مع مدرسين ومجموعات محددة لبدء إدارة حضوره ومالياته.
                                 </p>
                             </div>
-                            <Link
-                                href={`/center/enrollments?studentId=${student._id}`}
-                                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-primary text-white font-bold text-xs hover:bg-primary/90 transition-all shadow-sm"
-                            >
-                                <Plus className="h-4 w-4" />
-                                <span>تسجيل اشتراك جديد الآن</span>
-                            </Link>
                         </div>
                     )}
                 </TabsContent>
@@ -1184,6 +1192,36 @@ export default function CenterStudentProfilePage() {
                                 </div>
                             </div>
                         </div>
+                    </div>
+                </TabsContent>
+
+                {/* TAB 5: EXAMS & GRADES */}
+                <TabsContent value="grades" className="space-y-6">
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sm:p-6">
+                        <div className="flex items-center justify-between mb-4 border-b pb-3">
+                            <div className="flex items-center gap-2">
+                                <div className="p-2 rounded-xl bg-primary/10 text-primary">
+                                    <GraduationCap className="h-5 w-5" />
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-gray-900 text-base">سجل الامتحانات والتقييمات</h3>
+                                    <p className="text-xs text-gray-400">الدرجات ونسب النجاح في اختبارات السنتر</p>
+                                </div>
+                            </div>
+                            <Link href="/exams">
+                                <Button variant="outline" size="sm" className="rounded-xl text-xs gap-1.5">
+                                    <span>إدارة الامتحانات</span>
+                                    <ExternalLink className="h-3.5 w-3.5" />
+                                </Button>
+                            </Link>
+                        </div>
+
+                        <StudentGradesTab
+                            reportLoading={examsLoading}
+                            grades={examResults || []}
+                            studentName={student?.studentName}
+                            studentId={studentId}
+                        />
                     </div>
                 </TabsContent>
             </Tabs>

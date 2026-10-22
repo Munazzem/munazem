@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { updateExam } from '@/lib/api/exams';
 import type { IExam, IQuestion, QuestionType } from '@/lib/api/exams';
 import { fetchGroups } from '@/lib/api/groups';
+import { fetchCenterGroups } from '@/lib/api/centers';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { getAllowedGrades } from '@/lib/utils/grades';
 
@@ -52,6 +53,7 @@ const QUESTION_TYPES: { value: QuestionType; label: string }[] = [
 
 export function EditExamModal({ exam, open, onOpenChange, onSuccess }: Props) {
     const user = useAuthStore((s) => s.user);
+    const isCenter = user?.role === 'centerOwner' || user?.role === 'centerSupervisor';
     const allowedGrades = getAllowedGrades(user?.stages);
     const queryClient = useQueryClient();
 
@@ -66,11 +68,11 @@ export function EditExamModal({ exam, open, onOpenChange, onSuccess }: Props) {
 
     const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
 
-    const { data: groupsData } = useQuery({
-        queryKey: ['groups'],
-        queryFn: () => fetchGroups({ limit: 100 }),
+    const { data: groupsData } = useQuery<any>({
+        queryKey: isCenter ? ['center', 'groups'] : ['groups'],
+        queryFn: () => isCenter ? fetchCenterGroups() : fetchGroups({ limit: 100 }),
     });
-    const groups = (groupsData as any)?.data ?? (groupsData as any) ?? [];
+    const groups = Array.isArray(groupsData) ? groupsData : (groupsData as any)?.data ?? [];
 
     const watchedGradeLevel = watch('gradeLevel');
     const filteredGroups = watchedGradeLevel ? groups.filter((g: any) => g.gradeLevel === watchedGradeLevel) : groups;

@@ -121,7 +121,11 @@ export default function ExamDetailPage() {
     const { examId } = useParams<{ examId: string }>();
     const router     = useRouter();
     const user       = useAuthStore((s) => s.user);
-    const isTeacher  = user?.role === 'teacher' || user?.role === 'assistant';
+    const isTeacher =
+        user?.role === 'teacher' ||
+        user?.role === 'assistant' ||
+        user?.role === 'centerOwner' ||
+        (user?.role === 'centerSupervisor' && (user as any)?.permissions?.canCreateExams !== false);
     const queryClient = useQueryClient();
 
     const [activeTab,       setActiveTab]       = useState<Tab>('questions');

@@ -1,6 +1,7 @@
 import { ExamModel }       from '../../database/models/exam.model.js';
 import { ExamResultModel } from '../../database/models/exam-result.model.js';
 import { StudentModel }    from '../../database/models/student.model.js';
+import { CenterStudentModel } from '../../database/models/center-student.model.js';
 import { UserModel }       from '../../database/models/user.model.js';
 import { ExamStatus, ExamSource } from '../../common/enums/enum.service.js';
 import { NotFoundException, BadRequestException, ConflictException } from '../../common/utils/response/error.responce.js';
@@ -181,11 +182,22 @@ export class ExamsService {
             throw BadRequestException({ message: 'الدرجة لا يمكن أن تكون سالبة' });
         }
 
-        // Scope student lookup to this teacher — prevent recording results for another teacher's student
-        const student = await StudentModel.findOne(
+        // Scope student lookup to this teacher/center — prevent recording results for another teacher's student
+        let student: any = await StudentModel.findOne(
             { _id: data.studentId, teacherId },
             { studentName: 1, groupId: 1, parentPhone: 1 }
         ).lean();
+
+        if (!student) {
+            const centerStudent = await CenterStudentModel.findById(data.studentId).lean();
+            if (centerStudent) {
+                student = {
+                    ...centerStudent,
+                    groupId: exam.groupIds?.[0] || centerStudent._id,
+                };
+            }
+        }
+
         if (!student) throw NotFoundException({ message: 'الطالب غير موجود أو لا ينتمي لك' });
 
         const percentage = Math.round((data.score / exam.totalMarks) * 100);
@@ -290,11 +302,22 @@ export class ExamsService {
         if (exam.status === ExamStatus.DRAFT) throw BadRequestException({ message: 'يجب نشر الامتحان أولاً' });
 
         const studentIds = data.results.map(r => r.studentId);
-        // Scope to this teacher — prevents injecting another teacher's students
-        const students   = await StudentModel.find(
+        // Scope to this teacher/center — prevents injecting another teacher's students
+        let students: any[] = await StudentModel.find(
             { _id: { $in: studentIds }, teacherId },
             { studentName: 1, groupId: 1, parentPhone: 1 }  // parentPhone for WhatsApp
         ).lean();
+
+        if (students.length === 0) {
+            const centerStudents = await CenterStudentModel.find(
+                { _id: { $in: studentIds } },
+                { studentName: 1, parentPhone: 1 }
+            ).lean();
+            students = centerStudents.map(cs => ({
+                ...cs,
+                groupId: exam.groupIds?.[0] || cs._id,
+            }));
+        }
 
         const studentMap = new Map(students.map(s => [s._id.toString(), s]));
 
@@ -399,11 +422,35 @@ export class ExamsService {
         };
     }
 
-    // ── Get student exam history (for student report) ─────────────────
-    static async getStudentExamHistory(studentId: string, teacherId: string) {
-        return await ExamResultModel.find({ studentId, teacherId })
+    // ── Get student exam history (for student report / profile) ─────────
+    static async getStudentExamHistory(studentId: string, teacherId?: string) {
+        const filter: any = { studentId };
+        if (teacherId) {
+            filter.teacherId = teacherId;
+        }
+
+        const examResults = await ExamResultModel.find(filter)
             .sort({ date: -1 })
             .lean();
+
+        const examIds = [...new Set(examResults.map(r => r.examId.toString()))];
+        const exams = await ExamModel.find({ _id: { $in: examIds } }, { title: 1 }).lean();
+        const examTitleMap = new Map(exams.map(e => [e._id.toString(), e.title]));
+
+        return examResults.map(r => ({
+            _id:          r._id,
+            examId:       r.examId,
+            examTitle:    examTitleMap.get(r.examId.toString()) ?? 'امتحان تقييمي',
+            studentId:    r.studentId,
+            studentName:  r.studentName,
+            score:        r.score,
+            totalMarks:   r.totalMarks,
+            passingMarks: r.passingMarks,
+            percentage:   r.percentage,
+            grade:        r.grade,
+            passed:       r.passed,
+            date:         r.date,
+        }));
     }
 
     // ── Send WhatsApp Messages for Exam Results ───────────────────────

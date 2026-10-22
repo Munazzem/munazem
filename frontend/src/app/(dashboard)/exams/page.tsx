@@ -58,7 +58,11 @@ function StatusBadge({ status }: { status: ExamStatus }) {
 
 export default function ExamsPage() {
     const user      = useAuthStore((s) => s.user);
-    const isTeacher = user?.role === 'teacher' || user?.role === 'assistant';
+    const isTeacher =
+        user?.role === 'teacher' ||
+        user?.role === 'assistant' ||
+        user?.role === 'centerOwner' ||
+        (user?.role === 'centerSupervisor' && (user as any)?.permissions?.canCreateExams !== false);
     const router    = useRouter();
     const queryClient = useQueryClient();
     const allowedGrades = getAllowedGrades(user?.stages);

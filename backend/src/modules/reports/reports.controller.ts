@@ -63,12 +63,12 @@ reportsRouter.get(
     }
 );
 
-// All remaining routes: Teacher + Assistant (full access)
-reportsRouter.use(authorizeRoles(UserRole.teacher, UserRole.assistant));
+// All remaining routes: Teacher + Assistant + Center Roles (full access)
+reportsRouter.use(authorizeRoles(UserRole.teacher, UserRole.assistant, UserRole.centerOwner, UserRole.centerSupervisor));
 
-// Helper — resolves teacherId for both teacher and assistant
+// Helper — resolves teacherId for teacher, assistant, centerOwner, and centerSupervisor
 const resolveTeacherId = (user: any): string =>
-    user.role === UserRole.assistant ? user.teacherId : user.userId;
+    (user.role === UserRole.assistant || user.role === UserRole.centerSupervisor) ? user.teacherId : user.userId;
 
 // ─── GET /reports/student/:studentId — Full student report
 reportsRouter.get(

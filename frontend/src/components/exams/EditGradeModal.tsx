@@ -60,8 +60,10 @@ export function EditGradeModal({
             queryClient.invalidateQueries({ queryKey: ['exam', examId] });
             if (studentId) {
                 queryClient.invalidateQueries({ queryKey: ['student-report', studentId] });
+                queryClient.invalidateQueries({ queryKey: ['student-exams', studentId] });
             } else {
                 queryClient.invalidateQueries({ queryKey: ['student-report'] });
+                queryClient.invalidateQueries({ queryKey: ['student-exams'] });
             }
             onSuccess?.();
             onOpenChange(false);
@@ -79,8 +81,10 @@ export function EditGradeModal({
             queryClient.invalidateQueries({ queryKey: ['exam', examId] });
             if (studentId) {
                 queryClient.invalidateQueries({ queryKey: ['student-report', studentId] });
+                queryClient.invalidateQueries({ queryKey: ['student-exams', studentId] });
             } else {
                 queryClient.invalidateQueries({ queryKey: ['student-report'] });
+                queryClient.invalidateQueries({ queryKey: ['student-exams'] });
             }
             onSuccess?.();
             onOpenChange(false);
