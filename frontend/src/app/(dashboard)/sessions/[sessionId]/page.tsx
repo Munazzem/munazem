@@ -527,7 +527,19 @@ export default function SessionDetailPage() {
 
     // Complete session
     const completeMutation = useMutation({
-        mutationFn: () => completeSession(sessionId),
+        mutationFn: async () => {
+            // Non-blocking best-effort flush with 3-second timeout before completing session
+            try {
+                const flushPromise = useOfflineSyncStore.getState().flushQueue(sessionId);
+                const timeoutPromise = new Promise<{ synced: number; failed: number }>((resolve) =>
+                    setTimeout(() => resolve({ synced: 0, failed: 0 }), 3000)
+                );
+                await Promise.race([flushPromise, timeoutPromise]);
+            } catch (err) {
+                console.warn('[completeSession] Pre-completion offline outbox flush failed or timed out:', err);
+            }
+            return completeSession(sessionId);
+        },
         onSuccess: (result) => {
             toast.success('تم إنهاء الحصة وحفظ السجل');
             queryClient.invalidateQueries({ queryKey: QK.sessions.detail(sessionId) });
