@@ -17,7 +17,7 @@ import { cache, CacheKeys } from '../../infrastructure/cache/cache.service.js';
 import mongoose from 'mongoose';
 import { startOfDayEgyptMs, getEgyptParts, egyptDayBounds, formatTimeEgypt, format24hToEgypt12h, formatDateEgypt } from '../../common/utils/date.util.js';
 import { CardsService } from '../cards/cards.service.js';
-import { ParentPushService } from '../parent/parent-push.service.js';
+import { ParentPushService, type SessionAttendanceItem, type AttendanceNotificationKind } from '../parent/parent-push.service.js';
 import { StudentService } from '../students/students.service.js';
 
 // ─── Date helper ─────────────────────────────────────────────────────────────
@@ -1027,7 +1027,14 @@ export class AttendanceService {
                 const hasAttendance = attCount > 0;
 
                 if (isStaleInProgress || hasAttendance) {
-                    await AttendanceService.completeSession(s._id.toString(), teacherId.toString(), teacherId.toString());
+                    const sessionDate = new Date(s.date);
+                    const isOlderThan48h = (Date.now() - sessionDate.getTime()) > (48 * 60 * 60 * 1000);
+                    await AttendanceService.completeSession(
+                        s._id.toString(),
+                        teacherId.toString(),
+                        teacherId.toString(),
+                        { skipNotifications: isOlderThan48h }
+                    );
                 }
             }
         } catch (err) {
@@ -1036,7 +1043,12 @@ export class AttendanceService {
     }
 
     // ─── Complete session + generate Snapshot ───────────────────────
-    static async completeSession(sessionId: string, teacherId: string, completedBy?: string) {
+    static async completeSession(
+        sessionId: string,
+        teacherId: string,
+        completedBy?: string,
+        options?: { skipNotifications?: boolean }
+    ) {
         const session = await SessionModel.findOne({ _id: sessionId, teacherId }).lean();
         if (!session) throw NotFoundException({ message: 'الحصة غير موجودة' });
         if (session.status === SessionStatus.COMPLETED) {
@@ -1638,17 +1650,17 @@ export class AttendanceService {
             },
         });
 
+        const teacherDoc = await UserModel.findById(teacherId, { name: 1, subject: 1 }).lean().catch(() => null);
+        const rawTeacherName = (teacherDoc as any)?.name ?? '';
+        const subject = (teacherDoc as any)?.subject;
+        const teacherName = subject ? `${rawTeacherName} (${subject})` : rawTeacherName;
+
         if (absentStudents.length > 0) {
             const phoneMap = new Map(
                 allStudents
                     .filter(s => (s as any).parentPhone)
                     .map(s => [s._id.toString(), (s as any).parentPhone as string])
             );
-
-            const teacherDoc = await UserModel.findById(teacherId, { name: 1, subject: 1 }).lean().catch(() => null);
-            const rawTeacherName = (teacherDoc as any)?.name ?? '';
-            const subject = (teacherDoc as any)?.subject;
-            const teacherName = subject ? `${rawTeacherName} (${subject})` : rawTeacherName;
 
             for (const absent of absentStudents) {
                 const sid = absent.studentId.toString();
@@ -1667,15 +1679,70 @@ export class AttendanceService {
                         subject:     subject || '',
                     });
                 }
+            }
+        }
 
-                // ── Parent Mobile Push & In-App Notification ───────────────────────
-                ParentPushService.notifyAttendance({
-                    studentId:   sid,
-                    studentName: absent.studentName,
+        // ── Unified Parent Push & In-App Notifications on Session Completion ──
+        if (!options?.skipNotifications) {
+            const finalRecords = await AttendanceModel.find({ sessionId: session._id }).lean();
+            const studentIds = finalRecords.map(r => r.studentId);
+            const studentDocs = await StudentModel.find(
+                { _id: { $in: studentIds } },
+                { studentName: 1 }
+            ).lean();
+            const studentNameMap = new Map(studentDocs.map(s => [s._id.toString(), s.studentName]));
+
+            const batchItems: SessionAttendanceItem[] = [];
+
+            for (const r of finalRecords) {
+                const sid = r.studentId.toString();
+                const studentName = studentNameMap.get(sid) || 'الطالب';
+                const hasCompensationLink = Boolean(
+                    (r as any).relatedSessionId ||
+                    (r as any).relatedDate ||
+                    (r.notes && (r.notes.includes('معوّض') || r.notes.includes('معوض') || r.notes.includes('تعويض')))
+                );
+
+                let kind: AttendanceNotificationKind;
+
+                if (r.isGuest) {
+                    kind = hasCompensationLink ? 'GUEST_COMPENSATED' : 'GUEST';
+                } else if (r.status === AttendanceStatus.PRESENT) {
+                    kind = 'PRESENT';
+                } else if (r.status === AttendanceStatus.LATE) {
+                    kind = 'LATE';
+                } else if (r.status === AttendanceStatus.ABSENT) {
+                    kind = 'ABSENT';
+                } else if (r.status === AttendanceStatus.EXCUSED) {
+                    kind = hasCompensationLink ? 'COMPENSATED_ADVANCE' : 'EXCUSED';
+                } else {
+                    kind = 'PRESENT';
+                }
+
+                batchItems.push({
+                    studentId: sid,
+                    studentName,
+                    status: r.status as 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED',
+                    kind,
+                    scannedAt: r.scannedAt ?? undefined,
+                    homeworkDone: r.homeworkDone ?? undefined,
+                    relatedSessionId: (r as any).relatedSessionId || undefined,
+                    relatedGroupName: (r as any).relatedGroupName || undefined,
+                    relatedDate: (r as any).relatedDate || undefined,
+                    notes: r.notes || undefined,
+                });
+            }
+
+            if (batchItems.length > 0) {
+                ParentPushService.notifySessionAttendanceBatch({
+                    sessionId: session._id.toString(),
                     teacherId,
-                    teacherName,
+                    teacherName: teacherName || undefined,
+                    subject: subject || undefined,
+                    groupName: group.name || undefined,
                     sessionDate: session.date,
-                    status:      'ABSENT',
+                    startTime: session.startTime || undefined,
+                    items: batchItems,
                 });
             }
         }
