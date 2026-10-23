@@ -665,6 +665,7 @@ export class AttendanceService {
         type LateAdjustItem = {
             studentId:     mongoose.Types.ObjectId;
             status:        AttendanceStatus;
+            scannedAt?:    Date;
             homeworkDone?: boolean;
             notes?:        string;
         };
@@ -689,6 +690,7 @@ export class AttendanceService {
                 lateAdjustRecords.push({
                     studentId: rec.studentId,
                     status:    rec.status,
+                    ...(rec.scannedAt ? { scannedAt: rec.scannedAt } : {}),
                     ...(rec.homeworkDone !== undefined ? { homeworkDone: rec.homeworkDone } : {}),
                     ...(rec.notes ? { notes: rec.notes } : {}),
                 });
@@ -734,7 +736,8 @@ export class AttendanceService {
                     teacherId,
                     scannedBy,  // updatedBy — the assistant performing the sync
                     item.notes,
-                    item.homeworkDone
+                    item.homeworkDone,
+                    item.scannedAt
                 );
                 adjustedCount++;
             } catch {
@@ -1985,7 +1988,8 @@ export class AttendanceService {
         teacherId: string,
         updatedBy: string,
         notes?: string,
-        homeworkDone?: boolean
+        homeworkDone?: boolean,
+        actualScannedAt?: Date | string
     ) {
         const session = await SessionModel.findOne({ _id: sessionId, teacherId }).lean();
         if (!session) throw NotFoundException({ message: 'الحصة غير موجودة' });
@@ -2003,6 +2007,11 @@ export class AttendanceService {
         let record = await AttendanceModel.findOne({ sessionId, studentId });
         const oldStatus = record ? record.status : AttendanceStatus.ABSENT;
 
+        // Last status notified to parent (from parentNotify stamp or fallback to oldStatus)
+        const lastNotifiedStatus = record ? (record.parentNotify?.status ?? record.status) : AttendanceStatus.ABSENT;
+        const statusChanged = newStatus !== lastNotifiedStatus;
+        const nextRev = (record?.parentNotify?.rev || 0) + 1;
+
         if (oldStatus === newStatus && record && (homeworkDone === undefined || record.homeworkDone === homeworkDone) && (notes === undefined || record.notes === notes)) {
             return { success: true, message: 'لم يحدث تغيير في حالة الحضور', record };
         }
@@ -2014,10 +2023,17 @@ export class AttendanceService {
                 status: newStatus,
                 type: 'SESSION',
                 scannedBy: new mongoose.Types.ObjectId(updatedBy),
-                scannedAt: session.date,
+                scannedAt: actualScannedAt ? new Date(actualScannedAt) : (newStatus === AttendanceStatus.ABSENT ? session.date : new Date()),
                 isConsumed: newStatus === AttendanceStatus.ABSENT,
                 ...(homeworkDone !== undefined ? { homeworkDone } : {}),
-                ...(notes ? { notes } : {})
+                ...(notes ? { notes } : {}),
+                ...(statusChanged ? {
+                    parentNotify: {
+                        status: newStatus,
+                        rev: nextRev,
+                        sentAt: new Date(),
+                    }
+                } : {}),
             });
             await record.save();
         } else {
@@ -2026,6 +2042,18 @@ export class AttendanceService {
             if (notes !== undefined) record.notes = notes;
             if (homeworkDone !== undefined) record.homeworkDone = homeworkDone;
             record.isConsumed = newStatus === AttendanceStatus.ABSENT;
+            if (actualScannedAt) {
+                record.scannedAt = new Date(actualScannedAt);
+            } else if (!record.scannedAt && (newStatus === AttendanceStatus.PRESENT || newStatus === AttendanceStatus.LATE)) {
+                record.scannedAt = new Date();
+            }
+            if (statusChanged) {
+                record.parentNotify = {
+                    status: newStatus,
+                    rev: nextRev,
+                    sentAt: new Date(),
+                };
+            }
             await record.save();
         }
 
@@ -2055,7 +2083,7 @@ export class AttendanceService {
                 snapshot.presentStudents.push({
                     studentId: student._id,
                     studentName: student.studentName,
-                    scannedAt: session.date,
+                    scannedAt: record.scannedAt || session.date,
                     status: newStatus,
                     homeworkDone: record.homeworkDone ?? null
                 });
@@ -2092,18 +2120,27 @@ export class AttendanceService {
         });
 
         // ── Parent Push Notification for adjusted attendance (non-blocking) ─────────
-        if (oldStatus !== newStatus) {
-            UserModel.findById(teacherId, { name: 1, subject: 1 }).lean().then((teacherDoc) => {
+        if (statusChanged) {
+            Promise.all([
+                UserModel.findById(teacherId, { name: 1, subject: 1 }).lean(),
+                session.groupId ? GroupModel.findById(session.groupId, { name: 1 }).lean() : Promise.resolve(null),
+            ]).then(([teacherDoc, groupDoc]) => {
                 const rawName = (teacherDoc as any)?.name ?? '';
                 const subject = (teacherDoc as any)?.subject;
                 const teacherName = subject ? `${rawName} (${subject})` : rawName;
-                ParentPushService.notifyAttendance({
-                    studentId:   student._id.toString(),
+                ParentPushService.notifyAttendanceCorrection({
+                    sessionId,
+                    studentId: student._id.toString(),
                     studentName: student.studentName,
                     teacherId,
-                    teacherName,
+                    teacherName: teacherName || undefined,
+                    subject: subject || undefined,
+                    groupName: groupDoc?.name || undefined,
                     sessionDate: session.date,
-                    status:      newStatus as any,
+                    oldStatus: lastNotifiedStatus,
+                    newStatus,
+                    rev: nextRev,
+                    actualScannedAt: record.scannedAt || undefined,
                 });
             }).catch(() => {/* ignore */});
         }
