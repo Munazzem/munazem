@@ -359,8 +359,12 @@ describe('Phase 2 Integration: Open Session Notification Suppression & scannedAt
         });
         await linkStudentToParent(student._id);
 
-        // Past session in Home Group where student was ABSENT
-        const pastDate = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000); // 2 days ago
+        // Past session in Home Group where student was ABSENT.
+        // Compensation is restricted to the same slot/week as the host session
+        // (see getCompensationWindow), so derive the date from that window instead
+        // of a fixed offset like "now - 2 days", which is calendar-dependent.
+        const { windowStart } = await AttendanceService.getCompensationWindow(homeGroup._id, new Date());
+        const pastDate = new Date(windowStart.getTime() + 60 * 60 * 1000);
         const pastSession = await seedSession(homeGroup._id, {
             teacherId: teacher._id,
             date: pastDate,
