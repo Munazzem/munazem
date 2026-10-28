@@ -21,6 +21,11 @@ export interface IAttendance {
         decidedAt: Date;
         consecutiveCountAtTime: number;
     } | null;
+    parentNotify?: {
+        status: AttendanceStatus;
+        rev: number;
+        sentAt: Date;
+    };
     createdAt?:  Date;
     updatedAt?:  Date;
 }

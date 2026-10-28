@@ -6,15 +6,17 @@ import { ParentModel } from '../../database/models/parent.model.js';
 import { StudentModel } from '../../database/models/student.model.js';
 import { CenterStudentModel } from '../../database/models/center-student.model.js';
 import { UserModel } from '../../database/models/user.model.js';
+import { AttendanceModel } from '../../database/models/attendance.model.js';
 import { ParentNotificationType } from '../../types/parent.types.js';
 import { logger } from '../../common/utils/logger.util.js';
 import { normalizePhone } from './parent-auth.service.js';
+import { formatTimeEgypt, formatDateEgypt, format24hToEgypt12h } from '../../common/utils/date.util.js';
 
 // ── Expo Push API endpoint ─────────────────────────────────────────────────────
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
 // ── Expo Push Message type ─────────────────────────────────────────────────────
-interface ExpoPushMessage {
+export interface ExpoPushMessage {
   to: string;
   title: string;
   body: string;
@@ -25,26 +27,45 @@ interface ExpoPushMessage {
   priority?: 'default' | 'normal' | 'high';
 }
 
-interface ExpoPushTicket {
+export interface ExpoPushTicket {
   status: 'ok' | 'error';
   id?: string;
   message?: string;
   details?: { error?: string };
 }
 
+// ── Token validation helper ────────────────────────────────────────────────────
+export function isValidExpoPushToken(token: any): boolean {
+  return (
+    typeof token === 'string' &&
+    /^(ExponentPushToken|ExpoPushToken)\[.+\]$/.test(token.trim())
+  );
+}
+
+// ── Status label helper (Arabic) ──────────────────────────────────────────────
+export function formatAttendanceStatusArabic(status: string): string {
+  switch (status) {
+    case 'PRESENT': return 'حاضر';
+    case 'LATE': return 'حاضر (متأخر)';
+    case 'ABSENT': return 'غائب';
+    case 'EXCUSED': return 'مُستأذن';
+    default: return status;
+  }
+}
+
 // ── Deep link builder ──────────────────────────────────────────────────────────
-function buildDeepLink(studentId: string, tab: 'attendance' | 'exams' | 'financial'): string {
+export function buildDeepLink(studentId: string, tab: 'attendance' | 'exams' | 'financial'): string {
   return `monazem://child/${studentId}?tab=${tab}`;
 }
 
 // ── Resolve Teacher Signature Info with Subject ─────────────────────────────
-interface TeacherSigInfo {
+export interface TeacherSigInfo {
   cleanName: string;
   cleanSubject: string;
   teacherSig: string;
 }
 
-async function resolveTeacherSigInfo(
+export async function resolveTeacherSigInfo(
   teacherId: string,
   teacherName?: string,
   subject?: string
@@ -80,6 +101,123 @@ async function resolveTeacherSigInfo(
     : '';
 
   return { cleanName, cleanSubject, teacherSig };
+}
+
+// ── Pure Content Builder for Attendance Notifications ─────────────────────────
+export type AttendanceNotificationKind =
+  | 'PRESENT'
+  | 'LATE'
+  | 'ABSENT'
+  | 'GUEST'
+  | 'GUEST_COMPENSATED'
+  | 'EXCUSED'
+  | 'COMPENSATED_ADVANCE'
+  | 'CORRECTION';
+
+export interface BuildAttendanceContentParams {
+  kind: AttendanceNotificationKind;
+  studentName: string;
+  teacherSig?: string | undefined;
+  groupName?: string | undefined;
+  sessionDate: Date | string;
+  scannedAt?: Date | string | null | undefined;
+  startTime?: string | undefined;
+  relatedGroupName?: string | undefined;
+  relatedDate?: Date | string | undefined;
+  oldStatus?: string | undefined;
+  newStatus?: string | undefined;
+}
+
+export function buildAttendanceContent(params: BuildAttendanceContentParams): {
+  title: string;
+  body: string;
+  notificationType: ParentNotificationType;
+} {
+  const teacherText = params.teacherSig || 'المدرس';
+  const groupText = params.groupName ? ` — مجموعة [${params.groupName}]` : '';
+  const dateStr = formatDateEgypt(params.sessionDate, {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
+  const timeStr = params.scannedAt ? formatTimeEgypt(params.scannedAt) : '';
+  const startTimeStr = params.startTime ? format24hToEgypt12h(params.startTime) : '';
+  const relDateStr = params.relatedDate
+    ? formatDateEgypt(params.relatedDate, { weekday: 'long', day: 'numeric', month: 'long' })
+    : '';
+  const relGroupText = params.relatedGroupName ? ` في مجموعة [${params.relatedGroupName}]` : '';
+
+  switch (params.kind) {
+    case 'PRESENT':
+      return {
+        title: `${params.studentName} — حاضر ✓`,
+        body: `تم تسجيل حضور ${params.studentName} بحصة ${teacherText}${groupText}${timeStr ? ` في تمام الساعة ${timeStr}` : ''}.`,
+        notificationType: ParentNotificationType.ATTENDANCE_PRESENT,
+      };
+
+    case 'LATE':
+      return {
+        title: `${params.studentName} — حاضر (متأخر) ⏰`,
+        body: `تم تسجيل حضور ${params.studentName} (متأخر) بحصة ${teacherText}${groupText}${timeStr ? ` — وقت الوصول: ${timeStr}` : ''}.`,
+        notificationType: ParentNotificationType.ATTENDANCE_PRESENT,
+      };
+
+    case 'ABSENT':
+      return {
+        title: `${params.studentName} — غائب ⚠️`,
+        body: `نحيطكم علماً بغياب ${params.studentName} عن حصة ${teacherText}${groupText} اليوم ${dateStr}${startTimeStr ? ` (موعد الحصة: ${startTimeStr})` : ''}. يرجى المتابعة.`,
+        notificationType: ParentNotificationType.ATTENDANCE_ABSENT,
+      };
+
+    case 'GUEST':
+      return {
+        title: `${params.studentName} — حاضر كزائر 🔄`,
+        body: `سُجِّل حضور ${params.studentName} كزائر بحصة ${teacherText}${groupText}${timeStr ? ` في تمام الساعة ${timeStr}` : ''}.`,
+        notificationType: ParentNotificationType.ATTENDANCE_PRESENT,
+      };
+
+    case 'GUEST_COMPENSATED':
+      return {
+        title: `${params.studentName} — حاضر كزائر (تعويض غياب) 🔄`,
+        body: `سُجِّل حضور ${params.studentName} كزائر بحصة ${teacherText}${groupText}${timeStr ? ` في تمام الساعة ${timeStr}` : ''}، كتعويض عن غيابه بحصة ${relDateStr ? `يوم ${relDateStr}` : 'سابقة'}${relGroupText}.`,
+        notificationType: ParentNotificationType.ATTENDANCE_PRESENT,
+      };
+
+    case 'EXCUSED':
+      return {
+        title: `${params.studentName} — مُستأذن 📝`,
+        body: `تم تسجيل إذن غياب للطالب ${params.studentName} عن حصة ${teacherText}${groupText} بتاريخ ${dateStr}.`,
+        notificationType: ParentNotificationType.ATTENDANCE_PRESENT,
+      };
+
+    case 'COMPENSATED_ADVANCE':
+      return {
+        title: `${params.studentName} — معوّض مسبقاً 🔄`,
+        body: `نحيطكم علماً بأن الطالب ${params.studentName} معوّض مسبقاً لحصة ${teacherText}${groupText}، بحضوره كزائر بتاريخ ${relDateStr || dateStr}.`,
+        notificationType: ParentNotificationType.ATTENDANCE_PRESENT,
+      };
+
+    case 'CORRECTION': {
+      const newStatusLabel = formatAttendanceStatusArabic(params.newStatus || 'PRESENT');
+      const oldStatusLabel = formatAttendanceStatusArabic(params.oldStatus || 'ABSENT');
+      const notifType =
+        params.newStatus === 'ABSENT'
+          ? ParentNotificationType.ATTENDANCE_ABSENT
+          : ParentNotificationType.ATTENDANCE_PRESENT;
+      return {
+        title: `[تصحيح] ${params.studentName} — ${newStatusLabel}`,
+        body: `نحيطكم علماً بتصحيح حالة الطالب ${params.studentName} بحصة ${teacherText}${groupText} إلى (${newStatusLabel}) بدلاً من (${oldStatusLabel}).`,
+        notificationType: notifType,
+      };
+    }
+
+    default:
+      return {
+        title: `${params.studentName} — تسجيل الحضور`,
+        body: `تم تسجيل حالة الحضور للطالب ${params.studentName} بحصة ${teacherText}${groupText}.`,
+        notificationType: ParentNotificationType.ATTENDANCE_PRESENT,
+      };
+  }
 }
 
 // ── Send messages to Expo Push API ────────────────────────────────────────────
@@ -153,7 +291,7 @@ async function deliverToParent(
 
   const validTokens = devices
     .map((d) => d.fcmToken as string)
-    .filter((t) => t && (t.startsWith('ExponentPushToken[') || t.startsWith('ExpoPushToken[')));
+    .filter(isValidExpoPushToken);
 
   if (validTokens.length === 0) return;
 
@@ -234,8 +372,8 @@ async function getParentsForStudent(studentId: string): Promise<string[]> {
   return [];
 }
 
-// ── Save in-app notification (idempotent) ─────────────────────────────────────
-async function saveInAppNotification(params: {
+// ── Save in-app notification (idempotent, returns boolean indicating whether created) ──
+async function saveInAppNotificationSafe(params: {
   parentId: string;
   studentId: string;
   teacherId?: string;
@@ -246,7 +384,7 @@ async function saveInAppNotification(params: {
   deepLink: string;
   data?: Record<string, any>;
   eventId: string;
-}): Promise<void> {
+}): Promise<boolean> {
   try {
     const docData: any = {
       parentId: new mongoose.Types.ObjectId(params.parentId),
@@ -266,18 +404,430 @@ async function saveInAppNotification(params: {
     }
 
     await ParentNotificationModel.create(docData);
+    return true;
   } catch (err: any) {
     // Duplicate eventId — notification already saved, safe to ignore
     if (err.code !== 11000) {
       logger.warn('parent_notification_save_error', { err });
     }
+    return false;
   }
+}
+
+// ── Backward-compatible helper for legacy callers ──────────────────────────────
+async function saveInAppNotification(params: {
+  parentId: string;
+  studentId: string;
+  teacherId?: string;
+  centerId?: string;
+  type: ParentNotificationType;
+  title: string;
+  body: string;
+  deepLink: string;
+  data?: Record<string, any>;
+  eventId: string;
+}): Promise<void> {
+  await saveInAppNotificationSafe(params);
+}
+
+// ── Batch interfaces ──────────────────────────────────────────────────────────
+export interface SessionAttendanceItem {
+  studentId: string;
+  studentName: string;
+  status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED';
+  kind: AttendanceNotificationKind;
+  scannedAt?: Date | string | null | undefined;
+  homeworkDone?: boolean | null | undefined;
+  relatedSessionId?: string | mongoose.Types.ObjectId | undefined;
+  relatedGroupName?: string | undefined;
+  relatedDate?: Date | string | undefined;
+  notes?: string | undefined;
+}
+
+export interface NotifySessionAttendanceBatchParams {
+  sessionId: string;
+  teacherId: string;
+  teacherName?: string | undefined;
+  subject?: string | undefined;
+  groupName?: string | undefined;
+  sessionDate: Date | string;
+  startTime?: string | undefined;
+  items: SessionAttendanceItem[];
+}
+
+export interface NotifyAttendanceCorrectionParams {
+  sessionId: string;
+  studentId: string;
+  studentName: string;
+  teacherId: string;
+  teacherName?: string | undefined;
+  subject?: string | undefined;
+  groupName?: string | undefined;
+  sessionDate: Date | string;
+  oldStatus: string;
+  newStatus: string;
+  rev: number;
+  actualScannedAt?: Date | string | null | undefined;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PUBLIC SERVICE
 // ═══════════════════════════════════════════════════════════════════════════════
 export class ParentPushService {
+  /**
+   * Unified batch sender called upon session completion.
+   * Completely non-blocking (fire-and-forget).
+   */
+  static notifySessionAttendanceBatch(params: NotifySessionAttendanceBatchParams): void {
+    setImmediate(() => {
+      ParentPushService._sendSessionAttendanceBatch(params).catch((err) =>
+        logger.warn('parent_push_session_batch_error', { err, sessionId: params.sessionId })
+      );
+    });
+  }
+
+  /**
+   * Internal implementation of batch attendance notifications.
+   * Public for testing.
+   */
+  static async _sendSessionAttendanceBatch(
+    params: NotifySessionAttendanceBatchParams
+  ): Promise<{ insertedCount: number; pushCount: number }> {
+    if (!params.items || params.items.length === 0) {
+      return { insertedCount: 0, pushCount: 0 };
+    }
+
+    const { sessionId, teacherId, groupName, sessionDate, startTime, items } = params;
+
+    // 1. Resolve teacher info
+    const { cleanName, cleanSubject, teacherSig } = await resolveTeacherSigInfo(
+      teacherId,
+      params.teacherName,
+      params.subject
+    );
+
+    // 2. Fetch parents for all students in one bulk query
+    const studentObjectIds = Array.from(new Set(items.map((i) => i.studentId)))
+      .filter((id) => mongoose.Types.ObjectId.isValid(id))
+      .map((id) => new mongoose.Types.ObjectId(id));
+
+    const activeLinks = await ParentStudentModel.find({
+      studentId: { $in: studentObjectIds },
+      status: 'ACTIVE',
+    })
+      .select('studentId parentId')
+      .lean();
+
+    const studentToParentIdsMap = new Map<string, string[]>();
+    for (const link of activeLinks) {
+      const sid = link.studentId.toString();
+      const list = studentToParentIdsMap.get(sid) || [];
+      list.push(link.parentId.toString());
+      studentToParentIdsMap.set(sid, list);
+    }
+
+    // Fallback: auto-link any students missing parents
+    const missingStudentIds = items
+      .map((i) => i.studentId)
+      .filter((id) => !studentToParentIdsMap.has(id));
+
+    if (missingStudentIds.length > 0) {
+      for (const sid of missingStudentIds) {
+        const pids = await getParentsForStudent(sid);
+        if (pids.length > 0) {
+          studentToParentIdsMap.set(sid, pids);
+        }
+      }
+    }
+
+    // 3. Collect all unique parent ObjectIds and fetch devices in one query
+    const allParentIdStrings = Array.from(
+      new Set(Array.from(studentToParentIdsMap.values()).flat())
+    );
+
+    if (allParentIdStrings.length === 0) {
+      return { insertedCount: 0, pushCount: 0 };
+    }
+
+    const parentObjectIds = allParentIdStrings
+      .filter((id) => mongoose.Types.ObjectId.isValid(id))
+      .map((id) => new mongoose.Types.ObjectId(id));
+
+    const devices = await ParentDeviceModel.find({
+      parentId: { $in: parentObjectIds },
+      isActive: true,
+      fcmToken: { $ne: null, $exists: true },
+    })
+      .select('parentId fcmToken')
+      .lean();
+
+    const parentToTokensMap = new Map<string, string[]>();
+    for (const d of devices) {
+      const pid = d.parentId.toString();
+      const token = (d.fcmToken as string || '').trim();
+      if (isValidExpoPushToken(token)) {
+        const tokens = parentToTokensMap.get(pid) || [];
+        if (!tokens.includes(token)) {
+          tokens.push(token);
+          parentToTokensMap.set(pid, tokens);
+        }
+      }
+    }
+
+    // 4. Build in-app notification docs with deterministic eventId
+    const notificationDocs: any[] = [];
+    const docMetaMap = new Map<string, { studentId: string; status: string }>();
+
+    for (const item of items) {
+      const parentIds = studentToParentIdsMap.get(item.studentId) || [];
+      if (parentIds.length === 0) continue;
+
+      const { title, body, notificationType } = buildAttendanceContent({
+        kind: item.kind,
+        studentName: item.studentName,
+        teacherSig,
+        groupName,
+        sessionDate,
+        scannedAt: item.scannedAt,
+        startTime,
+        relatedGroupName: item.relatedGroupName,
+        relatedDate: item.relatedDate,
+      });
+
+      const deepLink = buildDeepLink(item.studentId, 'attendance');
+      const pushData = {
+        deepLink,
+        studentId: item.studentId,
+        sessionId,
+        tab: 'attendance',
+        kind: item.kind,
+        status: item.status,
+        scannedAt: item.scannedAt ? new Date(item.scannedAt).toISOString() : null,
+        sessionDate: new Date(sessionDate).toISOString(),
+        startTime: startTime || null,
+        teacherName: cleanName,
+        subject: cleanSubject,
+        groupName: groupName || null,
+        isGuest: item.kind === 'GUEST' || item.kind === 'GUEST_COMPENSATED',
+        isCorrection: false,
+        relatedGroupName: item.relatedGroupName || null,
+        relatedDate: item.relatedDate ? new Date(item.relatedDate).toISOString() : null,
+      };
+
+      for (const parentId of parentIds) {
+        const eventId = `attendance:${sessionId}:${item.studentId}:r0`;
+        const docKey = `${parentId}:${eventId}`;
+        docMetaMap.set(docKey, { studentId: item.studentId, status: item.status });
+
+        notificationDocs.push({
+          parentId: new mongoose.Types.ObjectId(parentId),
+          studentId: new mongoose.Types.ObjectId(item.studentId),
+          teacherId: new mongoose.Types.ObjectId(teacherId),
+          type: notificationType,
+          title,
+          body,
+          deepLink,
+          data: pushData,
+          eventId,
+        });
+      }
+    }
+
+    if (notificationDocs.length === 0) {
+      return { insertedCount: 0, pushCount: 0 };
+    }
+
+    // 5. Atomic insert with duplicate key handling
+    let insertedDocs: any[] = [];
+    try {
+      insertedDocs = (await ParentNotificationModel.insertMany(notificationDocs, {
+        ordered: false,
+      })) as any[];
+    } catch (err: any) {
+      if (err.insertedDocs && Array.isArray(err.insertedDocs) && err.insertedDocs.length > 0) {
+        insertedDocs = err.insertedDocs;
+      } else if (err.writeErrors && Array.isArray(err.writeErrors)) {
+        const failedIndices = new Set(err.writeErrors.map((e: any) => e.index));
+        insertedDocs = notificationDocs.filter((_, idx) => !failedIndices.has(idx));
+      } else {
+        logger.warn('parent_notifications_insert_many_partial_failure', {
+          code: err.code,
+          message: err.message,
+        });
+      }
+    }
+
+    if (insertedDocs.length === 0) {
+      return { insertedCount: 0, pushCount: 0 };
+    }
+
+    // 6. Update parentNotify on AttendanceModel for students whose notifications were actually inserted
+    const studentIdsWithInsertedNotif = new Set(
+      insertedDocs.map((d: any) => d.studentId?.toString()).filter(Boolean)
+    );
+
+    const attendanceUpdates = items
+      .filter((item) => studentIdsWithInsertedNotif.has(item.studentId))
+      .map((item) => ({
+        updateOne: {
+          filter: {
+            sessionId: new mongoose.Types.ObjectId(sessionId),
+            studentId: new mongoose.Types.ObjectId(item.studentId),
+          },
+          update: {
+            $set: {
+              'parentNotify.status': item.status,
+              'parentNotify.rev': 0,
+              'parentNotify.sentAt': new Date(),
+            },
+          },
+        },
+      }));
+
+    if (attendanceUpdates.length > 0) {
+      await AttendanceModel.bulkWrite(attendanceUpdates).catch((err) => {
+        logger.warn('parent_notify_attendance_update_error', { err });
+      });
+    }
+
+    // 7. Dispatch push notifications ONLY for insertedDocs
+    const pushMessages: ExpoPushMessage[] = [];
+    const tokensInMessages: string[] = [];
+
+    for (const doc of insertedDocs) {
+      const parentIdStr = doc.parentId?.toString();
+      if (!parentIdStr) continue;
+      const tokens = parentToTokensMap.get(parentIdStr) || [];
+      for (const token of tokens) {
+        pushMessages.push({
+          to: token,
+          sound: 'default',
+          priority: 'high',
+          channelId: 'default',
+          title: doc.title,
+          body: doc.body,
+          data: doc.data,
+        });
+        tokensInMessages.push(token);
+      }
+    }
+
+    // 8. Chunk into Expo batches of 100 max with isolated try/catch
+    const BATCH_SIZE = 100;
+    for (let i = 0; i < pushMessages.length; i += BATCH_SIZE) {
+      const chunkMessages = pushMessages.slice(i, i + BATCH_SIZE);
+      const chunkTokens = tokensInMessages.slice(i, i + BATCH_SIZE);
+      try {
+        const tickets = await sendExpoMessages(chunkMessages);
+        await deactivateInvalidTokens(chunkTokens, tickets);
+      } catch (batchErr) {
+        logger.warn('expo_push_batch_send_error', { batchErr, offset: i });
+      }
+    }
+
+    logger.info('parent_push_session_batch_sent', {
+      sessionId,
+      itemsCount: items.length,
+      notificationsInserted: insertedDocs.length,
+      pushMessagesCount: pushMessages.length,
+    });
+
+    return { insertedCount: insertedDocs.length, pushCount: pushMessages.length };
+  }
+
+  /**
+   * Correction notification sender called upon adjusting a completed session.
+   * Completely non-blocking (fire-and-forget).
+   */
+  static notifyAttendanceCorrection(params: NotifyAttendanceCorrectionParams): void {
+    setImmediate(() => {
+      ParentPushService._sendAttendanceCorrection(params).catch((err) =>
+        logger.warn('parent_push_correction_error', { err, studentId: params.studentId })
+      );
+    });
+  }
+
+  /**
+   * Internal implementation of correction notification.
+   * Public for testing.
+   */
+  static async _sendAttendanceCorrection(
+    params: NotifyAttendanceCorrectionParams
+  ): Promise<{ insertedCount: number; pushCount: number }> {
+    const parentIds = await getParentsForStudent(params.studentId);
+    if (parentIds.length === 0) return { insertedCount: 0, pushCount: 0 };
+
+    const { cleanName, cleanSubject, teacherSig } = await resolveTeacherSigInfo(
+      params.teacherId,
+      params.teacherName,
+      params.subject
+    );
+
+    const { title, body, notificationType } = buildAttendanceContent({
+      kind: 'CORRECTION',
+      studentName: params.studentName,
+      teacherSig,
+      groupName: params.groupName,
+      sessionDate: params.sessionDate,
+      scannedAt: params.actualScannedAt,
+      oldStatus: params.oldStatus,
+      newStatus: params.newStatus,
+    });
+
+    const deepLink = buildDeepLink(params.studentId, 'attendance');
+    const pushData = {
+      deepLink,
+      studentId: params.studentId,
+      sessionId: params.sessionId,
+      tab: 'attendance',
+      kind: 'CORRECTION',
+      status: params.newStatus,
+      oldStatus: params.oldStatus,
+      isCorrection: true,
+      rev: params.rev,
+      teacherName: cleanName,
+      subject: cleanSubject,
+      groupName: params.groupName || null,
+      sessionDate: new Date(params.sessionDate).toISOString(),
+      scannedAt: params.actualScannedAt ? new Date(params.actualScannedAt).toISOString() : null,
+    };
+
+    const eventId = `attendance:${params.sessionId}:${params.studentId}:r${params.rev}`;
+    let insertedCount = 0;
+    let pushCount = 0;
+
+    await Promise.allSettled(
+      parentIds.map(async (parentId) => {
+        const inserted = await saveInAppNotificationSafe({
+          parentId,
+          studentId: params.studentId,
+          teacherId: params.teacherId,
+          type: notificationType,
+          title,
+          body,
+          deepLink,
+          data: pushData,
+          eventId,
+        });
+
+        if (inserted) {
+          insertedCount++;
+          await deliverToParent(parentId, { title, body, data: pushData });
+          pushCount++;
+        }
+      })
+    );
+
+    logger.info('parent_push_correction_sent', {
+      studentId: params.studentId,
+      rev: params.rev,
+      insertedCount,
+      pushCount,
+    });
+
+    return { insertedCount, pushCount };
+  }
+
   /**
    * Notify parents when a student enters the center gate.
    * Fires-and-forgets — non-blocking.
@@ -310,11 +860,7 @@ export class ParentPushService {
 
     const { studentId, studentName, centerId, centerName } = params;
     const time = params.checkInTime || new Date();
-    const timeStr = new Date(time).toLocaleTimeString('ar-EG', {
-      timeZone: 'Africa/Cairo',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    const timeStr = formatTimeEgypt(time);
 
     const title = `${studentName} — وصل السنتر 🏢`;
     const body = `تم تسجيل دخول ${studentName} إلى سنتر ${centerName} بسلام في تمام الساعة ${timeStr}.`;
@@ -326,7 +872,7 @@ export class ParentPushService {
 
     await Promise.allSettled(
       parentIds.map(async (parentId) => {
-        await saveInAppNotification({
+        const inserted = await saveInAppNotificationSafe({
           parentId,
           studentId,
           centerId,
@@ -338,212 +884,18 @@ export class ParentPushService {
           eventId,
         });
 
-        await deliverToParent(parentId, {
-          title,
-          body,
-          data: pushData,
-        });
+        if (inserted) {
+          await deliverToParent(parentId, { title, body, data: pushData });
+        }
       })
     );
   }
 
-  /**
-   * Notify parents when a student's attendance is recorded.
-   * Fires-and-forgets — never throws so it cannot break the attendance flow.
-   */
-  static notifyAttendance(params: {
-    studentId: string;
-    studentName: string;
-    teacherId: string;
-    teacherName: string;
-    subject?: string;
-    sessionDate: Date;
-    status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED';
-    isGuest?: boolean;
-  }): void {
-    // Resolve parents asynchronously — completely non-blocking
-    setImmediate(() => {
-      ParentPushService._sendAttendance(params).catch((err) =>
-        logger.warn('parent_push_attendance_error', { err })
-      );
-    });
-  }
 
-  private static async _sendAttendance(params: {
-    studentId: string;
-    studentName: string;
-    teacherId: string;
-    teacherName: string;
-    subject?: string;
-    sessionDate: Date;
-    status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED';
-    isGuest?: boolean;
-  }): Promise<void> {
-    const parentIds = await getParentsForStudent(params.studentId);
-    if (parentIds.length === 0) return;
-
-    const { studentId, studentName, sessionDate, status, isGuest } = params;
-    const { cleanName, teacherSig } = await resolveTeacherSigInfo(
-      params.teacherId,
-      params.teacherName,
-      params.subject
-    );
-    const teacherDisplay = cleanName ? `أ/ ${cleanName}` : (params.teacherName || '');
-    const signature = teacherSig ? `\nمع تحيات: ${teacherSig}` : '';
-
-    // ── Build notification content ─────────────────────────────────────────
-    const dateStr = new Date(sessionDate).toLocaleDateString('ar-EG', {
-      timeZone: 'Africa/Cairo',
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long',
-    });
-
-    let title: string;
-    let body: string;
-    let notificationType: ParentNotificationType;
-
-    if (isGuest && (status === 'PRESENT' || status === 'LATE')) {
-      notificationType = ParentNotificationType.ATTENDANCE_PRESENT;
-      title = `${studentName} — حاضر كزائر 🔄`;
-      body = `سُجِّل حضور ${studentName} اليوم كزائر في حصة ${teacherDisplay}.${signature}`;
-    } else if (status === 'PRESENT' || status === 'LATE') {
-      notificationType = ParentNotificationType.ATTENDANCE_PRESENT;
-      const statusLabel = status === 'LATE' ? 'حاضر (متأخر)' : 'حاضر ✓';
-      title = `${studentName} — ${statusLabel}`;
-      body = `سُجِّل حضور ${studentName} في حصة ${teacherDisplay} بتاريخ ${dateStr}.${signature}`;
-    } else if (status === 'ABSENT') {
-      notificationType = ParentNotificationType.ATTENDANCE_ABSENT;
-      title = `${studentName} — غائب ⚠️`;
-      body = `سُجِّل غياب ${studentName} عن حصة ${teacherDisplay} بتاريخ ${dateStr}. يرجى المتابعة.${signature}`;
-    } else {
-      // EXCUSED / COMPENSATED
-      notificationType = ParentNotificationType.ATTENDANCE_PRESENT;
-      title = `${studentName} — تم تعويض الغياب 🔄`;
-      body = `تم تسجيل غياب ${studentName} كمعوّض عن حصة ${teacherDisplay} بتاريخ ${dateStr}.${signature}`;
-    }
-
-    const deepLink = buildDeepLink(studentId, 'attendance');
-    const sessionDateObj = new Date(sessionDate);
-    const datePart = !isNaN(sessionDateObj.getTime())
-      ? sessionDateObj.toISOString().split('T')[0]
-      : new Date().toISOString().split('T')[0];
-    const eventId = `attendance:${studentId}:${params.teacherId}:${datePart}:${status}${isGuest ? ':guest' : ''}`;
-    const pushData = { deepLink, studentId, tab: 'attendance', status, isGuest };
-
-    // ── Send to all parents in parallel ───────────────────────────────────
-    await Promise.allSettled(
-      parentIds.map(async (parentId) => {
-        await saveInAppNotification({
-          parentId,
-          studentId,
-          teacherId: params.teacherId,
-          type: notificationType,
-          title,
-          body,
-          deepLink,
-          data: pushData,
-          eventId: `${eventId}:${parentId}`,
-        });
-
-        await deliverToParent(parentId, { title, body, data: pushData });
-      })
-    );
-
-    logger.info('parent_push_attendance_sent', {
-      studentId,
-      status,
-      isGuest,
-      parentCount: parentIds.length,
-    });
-  }
-
-  /**
-   * Notify parents when a student's past missed session has been compensated.
-   * Fires-and-forgets — non-blocking.
-   */
-  static notifyCompensation(params: {
-    studentId: string;
-    studentName: string;
-    teacherId: string;
-    teacherName: string;
-    subject?: string;
-    missedSessionDate: Date;
-    hostGroupName?: string;
-  }): void {
-    setImmediate(() => {
-      ParentPushService._sendCompensation(params).catch((err) =>
-        logger.warn('parent_push_compensation_error', { err })
-      );
-    });
-  }
-
-  private static async _sendCompensation(params: {
-    studentId: string;
-    studentName: string;
-    teacherId: string;
-    teacherName: string;
-    subject?: string;
-    missedSessionDate: Date;
-    hostGroupName?: string;
-  }): Promise<void> {
-    const parentIds = await getParentsForStudent(params.studentId);
-    if (parentIds.length === 0) return;
-
-    const { studentId, studentName, missedSessionDate } = params;
-    const { cleanName, teacherSig } = await resolveTeacherSigInfo(
-      params.teacherId,
-      params.teacherName,
-      params.subject
-    );
-    const teacherDisplay = cleanName ? `أ/ ${cleanName}` : (params.teacherName || '');
-    const signature = teacherSig ? `\nمع تحيات: ${teacherSig}` : '';
-
-    const dateStr = new Date(missedSessionDate).toLocaleDateString('ar-EG', {
-      timeZone: 'Africa/Cairo',
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long',
-    });
-
-    const title = `${studentName} — تم تعويض الغياب بنجاح 🔄`;
-    const body = `تم تعويض حصة الغياب لـ ${studentName} في ${teacherDisplay} (حصة يوم ${dateStr}) بعد حضوره كزائر.${signature}`;
-
-    const deepLink = buildDeepLink(studentId, 'attendance');
-    const sessionDateObj = new Date(missedSessionDate);
-    const datePart = !isNaN(sessionDateObj.getTime())
-      ? sessionDateObj.toISOString().split('T')[0]
-      : new Date().toISOString().split('T')[0];
-    const eventId = `compensation:${studentId}:${params.teacherId}:${datePart}`;
-    const pushData = { deepLink, studentId, tab: 'attendance', status: 'EXCUSED' };
-
-    await Promise.allSettled(
-      parentIds.map(async (parentId) => {
-        await saveInAppNotification({
-          parentId,
-          studentId,
-          teacherId: params.teacherId,
-          type: ParentNotificationType.ATTENDANCE_PRESENT,
-          title,
-          body,
-          deepLink,
-          data: pushData,
-          eventId: `${eventId}:${parentId}`,
-        });
-
-        await deliverToParent(parentId, { title, body, data: pushData });
-      })
-    );
-
-    logger.info('parent_push_compensation_sent', {
-      studentId,
-      parentCount: parentIds.length,
-    });
-  }
 
   /**
    * Notify parents when an exam result is recorded for a student.
-   * Fires-and-forgets — never throws so it cannot break the exam flow.
+   * Fires-and-forgets — never throws.
    */
   static notifyExamResult(params: {
     studentId: string;
@@ -592,7 +944,6 @@ export class ParentPushService {
       examId,
       score,
       totalMarks,
-      percentage,
       passed,
       grade,
     } = params;
@@ -615,7 +966,7 @@ export class ParentPushService {
 
     await Promise.allSettled(
       parentIds.map(async (parentId) => {
-        await saveInAppNotification({
+        const inserted = await saveInAppNotificationSafe({
           parentId,
           studentId,
           teacherId: params.teacherId,
@@ -624,24 +975,19 @@ export class ParentPushService {
           body,
           deepLink,
           data: pushData,
-          eventId: `${eventId}:${parentId}`,
+          eventId,
         });
 
-        await deliverToParent(parentId, { title, body, data: pushData });
+        if (inserted) {
+          await deliverToParent(parentId, { title, body, data: pushData });
+        }
       })
     );
-
-    logger.info('parent_push_exam_sent', {
-      studentId,
-      examId,
-      passed,
-      parentCount: parentIds.length,
-    });
   }
 
   /**
    * Notify parents when a student's subscription payment is recorded.
-   * Fires-and-forgets — never throws so it cannot break the payment flow.
+   * Fires-and-forgets — never throws.
    */
   static notifyPayment(params: {
     studentId: string;
@@ -716,7 +1062,7 @@ export class ParentPushService {
 
     await Promise.allSettled(
       parentIds.map(async (parentId) => {
-        await saveInAppNotification({
+        const inserted = await saveInAppNotificationSafe({
           parentId,
           studentId,
           teacherId: params.teacherId,
@@ -725,19 +1071,13 @@ export class ParentPushService {
           body,
           deepLink,
           data: pushData,
-          eventId: `${eventId}:${parentId}`,
+          eventId,
         });
 
-        await deliverToParent(parentId, { title, body, data: pushData });
+        if (inserted) {
+          await deliverToParent(parentId, { title, body, data: pushData });
+        }
       })
     );
-
-    logger.info('parent_push_payment_sent', {
-      studentId,
-      transactionId,
-      paidAmount,
-      cycleNumber,
-      parentCount: parentIds.length,
-    });
   }
 }
