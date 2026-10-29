@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Alert,
   Dimensions,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,6 +16,7 @@ import { spacing } from '../../theme/spacing';
 import { Button } from '../../components/common/Button';
 import { AuthApi } from '../../api/auth.api';
 import { useAuthStore } from '../../store/auth.store';
+import { showAlert } from '../../utils/alert.util';
 import { ArrowRight, QrCode, Keyboard } from 'lucide-react-native';
 
 const { width } = Dimensions.get('window');
@@ -74,9 +74,7 @@ export const BarcodeScannerScreen: React.FC<Props> = ({ route, navigation }) => 
       } else if (!error?.response) {
         message = 'تعذر الاتصال بالخادم. يرجى التأكد من اتصالك بالإنترنت والمحاولة مجدداً.';
       }
-      Alert.alert('تعذر التحقق', message, [
-        { text: 'حاول مرة أخرى', onPress: () => setScanned(false) },
-      ]);
+      showAlert('تعذر التحقق', message, () => setScanned(false), 'حاول مرة أخرى');
     } finally {
       setLoading(false);
     }
