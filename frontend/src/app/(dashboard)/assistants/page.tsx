@@ -207,7 +207,7 @@ function AssistantsContent() {
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3 text-gray-700 font-medium">
-                                                {a.salary != null ? `${a.salary.toLocaleString('ar-EG')} ج` : '—'}
+                                                {a.salary != null ? `${a.salary.toLocaleString('en-US')} ج` : '—'}
                                             </td>
                                             <td className="px-4 py-3 text-center">
                                                 <Badge
@@ -265,7 +265,7 @@ function AssistantsContent() {
                                                 <p className="text-xs text-gray-400 truncate" dir="ltr">{a.phone ?? '—'}</p>
                                                 {a.salary != null && (
                                                     <p className="text-xs text-green-600 font-medium mt-0.5">
-                                                        راتب: {a.salary.toLocaleString('ar-EG')} ج
+                                                        راتب: {a.salary.toLocaleString('en-US')} ج
                                                     </p>
                                                 )}
                                             </div>
@@ -686,7 +686,7 @@ function PaySalaryModal({
                         <div className="space-y-3">
                             <div className="bg-gray-50 border border-gray-100 rounded-xl p-3 flex justify-between items-center">
                                 <span className="text-sm text-gray-500 font-medium">الراتب الأساسي</span>
-                                <span className="text-sm font-bold text-gray-900">{assistant.salary?.toLocaleString('ar-EG')} ج</span>
+                                <span className="text-sm font-bold text-gray-900">{assistant.salary?.toLocaleString('en-US')} ج</span>
                             </div>
                             
                             <div className="grid grid-cols-2 gap-3">
@@ -716,7 +716,7 @@ function PaySalaryModal({
                             
                             <div className="bg-primary/5 border border-primary/10 rounded-xl p-3 flex justify-between items-center mt-2">
                                 <span className="text-sm text-primary font-bold">الصافي للدفع</span>
-                                <span className="text-lg font-black text-primary">{netAmount.toLocaleString('ar-EG')} ج</span>
+                                <span className="text-lg font-black text-primary">{netAmount.toLocaleString('en-US')} ج</span>
                             </div>
                         </div>
                     ) : (

@@ -11,10 +11,13 @@ import { Loader2 } from 'lucide-react';
 
 import { useQuery } from '@tanstack/react-query';
 import { fetchMe } from '@/lib/api/auth';
+import { usePresenceHeartbeat } from '@/lib/hooks/usePresenceHeartbeat';
 
 export function DashboardWrapper({ children }: { children: ReactNode }) {
     const { user, token, login: loginStore, logout } = useAuthStore();
     const [isMounted, setIsMounted] = useState(false);
+
+    usePresenceHeartbeat();
 
     useEffect(() => {
         setIsMounted(true);

@@ -375,6 +375,7 @@ export class ReportsService {
             });
         }
 
+        const syntheticPaidTxs: any[] = [];
         const cycleEnrollments = sortedDeduplicatedEnrollments.map(e => {
             const isCurrentCycle = e.cycleNumber === currentCycleNumber && e.groupId?.toString() === student.groupId?.toString();
             const isPastCycle = !isCurrentCycle && (e.groupId?.toString() !== student.groupId?.toString() || e.cycleNumber < currentCycleNumber);
@@ -417,6 +418,58 @@ export class ReportsService {
                 CycleEnrollmentModel.updateOne(
                     { _id: e._id },
                     { $set: { remainingAmount, status, totalPaid: 0 } }
+                ).exec().catch(() => {});
+            }
+
+            // Auto-heal missing transaction record so payment log always shows when and how cycle was paid
+            if ((status === CycleEnrollmentStatus.PAID || totalPaid > 0 || (e as any).isWaived) && cycleTxs.length === 0) {
+                const paymentDate = (e as any).updatedAt || (e as any).createdAt || (student as any).createdAt || new Date();
+                const recordedPaid = totalPaid > 0 ? totalPaid : e.cycleCharge;
+                const autoTx = {
+                    _id: `rec_${e._id || e.cycleNumber}`,
+                    teacherId: (student as any).teacherId,
+                    studentId: student._id,
+                    studentName: student.studentName,
+                    gradeLevel: student.gradeLevel,
+                    type: TransactionType.INCOME,
+                    category: TransactionCategory.SUBSCRIPTION,
+                    originalAmount: e.cycleCharge,
+                    discountAmount: totalDiscount,
+                    paidAmount: recordedPaid,
+                    remainingAmount: 0,
+                    date: paymentDate,
+                    cycleNumber: e.cycleNumber,
+                    description: (e as any).isWaived 
+                        ? `إعفاء وتسوية الدورة ${e.cycleNumber}` 
+                        : `سداد معتمد للدورة ${e.cycleNumber} (تسجيل النظام)`,
+                    isSystemRecorded: true,
+                };
+                cycleTxs.push(autoTx);
+                subTxsByCycle.set(e.cycleNumber, cycleTxs);
+                syntheticPaidTxs.push(autoTx);
+
+                // Auto-heal DB record asynchronously
+                TransactionModel.updateOne(
+                    { studentId: student._id, cycleNumber: e.cycleNumber, category: TransactionCategory.SUBSCRIPTION },
+                    {
+                        $setOnInsert: {
+                            teacherId: (student as any).teacherId,
+                            createdBy: (student as any).teacherId,
+                            type: TransactionType.INCOME,
+                            category: TransactionCategory.SUBSCRIPTION,
+                            studentId: student._id,
+                            studentName: student.studentName,
+                            gradeLevel: student.gradeLevel,
+                            originalAmount: e.cycleCharge,
+                            discountAmount: totalDiscount,
+                            paidAmount: recordedPaid,
+                            remainingAmount: 0,
+                            date: paymentDate,
+                            cycleNumber: e.cycleNumber,
+                            description: `سداد معتمد للدورة ${e.cycleNumber} (تسجيل النظام)`,
+                        }
+                    },
+                    { upsert: true }
                 ).exec().catch(() => {});
             }
 
@@ -800,15 +853,18 @@ export class ReportsService {
                 cycles: attendanceCycles,
             },
             payments: {
-                totalPaid,
-                totalDiscount,
-                subscriptionsCount,
+                totalPaid: totalPaid + syntheticPaidTxs.reduce((sum: number, t: any) => sum + (t.paidAmount || 0), 0),
+                totalDiscount: totalDiscount + syntheticPaidTxs.reduce((sum: number, t: any) => sum + (t.discountAmount || 0), 0),
+                subscriptionsCount: subscriptionsCount + syntheticPaidTxs.length,
                 notebookSalesCount,
-                history: payments,
-                subscriptions: payments.filter((p: any) => 
-                    p.category === TransactionCategory.SUBSCRIPTION || 
-                    p.category === TransactionCategory.DEBT_PAYMENT
-                ),
+                history: [...payments, ...syntheticPaidTxs].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+                subscriptions: [
+                    ...payments.filter((p: any) => 
+                        p.category === TransactionCategory.SUBSCRIPTION || 
+                        p.category === TransactionCategory.DEBT_PAYMENT
+                    ),
+                    ...syntheticPaidTxs
+                ].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()),
                 cycleEnrollments,
                 allCycleEnrollments: cycleEnrollments,
                 pastUnpaidCycles,

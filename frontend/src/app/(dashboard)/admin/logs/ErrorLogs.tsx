@@ -42,7 +42,7 @@ function ErrorRow({ log }: { log: AdminErrorLog }) {
                     </div>
                 </div>
                 <span className="text-xs text-gray-400 shrink-0">
-                    {new Date(log.createdAt).toLocaleString('ar-EG', {
+                    {new Date(log.createdAt).toLocaleString('ar-EG-u-nu-latn', {
                         month: 'short', day: 'numeric',
                         hour: '2-digit', minute: '2-digit',
                     })}

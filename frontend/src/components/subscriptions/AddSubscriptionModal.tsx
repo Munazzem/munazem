@@ -227,7 +227,7 @@ export function AddSubscriptionModal({ tenantId, disabled }: { tenantId?: string
                                                             {PLAN_LABELS[plan]}
                                                         </p>
                                                         <p className={cn('text-xl font-extrabold mt-0.5', isSelected ? style.color : 'text-gray-900')}>
-                                                            {PLAN_PRICES[plan].toLocaleString('ar-EG')}
+                                                            {PLAN_PRICES[plan].toLocaleString('en-US')}
                                                         </p>
                                                         <p className="text-xs text-gray-400">ج / شهر</p>
                                                     </button>
@@ -294,12 +294,12 @@ export function AddSubscriptionModal({ tenantId, disabled }: { tenantId?: string
                     <div>
                         <p className="text-xs text-gray-500">الإجمالي</p>
                         <p className="text-xs text-gray-400">
-                            {isFreeTrial ? 'مجاني (فترة تجريبية)' : `${monthlyAmount.toLocaleString('ar-EG')} ج × ${selectedDuration} شهر`}
+                            {isFreeTrial ? 'مجاني (فترة تجريبية)' : `${monthlyAmount.toLocaleString('en-US')} ج × ${selectedDuration} شهر`}
                         </p>
                     </div>
                     <div className="flex items-center gap-4">
                         <p className="text-2xl font-extrabold text-primary">
-                            {total.toLocaleString('ar-EG')} {total > 0 && <span className="text-sm font-normal text-gray-500">ج</span>}
+                            {total.toLocaleString('en-US')} {total > 0 && <span className="text-sm font-normal text-gray-500">ج</span>}
                         </p>
                         <div className="flex gap-2">
                             <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={mutation.isPending}>إلغاء</Button>

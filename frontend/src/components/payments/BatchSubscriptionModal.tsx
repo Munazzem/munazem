@@ -257,7 +257,7 @@ export function BatchSubscriptionModal({
                                 </div>
                                 <div className="bg-blue-50/70 border border-blue-100 rounded-xl p-2.5 sm:p-3">
                                     <p className="text-lg sm:text-xl font-black text-blue-700">
-                                        {results.filter(r => r.status === 'success').reduce((s, r) => s + r.paidAmount, 0).toLocaleString('ar-EG')}
+                                        {results.filter(r => r.status === 'success').reduce((s, r) => s + r.paidAmount, 0).toLocaleString('en-US')}
                                     </p>
                                     <p className="text-xs text-blue-600 font-medium mt-0.5">إجمالي المدفوع (ج)</p>
                                 </div>
@@ -279,7 +279,7 @@ export function BatchSubscriptionModal({
                                             <span className="font-semibold text-gray-800 truncate">{r.studentName || r.studentId}</span>
                                         </div>
                                         {r.status === 'success' ? (
-                                            <span className="text-emerald-700 font-black text-sm shrink-0">{r.paidAmount.toLocaleString('ar-EG')} ج</span>
+                                            <span className="text-emerald-700 font-black text-sm shrink-0">{r.paidAmount.toLocaleString('en-US')} ج</span>
                                         ) : (
                                             <span className="text-red-500 text-xs shrink-0">{r.error}</span>
                                         )}

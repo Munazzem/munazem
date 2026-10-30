@@ -128,7 +128,7 @@ export function GroupReportModal({ groupId, groupName, open, onOpenChange }: Gro
                             <div className="bg-emerald-50 rounded-xl p-4 text-center">
                                 <TrendingUp className="h-5 w-5 text-emerald-600 mx-auto mb-1" />
                                 <p className="text-2xl font-bold text-emerald-700">
-                                    {totalRevenue.toLocaleString('ar-EG')}
+                                    {totalRevenue.toLocaleString('en-US')}
                                 </p>
                                 <p className="text-xs text-gray-500 mt-0.5">إجمالي الإيرادات (ج.م)</p>
                             </div>
@@ -166,7 +166,7 @@ export function GroupReportModal({ groupId, groupName, open, onOpenChange }: Gro
                                             <span className="text-xs text-gray-400">({b.count} معاملة)</span>
                                         </div>
                                         <span className="text-sm font-bold text-gray-900">
-                                            {b.total.toLocaleString('ar-EG')} ج.م
+                                            {b.total.toLocaleString('en-US')} ج.م
                                         </span>
                                     </div>
                                 ))}

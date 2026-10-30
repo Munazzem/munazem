@@ -765,6 +765,183 @@ export class AdminService {
 
         return templates;
     }
+
+    // ── Get Active Presence Users ─────────────────────────────────────
+    static async getActiveUsers() {
+        const { PresenceService } = await import('../../infrastructure/presence/presence.service.js');
+        return await PresenceService.getActiveUsers();
+    }
+
+    // ── Get Specific Tenant Activity Logs ────────────────────────────
+    static async getTenantActivity(tenantId: string, query: {
+        page?: number; limit?: number; event?: string;
+    }) {
+        const page  = Math.max(1, query.page ?? 1);
+        const limit = Math.min(100, query.limit ?? 25);
+        const skip  = (page - 1) * limit;
+
+        const filter: any = { tenantId };
+        if (query.event) filter.event = query.event;
+
+        const [logs, total, assistants, teacher] = await Promise.all([
+            ActivityLogModel.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+            ActivityLogModel.countDocuments(filter),
+            UserModel.find({ teacherId: tenantId }, { name: 1, role: 1 }).lean(),
+            UserModel.findById(tenantId, { name: 1, centerName: 1 }).lean(),
+        ]);
+
+        if (!teacher) throw NotFoundException({ message: 'Teacher not found' });
+
+        const actorMap = new Map<string, string>();
+        actorMap.set(teacher._id.toString(), teacher.name);
+        for (const a of assistants) {
+            actorMap.set(a._id.toString(), `${a.name} (مساعد)`);
+        }
+
+        const enriched = logs.map(log => ({
+            ...log,
+            actorName: actorMap.get(log.userId?.toString()) || 'مستخدم',
+            teacherName: teacher.name,
+        }));
+
+        return {
+            data: enriched,
+            teacher: { id: teacher._id, name: teacher.name, centerName: teacher.centerName },
+            pagination: { total, page, limit, totalPages: Math.ceil(total / limit) }
+        };
+    }
+
+    // ── Get Tenant Deletion Impact Analysis ───────────────────────────
+    static async getTenantDeletionImpact(tenantId: string) {
+        const teacher = await UserModel.findById(tenantId).lean();
+        if (!teacher) throw NotFoundException({ message: 'Teacher not found' });
+
+        const { AttendanceModel } = await import('../../database/models/attendance.model.js');
+        const { TransactionModel } = await import('../../database/models/transaction.model.js');
+        const { ExamModel } = await import('../../database/models/exam.model.js');
+        const { CardModel } = await import('../../database/models/card.model.js');
+
+        const [
+            studentsCount,
+            assistantsCount,
+            groupsCount,
+            sessionsCount,
+            attendancesCount,
+            transactionsCount,
+            examsCount,
+            cardsCount,
+            subscriptionsCount,
+        ] = await Promise.all([
+            StudentModel.countDocuments({ teacherId: tenantId }),
+            UserModel.countDocuments({ teacherId: tenantId, role: UserRole.assistant }),
+            GroupModel.countDocuments({ teacherId: tenantId }),
+            SessionModel.countDocuments({ teacherId: tenantId }),
+            AttendanceModel.countDocuments({ teacherId: tenantId }),
+            TransactionModel.countDocuments({ teacherId: tenantId }),
+            ExamModel.countDocuments({ teacherId: tenantId }),
+            CardModel.countDocuments({ teacherId: tenantId }),
+            SubscriptionModel.countDocuments({ teacherId: tenantId }),
+        ]);
+
+        return {
+            teacher: {
+                id: teacher._id,
+                name: teacher.name,
+                phone: teacher.phone,
+                role: teacher.role,
+                centerName: teacher.centerName,
+                createdAt: teacher.createdAt,
+            },
+            counts: {
+                studentsCount,
+                assistantsCount,
+                groupsCount,
+                sessionsCount,
+                attendancesCount,
+                transactionsCount,
+                examsCount,
+                cardsCount,
+                subscriptionsCount,
+            }
+        };
+    }
+
+    // ── Safe Cascade or Soft Delete Tenant ────────────────────────────
+    static async deleteTenant(tenantId: string, options: { permanent?: boolean; superAdminId?: string }) {
+        const teacher = await UserModel.findById(tenantId);
+        if (!teacher) throw NotFoundException({ message: 'Teacher not found' });
+
+        const { cache, CacheKeys } = await import('../../infrastructure/cache/cache.service.js');
+
+        if (!options.permanent) {
+            // Soft delete: Disable teacher, disable assistants, mark as inactive
+            await UserModel.updateOne(
+                { _id: tenantId },
+                { $set: { isActive: false, 'meta.softDeleted': true, 'meta.softDeletedAt': new Date() } }
+            );
+            await UserModel.updateMany(
+                { teacherId: tenantId },
+                { $set: { isActive: false } }
+            );
+
+            // Invalidate cache
+            await cache.invalidate(CacheKeys.teacherAll(tenantId));
+
+            // Log activity
+            await ActivityLogModel.create({
+                event: 'tenant_soft_deleted',
+                tenantId: teacher._id,
+                userId: options.superAdminId || teacher._id,
+                meta: { teacherName: teacher.name, permanent: false }
+            });
+
+            return { success: true, mode: 'soft_delete', message: `تم تعطيل وأرشفة حساب المعلم ${teacher.name} بنجاح` };
+        }
+
+        // Permanent Hard Delete: Cascade delete all resources
+        const { AttendanceModel } = await import('../../database/models/attendance.model.js');
+        const { AttendanceSnapshotModel } = await import('../../database/models/attendance-snapshot.model.js');
+        const { ArchiveAttendanceModel } = await import('../../database/models/archive-attendance.model.js');
+        const { TransactionModel } = await import('../../database/models/transaction.model.js');
+        const { DailyLedgerModel, MonthlyLedgerModel } = await import('../../database/models/ledger.model.js');
+        const { ExamModel } = await import('../../database/models/exam.model.js');
+        const { ExamResultModel } = await import('../../database/models/exam-result.model.js');
+        const { CardModel } = await import('../../database/models/card.model.js');
+        const { CycleEnrollmentModel } = await import('../../database/models/cycle-enrollment.model.js');
+        const { NotebookModel } = await import('../../database/models/notebook.model.js');
+        const { NotebookReservationModel } = await import('../../database/models/notebook-reservation.model.js');
+        const { CenterTeacherModel } = await import('../../database/models/center-teacher.model.js');
+        const { CenterEnrollmentModel } = await import('../../database/models/center-enrollment.model.js');
+
+        await Promise.all([
+            StudentModel.deleteMany({ teacherId: tenantId }),
+            GroupModel.deleteMany({ teacherId: tenantId }),
+            SessionModel.deleteMany({ teacherId: tenantId }),
+            AttendanceModel.deleteMany({ teacherId: tenantId }),
+            AttendanceSnapshotModel.deleteMany({ teacherId: tenantId }),
+            ArchiveAttendanceModel.deleteMany({ teacherId: tenantId }),
+            TransactionModel.deleteMany({ teacherId: tenantId }),
+            DailyLedgerModel.deleteMany({ teacherId: tenantId }),
+            MonthlyLedgerModel.deleteMany({ teacherId: tenantId }),
+            SubscriptionModel.deleteMany({ teacherId: tenantId }),
+            ExamModel.deleteMany({ teacherId: tenantId }),
+            ExamResultModel.deleteMany({ teacherId: tenantId }),
+            CardModel.deleteMany({ teacherId: tenantId }),
+            CycleEnrollmentModel.deleteMany({ teacherId: tenantId }),
+            NotebookModel.deleteMany({ teacherId: tenantId }),
+            NotebookReservationModel.deleteMany({ teacherId: tenantId }),
+            CenterTeacherModel.deleteMany({ teacherId: tenantId }),
+            CenterEnrollmentModel.deleteMany({ teacherId: tenantId }),
+            MessageLogModel.deleteMany({ teacherId: tenantId }),
+            UserModel.deleteMany({ teacherId: tenantId }), // Delete all assistants
+            UserModel.findByIdAndDelete(tenantId),         // Delete teacher
+        ]);
+
+        // Invalidate cache
+        await cache.invalidate(CacheKeys.teacherAll(tenantId));
+
+        return { success: true, mode: 'permanent', message: `تم حذف حساب المعلم ${teacher.name} وكافة بياناته نهائياً` };
+    }
 }
 
 

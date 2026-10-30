@@ -114,7 +114,7 @@ export default function SubscriptionsPage() {
                     { icon: CheckCircle2, bg: 'bg-green-100', color: 'text-green-600', label: 'اشتراكات نشطة', value: activeCount },
                     { icon: XCircle,      bg: 'bg-red-100',   color: 'text-red-500',   label: 'اشتراكات منتهية', value: expiredCount },
                     { icon: CalendarDays, bg: 'bg-amber-100', color: 'text-amber-600', label: 'تنتهي قريباً', value: expiringSoon },
-                    { icon: TrendingUp,   bg: 'bg-blue-100',  color: 'text-blue-600',  label: 'إجمالي الإيرادات', value: `${totalRevenue.toLocaleString('ar-EG')} ج` },
+                    { icon: TrendingUp,   bg: 'bg-blue-100',  color: 'text-blue-600',  label: 'إجمالي الإيرادات', value: `${totalRevenue.toLocaleString('en-US')} ج` },
                 ].map(({ icon: Icon, bg, color, label, value }) => (
                     <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-4 flex items-center gap-3">
                         <div className={cn('h-10 w-10 rounded-xl flex items-center justify-center shrink-0', bg)}>
@@ -189,7 +189,7 @@ export default function SubscriptionsPage() {
                                         <div className={cn(isExpiring ? 'text-amber-600 font-semibold' : '')}>
                                             ينتهي: {formatDate(sub.endDate)}
                                         </div>
-                                        <div className="font-bold text-gray-800">{(sub.amount || 0).toLocaleString('ar-EG')} ج</div>
+                                        <div className="font-bold text-gray-800">{(sub.amount || 0).toLocaleString('en-US')} ج</div>
                                     </div>
                                     <Button size="sm" variant="outline" className="w-full h-8 gap-1.5 text-primary border-primary/30 hover:bg-primary/5 text-xs" onClick={() => setRenewSub(sub)}>
                                         <RefreshCw className="h-3.5 w-3.5" /> تجديد الاشتراك
@@ -242,7 +242,7 @@ export default function SubscriptionsPage() {
                                                 </span>
                                             </td>
                                             <td className="py-3.5 px-4 font-semibold text-gray-900">
-                                                {(sub.amount || 0).toLocaleString('ar-EG')} ج
+                                                {(sub.amount || 0).toLocaleString('en-US')} ج
                                             </td>
                                             <td className="py-3.5 px-4 text-center">
                                                 <Badge className={cn('inline-flex items-center gap-1.5 border text-xs font-medium', statusClass)}>

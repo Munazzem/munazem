@@ -187,7 +187,7 @@ function UnifiedChildCard({ childGroup }: { childGroup: ChildGroup }) {
                             <p className="text-xs text-gray-400 mt-0.5">نسبة الحضور</p>
                         </div>
                         <div className="bg-gray-50 rounded-xl p-3 text-center border border-gray-100/60">
-                            <p className="text-lg font-extrabold text-gray-800">{s.payments.totalPaid.toLocaleString('ar-EG')}</p>
+                            <p className="text-lg font-extrabold text-gray-800">{s.payments.totalPaid.toLocaleString('en-US')}</p>
                             <p className="text-xs text-gray-400 mt-0.5">المدفوع (ج)</p>
                         </div>
                         <div className="bg-gray-50 rounded-xl p-3 text-center border border-gray-100/60">
@@ -307,7 +307,7 @@ function UnifiedChildCard({ childGroup }: { childGroup: ChildGroup }) {
                                     <div key={i} className="flex items-center justify-between py-3">
                                         <div>
                                             <p className="text-sm text-gray-800 font-bold">
-                                                {p.paidAmount.toLocaleString('ar-EG')} ج
+                                                {p.paidAmount.toLocaleString('en-US')} ج
                                             </p>
                                             {p.discountAmount > 0 && (
                                                 <p className="text-xs text-amber-600 font-medium">خصم: {p.discountAmount} ج</p>

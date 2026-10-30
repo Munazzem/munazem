@@ -259,3 +259,79 @@ export const updateWhatsAppTemplates = async (templates: { session_absent: strin
     const res = await apiClient.patch('/admin/settings/whatsapp-templates', templates);
     return (res as any).data;
 };
+
+// ── PRESENCE & LIVE MONITORING ────────────────────────
+
+export interface ActiveUserSession {
+    userId: string;
+    name: string;
+    role: string;
+    phone?: string;
+    teacherId?: string | null;
+    teacherName?: string | null;
+    centerName?: string | null;
+    currentRoute?: string;
+    ip?: string;
+    userAgent?: string;
+    lastActiveAt: string;
+}
+
+export const fetchActiveUsers = async (): Promise<{ activeUsers: ActiveUserSession[]; totalActive: number }> => {
+    const res = await apiClient.get('/admin/presence/active-users');
+    return (res as any).data;
+};
+
+export const sendPresenceHeartbeat = async (data?: { currentRoute?: string }): Promise<{ status: string }> => {
+    const res = await apiClient.post('/auth/heartbeat', data || {});
+    return (res as any).data;
+};
+
+// ── TENANT SEPARATE LOGS & DELETION ───────────────────
+
+export const fetchTenantActivity = async (tenantId: string, params?: {
+    page?: number; limit?: number; event?: string;
+}): Promise<Paginated<ActivityLogEntry> & { teacher?: { id: string; name: string; centerName?: string } }> => {
+    const q = new URLSearchParams();
+    if (params?.page)  q.set('page',  String(params.page));
+    if (params?.limit) q.set('limit', String(params.limit));
+    if (params?.event) q.set('event', params.event);
+    const qs = q.toString();
+    const res = await apiClient.get(`/admin/tenants/${tenantId}/activity${qs ? `?${qs}` : ''}`);
+    return (res as any).data;
+};
+
+export interface TenantDeletionImpact {
+    teacher: {
+        id: string;
+        name: string;
+        phone: string;
+        role: string;
+        centerName?: string;
+        createdAt: string;
+    };
+    counts: {
+        studentsCount: number;
+        assistantsCount: number;
+        groupsCount: number;
+        sessionsCount: number;
+        attendancesCount: number;
+        transactionsCount: number;
+        examsCount: number;
+        cardsCount: number;
+        subscriptionsCount: number;
+    };
+}
+
+export const fetchTenantDeletionImpact = async (tenantId: string): Promise<TenantDeletionImpact> => {
+    const res = await apiClient.get(`/admin/tenants/${tenantId}/deletion-impact`);
+    return (res as any).data;
+};
+
+export const deleteTenant = async (tenantId: string, options: { permanent?: boolean }): Promise<{ success: boolean; mode: string; message: string }> => {
+    const q = new URLSearchParams();
+    if (options.permanent) q.set('permanent', 'true');
+    const qs = q.toString();
+    const res = await apiClient.delete(`/admin/tenants/${tenantId}${qs ? `?${qs}` : ''}`);
+    return (res as any).data;
+};
+

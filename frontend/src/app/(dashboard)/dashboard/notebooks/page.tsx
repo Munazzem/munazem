@@ -344,7 +344,7 @@ export default function NotebooksPage() {
                                     <div className="flex items-center justify-between pt-1">
                                         <div className="flex flex-col gap-1">
                                             <span className="text-xs text-gray-400">السعر</span>
-                                            <span className="font-bold text-primary">{nb.price.toLocaleString('ar-EG')} ج</span>
+                                            <span className="font-bold text-primary">{nb.price.toLocaleString('en-US')} ج</span>
                                         </div>
                                         <div className="flex flex-col items-end gap-1">
                                             <span className="text-xs text-gray-400">المحجوز</span>
@@ -398,7 +398,7 @@ export default function NotebooksPage() {
                                                 <Badge variant="outline" className="text-xs text-gray-500">{nb.gradeLevel}</Badge>
                                             </td>
                                             <td className="px-4 py-3 font-medium text-gray-900">
-                                                {nb.price.toLocaleString('ar-EG')} ج
+                                                {nb.price.toLocaleString('en-US')} ج
                                             </td>
                                             <td className="px-4 py-3">
                                                 <span className="flex items-center gap-1 text-sm font-bold w-fit px-2 py-0.5 rounded-lg bg-purple-100 text-purple-700">

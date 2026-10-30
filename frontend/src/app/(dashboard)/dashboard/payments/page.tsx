@@ -69,7 +69,7 @@ function StatCard({
             </div>
             <div>
                 <p className={cn('text-lg sm:text-xl font-bold', c.text)}>
-                    {value.toLocaleString('ar-EG')} <span className="text-xs sm:text-sm font-normal">ج</span>
+                    {value.toLocaleString('en-US')} <span className="text-xs sm:text-sm font-normal">ج</span>
                 </p>
                 {subValue && <p className="text-[10px] text-gray-400 mt-1">{subValue}</p>}
             </div>
@@ -226,7 +226,7 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
     const openDeleteConfirm = (tx: typeof txs[number]) => {
         const txId = (tx as any).transactionId;
         if (!txId) { toast.error('لا يمكن مسح هذه المعاملة'); return; }
-        const label = `${CATEGORY_LABELS[tx.category as TransactionCategory] ?? tx.category}${tx.studentName ? ` — ${tx.studentName}` : ''} (${tx.paidAmount.toLocaleString('ar-EG')} ج)`;
+        const label = `${CATEGORY_LABELS[tx.category as TransactionCategory] ?? tx.category}${tx.studentName ? ` — ${tx.studentName}` : ''} (${tx.paidAmount.toLocaleString('en-US')} ج)`;
         setDeleteTxLabel(label);
         setDeleteTxId(txId);
     };
@@ -456,7 +456,7 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                                                     </div>
                                                 )}
                                                 <span className="font-black text-gray-900">
-                                                    {tx.paidAmount.toLocaleString('ar-EG')} ج
+                                                    {tx.paidAmount.toLocaleString('en-US')} ج
                                                 </span>
                                             </div>
                                         </div>
@@ -548,7 +548,7 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                                                 </td>
                                                 <td className="px-6 py-4">
                                                     <span className="text-base font-black text-gray-900">
-                                                        {tx.paidAmount.toLocaleString('ar-EG')} <span className="text-[10px] font-normal text-gray-400">ج</span>
+                                                        {tx.paidAmount.toLocaleString('en-US')} <span className="text-[10px] font-normal text-gray-400">ج</span>
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-4 text-gray-400 text-xs font-medium">{formatTime(tx.time)}</td>
@@ -746,7 +746,7 @@ function MonthlyTab() {
                                 },
                                 tooltip: {
                                     theme: 'light',
-                                    y: { formatter: (val) => `${val.toLocaleString('ar-EG')} ج` }
+                                    y: { formatter: (val) => `${val.toLocaleString('en-US')} ج` }
                                 },
                                 legend: {
                                     position: 'top',

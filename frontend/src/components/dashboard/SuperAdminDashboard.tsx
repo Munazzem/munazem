@@ -70,7 +70,7 @@ function StatCard({
             <div className="mt-4">
                 <p className="text-xs font-medium text-gray-500 mb-1">{label}</p>
                 <p className="text-2xl font-bold text-gray-900">
-                    {typeof value === 'number' ? value.toLocaleString('ar-EG') : value}
+                    {typeof value === 'number' ? value.toLocaleString('en-US') : value}
                     {suffix && <span className="text-sm font-normal text-gray-400 mr-1">{suffix}</span>}
                 </p>
             </div>
@@ -314,9 +314,9 @@ export function SuperAdminDashboard() {
                                                 <span className={cn('text-xs font-bold px-2 py-0.5 rounded-full', statusCfg.cls)}>{statusCfg.label}</span>
                                             </div>
                                             <div className="flex items-center justify-between text-xs text-gray-500">
-                                                <span>{PLAN_LABEL[sub.planTier] ?? sub.planTier} · {sub.amount?.toLocaleString()} ج</span>
+                                                <span>{PLAN_LABEL[sub.planTier] ?? sub.planTier} · {sub.amount?.toLocaleString('en-US')} ج</span>
                                                 <span className={cn(daysLeft <= 7 ? 'text-red-600 font-semibold' : daysLeft <= 30 ? 'text-amber-600 font-semibold' : '')}>
-                                                    {new Date(sub.endDate).toLocaleDateString('ar-EG')}
+                                                    {new Date(sub.endDate).toLocaleDateString('ar-EG-u-nu-latn')}
                                                     {sub.status === 'ACTIVE' && ` (${daysLeft})`}
                                                 </span>
                                             </div>
@@ -351,10 +351,10 @@ export function SuperAdminDashboard() {
                                                         <p className="text-xs text-gray-400" dir="ltr">{teacher.phone}</p>
                                                     </td>
                                                     <td className="px-4 py-3 text-gray-700">{PLAN_LABEL[sub.planTier] ?? sub.planTier}</td>
-                                                    <td className="px-4 py-3 font-medium text-gray-900">{sub.amount?.toLocaleString()} ج</td>
+                                                    <td className="px-4 py-3 font-medium text-gray-900">{sub.amount?.toLocaleString('en-US')} ج</td>
                                                     <td className="px-4 py-3">
                                                         <span className={cn('text-xs font-medium', daysLeft <= 7 ? 'text-red-600' : daysLeft <= 30 ? 'text-amber-600' : 'text-gray-500')}>
-                                                            {new Date(sub.endDate).toLocaleDateString('ar-EG')}
+                                                            {new Date(sub.endDate).toLocaleDateString('ar-EG-u-nu-latn')}
                                                             {sub.status === 'ACTIVE' && ` (${daysLeft} يوم)`}
                                                         </span>
                                                     </td>
