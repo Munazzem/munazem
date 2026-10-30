@@ -8,7 +8,6 @@ import {
   Platform,
   TouchableWithoutFeedback,
   Keyboard,
-  Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -20,6 +19,7 @@ import { Input } from '../../components/common/Input';
 import { Button } from '../../components/common/Button';
 import { AuthApi } from '../../api/auth.api';
 import { useAuthStore } from '../../store/auth.store';
+import { showAlert } from '../../utils/alert.util';
 import { KeyRound, ShieldCheck } from 'lucide-react-native';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'ManualBarcode'>;
@@ -66,7 +66,7 @@ export const ManualBarcodeScreen: React.FC<Props> = ({ route, navigation }) => {
       } else if (!err?.response) {
         msg = 'تعذر الاتصال بالخادم. يرجى التأكد من اتصالك بالإنترنت والمحاولة مجدداً.';
       }
-      Alert.alert('تعذر التحقق', msg);
+      showAlert('تعذر التحقق', msg);
     } finally {
       setLoading(false);
     }
