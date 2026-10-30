@@ -37,6 +37,7 @@ import { toast } from 'sonner';
 import { QK } from '@/lib/query-keys';
 import { useOfflineSyncStore } from '@/lib/store/offline-sync.store';
 import { OutboxService } from '@/lib/offline/outbox.service';
+import { OfflineStorageService } from '@/lib/offline/storage.service';
 import {
     ArrowRight,
     CheckCircle2,
@@ -207,6 +208,13 @@ export default function SessionDetailPage() {
         }
         return map;
     }, [groupCardTokens]);
+
+    // Keep IndexedDB students cache warm whenever group students load
+    useEffect(() => {
+        if (groupStudentsData?.data && groupStudentsData.data.length > 0) {
+            OfflineStorageService.saveOfflineStudents(groupStudentsData.data);
+        }
+    }, [groupStudentsData?.data]);
 
     const pendingCount = useOfflineSyncStore((s) => s.pendingCount);
     const isSyncing = useOfflineSyncStore((s) => s.isSyncing);
@@ -613,7 +621,7 @@ export default function SessionDetailPage() {
             // groupStudentsData holds students of the session's own group.
             // Match by barcode or studentCode (the two non-ObjectId identifiers a QR might carry).
             const localStudents = groupStudentsData?.data ?? [];
-            const localStudent = localStudents.find(
+            let localStudent = localStudents.find(
                 s => s.barcode === scanInput || s.studentCode === scanInput
             );
 
@@ -622,6 +630,14 @@ export default function SessionDetailPage() {
             const uuidMatch = scanInput.match(uuidRegex);
             const tokenKey = uuidMatch ? uuidMatch[0] : scanInput.trim();
             const cardEntry = !localStudent ? (cardTokenMap.get(tokenKey) || cardTokenMap.get(scanInput.trim())) : null;
+
+            // Full IndexedDB store fallback if student is from another group or cache was cold
+            if (!localStudent && !cardEntry) {
+                const idbStudent = await OfflineStorageService.findOfflineStudentByScan(scanInput);
+                if (idbStudent) {
+                    localStudent = idbStudent;
+                }
+            }
 
             const clientMutationId = `mut-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
             const scannedAt = new Date().toISOString();

@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchSessions, generateTodaySessions, updateSessionStatus, deleteSession } from '@/lib/api/sessions';
 import { fetchGroups } from '@/lib/api/groups';
+import { OfflineStorageService } from '@/lib/offline/storage.service';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { CreateSessionModal } from '@/components/sessions/CreateSessionModal';
 import { toast } from 'sonner';
@@ -107,6 +108,19 @@ export default function SessionsPage() {
         queryKey: ['groups'],
         queryFn: () => fetchGroups({ limit: 100 }),
     });
+
+    // Auto-sync sessions and groups into IndexedDB for offline access
+    useEffect(() => {
+        if (data?.data && data.data.length > 0) {
+            OfflineStorageService.saveOfflineSessions(data.data);
+        }
+    }, [data?.data]);
+
+    useEffect(() => {
+        if (groupsData?.data && groupsData.data.length > 0) {
+            OfflineStorageService.saveOfflineGroups(groupsData.data);
+        }
+    }, [groupsData?.data]);
 
 
     const generateTodayMutation = useMutation({

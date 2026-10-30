@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -26,6 +26,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { fetchExams, deleteExam } from '@/lib/api/exams';
 import type { IExam, ExamStatus } from '@/lib/api/exams';
+import { OfflineStorageService } from '@/lib/offline/storage.service';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { getAllowedGrades } from '@/lib/utils/grades';
 import dynamic from 'next/dynamic';
@@ -87,6 +88,13 @@ export default function ExamsPage() {
         }),
         placeholderData: keepPreviousData,
     });
+
+    useEffect(() => {
+        const examsList = (data as any)?.data;
+        if (examsList && Array.isArray(examsList) && examsList.length > 0) {
+            OfflineStorageService.saveOfflineExams(examsList);
+        }
+    }, [data]);
 
     const deleteMutation = useMutation({
         mutationFn: deleteExam,

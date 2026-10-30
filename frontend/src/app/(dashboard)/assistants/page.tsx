@@ -19,7 +19,10 @@ import {
     Lock,
     Unlock,
     Edit2,
+    RotateCcw,
+    Clock,
 } from 'lucide-react';
+import { OfflineStorageService } from '@/lib/offline/storage.service';
 import { TableSkeleton } from '@/components/layout/skeletons/TableSkeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -100,12 +103,20 @@ function AssistantsContent() {
 
     const deleteMutation = useMutation({
         mutationFn: deleteUser,
-        onSuccess: () => {
-            toast.success('تم حذف المساعد بنجاح');
+        onSuccess: (res: any) => {
+            const isOffline = typeof window !== 'undefined' && !navigator.onLine;
+            if (isOffline) {
+                if (res?.isPendingDelete) {
+                    toast.warning(res?.message || 'تم تعليم المساعد للحذف: سيتم الحذف نهائياً من السيرفر فور استعادة الاتصال');
+                } else {
+                    toast.success('تم مسح المساعد المحلي نهائياً');
+                }
+            } else {
+                toast.success(res?.message || 'تم حذف المساعد بنجاح');
+            }
             queryClient.invalidateQueries({ queryKey: ['assistants'] });
             setDeleteTarget(null);
         },
-        
     });
 
     return (
@@ -189,7 +200,7 @@ function AssistantsContent() {
                                 </thead>
                                 <tbody className="divide-y divide-gray-50">
                                     {assistants.map((a: any) => (
-                                        <tr key={a._id} className="hover:bg-gray-50/50 transition-colors">
+                                        <tr key={a._id} className={cn('hover:bg-gray-50/50 transition-colors', a.isPendingDelete && 'bg-red-50/70 border-r-4 border-r-red-500 opacity-90')}>
                                             <td className="px-6 py-3">
                                                 <div className="flex items-center gap-3">
                                                     <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
@@ -197,7 +208,17 @@ function AssistantsContent() {
                                                             {a.name?.charAt(0) ?? '؟'}
                                                         </span>
                                                     </div>
-                                                    <span className="font-medium text-gray-900">{a.name}</span>
+                                                    <div className="flex flex-col">
+                                                        <span className="font-medium text-gray-900">
+                                                            {a.isPendingDelete ? <del className="text-red-500">{a.name}</del> : a.name}
+                                                        </span>
+                                                        {a.isPendingDelete && (
+                                                            <span className="text-[11px] font-semibold text-red-700 flex items-center gap-1 mt-0.5">
+                                                                <Clock className="w-3 h-3 text-red-600 animate-pulse" />
+                                                                معلق للحذف من السيرفر
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3 text-gray-600" dir="ltr">
@@ -220,29 +241,45 @@ function AssistantsContent() {
                                                 </Badge>
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <div className="flex items-center justify-center gap-1">
-                                                    <button
-                                                        onClick={() => setSalaryTarget({ id: a._id, name: a.name, salary: a.salary ?? null })}
-                                                        title="دفع الراتب"
-                                                        className="inline-flex items-center justify-center h-8 w-8 rounded-lg text-green-500 hover:bg-green-50 hover:text-green-700 transition-colors"
+                                                {a.isPendingDelete ? (
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="h-7 px-2 text-xs border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800 gap-1 rounded-lg"
+                                                        onClick={async () => {
+                                                            await OfflineStorageService.undoUserPendingDelete(a._id);
+                                                            queryClient.invalidateQueries({ queryKey: ['assistants'] });
+                                                            toast.success('تم التراجع عن حذف المساعد');
+                                                        }}
                                                     >
-                                                        <Banknote className="h-4 w-4" />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => setEditTarget({ id: a._id, name: a.name, phone: a.phone, salary: a.salary ?? null })}
-                                                        title="تعديل"
-                                                        className="inline-flex items-center justify-center h-8 w-8 rounded-lg text-blue-500 hover:bg-blue-50 hover:text-blue-700 transition-colors"
-                                                    >
-                                                        <Edit2 className="h-4 w-4" />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => setDeleteTarget({ id: a._id, name: a.name })}
-                                                        title="حذف"
-                                                        className="inline-flex items-center justify-center h-8 w-8 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
-                                                    >
-                                                        <Trash2 className="h-4 w-4" />
-                                                    </button>
-                                                </div>
+                                                        <RotateCcw className="h-3.5 w-3.5" />
+                                                        تراجع عن الحذف
+                                                    </Button>
+                                                ) : (
+                                                    <div className="flex items-center justify-center gap-1">
+                                                        <button
+                                                            onClick={() => setSalaryTarget({ id: a._id, name: a.name, salary: a.salary ?? null })}
+                                                            title="دفع الراتب"
+                                                            className="inline-flex items-center justify-center h-8 w-8 rounded-lg text-green-500 hover:bg-green-50 hover:text-green-700 transition-colors"
+                                                        >
+                                                            <Banknote className="h-4 w-4" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setEditTarget({ id: a._id, name: a.name, phone: a.phone, salary: a.salary ?? null })}
+                                                            title="تعديل"
+                                                            className="inline-flex items-center justify-center h-8 w-8 rounded-lg text-blue-500 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                                                        >
+                                                            <Edit2 className="h-4 w-4" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setDeleteTarget({ id: a._id, name: a.name })}
+                                                            title="حذف"
+                                                            className="inline-flex items-center justify-center h-8 w-8 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                                        >
+                                                            <Trash2 className="h-4 w-4" />
+                                                        </button>
+                                                    </div>
+                                                )}
                                             </td>
                                         </tr>
                                     ))}
@@ -253,7 +290,7 @@ function AssistantsContent() {
                         {/* Mobile cards */}
                         <div className="sm:hidden divide-y divide-gray-50">
                             {assistants.map((a: any) => (
-                                <div key={a._id} className="p-4 flex items-center justify-between gap-3">
+                                <div key={a._id} className={cn('p-4 flex items-center justify-between gap-3 transition-colors', a.isPendingDelete && 'bg-red-50/70 border-r-4 border-r-red-500 opacity-90')}>
                                         <div className="flex items-center gap-3 min-w-0">
                                             <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                                                 <span className="text-sm font-bold text-primary">
@@ -261,9 +298,18 @@ function AssistantsContent() {
                                                 </span>
                                             </div>
                                             <div className="min-w-0">
-                                                <p className="font-medium text-gray-900 truncate">{a.name}</p>
-                                                <p className="text-xs text-gray-400 truncate" dir="ltr">{a.phone ?? '—'}</p>
-                                                {a.salary != null && (
+                                                <p className="font-medium text-gray-900 truncate">
+                                                    {a.isPendingDelete ? <del className="text-red-500">{a.name}</del> : a.name}
+                                                </p>
+                                                {a.isPendingDelete ? (
+                                                    <span className="text-[11px] font-semibold text-red-700 flex items-center gap-1">
+                                                        <Clock className="w-2.5 h-2.5 text-red-600 animate-pulse" />
+                                                        معلق للحذف
+                                                    </span>
+                                                ) : (
+                                                    <p className="text-xs text-gray-400 truncate" dir="ltr">{a.phone ?? '—'}</p>
+                                                )}
+                                                {a.salary != null && !a.isPendingDelete && (
                                                     <p className="text-xs text-green-600 font-medium mt-0.5">
                                                         راتب: {a.salary.toLocaleString('en-US')} ج
                                                     </p>
@@ -271,30 +317,48 @@ function AssistantsContent() {
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-2 shrink-0">
-                                            <Badge className={cn('text-xs', a.isActive
-                                                ? 'bg-green-100 text-green-700 hover:bg-green-100'
-                                                : 'bg-red-100 text-red-600 hover:bg-red-100'
-                                            )}>
-                                                {a.isActive ? 'فعّال' : 'موقوف'}
-                                            </Badge>
-                                            <button
-                                                onClick={() => setSalaryTarget({ id: a._id, name: a.name, salary: a.salary ?? null })}
-                                                className="inline-flex items-center justify-center h-8 w-8 rounded-lg text-green-500 hover:bg-green-50 hover:text-green-700 transition-colors"
-                                            >
-                                                <Banknote className="h-4 w-4" />
-                                            </button>
-                                            <button
-                                                onClick={() => setEditTarget({ id: a._id, name: a.name, phone: a.phone, salary: a.salary ?? null })}
-                                                className="inline-flex items-center justify-center h-8 w-8 rounded-lg text-blue-500 hover:bg-blue-50 hover:text-blue-700 transition-colors"
-                                            >
-                                                <Edit2 className="h-4 w-4" />
-                                            </button>
-                                            <button
-                                                onClick={() => setDeleteTarget({ id: a._id, name: a.name })}
-                                                className="inline-flex items-center justify-center h-8 w-8 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
-                                            >
-                                                <Trash2 className="h-4 w-4" />
-                                            </button>
+                                            {a.isPendingDelete ? (
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="h-7 px-2 text-xs border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800 gap-1 rounded-lg"
+                                                    onClick={async () => {
+                                                        await OfflineStorageService.undoUserPendingDelete(a._id);
+                                                        queryClient.invalidateQueries({ queryKey: ['assistants'] });
+                                                        toast.success('تم التراجع عن حذف المساعد');
+                                                    }}
+                                                >
+                                                    <RotateCcw className="h-3 w-3" />
+                                                    تراجع
+                                                </Button>
+                                            ) : (
+                                                <>
+                                                    <Badge className={cn('text-xs', a.isActive
+                                                        ? 'bg-green-100 text-green-700 hover:bg-green-100'
+                                                        : 'bg-red-100 text-red-600 hover:bg-red-100'
+                                                    )}>
+                                                        {a.isActive ? 'فعّال' : 'موقوف'}
+                                                    </Badge>
+                                                    <button
+                                                        onClick={() => setSalaryTarget({ id: a._id, name: a.name, salary: a.salary ?? null })}
+                                                        className="inline-flex items-center justify-center h-8 w-8 rounded-lg text-green-500 hover:bg-green-50 hover:text-green-700 transition-colors"
+                                                    >
+                                                        <Banknote className="h-4 w-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setEditTarget({ id: a._id, name: a.name, phone: a.phone, salary: a.salary ?? null })}
+                                                        className="inline-flex items-center justify-center h-8 w-8 rounded-lg text-blue-500 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                                                    >
+                                                        <Edit2 className="h-4 w-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setDeleteTarget({ id: a._id, name: a.name })}
+                                                        className="inline-flex items-center justify-center h-8 w-8 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </button>
+                                                </>
+                                            )}
                                         </div>
                                 </div>
                             ))}
