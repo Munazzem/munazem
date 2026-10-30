@@ -336,7 +336,11 @@ export default function CenterFinancialsPage() {
     const paymentMutation = useMutation({
         mutationFn: recordCenterPayment,
         onSuccess: (res: any) => {
-            toast.success('تم تسجيل المعاملة المالية بنجاح');
+            if (res?.offline || !navigator.onLine) {
+                toast.warning('تم تسجيل المعاملة المالية محلياً (أوفلاين) - سيتم ترحيلها للسيرفر فور استعادة الاتصال');
+            } else {
+                toast.success('تم تسجيل المعاملة المالية بنجاح');
+            }
             queryClient.invalidateQueries({ queryKey: ['center', 'financials-summary'] });
             queryClient.invalidateQueries({ queryKey: ['center', 'daily-tally'] });
             queryClient.invalidateQueries({ queryKey: ['center', 'monthly-tally'] });
@@ -1442,7 +1446,14 @@ export default function CenterFinancialsPage() {
                                             <div key={tx._id} className="bg-white p-3.5 rounded-xl border border-gray-100 shadow-xs space-y-2">
                                                 <div className="flex items-center justify-between">
                                                     <div>
-                                                        <div className="font-bold text-gray-900 text-sm">{tx.studentName || 'طالب'}</div>
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="font-bold text-gray-900 text-sm">{tx.studentName || 'طالب'}</div>
+                                                            {(tx.offlinePending || tx.isOfflineCreated) && (
+                                                                <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300 text-[9px] font-bold">
+                                                                    معلق للرفع
+                                                                </Badge>
+                                                            )}
+                                                        </div>
                                                         <div className="text-[10px] text-gray-400 font-mono">
                                                             {new Date(tx.date || tx.createdAt).toLocaleDateString('ar-EG')} • {new Date(tx.date || tx.createdAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
                                                         </div>
@@ -1520,7 +1531,14 @@ export default function CenterFinancialsPage() {
                                                             <div className="text-[10px] text-gray-400">{new Date(tx.date || tx.createdAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</div>
                                                         </td>
                                                         <td className="py-3 px-3">
-                                                            <div className="font-bold text-gray-900">{tx.studentName || 'طالب'}</div>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="font-bold text-gray-900">{tx.studentName || 'طالب'}</span>
+                                                                {(tx.offlinePending || tx.isOfflineCreated) && (
+                                                                    <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300 text-[10px] font-bold">
+                                                                        معلق للرفع
+                                                                    </Badge>
+                                                                )}
+                                                            </div>
                                                             <div className="text-[10px] text-gray-400 font-mono mt-0.5">
                                                                 {tx.studentCode && <span>كود: {tx.studentCode}</span>}
                                                                 {tx.gradeLevel && <span> • {tx.gradeLevel}</span>}

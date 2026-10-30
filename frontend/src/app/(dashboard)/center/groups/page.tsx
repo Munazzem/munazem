@@ -26,6 +26,7 @@ import {
 } from '@/lib/api/centers';
 import { ICenterGroup, ICenterTeacher, CenterGroupType } from '@/types/center.types';
 import { ALL_GRADES } from '@/lib/constants/grade.constants';
+import { OfflineStorageService } from '@/lib/offline/storage.service';
 import { BranchSwitcher } from '@/components/center/BranchSwitcher';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -109,8 +110,8 @@ export default function CenterGroupsPage() {
 
     const deleteMutation = useMutation({
         mutationFn: deleteCenterGroup,
-        onSuccess: () => {
-            toast.success('تم تعطيل المجموعة بنجاح');
+        onSuccess: (res: any) => {
+            toast.success(res?.message || 'تم حذف/تعطيل المجموعة بنجاح');
             queryClient.invalidateQueries({ queryKey: ['center', 'groups'] });
         },
         onError: (err: any) => {
@@ -300,9 +301,15 @@ export default function CenterGroupsPage() {
                             >
                                 <div className="p-5">
                                     <div className="flex items-start justify-between gap-3 mb-2">
-                                        <Badge variant="outline" className={`text-xs font-bold ${typeColor}`}>
-                                            {typeLabel}
-                                        </Badge>
+                                        {(group as any).isPendingDelete ? (
+                                            <Badge variant="outline" className="text-xs font-bold bg-rose-50 text-rose-700 border-rose-300">
+                                                معلق للحذف (أوفلاين)
+                                            </Badge>
+                                        ) : (
+                                            <Badge variant="outline" className={`text-xs font-bold ${typeColor}`}>
+                                                {typeLabel}
+                                            </Badge>
+                                        )}
                                         <Badge variant="outline" className="text-[11px] bg-gray-50 text-gray-600 border-gray-200">
                                             {group.gradeLevel}
                                         </Badge>
@@ -359,18 +366,33 @@ export default function CenterGroupsPage() {
                                         >
                                             <Edit2 className="h-3.5 w-3.5" />
                                         </Button>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => {
-                                                if (confirm(`هل أنت متأكد من تعطيل مجموعة ${group.name}؟`)) {
-                                                    deleteMutation.mutate(group._id);
-                                                }
-                                            }}
-                                            className="h-8 px-2 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-lg"
-                                        >
-                                            <Trash2 className="h-3.5 w-3.5" />
-                                        </Button>
+                                        {(group as any).isPendingDelete ? (
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={async () => {
+                                                    await OfflineStorageService.undoCenterGroupPendingDelete(group._id);
+                                                    queryClient.invalidateQueries({ queryKey: ['center', 'groups'] });
+                                                    toast.success('تم التراجع عن حذف المجموعة واستعادتها');
+                                                }}
+                                                className="h-8 px-2 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-lg"
+                                            >
+                                                تراجع
+                                            </Button>
+                                        ) : (
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => {
+                                                    if (confirm(`هل أنت متأكد من تعطيل مجموعة ${group.name}؟`)) {
+                                                        deleteMutation.mutate(group._id);
+                                                    }
+                                                }}
+                                                className="h-8 px-2 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-lg"
+                                            >
+                                                <Trash2 className="h-3.5 w-3.5" />
+                                            </Button>
+                                        )}
                                     </div>
                                 </div>
                             </div>

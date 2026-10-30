@@ -24,6 +24,7 @@ import {
 } from '@/lib/api/centers';
 import { ICenterPackage, ICenterTeacher } from '@/types/center.types';
 import { ALL_GRADES } from '@/lib/constants/grade.constants';
+import { OfflineStorageService } from '@/lib/offline/storage.service';
 import { BranchSwitcher } from '@/components/center/BranchSwitcher';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -84,8 +85,8 @@ export default function CenterPackagesPage() {
 
     const deleteMutation = useMutation({
         mutationFn: deleteCenterPackage,
-        onSuccess: () => {
-            toast.success('تم تعطيل الباكيدج بنجاح');
+        onSuccess: (res: any) => {
+            toast.success(res?.message || 'تم حذف/تعطيل الباقة بنجاح');
             queryClient.invalidateQueries({ queryKey: ['center', 'packages'] });
         },
         onError: (err: any) => {
@@ -230,9 +231,16 @@ export default function CenterPackagesPage() {
                             <div className="p-5">
                                 <div className="flex items-start justify-between gap-3">
                                     <div>
-                                        <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200 font-bold mb-2">
-                                            {pkg.gradeLevel}
-                                        </Badge>
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200 font-bold">
+                                                {pkg.gradeLevel}
+                                            </Badge>
+                                            {(pkg as any).isPendingDelete && (
+                                                <Badge variant="outline" className="text-xs bg-rose-50 text-rose-700 border-rose-300 font-bold">
+                                                    معلق للحذف (أوفلاين)
+                                                </Badge>
+                                            )}
+                                        </div>
                                         <h3 className="text-lg font-black text-gray-900">{pkg.name}</h3>
                                     </div>
                                     <div className="text-left shrink-0">
@@ -278,19 +286,34 @@ export default function CenterPackagesPage() {
                                     <Edit2 className="h-3.5 w-3.5 ml-1" />
                                     تعديل
                                 </Button>
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => {
-                                        if (confirm(`هل أنت متأكد من تعطيل باقة ${pkg.name}؟`)) {
-                                            deleteMutation.mutate(pkg._id);
-                                        }
-                                    }}
-                                    className="h-8 px-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-lg"
-                                >
-                                    <Trash2 className="h-3.5 w-3.5 ml-1" />
-                                    تعطيل
-                                </Button>
+                                {(pkg as any).isPendingDelete ? (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={async () => {
+                                            await OfflineStorageService.undoCenterPackagePendingDelete(pkg._id);
+                                            queryClient.invalidateQueries({ queryKey: ['center', 'packages'] });
+                                            toast.success('تم التراجع عن حذف الباقة واستعادتها');
+                                        }}
+                                        className="h-8 px-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-lg"
+                                    >
+                                        تراجع عن الحذف
+                                    </Button>
+                                ) : (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => {
+                                            if (confirm(`هل أنت متأكد من تعطيل باقة ${pkg.name}؟`)) {
+                                                deleteMutation.mutate(pkg._id);
+                                            }
+                                        }}
+                                        className="h-8 px-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-lg"
+                                    >
+                                        <Trash2 className="h-3.5 w-3.5 ml-1" />
+                                        تعطيل
+                                    </Button>
+                                )}
                             </div>
                         </div>
                     ))}

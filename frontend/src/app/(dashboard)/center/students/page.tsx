@@ -366,8 +366,12 @@ export default function CenterStudentsPage() {
 
     const deleteMutation = useMutation({
         mutationFn: deleteCenterStudent,
-        onSuccess: () => {
-            toast.success('تم حذف الطالب بنجاح');
+        onSuccess: (data: any) => {
+            if (data?.offline || !navigator.onLine) {
+                toast.warning(data?.message || 'تم وضع علامة على الطالب كمعلق للحذف (أوفلاين). سيتم حذفه من السيرفر فور استعادة الاتصال.');
+            } else {
+                toast.success('تم حذف الطالب بنجاح');
+            }
             queryClient.invalidateQueries({ queryKey: ['center', 'students'] });
         },
         onError: (err: any) => {
