@@ -53,37 +53,53 @@ export const useOfflineSyncStore = create<OfflineSyncState>((set, get) => ({
             sessionGroups.set(item.sessionId, list);
         }
 
+        const CHUNK_SIZE = 25;
         for (const [sId, items] of sessionGroups.entries()) {
-            const clientMutationIds = items.map(i => i.clientMutationId);
-            await OutboxService.markMutationsSyncing(clientMutationIds);
+            if (typeof window !== 'undefined' && !navigator.onLine) break;
 
-            const records: SyncAttendanceRecordDTO[] = items.map(i => ({
-                clientMutationId: i.clientMutationId,
-                // Pass whichever identifier is available:
-                //   studentId (ObjectId) — online or local-cache-resolved scan
-                //   rawToken             — offline scan with no local match; server resolves
-                ...(i.studentId ? { studentId: i.studentId } : {}),
-                ...(i.rawToken  ? { rawToken:  i.rawToken  } : {}),
-                status:       i.status,
-                isGuest:      i.isGuest,
-                homeworkDone: i.homeworkDone ?? undefined,
-                scannedAt:    i.scannedAt,
-                notes:        i.notes,
-            }));
+            for (let i = 0; i < items.length; i += CHUNK_SIZE) {
+                if (typeof window !== 'undefined' && !navigator.onLine) break;
 
-            try {
-                const res = await syncBatchAttendance(sId, records);
-                if (res.success) {
-                    await OutboxService.removeResolvedMutations(clientMutationIds);
-                    totalSynced += records.length;
-                } else {
-                    await OutboxService.markMutationsFailed(clientMutationIds, res.message || 'فشلت المزامنة');
+                const chunk = items.slice(i, i + CHUNK_SIZE);
+                const clientMutationIds = chunk.map(c => c.clientMutationId);
+                await OutboxService.markMutationsSyncing(clientMutationIds);
+
+                const records: SyncAttendanceRecordDTO[] = chunk.map(c => ({
+                    clientMutationId: c.clientMutationId,
+                    ...(c.studentId ? { studentId: c.studentId } : {}),
+                    ...(c.rawToken  ? { rawToken:  c.rawToken  } : {}),
+                    status:       c.status,
+                    isGuest:      c.isGuest,
+                    homeworkDone: c.homeworkDone ?? undefined,
+                    scannedAt:    c.scannedAt,
+                    notes:        c.notes,
+                }));
+
+                try {
+                    const res = await syncBatchAttendance(sId, records);
+                    if (res.success) {
+                        await OutboxService.removeResolvedMutations(clientMutationIds);
+                        totalSynced += records.length;
+                    } else {
+                        await OutboxService.markMutationsFailed(clientMutationIds, res.message || 'فشلت المزامنة');
+                        totalFailed += records.length;
+                    }
+                } catch (err: any) {
+                    const status = err?.response?.status;
+                    const errorMsg = err?.response?.data?.message || err?.message || 'خطأ في الاتصال بالخادم';
+                    await OutboxService.markMutationsFailed(clientMutationIds, errorMsg);
                     totalFailed += records.length;
+
+                    // If rate limited or server overloaded, stop hammering this pass
+                    if (status === 429 || (status >= 500 && status < 600)) {
+                        break;
+                    }
                 }
-            } catch (err: any) {
-                const errorMsg = err?.response?.data?.message || err?.message || 'خطأ في الاتصال بالخادم';
-                await OutboxService.markMutationsFailed(clientMutationIds, errorMsg);
-                totalFailed += records.length;
+
+                // Breathing room delay (250ms) between chunks to avoid server load spikes
+                if (i + CHUNK_SIZE < items.length) {
+                    await new Promise(r => setTimeout(r, 250));
+                }
             }
         }
 

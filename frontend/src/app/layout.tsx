@@ -7,6 +7,7 @@ import { OfflineIndicator } from "@/components/ui/offline-indicator";
 import { PWAEventListener } from "@/components/pwa/PWAEventListener";
 import { InstallPrompt } from "@/components/ui/InstallPrompt";
 import { OfflineSyncWorker } from "@/components/pwa/OfflineSyncWorker";
+import { DataPreloader } from "@/components/pwa/DataPreloader";
 
 const cairo = Cairo({
   variable: "--font-cairo",
@@ -67,6 +68,7 @@ export default function RootLayout({
           {children}
           <PWAEventListener />
           <OfflineSyncWorker />
+          <DataPreloader />
           <OfflineIndicator />
           <InstallPrompt />
         </Providers>

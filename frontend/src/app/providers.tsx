@@ -2,12 +2,13 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
-import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { createIndexedDBPersister } from '@/lib/offline/idb-persister';
 
 /**
  * Global Providers Wrapper
  * Houses the React Query Client and any other context providers needed at the root.
+ * Configured with IndexedDB persistence for robust, quota-free offline operation.
  */
 export function Providers({ children }: { children: React.ReactNode }) {
     // We instantiate the client inside the component so that each user gets their own client if doing SSR in the future.
@@ -16,10 +17,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
             new QueryClient({
                 defaultOptions: {
                     queries: {
-                        gcTime: 1000 * 60 * 60 * 24, // 24 hours
-                        staleTime: 60 * 1000, // 1 minute stale time by default
+                        gcTime: 1000 * 60 * 60 * 24 * 7, // 7 days cache persistence for offline access
+                        staleTime: 1000 * 60 * 5,         // 5 minutes stale time
                         refetchOnWindowFocus: false,
                         retry: 1,
+                        networkMode: 'offlineFirst',      // Read cache or pause gracefully when offline
+                    },
+                    mutations: {
+                        networkMode: 'offlineFirst',
                     },
                 },
             })
@@ -27,9 +32,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
     const [persister] = useState<any>(() => {
         if (typeof window !== 'undefined') {
-            return createSyncStoragePersister({
-                storage: window.localStorage,
-            });
+            return createIndexedDBPersister();
         }
         return null;
     });
@@ -46,7 +49,17 @@ export function Providers({ children }: { children: React.ReactNode }) {
     return (
         <PersistQueryClientProvider
             client={queryClient}
-            persistOptions={{ persister }}
+            persistOptions={{
+                persister,
+                maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days max age
+                buster: 'v2-idb',
+                dehydrateOptions: {
+                    shouldDehydrateQuery: (query) => {
+                        // Persist successful queries that aren't transient errors
+                        return query.state.status === 'success';
+                    },
+                },
+            }}
         >
             {children}
         </PersistQueryClientProvider>
