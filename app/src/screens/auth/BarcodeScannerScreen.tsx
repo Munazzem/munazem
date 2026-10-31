@@ -74,6 +74,14 @@ export const BarcodeScannerScreen: React.FC<Props> = ({ route, navigation }) => 
       } else if (!error?.response) {
         message = 'تعذر الاتصال بالخادم. يرجى التأكد من اتصالك بالإنترنت والمحاولة مجدداً.';
       }
+
+      if (error?.response?.status === 429) {
+        Alert.alert('محاولات متكررة', message, [
+          { text: 'حسناً', onPress: () => navigation.goBack() },
+        ]);
+        return;
+      }
+
       Alert.alert('تعذر التحقق', message, [
         { text: 'حاول مرة أخرى', onPress: () => setScanned(false) },
       ]);

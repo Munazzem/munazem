@@ -66,6 +66,14 @@ export const ManualBarcodeScreen: React.FC<Props> = ({ route, navigation }) => {
       } else if (!err?.response) {
         msg = 'تعذر الاتصال بالخادم. يرجى التأكد من اتصالك بالإنترنت والمحاولة مجدداً.';
       }
+
+      if (err?.response?.status === 429) {
+        Alert.alert('محاولات متكررة', msg, [
+          { text: 'حسناً', onPress: () => navigation.goBack() },
+        ]);
+        return;
+      }
+
       Alert.alert('تعذر التحقق', msg);
     } finally {
       setLoading(false);

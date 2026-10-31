@@ -59,6 +59,14 @@ export const PhoneEntryScreen: React.FC<Props> = ({ navigation }) => {
       } else if (!err?.response) {
         message = 'تعذر الاتصال بالخادم. يرجى التأكد من اتصالك بالإنترنت والمحاولة مجدداً.';
       }
+
+      if (err?.response?.status === 429) {
+        Alert.alert('محاولات متكررة', message, [
+          { text: 'حسناً', style: 'default' },
+        ]);
+        return;
+      }
+
       Alert.alert('تعذر تسجيل الدخول', message, [
         {
           text: 'مسح كارت الطالب',
