@@ -125,58 +125,100 @@ export const NotificationsScreen: React.FC = () => {
     }
   };
 
-  const renderAttendanceDetails = (notifData: AttendanceNotificationData) => {
+  const renderAttendanceDetails = (notifData: AttendanceNotificationData, itemTitle?: string) => {
     const badgeCfg = getAttendanceBadgeConfig(notifData);
     const formattedScanTime = formatScanTime(notifData.scannedAt);
     const teacherAndSubject = [notifData.teacherName, notifData.subject].filter(Boolean).join(' • ');
 
+    const hasSpecificBadge = !!(notifData.isCorrection || notifData.isGuest || notifData.kind === 'GUEST_COMPENSATED');
+    const titleAlreadyHasStatus = !!itemTitle && (
+      itemTitle.includes(badgeCfg.label) ||
+      itemTitle.includes('حاضر') ||
+      itemTitle.includes('غائب') ||
+      itemTitle.includes('متأخر')
+    );
+    const showStatusBadge = !titleAlreadyHasStatus;
+
+    const hasMeta = !!(
+      formattedScanTime ||
+      teacherAndSubject ||
+      notifData.groupName ||
+      notifData.relatedGroupName ||
+      notifData.startTime
+    );
+
     return (
       <View style={styles.attendanceContainer}>
-        {/* Badges Row */}
-        <View style={styles.badgeRow}>
-          {notifData.isCorrection && (
-            <View style={styles.correctionBadge}>
-              <RotateCcw size={10} color={colors.warningDark} style={styles.correctionIcon} />
-              <Text style={styles.correctionBadgeText}>[تصحيح]</Text>
-            </View>
-          )}
-          <View style={[styles.statusBadge, { backgroundColor: badgeCfg.bg }]}>
-            <Text style={[styles.statusBadgeText, { color: badgeCfg.color }]}>
-              {badgeCfg.label}
-            </Text>
+        {/* Badges Row - Only shown when it adds useful non-redundant info */}
+        {(hasSpecificBadge || showStatusBadge) ? (
+          <View style={styles.badgeRow}>
+            {notifData.isCorrection && (
+              <View style={styles.correctionBadge}>
+                <RotateCcw size={11} color={colors.warningDark} style={styles.correctionIcon} />
+                <Text style={styles.correctionBadgeText}>تصحيح حضور</Text>
+              </View>
+            )}
+            {notifData.isGuest && !notifData.isCorrection && (
+              <View style={[styles.statusBadge, { backgroundColor: colors.warningLight }]}>
+                <Text style={[styles.statusBadgeText, { color: colors.warningDark }]}>
+                  طالب زائر
+                </Text>
+              </View>
+            )}
+            {showStatusBadge && (
+              <View style={[styles.statusBadge, { backgroundColor: badgeCfg.bg }]}>
+                <Text style={[styles.statusBadgeText, { color: badgeCfg.color }]}>
+                  {badgeCfg.label}
+                </Text>
+              </View>
+            )}
           </View>
-        </View>
+        ) : null}
 
-        {/* Structured Meta Box */}
-        {(formattedScanTime || teacherAndSubject || notifData.groupName || notifData.relatedGroupName) ? (
+        {/* Structured Meta Box with soft card-matching container and high-contrast text */}
+        {hasMeta ? (
           <View style={styles.metaBox}>
             {formattedScanTime ? (
               <View style={styles.metaRow}>
-                <Clock size={12} color={colors.primary} />
+                <Clock size={13} color={colors.primary} />
                 <Text style={styles.metaText}>
                   وقت الحضور الفعلي:{' '}
                   <Text style={styles.metaTextBold}>{formattedScanTime}</Text>
+                </Text>
+              </View>
+            ) : notifData.startTime ? (
+              <View style={styles.metaRow}>
+                <Clock size={13} color={colors.primary} />
+                <Text style={styles.metaText}>
+                  موعد الحصة:{' '}
+                  <Text style={styles.metaTextBold}>{notifData.startTime}</Text>
                 </Text>
               </View>
             ) : null}
 
             {teacherAndSubject ? (
               <View style={styles.metaRow}>
-                <User size={12} color={colors.textSecondary} />
-                <Text style={styles.metaText}>{teacherAndSubject}</Text>
+                <User size={13} color={colors.primary} />
+                <Text style={styles.metaText}>
+                  المعلم:{' '}
+                  <Text style={styles.metaTextBold}>{teacherAndSubject}</Text>
+                </Text>
               </View>
             ) : null}
 
             {notifData.groupName ? (
               <View style={styles.metaRow}>
-                <Users size={12} color={colors.textSecondary} />
-                <Text style={styles.metaText}>{notifData.groupName}</Text>
+                <Users size={13} color={colors.primary} />
+                <Text style={styles.metaText}>
+                  المجموعة:{' '}
+                  <Text style={styles.metaTextBold}>{notifData.groupName}</Text>
+                </Text>
               </View>
             ) : null}
 
             {notifData.relatedGroupName ? (
               <View style={styles.metaRow}>
-                <BookOpen size={12} color={colors.compensation} />
+                <BookOpen size={13} color={colors.compensation} />
                 <Text style={styles.metaText}>
                   المجموعة البديلة:{' '}
                   <Text style={styles.metaTextBold}>{notifData.relatedGroupName}</Text>
@@ -293,9 +335,11 @@ export const NotificationsScreen: React.FC = () => {
                       <Text style={styles.cardTitle}>{item.title}</Text>
 
                       {/* Structured Attendance Details (Active when data.kind is present) */}
-                      {hasStructuredAttendance && item.data && renderAttendanceDetails(item.data)}
-
-                      <Text style={styles.cardBody}>{item.body}</Text>
+                      {hasStructuredAttendance && item.data ? (
+                        renderAttendanceDetails(item.data, item.title)
+                      ) : (
+                        <Text style={styles.cardBody}>{item.body}</Text>
+                      )}
                       <Text style={styles.timeText}>
                         {formatNotificationDate(item.createdAt)}
                       </Text>
@@ -409,20 +453,20 @@ const styles = StyleSheet.create({
   // ─── Attendance Details & Badges ─────────────────────────────
   attendanceContainer: {
     width: '100%',
-    marginTop: 6,
-    marginBottom: 6,
+    marginTop: 4,
+    marginBottom: 4,
   },
   badgeRow: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: 6,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   statusBadge: {
     paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
+    paddingVertical: 2.5,
+    borderRadius: 8,
     alignSelf: 'flex-start',
   },
   statusBadgeText: {
@@ -432,9 +476,9 @@ const styles = StyleSheet.create({
   correctionBadge: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 8,
     backgroundColor: colors.warningLight,
   },
   correctionIcon: {
@@ -446,14 +490,15 @@ const styles = StyleSheet.create({
     color: colors.warningDark,
   },
   metaBox: {
-    backgroundColor: colors.background,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.72)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderWidth: 1,
-    borderColor: colors.borderLight,
-    gap: 4,
+    borderColor: 'rgba(15, 76, 129, 0.12)',
+    gap: 5,
     width: '100%',
+    marginTop: 2,
   },
   metaRow: {
     flexDirection: 'row-reverse',
@@ -463,11 +508,13 @@ const styles = StyleSheet.create({
   metaText: {
     fontFamily: typography.regular,
     fontSize: 12,
-    color: colors.textSecondary,
+    color: '#1e293b',
     textAlign: 'right',
   },
   metaTextBold: {
     fontFamily: typography.bold,
-    color: colors.text,
+    fontSize: 12,
+    color: colors.primaryDark,
+    textAlign: 'right',
   },
 });
