@@ -18,6 +18,7 @@ import { confirmAction, showAlert } from '../../utils/alert.util';
 import {
   User, Phone, Users, Bell, HelpCircle, Info,
   LogOut, ChevronLeft, Shield, Star, X, MessageSquare, CheckCircle2,
+  Lock, Smartphone, ShieldAlert, PhoneCall,
 } from 'lucide-react-native';
 
 const SUPPORT_PHONE = '01288494803';
@@ -333,28 +334,40 @@ export const SettingsScreen: React.FC = () => {
 
                 <ScrollView style={{ maxHeight: 250 }} showsVerticalScrollIndicator={false}>
                   <View style={modalStyles.privacySection}>
-                    <Text style={modalStyles.privacyHeading}>🔒 سرية وأمان البيانات</Text>
+                    <View style={modalStyles.privacyHeadingRow}>
+                      <Lock size={15} color={colors.primary} />
+                      <Text style={modalStyles.privacyHeading}>سرية وأمان البيانات</Text>
+                    </View>
                     <Text style={modalStyles.privacyText}>
                       نلتزم في منصة "منظّم" بأعلى معايير الحماية والتشفير لحفظ سرية بيانات أولياء الأمور والطلاب.
                     </Text>
                   </View>
 
                   <View style={modalStyles.privacySection}>
-                    <Text style={modalStyles.privacyHeading}>📱 الاستخدام المصرح به</Text>
+                    <View style={modalStyles.privacyHeadingRow}>
+                      <Smartphone size={15} color={colors.primary} />
+                      <Text style={modalStyles.privacyHeading}>الاستخدام المصرح به</Text>
+                    </View>
                     <Text style={modalStyles.privacyText}>
                       تُستخدم أرقام الهواتف والبيانات المدخلة فقط لتسجيل الدخول الآمن، تسجيل الحضور والغياب، إرسال نتائج الدرجات، والتواصل التعليمي مع السنتر.
                     </Text>
                   </View>
 
                   <View style={modalStyles.privacySection}>
-                    <Text style={modalStyles.privacyHeading}>🚫 عدم مشاركة البيانات</Text>
+                    <View style={modalStyles.privacyHeadingRow}>
+                      <ShieldAlert size={15} color={colors.primary} />
+                      <Text style={modalStyles.privacyHeading}>عدم مشاركة البيانات</Text>
+                    </View>
                     <Text style={modalStyles.privacyText}>
                       لا يتم بيع أو مشاركة أي بيانات شخصية مع أي جهات خارجية أو استخدامها في أي حملات إعلانية.
                     </Text>
                   </View>
 
                   <View style={modalStyles.privacySection}>
-                    <Text style={modalStyles.privacyHeading}>📞 الاستفسار والدعم</Text>
+                    <View style={modalStyles.privacyHeadingRow}>
+                      <PhoneCall size={15} color={colors.primary} />
+                      <Text style={modalStyles.privacyHeading}>الاستفسار والدعم</Text>
+                    </View>
                     <Text style={modalStyles.privacyText}>
                       لأي أسئلة حول سياسة الخصوصية، يرجى التواصل مع فريق الدعم على: {SUPPORT_PHONE}
                     </Text>
@@ -435,16 +448,16 @@ const SettingsToggle: React.FC<{
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
-  safe: { flex: 1, backgroundColor: colors.navy },
+  safe: { flex: 1, backgroundColor: colors.background },
   scroll: { backgroundColor: colors.background },
   header: {
-    backgroundColor: colors.navy,
+    backgroundColor: colors.background,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
     paddingBottom: spacing.xxl,
     alignItems: 'flex-end',
   },
-  headerTitle: { fontFamily: typography.extraBold, fontSize: 26, color: colors.textInverse },
+  headerTitle: { fontFamily: typography.extraBold, fontSize: 26, color: '#ffffff' },
   profileCard: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
@@ -455,37 +468,41 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     borderRadius: borderRadius.xl,
     padding: spacing.lg,
-    ...shadows.md,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
     borderWidth: 1,
-    borderColor: colors.borderLight,
+    borderColor: colors.border,
   },
   profileAvatar: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: colors.navyMid,
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: colors.skyBlue,
+    borderColor: '#38bdf8',
   },
-  profileAvatarText: { fontFamily: typography.extraBold, fontSize: 24, color: colors.skyBlue },
+  profileAvatarText: { fontFamily: typography.extraBold, fontSize: 24, color: '#0f4c81' },
   profileInfo: { flex: 1, alignItems: 'flex-end' },
-  profileName: { fontFamily: typography.bold, fontSize: 18, color: colors.text },
+  profileName: { fontFamily: typography.bold, fontSize: 18, color: '#0b2344' },
   profilePhoneRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: 4, marginTop: 4 },
-  profilePhone: { fontFamily: typography.medium, fontSize: 13, color: colors.textSecondary },
+  profilePhone: { fontFamily: typography.medium, fontSize: 13, color: '#475569' },
   currentChild: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginHorizontal: spacing.lg,
     marginBottom: spacing.md,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.surface,
     borderRadius: borderRadius.lg,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderWidth: 1,
-    borderColor: 'rgba(15,76,129,0.15)',
+    borderColor: colors.border,
   },
   currentChildInfo: { alignItems: 'flex-end' },
   currentChildLabel: { fontFamily: typography.medium, fontSize: 10, color: colors.primary, letterSpacing: 0.3 },
@@ -502,7 +519,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     paddingVertical: spacing.sm,
     borderTopWidth: 1,
-    borderTopColor: colors.borderLight,
+    borderTopColor: colors.border,
   },
   switchAllText: { fontFamily: typography.bold, fontSize: 13, color: colors.primary },
   logoutBtn: {
@@ -515,8 +532,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderRadius: borderRadius.xl,
     borderWidth: 1.5,
-    borderColor: colors.absentLight,
-    backgroundColor: '#fff5f5',
+    borderColor: '#fecaca',
+    backgroundColor: colors.card,
   },
   logoutText: { fontFamily: typography.bold, fontSize: 15, color: colors.absent },
 });
@@ -524,16 +541,20 @@ const styles = StyleSheet.create({
 const secStyles = StyleSheet.create({
   container: { marginHorizontal: spacing.lg, marginBottom: spacing.md },
   title: {
-    fontFamily: typography.bold, fontSize: 13, color: colors.textMuted,
+    fontFamily: typography.bold, fontSize: 13, color: '#93c5fd',
     textAlign: 'right', marginBottom: spacing.xs, letterSpacing: 0.3,
   },
   card: {
     backgroundColor: colors.card,
     borderRadius: borderRadius.xl,
     borderWidth: 1,
-    borderColor: colors.borderLight,
+    borderColor: colors.border,
     overflow: 'hidden',
-    ...shadows.sm,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
   },
   row: {
     flexDirection: 'row-reverse',
@@ -542,15 +563,17 @@ const secStyles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     gap: spacing.sm,
   },
-  rowBorder: { borderBottomWidth: 1, borderBottomColor: colors.borderLight },
+  rowBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
   iconWrap: {
     width: 36, height: 36, borderRadius: 10,
     backgroundColor: colors.surface,
     alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   rowInfo: { flex: 1, alignItems: 'flex-end' },
-  rowLabel: { fontFamily: typography.bold, fontSize: 14, color: colors.text },
-  rowSub: { fontFamily: typography.regular, fontSize: 11, color: colors.textMuted, marginTop: 2 },
+  rowLabel: { fontFamily: typography.bold, fontSize: 14, color: '#0b2344' },
+  rowSub: { fontFamily: typography.regular, fontSize: 11, color: '#64748b', marginTop: 2 },
   activeDot: {
     width: 8, height: 8, borderRadius: 4, backgroundColor: colors.present,
     position: 'absolute', top: spacing.sm, left: spacing.sm,
@@ -725,12 +748,17 @@ const modalStyles = StyleSheet.create({
   privacySection: {
     marginBottom: spacing.md,
   },
+  privacyHeadingRow: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
   privacyHeading: {
     fontFamily: typography.bold,
     fontSize: 13,
     color: colors.text,
     textAlign: 'right',
-    marginBottom: 2,
   },
   privacyText: {
     fontFamily: typography.regular,

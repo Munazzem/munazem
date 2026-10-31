@@ -20,6 +20,7 @@ import {
     MessageCircle,
     Printer,
     Pencil,
+    RotateCcw,
 } from 'lucide-react';
 import { ReportCardSkeleton } from '@/components/layout/skeletons/ReportCardSkeleton';
 import { TableSkeleton } from '@/components/layout/skeletons/TableSkeleton';
@@ -37,6 +38,7 @@ import { EditGradeModal } from '@/components/exams/EditGradeModal';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { cn } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { OfflineStorageService } from '@/lib/offline/storage.service';
 
 // ── Status helpers ─────────────────────────────────────────────────
 const STATUS_MAP: Record<ExamStatus, { label: string; className: string; icon: React.ElementType }> = {
@@ -510,10 +512,29 @@ export default function ExamDetailPage() {
                                                                 effectiveSubject
                                                             );
                                                             return (
-                                                                <tr key={r._id} className="hover:bg-gray-50/50">
-                                                                    <td className="px-6 py-3 font-medium text-gray-900">{name}</td>
+                                                                <tr key={r._id} className={cn('hover:bg-gray-50/50 transition-colors', r.isPendingDelete && 'bg-red-50/70 border-r-4 border-r-red-500 opacity-90')}>
+                                                                    <td className="px-6 py-3 font-medium text-gray-900">
+                                                                        <div className="flex flex-wrap items-center gap-2">
+                                                                            <span>{name}</span>
+                                                                            {r.isPendingDelete && (
+                                                                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-300">
+                                                                                    <Clock className="w-3 h-3 text-red-600 animate-pulse" />
+                                                                                    معلق للحذف من السيرفر
+                                                                                </span>
+                                                                            )}
+                                                                            {r.isPendingSync && !r.isPendingDelete && (
+                                                                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+                                                                                    غير مرفوع للسيرفر (محلي)
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                    </td>
                                                                     <td className="px-4 py-3 text-center font-bold text-gray-800">
-                                                                        {r.score} / {examData.totalMarks}
+                                                                        {r.isPendingDelete ? (
+                                                                            <del className="text-red-500 font-semibold">{r.score} / {examData.totalMarks}</del>
+                                                                        ) : (
+                                                                            `${r.score} / ${examData.totalMarks}`
+                                                                        )}
                                                                     </td>
                                                                     <td className="px-4 py-3 text-center">
                                                                         <span className={cn(
@@ -544,15 +565,31 @@ export default function ExamDetailPage() {
                                                                     </td>
                                                                     {isTeacher && (
                                                                         <td className="px-4 py-3 text-center">
-                                                                            <Button
-                                                                                variant="ghost"
-                                                                                size="sm"
-                                                                                className="h-8 w-8 p-0 text-gray-400 hover:text-primary hover:bg-primary/5 rounded-full"
-                                                                                onClick={() => setEditingResult(r)}
-                                                                                title="تعديل الدرجة"
-                                                                            >
-                                                                                <Pencil className="h-3.5 w-3.5" />
-                                                                            </Button>
+                                                                            {r.isPendingDelete ? (
+                                                                                <Button
+                                                                                    variant="outline"
+                                                                                    size="sm"
+                                                                                    className="h-7 px-2 text-xs border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800 gap-1 rounded-lg"
+                                                                                    onClick={async () => {
+                                                                                        await OfflineStorageService.undoExamResultPendingDelete(examId, r._id);
+                                                                                        queryClient.invalidateQueries({ queryKey: ['exam-results', examId] });
+                                                                                        toast.success(`تم التراجع عن حذف درجة ${name}`);
+                                                                                    }}
+                                                                                >
+                                                                                    <RotateCcw className="h-3 w-3" />
+                                                                                    تراجع عن الحذف
+                                                                                </Button>
+                                                                            ) : (
+                                                                                <Button
+                                                                                    variant="ghost"
+                                                                                    size="sm"
+                                                                                    className="h-8 w-8 p-0 text-gray-400 hover:text-primary hover:bg-primary/5 rounded-full"
+                                                                                    onClick={() => setEditingResult(r)}
+                                                                                    title="تعديل الدرجة"
+                                                                                >
+                                                                                    <Pencil className="h-3.5 w-3.5" />
+                                                                                </Button>
+                                                                            )}
                                                                         </td>
                                                                     )}
                                                                 </tr>
@@ -588,9 +625,22 @@ export default function ExamDetailPage() {
                                                         effectiveSubject
                                                     );
                                                     return (
-                                                        <div key={r._id} className="p-4">
+                                                        <div key={r._id} className={cn('p-4 transition-colors', r.isPendingDelete && 'bg-red-50/70 border-r-4 border-r-red-500 opacity-90')}>
                                                             <div className="flex items-center justify-between">
-                                                                <span className="font-medium text-gray-900">{name}</span>
+                                                                <div className="flex flex-col gap-1">
+                                                                    <span className="font-medium text-gray-900">{name}</span>
+                                                                    {r.isPendingDelete && (
+                                                                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-300 w-fit">
+                                                                            <Clock className="w-3 h-3 text-red-600 animate-pulse" />
+                                                                            معلق للحذف من السيرفر
+                                                                        </span>
+                                                                    )}
+                                                                    {r.isPendingSync && !r.isPendingDelete && (
+                                                                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 w-fit">
+                                                                            غير مرفوع للسيرفر (محلي)
+                                                                        </span>
+                                                                    )}
+                                                                </div>
                                                                 <div className="flex items-center gap-1.5">
                                                                     <span className={cn(
                                                                         'text-xs font-medium px-2 py-0.5 rounded-full',
@@ -607,20 +657,42 @@ export default function ExamDetailPage() {
                                                                         <MessageCircle className="h-3.5 w-3.5" />
                                                                     </a>
                                                                     {isTeacher && (
-                                                                        <Button
-                                                                            variant="ghost"
-                                                                            size="sm"
-                                                                            className="h-7 w-7 p-0 text-gray-400 hover:text-primary rounded-full"
-                                                                            onClick={() => setEditingResult(r)}
-                                                                            title="تعديل الدرجة"
-                                                                        >
-                                                                            <Pencil className="h-3.5 w-3.5" />
-                                                                        </Button>
+                                                                        r.isPendingDelete ? (
+                                                                            <Button
+                                                                                variant="outline"
+                                                                                size="sm"
+                                                                                className="h-7 px-2 text-xs border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800 gap-1 rounded-lg"
+                                                                                onClick={async () => {
+                                                                                    await OfflineStorageService.undoExamResultPendingDelete(examId, r._id);
+                                                                                    queryClient.invalidateQueries({ queryKey: ['exam-results', examId] });
+                                                                                    toast.success(`تم التراجع عن حذف درجة ${name}`);
+                                                                                }}
+                                                                            >
+                                                                                <RotateCcw className="h-3 w-3" />
+                                                                                تراجع
+                                                                            </Button>
+                                                                        ) : (
+                                                                            <Button
+                                                                                variant="ghost"
+                                                                                size="sm"
+                                                                                className="h-7 w-7 p-0 text-gray-400 hover:text-primary rounded-full"
+                                                                                onClick={() => setEditingResult(r)}
+                                                                                title="تعديل الدرجة"
+                                                                            >
+                                                                                <Pencil className="h-3.5 w-3.5" />
+                                                                            </Button>
+                                                                        )
                                                                     )}
                                                                 </div>
                                                             </div>
                                                             <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-sm text-gray-500">
-                                                                <span>الدرجة: <strong className="text-gray-800">{r.score} / {examData.totalMarks}</strong></span>
+                                                                <span>
+                                                                    الدرجة: {r.isPendingDelete ? (
+                                                                        <del className="text-red-500 font-bold">{r.score} / {examData.totalMarks}</del>
+                                                                    ) : (
+                                                                        <strong className="text-gray-800">{r.score} / {examData.totalMarks}</strong>
+                                                                    )}
+                                                                </span>
                                                                 <span>التقدير: <strong className={GRADE_COLORS[r.grade] ? 'font-bold' : ''}>{r.grade}</strong></span>
                                                             </div>
                                                         </div>

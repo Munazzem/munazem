@@ -20,7 +20,7 @@ import { Button } from '../../components/common/Button';
 import { isValidEgyptianPhone, normalizeEgyptianPhone } from '../../utils/phone.util';
 import { AuthApi } from '../../api/auth.api';
 import { useAuthStore } from '../../store/auth.store';
-import { confirmAction } from '../../utils/alert.util';
+import { confirmAction, showAlert } from '../../utils/alert.util';
 import { Phone, LogIn, QrCode } from 'lucide-react-native';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'PhoneEntry'>;
@@ -59,6 +59,11 @@ export const PhoneEntryScreen: React.FC<Props> = ({ navigation }) => {
       } else if (!err?.response) {
         message = 'تعذر الاتصال بالخادم. يرجى التأكد من اتصالك بالإنترنت والمحاولة مجدداً.';
       }
+      if (err?.response?.status === 429) {
+        showAlert('محاولات متكررة', message);
+        return;
+      }
+
       confirmAction({
         title: 'تعذر تسجيل الدخول',
         message,

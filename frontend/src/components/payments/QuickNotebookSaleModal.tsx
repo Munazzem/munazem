@@ -277,12 +277,12 @@ export function QuickNotebookSaleModal({ open, onOpenChange }: Props) {
                             <div className="bg-purple-50 border border-purple-100 rounded-xl px-4 py-3 flex items-center justify-between">
                                 <div className="flex flex-col">
                                     <span className="text-xs text-gray-500">إجمالي الحجز</span>
-                                    <span className="text-sm font-bold text-gray-700">{fullPrice.toLocaleString('ar-EG')} ج.م</span>
+                                    <span className="text-sm font-bold text-gray-700">{fullPrice.toLocaleString('en-US')} ج.م</span>
                                 </div>
                                 <div className="flex flex-col items-end">
                                     <span className="text-xs text-gray-500">المبلغ المتبقي</span>
                                     <span className="text-xl font-bold text-purple-700">
-                                        {remaining.toLocaleString('ar-EG')} ج.م
+                                        {remaining.toLocaleString('en-US')} ج.م
                                     </span>
                                 </div>
                             </div>

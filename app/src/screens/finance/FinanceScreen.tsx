@@ -16,6 +16,7 @@ import { StatusBadge } from '../../components/common/StatusBadge';
 import { TeacherTabs } from '../../components/common/TeacherTabs';
 import { useActiveChild } from '../../hooks/useActiveChild';
 import { Wallet, CheckCircle2, AlertTriangle, Receipt, Calendar } from 'lucide-react-native';
+import { getArabicMonthName } from '../../utils/date.util';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'FinanceDetail'>;
 
@@ -134,7 +135,7 @@ export const FinanceScreen: React.FC<Props> = ({ route }) => {
           {allPayments.length > 0 && (
             <>
               <View style={s.histHeader}>
-                <Receipt size={17} color={colors.primary} />
+                <Receipt size={18} color="#ffffff" />
                 <Text style={s.sectionTitle}>سجل الدفعات</Text>
               </View>
               <View style={s.histCard}>
@@ -175,42 +176,61 @@ export const FinanceScreen: React.FC<Props> = ({ route }) => {
   );
 };
 
+const getCycleMonthLabel = (record: FinancialRecord): string => {
+  if (record.cycleMonth) {
+    return record.cycleMonth.includes('شهر') ? record.cycleMonth : `شهر ${record.cycleMonth}`;
+  }
+  if (record.payments && record.payments.length > 0 && record.payments[0].date) {
+    const month = getArabicMonthName(record.payments[0].date);
+    if (month) return `شهر ${month}`;
+  }
+  return '';
+};
+
 // Cycle card WITHOUT payment history (moved to unified section)
-const CycleCard: React.FC<{ record: FinancialRecord }> = ({ record }) => (
-  <View style={c.container}>
-    <View style={c.header}>
-      <StatusBadge status={record.status} size="sm" />
-      <View style={c.titleWrap}>
-        <Text style={c.subject}>الدورة {record.cycleNumber} ({record.subject})</Text>
-        <Text style={c.teacher}>{record.teacherName}</Text>
+const CycleCard: React.FC<{ record: FinancialRecord }> = ({ record }) => {
+  const monthLabel = getCycleMonthLabel(record);
+
+  return (
+    <View style={c.container}>
+      <View style={c.header}>
+        <StatusBadge status={record.status} size="sm" />
+        <View style={c.titleWrap}>
+          <Text style={c.subject}>
+            الدورة {record.cycleNumber} ({monthLabel || record.subject})
+          </Text>
+          <Text style={c.teacher}>
+            {record.teacherName}{record.subject && monthLabel ? ` • ${record.subject}` : ''}
+          </Text>
+        </View>
+      </View>
+
+      {/* Cycle stats */}
+      <View style={c.infoRow}>
+        <InfoItem label="حصص الدورة" value={String(record.cycleCapacity)} />
+        <InfoItem label="مستهلك" value={String(record.sessionsConsumed)} />
+        <InfoItem label="سعر الدورة" value={`${record.fullCyclePrice} ج`} />
+      </View>
+
+      {/* Paid / Remaining / Discount chips */}
+      <View style={c.finRow}>
+        <View style={[c.chip, { backgroundColor: colors.presentLight }]}>
+          <Text style={[c.chipText, { color: colors.present }]}>مدفوع: {record.totalPaid} ج</Text>
+        </View>
+        {(record.totalDiscount || 0) > 0 && (
+          <View style={[c.chip, { backgroundColor: colors.warningLight }]}>
+            <Text style={[c.chipText, { color: colors.warningDark }]}>خصم: {record.totalDiscount} ج</Text>
+          </View>
+        )}
+        {record.remainingAmount > 0 && (
+          <View style={[c.chip, { backgroundColor: colors.absentLight }]}>
+            <Text style={[c.chipText, { color: colors.absent }]}>متبقي: {record.remainingAmount} ج</Text>
+          </View>
+        )}
       </View>
     </View>
-
-    {/* Cycle stats */}
-    <View style={c.infoRow}>
-      <InfoItem label="حصص الدورة" value={String(record.cycleCapacity)} />
-      <InfoItem label="مستهلك" value={String(record.sessionsConsumed)} />
-      <InfoItem label="سعر الدورة" value={`${record.fullCyclePrice} ج`} />
-    </View>
-
-    {/* Paid / Remaining / Discount chips */}
-    <View style={c.finRow}>
-      <View style={[c.chip, { backgroundColor: colors.presentLight }]}>
-        <Text style={[c.chipText, { color: colors.present }]}>مدفوع: {record.totalPaid} ج</Text>
-      </View>
-      {(record.totalDiscount || 0) > 0 && (
-        <View style={[c.chip, { backgroundColor: colors.warningLight }]}>
-          <Text style={[c.chipText, { color: colors.warningDark }]}>خصم: {record.totalDiscount} ج</Text>
-        </View>
-      )}
-      {record.remainingAmount > 0 && (
-        <View style={[c.chip, { backgroundColor: colors.absentLight }]}>
-          <Text style={[c.chipText, { color: colors.absent }]}>متبقي: {record.remainingAmount} ج</Text>
-        </View>
-      )}
-    </View>
-  </View>
-);
+  );
+};
 
 const InfoItem: React.FC<{ label: string; value: string }> = ({ label, value }) => (
   <View style={c.infoItem}>
@@ -221,17 +241,17 @@ const InfoItem: React.FC<{ label: string; value: string }> = ({ label, value }) 
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
-  safe: { flex: 1, backgroundColor: colors.navy },
+  safe: { flex: 1, backgroundColor: colors.background },
   scroll: { paddingBottom: 60, backgroundColor: colors.background },
   header: {
-    backgroundColor: colors.navy,
+    backgroundColor: colors.background,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
     paddingBottom: spacing.xxl,
     alignItems: 'flex-end',
   },
-  headerTitle: { fontFamily: typography.extraBold, fontSize: 26, color: colors.textInverse },
-  headerSub: { fontFamily: typography.regular, fontSize: 13, color: '#94a3b8', marginTop: 2 },
+  headerTitle: { fontFamily: typography.extraBold, fontSize: 26, color: '#ffffff' },
+  headerSub: { fontFamily: typography.medium, fontSize: 13, color: '#93c5fd', marginTop: 2 },
   tabsWrap: {
     alignSelf: 'stretch',
     width: '100%',
@@ -245,19 +265,27 @@ const s = StyleSheet.create({
     backgroundColor: colors.card,
     borderRadius: borderRadius.xl,
     padding: spacing.lg,
-    ...shadows.md,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
     borderWidth: 1.5,
     marginBottom: spacing.md,
   },
   summaryItem: { flex: 1, alignItems: 'center' },
   summaryValue: { fontFamily: typography.extraBold, fontSize: 24 },
   summaryValueSm: { fontSize: 18 },
-  summaryLabel: { fontFamily: typography.regular, fontSize: 11, color: colors.textSecondary, marginTop: 2 },
-  summaryDivider: { width: 1, height: 44, backgroundColor: colors.borderLight, marginHorizontal: spacing.sm },
+  summaryLabel: { fontFamily: typography.bold, fontSize: 12, color: '#1e3a6e', marginTop: 2 },
+  summaryDivider: { width: 1, height: 44, backgroundColor: colors.border, marginHorizontal: spacing.sm },
   statusIcon: { marginLeft: spacing.md },
   sectionTitle: {
-    fontFamily: typography.bold, fontSize: 16, color: colors.text,
-    textAlign: 'right', marginHorizontal: spacing.lg, marginBottom: spacing.sm,
+    fontFamily: typography.bold,
+    fontSize: 16,
+    color: '#ffffff',
+    textAlign: 'right',
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
   },
   histHeader: {
     flexDirection: 'row-reverse',
@@ -265,15 +293,20 @@ const s = StyleSheet.create({
     gap: spacing.sm,
     marginHorizontal: spacing.lg,
     marginTop: spacing.lg,
+    marginBottom: spacing.sm,
   },
   histCard: {
     marginHorizontal: spacing.lg,
     marginBottom: spacing.lg,
     backgroundColor: colors.card,
     borderRadius: borderRadius.xl,
-    ...shadows.sm,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
     borderWidth: 1,
-    borderColor: colors.borderLight,
+    borderColor: colors.border,
     overflow: 'hidden',
   },
   payRow: {
@@ -283,19 +316,19 @@ const s = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
-  payBorder: { borderBottomWidth: 1, borderBottomColor: colors.borderLight },
+  payBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
   payRight: { alignItems: 'flex-end', gap: 4 },
   payAmount: { fontFamily: typography.extraBold, fontSize: 17, color: colors.present },
   payBadgesRow: { flexDirection: 'row-reverse', gap: 4, alignItems: 'center' },
   payBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 99 },
   payBadgeText: { fontFamily: typography.bold, fontSize: 11 },
   payLeft: { alignItems: 'flex-end' },
-  paySubject: { fontFamily: typography.bold, fontSize: 13, color: colors.text },
+  paySubject: { fontFamily: typography.bold, fontSize: 13, color: '#0b2344' },
   payDateRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: 3, marginTop: 3 },
-  payDate: { fontFamily: typography.regular, fontSize: 11, color: colors.textMuted },
+  payDate: { fontFamily: typography.regular, fontSize: 11, color: '#64748b' },
   center: { paddingVertical: 60, alignItems: 'center' },
   emptyWrap: { paddingVertical: 60, alignItems: 'center', gap: spacing.md },
-  emptyText: { fontFamily: typography.medium, fontSize: 14, color: colors.textMuted },
+  emptyText: { fontFamily: typography.medium, fontSize: 14, color: '#93c5fd' },
 });
 
 const c = StyleSheet.create({
@@ -305,25 +338,31 @@ const c = StyleSheet.create({
     backgroundColor: colors.card,
     borderRadius: borderRadius.xl,
     padding: spacing.lg,
-    ...shadows.sm,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
     borderWidth: 1,
-    borderColor: colors.borderLight,
+    borderColor: colors.border,
   },
   header: { flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: spacing.md },
   titleWrap: { alignItems: 'flex-end', flex: 1, marginRight: spacing.sm },
-  subject: { fontFamily: typography.bold, fontSize: 15, color: colors.text },
-  teacher: { fontFamily: typography.regular, fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  subject: { fontFamily: typography.bold, fontSize: 15, color: '#0b2344' },
+  teacher: { fontFamily: typography.regular, fontSize: 12, color: '#64748b', marginTop: 2 },
   infoRow: {
     flexDirection: 'row-reverse',
     justifyContent: 'space-between',
     backgroundColor: colors.surface,
     borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
     padding: spacing.sm,
     marginBottom: spacing.sm,
   },
   infoItem: { alignItems: 'center', flex: 1 },
-  infoValue: { fontFamily: typography.bold, fontSize: 16, color: colors.text },
-  infoLabel: { fontFamily: typography.regular, fontSize: 11, color: colors.textSecondary, marginTop: 2 },
+  infoValue: { fontFamily: typography.bold, fontSize: 16, color: '#0b2344' },
+  infoLabel: { fontFamily: typography.medium, fontSize: 11, color: '#64748b', marginTop: 2 },
   finRow: { flexDirection: 'row-reverse', gap: spacing.sm, flexWrap: 'wrap' },
   chip: { paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: borderRadius.full },
   chipText: { fontFamily: typography.bold, fontSize: 12 },

@@ -147,6 +147,14 @@ export default function StudentProfilePage() {
         };
     }, [reportLoading, studentLoading]);
 
+    useEffect(() => {
+        if (!tabsContainerRef.current) return;
+        const activeTrigger = tabsContainerRef.current.querySelector('[data-state="active"]') as HTMLElement | null;
+        if (activeTrigger) {
+            activeTrigger.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+        }
+    }, [activeTab]);
+
     // وظيفة سهم اليسار: الرجوع للتبويبات السابقة يساراً
     const handleScrollLeft = () => {
         const el = tabsContainerRef.current;
@@ -573,9 +581,9 @@ export default function StudentProfilePage() {
                     </div>
 
                     <div className="flex items-center justify-between pt-2.5 border-t border-gray-50 text-[11px] text-gray-500">
-                        <span>آخر اختبار:</span>
+                        <span className="shrink-0">آخر اختبار:</span>
                         {latestExam ? (
-                            <span className="font-bold text-gray-800 truncate max-w-[180px]">
+                            <span className="font-bold text-gray-800 truncate min-w-0 flex-1 text-left mr-2" title={`${latestExam.examTitle} (${latestExam.score}/${latestExam.totalMarks})`}>
                                 {latestExam.examTitle} ({latestExam.score}/{latestExam.totalMarks})
                                 {latestExam.grade && ` • ${latestExam.grade}`}
                             </span>
@@ -588,7 +596,7 @@ export default function StudentProfilePage() {
 
             {/* ── 3. Tabs Navigation & Hub Content ── */}
             <div className="bg-white rounded-2xl shadow-[0_0_40px_-15px_rgba(0,0,0,0.06)] overflow-hidden border border-gray-100 flex flex-col">
-                <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex-1 flex flex-col min-h-[420px]">
+                <Tabs value={activeTab} onValueChange={setActiveTab} dir="rtl" className="w-full flex-1 flex flex-col min-h-[420px]">
                     <div className="relative w-full border-b border-gray-100 bg-gray-50/70 p-1 sm:p-1.5">
                         {/* Left Arrow */}
                         <button

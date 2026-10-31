@@ -200,4 +200,32 @@ router.patch('/change-password', authenticate, async (req: Request, res: Respons
     }
 });
 
+// POST /auth/heartbeat — lightweight client presence ping
+router.post('/heartbeat', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const user = (req as any).user;
+        const userId = user?.id || user?._id || user?.userId;
+        const currentRoute = req.body?.currentRoute || req.headers['referer'] || '/dashboard';
+
+        if (userId) {
+            const { PresenceService } = await import('../../infrastructure/presence/presence.service.js');
+            await PresenceService.recordActivity({
+                userId: String(userId),
+                name: (user as any).name || 'مستخدم',
+                role: (user as any).role || 'user',
+                phone: (user as any).phone,
+                teacherId: user.teacherId ? String(user.teacherId) : null,
+                centerName: (user as any).centerName,
+                currentRoute: String(currentRoute),
+                ip: (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip,
+                userAgent: req.headers['user-agent'] as string | undefined,
+            });
+        }
+
+        SuccessResponse({ res, data: { status: 'alive' }, message: 'Heartbeat recorded' });
+    } catch (error) {
+        next(error);
+    }
+});
+
 export default router;

@@ -7,6 +7,7 @@ import { fetchMonthlyReportHtml } from '@/lib/api/reports';
 import { printHtmlContent } from '@/lib/utils/print';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/lib/store/auth.store';
+import { OfflineStorageService } from '@/lib/offline/storage.service';
 import { AddTransactionModal } from '@/components/payments/AddTransactionModal';
 import { PriceSettingsModal } from '@/components/payments/PriceSettingsModal';
 import { BatchSubscriptionModal } from '@/components/payments/BatchSubscriptionModal';
@@ -69,7 +70,7 @@ function StatCard({
             </div>
             <div>
                 <p className={cn('text-lg sm:text-xl font-bold', c.text)}>
-                    {value.toLocaleString('ar-EG')} <span className="text-xs sm:text-sm font-normal">ج</span>
+                    {value.toLocaleString('en-US')} <span className="text-xs sm:text-sm font-normal">ج</span>
                 </p>
                 {subValue && <p className="text-[10px] text-gray-400 mt-1">{subValue}</p>}
             </div>
@@ -121,10 +122,35 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
         queryFn: () => getDailyLedger(date),
     });
 
+    React.useEffect(() => {
+        const handleUpdate = () => {
+            refetch();
+        };
+        window.addEventListener('munazem:offline-transaction-recorded', handleUpdate);
+        window.addEventListener('munazem:offline-transaction-deleted', handleUpdate);
+        return () => {
+            window.removeEventListener('munazem:offline-transaction-recorded', handleUpdate);
+            window.removeEventListener('munazem:offline-transaction-deleted', handleUpdate);
+        };
+    }, [refetch]);
+
+    const handleUndoDelete = async (tx: any) => {
+        const txId = (tx as any).transactionId;
+        if (!txId) return;
+        await OfflineStorageService.undoTransactionPendingDelete(txId, date);
+        toast.success('تم التراجع عن مسح المعاملة واستعادتها بنجاح');
+        refetch();
+    };
+
     const deleteMutation = useMutation({
         mutationFn: (txId: string) => deleteTransaction(txId),
-        onSuccess: () => {
-            toast.success('تم مسح المعاملة بنجاح وعكس أثرها على السجلات');
+        onSuccess: (data: any) => {
+            if (data?.isPendingDelete) {
+                toast.warning('تم تعليم المعاملة للحذف: سيتم الحذف نهائياً من قاعدة بيانات السيرفر فور استعادة الاتصال');
+            } else {
+                toast.success('تم مسح المعاملة بنجاح وعكس أثرها على السجلات');
+            }
+            refetch();
             queryClient.removeQueries({ queryKey: ['students'] });
             queryClient.removeQueries({ queryKey: QK.students.details });
             queryClient.removeQueries({ queryKey: QK.students.reports });
@@ -226,7 +252,7 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
     const openDeleteConfirm = (tx: typeof txs[number]) => {
         const txId = (tx as any).transactionId;
         if (!txId) { toast.error('لا يمكن مسح هذه المعاملة'); return; }
-        const label = `${CATEGORY_LABELS[tx.category as TransactionCategory] ?? tx.category}${tx.studentName ? ` — ${tx.studentName}` : ''} (${tx.paidAmount.toLocaleString('ar-EG')} ج)`;
+        const label = `${CATEGORY_LABELS[tx.category as TransactionCategory] ?? tx.category}${tx.studentName ? ` — ${tx.studentName}` : ''} (${tx.paidAmount.toLocaleString('en-US')} ج)`;
         setDeleteTxLabel(label);
         setDeleteTxId(txId);
     };
@@ -413,11 +439,12 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                             {txs.map((tx, i) => {
                                 const txId = (tx as any).transactionId;
                                 const isSelected = txId && selectedTxIds.has(txId);
+                                const isPendingDelete = Boolean((tx as any).isPendingDelete);
                                 return (
-                                    <div key={i} className={cn("px-5 py-4 transition-colors", isSelected ? "bg-red-50/50" : "hover:bg-gray-50/30")}>
+                                    <div key={i} className={cn("px-5 py-4 transition-colors", isPendingDelete ? "bg-red-50/70 border-r-4 border-r-red-500 opacity-80" : isSelected ? "bg-red-50/50" : "hover:bg-gray-50/30")}>
                                         <div className="flex items-center justify-between mb-2">
                                             <div className="flex items-center gap-2">
-                                                {canWrite && txId && (
+                                                {canWrite && txId && !isPendingDelete && (
                                                     <input
                                                         type="checkbox"
                                                         checked={isSelected}
@@ -425,38 +452,72 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                                                         className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4"
                                                     />
                                                 )}
-                                                <span className={cn(
-                                                    'inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-bold border uppercase tracking-wider',
-                                                    tx.type === 'INCOME'
-                                                        ? 'bg-green-50 text-green-700 border-green-100'
-                                                        : 'bg-red-50 text-red-600 border-red-100'
-                                                )}>
-                                                    {tx.type === 'INCOME' ? '↑ دخل' : '↓ مصروف'}
-                                                </span>
+                                                {(() => {
+                                                    const isOfflinePending = Boolean(
+                                                        (tx as any).isPendingSync ||
+                                                        (tx as any).offlinePending ||
+                                                        ((tx as any).transactionId && String((tx as any).transactionId).startsWith('loc_tx_'))
+                                                    );
+                                                    return (
+                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                        <span className={cn(
+                                                            'inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-bold border uppercase tracking-wider',
+                                                            tx.type === 'INCOME'
+                                                                ? 'bg-green-50 text-green-700 border-green-100'
+                                                                : 'bg-red-50 text-red-600 border-red-100'
+                                                        )}>
+                                                            {tx.type === 'INCOME' ? '↑ دخل' : '↓ مصروف'}
+                                                        </span>
+                                                        {isPendingDelete ? (
+                                                            <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full font-bold bg-red-100 text-red-800 border border-red-300">
+                                                                <Trash2 className="h-3 w-3 text-red-600" />
+                                                                معلق للحذف من السيرفر
+                                                            </span>
+                                                        ) : isOfflinePending ? (
+                                                            <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full font-bold bg-amber-50 text-amber-800 border border-amber-300">
+                                                                <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                                                غير مرفوع (محلي)
+                                                            </span>
+                                                        ) : null}
+                                                    </div>
+                                                );
+                                            })()}
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 {canWrite && (
                                                     <div className="flex items-center gap-1">
-                                                        <button
-                                                            type="button"
-                                                            title="تعديل المعاملة"
-                                                            onClick={() => openEditModal(tx)}
-                                                            className="p-1 rounded-lg text-gray-400 hover:text-primary hover:bg-primary/5 transition-colors"
-                                                        >
-                                                            <Pencil className="h-3.5 w-3.5" />
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            title="مسح المعاملة"
-                                                            onClick={() => openDeleteConfirm(tx)}
-                                                            className="p-1 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                                                        >
-                                                            <Trash2 className="h-3.5 w-3.5" />
-                                                        </button>
+                                                        {isPendingDelete ? (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleUndoDelete(tx)}
+                                                                className="text-xs text-blue-700 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-md font-bold transition-colors"
+                                                            >
+                                                                تراجع
+                                                            </button>
+                                                        ) : (
+                                                            <>
+                                                                <button
+                                                                    type="button"
+                                                                    title="تعديل المعاملة"
+                                                                    onClick={() => openEditModal(tx)}
+                                                                    className="p-1 rounded-lg text-gray-400 hover:text-primary hover:bg-primary/5 transition-colors"
+                                                                >
+                                                                    <Pencil className="h-3.5 w-3.5" />
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    title="مسح المعاملة"
+                                                                    onClick={() => openDeleteConfirm(tx)}
+                                                                    className="p-1 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                                                                >
+                                                                    <Trash2 className="h-3.5 w-3.5" />
+                                                                </button>
+                                                            </>
+                                                        )}
                                                     </div>
                                                 )}
-                                                <span className="font-black text-gray-900">
-                                                    {tx.paidAmount.toLocaleString('ar-EG')} ج
+                                                <span className={cn("font-black text-gray-900", isPendingDelete && "line-through opacity-70")}>
+                                                    {tx.paidAmount.toLocaleString('en-US')} ج
                                                 </span>
                                             </div>
                                         </div>
@@ -509,11 +570,12 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                                     {txs.map((tx, i) => {
                                         const txId = (tx as any).transactionId;
                                         const isSelected = txId && selectedTxIds.has(txId);
+                                        const isPendingDelete = Boolean((tx as any).isPendingDelete);
                                         return (
-                                            <tr key={i} className={cn("group transition-colors", isSelected ? "bg-red-50/40" : "hover:bg-gray-50/50")}>
+                                            <tr key={i} className={cn("group transition-colors", isPendingDelete ? "bg-red-50/60 border-r-4 border-r-red-500 opacity-80" : isSelected ? "bg-red-50/40" : "hover:bg-gray-50/50")}>
                                                 {canWrite && (
                                                     <td className="px-4 py-4 text-center">
-                                                        {txId ? (
+                                                        {txId && !isPendingDelete ? (
                                                             <input
                                                                 type="checkbox"
                                                                 checked={isSelected}
@@ -524,17 +586,39 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                                                     </td>
                                                 )}
                                                 <td className="px-6 py-4">
-                                                    <span className={cn(
-                                                        'inline-flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-full font-bold border uppercase',
-                                                        tx.type === 'INCOME'
-                                                            ? 'bg-green-50 text-green-700 border-green-100'
-                                                            : 'bg-red-50 text-red-600 border-red-100'
-                                                    )}>
-                                                        {tx.type === 'INCOME' ? '↑ دخل' : '↓ مصروف'}
-                                                    </span>
+                                                    {(() => {
+                                                        const isOfflinePending = Boolean(
+                                                            (tx as any).isPendingSync ||
+                                                            (tx as any).offlinePending ||
+                                                            ((tx as any).transactionId && String((tx as any).transactionId).startsWith('loc_tx_'))
+                                                        );
+                                                        return (
+                                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                                <span className={cn(
+                                                                    'inline-flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-full font-bold border uppercase',
+                                                                    tx.type === 'INCOME'
+                                                                        ? 'bg-green-50 text-green-700 border-green-100'
+                                                                        : 'bg-red-50 text-red-600 border-red-100'
+                                                                )}>
+                                                                    {tx.type === 'INCOME' ? '↑ دخل' : '↓ مصروف'}
+                                                                </span>
+                                                                {isPendingDelete ? (
+                                                                    <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-bold bg-red-100 text-red-800 border border-red-300">
+                                                                        <Trash2 className="h-3 w-3 text-red-600" />
+                                                                        معلق للحذف من السيرفر
+                                                                    </span>
+                                                                ) : isOfflinePending ? (
+                                                                    <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-50 text-amber-800 border border-amber-300">
+                                                                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                                                        غير مرفوع للسيرفر (محلي)
+                                                                    </span>
+                                                                ) : null}
+                                                            </div>
+                                                        );
+                                                    })()}
                                                 </td>
                                                 <td className="px-6 py-4">
-                                                    <p className="text-sm font-bold text-gray-800">
+                                                    <p className={cn("text-sm font-bold text-gray-800", isPendingDelete && "line-through opacity-70")}>
                                                         {CATEGORY_LABELS[tx.category as TransactionCategory] ?? tx.category}
                                                     </p>
                                                     {tx.description && (
@@ -547,31 +631,41 @@ function DailyTab({ canWrite, isTeacher }: { canWrite: boolean; isTeacher: boole
                                                     <span className="text-sm font-medium text-gray-600">{tx.studentName ?? '—'}</span>
                                                 </td>
                                                 <td className="px-6 py-4">
-                                                    <span className="text-base font-black text-gray-900">
-                                                        {tx.paidAmount.toLocaleString('ar-EG')} <span className="text-[10px] font-normal text-gray-400">ج</span>
+                                                    <span className={cn("text-base font-black text-gray-900", isPendingDelete && "line-through opacity-70")}>
+                                                        {tx.paidAmount.toLocaleString('en-US')} <span className="text-[10px] font-normal text-gray-400">ج</span>
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-4 text-gray-400 text-xs font-medium">{formatTime(tx.time)}</td>
                                                 {canWrite && (
                                                     <td className="px-6 py-4">
-                                                        <div className="flex items-center gap-1">
+                                                        {isPendingDelete ? (
                                                             <button
                                                                 type="button"
-                                                                title="تعديل المعاملة"
-                                                                onClick={() => openEditModal(tx)}
-                                                                className="p-1.5 rounded-lg text-gray-400 hover:text-primary hover:bg-primary/5 transition-colors"
+                                                                onClick={() => handleUndoDelete(tx)}
+                                                                className="text-xs text-blue-700 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-lg font-bold transition-colors"
                                                             >
-                                                                <Pencil className="h-4 w-4" />
+                                                                تراجع عن الحذف
                                                             </button>
-                                                            <button
-                                                                type="button"
-                                                                title="مسح المعاملة"
-                                                                onClick={() => openDeleteConfirm(tx)}
-                                                                className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                                                            >
-                                                                <Trash2 className="h-4 w-4" />
-                                                            </button>
-                                                        </div>
+                                                        ) : (
+                                                            <div className="flex items-center gap-1">
+                                                                <button
+                                                                    type="button"
+                                                                    title="تعديل المعاملة"
+                                                                    onClick={() => openEditModal(tx)}
+                                                                    className="p-1.5 rounded-lg text-gray-400 hover:text-primary hover:bg-primary/5 transition-colors"
+                                                                >
+                                                                    <Pencil className="h-4 w-4" />
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    title="مسح المعاملة"
+                                                                    onClick={() => openDeleteConfirm(tx)}
+                                                                    className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                                                                >
+                                                                    <Trash2 className="h-4 w-4" />
+                                                                </button>
+                                                            </div>
+                                                        )}
                                                     </td>
                                                 )}
                                             </tr>
@@ -746,7 +840,7 @@ function MonthlyTab() {
                                 },
                                 tooltip: {
                                     theme: 'light',
-                                    y: { formatter: (val) => `${val.toLocaleString('ar-EG')} ج` }
+                                    y: { formatter: (val) => `${val.toLocaleString('en-US')} ج` }
                                 },
                                 legend: {
                                     position: 'top',

@@ -27,7 +27,7 @@ import {
 import { useAuthStore } from '@/lib/store/auth.store';
 import { useUIStore } from '@/lib/store/ui.store';
 
-const getNavItems = (role?: string) => {
+const getNavItems = (role?: string, permissions?: any) => {
     if (role === 'superAdmin') {
         return [
             { name: 'لوحة التحكم',   href: '/admin',          icon: LayoutDashboard },
@@ -49,10 +49,11 @@ const getNavItems = (role?: string) => {
             { name: 'الباكيدجات',         href: '/center/packages',    icon: BookOpen        },
             { name: 'المجموعات الدراسية',  href: '/center/groups',      icon: Users           },
             { name: 'دليل الطلاب',        href: '/center/students',    icon: UserCheck       },
+            { name: 'تسجيلات واشتراكات',  href: '/center/enrollments', icon: ClipboardList   },
             { name: 'الكارت الذكي',        href: '/center/cards',       icon: CreditCard      },
-            { name: 'الامتحانات',         href: '/exams',              icon: ClipboardList   },
+            { name: 'الامتحانات',         href: '/exams',              icon: FileText        },
             { name: 'التحضير السريع',     href: '/center/attendance',  icon: CalendarCheck   },
-            { name: 'التقارير الشاملة',   href: '/center/reports',     icon: FileText        },
+            { name: 'التقارير الشاملة',   href: '/center/reports',     icon: BarChart3       },
             { name: 'المشرفين',           href: '/center/supervisors', icon: ShieldCheck     },
             { name: 'الماليات والحسابات',  href: '/center/financials',  icon: Wallet          },
             { name: 'إعدادات السنتر',     href: '/center/settings',    icon: Settings        },
@@ -64,10 +65,11 @@ const getNavItems = (role?: string) => {
             { name: 'لوحة تحكم السنتر',   href: '/center',             icon: LayoutDashboard },
             { name: 'المجموعات',         href: '/center/groups',      icon: Users           },
             { name: 'دليل الطلاب',        href: '/center/students',    icon: UserCheck       },
+            { name: 'تسجيلات الطلاب',     href: '/center/enrollments', icon: ClipboardList   },
             { name: 'الكارت الذكي',        href: '/center/cards',       icon: CreditCard      },
-            { name: 'الامتحانات',         href: '/exams',              icon: ClipboardList   },
+            { name: 'الامتحانات',         href: '/exams',              icon: FileText        },
             { name: 'التحضير السريع',     href: '/center/attendance',  icon: CalendarCheck   },
-            { name: 'التقارير',          href: '/center/reports',     icon: FileText        },
+            { name: 'التقارير',          href: '/center/reports',     icon: BarChart3       },
             { name: 'الماليات',          href: '/center/financials',  icon: Wallet          },
         ];
     }
@@ -91,6 +93,21 @@ const getNavItems = (role?: string) => {
         base.splice(8, 0, { name: 'المساعدين', href: '/assistants', icon: ShieldCheck });
     }
 
+    // Assistant permissions filter
+    if (role === 'assistant' && permissions) {
+        return base.filter((item) => {
+            if (item.href === '/dashboard/payments' && permissions.canViewFinancials === false && permissions.canRecordPayments === false) return false;
+            if (item.href === '/reports' && permissions.canViewFinancials === false) return false;
+            if (item.href === '/groups' && permissions.canManageGroups === false) return false;
+            if (item.href === '/dashboard/notebooks' && permissions.canManageNotebooks === false) return false;
+            if (item.href === '/exams' && permissions.canCreateExams === false && permissions.canGradeExams === false) return false;
+            if (item.href === '/sessions' && permissions.canTakeAttendance === false && permissions.canViewAttendance === false && permissions.canManageSessions === false) return false;
+            if (item.href === '/students' && permissions.canManageStudents === false) return false;
+            if (item.href === '/smart-card' && permissions.canManageStudents === false) return false;
+            return true;
+        });
+    }
+
     return base;
 };
 
@@ -106,7 +123,7 @@ export function Sidebar() {
         setIsMounted(true);
     }, []);
 
-    const navItems = getNavItems(user?.role);
+    const navItems = getNavItems(user?.role, user?.assistantPermissions);
 
     const handleLogout = () => {
         logout();

@@ -140,6 +140,8 @@ export const cache = {
     },
 };
 
+export { getClient as getRedisClient };
+
 // ── Cache key builders ───────────────────────────────────────────────────────
 // Centralized key definitions to avoid typos and ensure consistent invalidation.
 

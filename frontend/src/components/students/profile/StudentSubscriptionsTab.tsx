@@ -186,7 +186,7 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                                     مديونيات واشتراكات دورات سابقة مستحقة ({pastUnpaidCycles.length})
                                 </h3>
                                 <p className="text-xs text-amber-700 mt-0.5">
-                                    إجمالي المستحق من الدورات السابقة: <span className="font-extrabold text-amber-900 text-sm">{pastCyclesDebt.toLocaleString('ar-EG')} ج.م</span>
+                                    إجمالي المستحق من الدورات السابقة: <span className="font-extrabold text-amber-900 text-sm">{pastCyclesDebt.toLocaleString('en-US')} ج.م</span>
                                 </p>
                             </div>
                         </div>
@@ -395,7 +395,7 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                                 <div>
                                     <div className="flex items-center gap-2">
                                         <p className="text-xs font-bold text-gray-800">
-                                            {new Date(sub.date).toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' })}
+                                            {new Date(sub.date).toLocaleDateString('ar-EG-u-nu-latn', { year: 'numeric', month: 'long', day: 'numeric' })}
                                         </p>
                                         {sub.cycleNumber && (
                                             <Badge variant="outline" className="text-[10px] text-gray-600 bg-gray-50 py-0">
@@ -415,9 +415,9 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                                     )}
                                 </div>
                                 <div className="text-left bg-green-50/60 px-3 py-1.5 rounded-xl border border-green-100">
-                                    <p className="text-xs font-bold text-green-700">{(sub.paidAmount ?? 0).toLocaleString('ar-EG')} ج.م</p>
+                                    <p className="text-xs font-bold text-green-700">{(sub.paidAmount ?? 0).toLocaleString('en-US')} ج.م</p>
                                     {(sub.discountAmount || 0) > 0 && (
-                                        <p className="text-[10px] text-green-600/80 font-medium">خصم {(sub.discountAmount ?? 0).toLocaleString('ar-EG')}</p>
+                                        <p className="text-[10px] text-green-600/80 font-medium">خصم {(sub.discountAmount ?? 0).toLocaleString('en-US')}</p>
                                     )}
                                 </div>
                             </div>
@@ -547,7 +547,7 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                             </p>
                             <div className="flex justify-between pt-1 border-t border-amber-200 text-amber-950 font-bold">
                                 <span>إجمالي المتبقي من الدورات السابقة:</span>
-                                <span className="text-red-600 font-extrabold text-sm">{pastCyclesDebt.toLocaleString('ar-EG')} ج.م</span>
+                                <span className="text-red-600 font-extrabold text-sm">{pastCyclesDebt.toLocaleString('en-US')} ج.م</span>
                             </div>
                         </div>
 
@@ -703,7 +703,7 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                             </div>
                             <div className="flex justify-between items-center text-rose-800 font-extrabold text-sm pt-1 border-t border-rose-200">
                                 <span>إجمالي المبلغ المطلوب إسقاطه:</span>
-                                <span>{pastCyclesDebt.toLocaleString('ar-EG')} ج.م</span>
+                                <span>{pastCyclesDebt.toLocaleString('en-US')} ج.م</span>
                             </div>
                         </div>
 

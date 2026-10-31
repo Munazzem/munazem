@@ -75,7 +75,7 @@ export function StudentPaymentsTab({ reportLoading, report }: Props) {
                     <div className="relative z-10">
                         <p className="text-[10px] font-bold text-green-800/60 mb-1">إجمالي المدفوع</p>
                         <p className="text-base sm:text-2xl font-extrabold text-green-700 leading-none">
-                            {totalPaid.toLocaleString('ar-EG')}
+                            {totalPaid.toLocaleString('en-US')}
                             <span className="text-[10px] font-bold opacity-70 mr-1">ج.م</span>
                         </p>
                     </div>
@@ -89,7 +89,7 @@ export function StudentPaymentsTab({ reportLoading, report }: Props) {
                     <div className="relative z-10">
                         <p className="text-[10px] font-bold text-orange-800/60 mb-1">إجمالي الخصومات</p>
                         <p className="text-base sm:text-2xl font-extrabold text-orange-600 leading-none">
-                            {totalDiscount.toLocaleString('ar-EG')}
+                            {totalDiscount.toLocaleString('en-US')}
                             <span className="text-[10px] font-bold opacity-70 mr-1">ج.م</span>
                         </p>
                     </div>
@@ -176,7 +176,7 @@ export function StudentPaymentsTab({ reportLoading, report }: Props) {
                                                 {CATEGORY_LABELS[tx.category] ?? tx.category}
                                             </p>
                                             <p className="text-[11px] sm:text-xs text-gray-400 mt-0.5 font-medium">
-                                                {new Date(tx.date).toLocaleDateString('ar-EG', {
+                                                {new Date(tx.date).toLocaleDateString('ar-EG-u-nu-latn', {
                                                     year: 'numeric', month: 'short', day: 'numeric',
                                                 })}
                                             </p>
@@ -189,17 +189,17 @@ export function StudentPaymentsTab({ reportLoading, report }: Props) {
                                     {/* Amounts */}
                                     <div className="text-left shrink-0">
                                         <p className="text-sm sm:text-[15px] font-bold text-gray-900">
-                                            {(tx.paidAmount ?? 0).toLocaleString('ar-EG')} ج
+                                            {(tx.paidAmount ?? 0).toLocaleString('en-US')} ج
                                         </p>
                                         {hasDiscount && (
                                             <p className="text-[10px] sm:text-[11px] text-orange-500 font-medium flex items-center gap-0.5 justify-end">
                                                 <ArrowDownLeft className="h-3 w-3" />
-                                                خصم {(tx.discountAmount).toLocaleString('ar-EG')} ج
+                                                خصم {(tx.discountAmount).toLocaleString('en-US')} ج
                                             </p>
                                         )}
                                         {tx.originalAmount && tx.originalAmount !== tx.paidAmount && (
                                             <p className="text-[9px] sm:text-[10px] text-gray-300 line-through text-left">
-                                                {(tx.originalAmount).toLocaleString('ar-EG')} ج
+                                                {(tx.originalAmount).toLocaleString('en-US')} ج
                                             </p>
                                         )}
                                     </div>

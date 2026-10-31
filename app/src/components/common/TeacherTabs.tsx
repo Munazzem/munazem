@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-nati
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing, borderRadius } from '../../theme/spacing';
-import { UserCheck } from 'lucide-react-native';
+import { UserCheck, Building2, BookOpen } from 'lucide-react-native';
 
 export interface TeacherTabItem {
   studentId: string;
@@ -53,7 +53,7 @@ export const TeacherTabs: React.FC<TeacherTabsProps> = ({
             selectedSubjectId === subj.studentId || (!selectedSubjectId && idx === 0);
 
           const displayName = subj.isPackage
-            ? '🏛️ باقة السنتر'
+            ? 'باقة السنتر'
             : subj.teacherName?.startsWith('أ.') || subj.teacherName?.startsWith('د.')
             ? subj.teacherName
             : `أ. ${subj.teacherName || 'المعلم'}`;
@@ -74,13 +74,23 @@ export const TeacherTabs: React.FC<TeacherTabsProps> = ({
               activeOpacity={0.8}
             >
               <View style={styles.tabContent}>
-                {isSelected && (
+                {subj.isPackage ? (
+                  <Building2
+                    size={14}
+                    color={
+                      isSelected
+                        ? (isNavy ? colors.skyBlue : colors.primary)
+                        : (isNavy ? '#94a3b8' : colors.textMuted)
+                    }
+                    style={styles.icon}
+                  />
+                ) : isSelected ? (
                   <UserCheck
                     size={14}
                     color={isNavy ? colors.skyBlue : colors.primary}
                     style={styles.icon}
                   />
-                )}
+                ) : null}
                 <View>
                   <Text
                     style={[

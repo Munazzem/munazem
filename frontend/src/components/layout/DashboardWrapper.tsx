@@ -11,10 +11,13 @@ import { Loader2 } from 'lucide-react';
 
 import { useQuery } from '@tanstack/react-query';
 import { fetchMe } from '@/lib/api/auth';
+import { usePresenceHeartbeat } from '@/lib/hooks/usePresenceHeartbeat';
 
 export function DashboardWrapper({ children }: { children: ReactNode }) {
     const { user, token, login: loginStore, logout } = useAuthStore();
     const [isMounted, setIsMounted] = useState(false);
+
+    usePresenceHeartbeat();
 
     useEffect(() => {
         setIsMounted(true);
@@ -51,6 +54,10 @@ export function DashboardWrapper({ children }: { children: ReactNode }) {
                 centerName: meData.centerName,
                 logoUrl: meData.logoUrl,
                 assistantsAccessEnabled: meData.assistantsAccessEnabled,
+                assistantType: meData.assistantType ?? null,
+                assistantPermissions: meData.assistantPermissions ?? null,
+                supervisorType: meData.supervisorType ?? null,
+                supervisorPermissions: meData.supervisorPermissions ?? null,
                 planTier: meData.planTier ?? null,
                 features: meData.features ?? { homeworkTracking: false },
             };
@@ -66,33 +73,43 @@ export function DashboardWrapper({ children }: { children: ReactNode }) {
                 user.name !== mappedUser.name ||
                 user.role !== mappedUser.role ||
                 user.centerName !== mappedUser.centerName ||
-                user.logoUrl !== mappedUser.logoUrl
+                user.logoUrl !== mappedUser.logoUrl ||
+                JSON.stringify(user.assistantPermissions) !== JSON.stringify(mappedUser.assistantPermissions)
             ) {
                 loginStore(mappedUser as any, token);
             }
         }
     }, [meData, token, user, loginStore]);
 
-    // Handle token error: cleanly logout and redirect to login
+    // Handle token error: cleanly logout and redirect to login ONLY on explicit 401 Unauthorized
     useEffect(() => {
         if (meError) {
-            logout();
-            if (typeof window !== 'undefined') {
-                window.location.href = '/login';
+            const status = (meError as any)?.response?.status;
+            // Only force logout if the server explicitly tells us the token is invalid (401 Unauthorized)
+            // DO NOT logout on network drop, timeout, server restart, 500 error, or offline state!
+            if (status === 401) {
+                logout();
+                if (typeof window !== 'undefined') {
+                    window.location.href = '/login';
+                }
             }
         }
     }, [meError, logout]);
 
-    // Safety timeout: if token exists but user cannot be loaded, redirect to login
+    // Safety timeout: if token exists but user cannot be loaded, redirect to login ONLY if confirmed 401
     useEffect(() => {
-        if (isMounted && token && !user && !isMeLoading && !meData) {
-            const timer = setTimeout(() => {
-                logout();
-                window.location.href = '/login';
-            }, 3000);
-            return () => clearTimeout(timer);
+        const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+        if (isMounted && token && !user && !isMeLoading && !meData && !isOffline) {
+            const status = (meError as any)?.response?.status;
+            if (status === 401) {
+                const timer = setTimeout(() => {
+                    logout();
+                    window.location.href = '/login';
+                }, 3000);
+                return () => clearTimeout(timer);
+            }
         }
-    }, [isMounted, token, user, isMeLoading, meData, logout]);
+    }, [isMounted, token, user, isMeLoading, meData, meError, logout]);
 
     // SSR fallback and spinner while session is being loaded or recovered
     if (!isMounted || !user || !token) {

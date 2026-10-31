@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { useDebounce } from '@/lib/hooks/use-debounce';
 import { fetchGroups, deleteGroup } from '@/lib/api/groups';
 import type { Group } from '@/types/group.types';
+import { OfflineStorageService } from '@/lib/offline/storage.service';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { 
     Search, 
@@ -94,6 +95,16 @@ export default function GroupsPage() {
         },
         initialPageParam: 1,
     });
+
+    // Automatically sync fetched groups into IndexedDB for offline availability
+    useEffect(() => {
+        if (data?.pages) {
+            const allFetchedGroups = data.pages.flatMap((page) => page.data || []);
+            if (allFetchedGroups.length > 0) {
+                OfflineStorageService.saveOfflineGroups(allFetchedGroups);
+            }
+        }
+    }, [data?.pages]);
 
     const deleteMutation = useMutation({
         mutationFn: deleteGroup,

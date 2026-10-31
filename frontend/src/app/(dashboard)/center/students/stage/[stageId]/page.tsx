@@ -47,7 +47,9 @@ import {
     Check,
     X,
     ChevronLeft,
+    RotateCcw,
 } from 'lucide-react';
+import { OfflineStorageService } from '@/lib/offline/storage.service';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -431,10 +433,14 @@ export default function StageStudentsPage() {
         mutationFn: async (id: string) => {
             return await deleteCenterStudent(id);
         },
-        onSuccess: () => {
+        onSuccess: (data: any) => {
             queryClient.invalidateQueries({ queryKey: ['center', 'students'] });
             setDeletingStudent(null);
-            toast.success('تم حذف الطالب بنجاح');
+            if (data?.offline || !navigator.onLine) {
+                toast.warning(data?.message || 'تم وضع علامة على الطالب كمعلق للحذف (أوفلاين). سيتم حذفه من السيرفر فور استعادة الاتصال.');
+            } else {
+                toast.success('تم حذف الطالب بنجاح');
+            }
         },
         onError: (err: any) => {
             toast.error(err?.response?.data?.message || 'تعذر حذف الطالب');
@@ -807,8 +813,10 @@ export default function StageStudentsPage() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
-                                {students.map((st) => (
-                                    <tr key={st._id} className="hover:bg-gray-50/60 transition-colors">
+                                {students.map((st) => {
+                                    const isPending = !!(st as any).isPendingDelete;
+                                    return (
+                                    <tr key={st._id} className={isPending ? 'bg-rose-50/40 opacity-80 transition-colors' : 'hover:bg-gray-50/60 transition-colors'}>
                                         {/* Student Name & Avatar */}
                                         <td className="py-3.5 px-4 font-bold text-gray-900">
                                             <Link
@@ -822,8 +830,15 @@ export default function StageStudentsPage() {
                                                     {st.studentName.charAt(0)}
                                                 </div>
                                                 <div>
-                                                    <div className="text-gray-900 font-bold group-hover:text-primary transition-colors underline-offset-4 group-hover:underline text-sm">
-                                                        {st.studentName}
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-gray-900 font-bold group-hover:text-primary transition-colors underline-offset-4 group-hover:underline text-sm">
+                                                            {st.studentName}
+                                                        </span>
+                                                        {isPending && (
+                                                            <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-300 font-bold text-[10px]">
+                                                                معلق للحذف (أوفلاين)
+                                                            </Badge>
+                                                        )}
                                                     </div>
                                                     {st.notes && (
                                                         <div className="text-[11px] text-gray-400 font-normal">
@@ -937,31 +952,49 @@ export default function StageStudentsPage() {
                                                     <span>بروفايل</span>
                                                 </Link>
 
+                                                {isPending ? (
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={async () => {
+                                                            await OfflineStorageService.undoCenterStudentPendingDelete(st._id);
+                                                            queryClient.invalidateQueries({ queryKey: ['center', 'students'] });
+                                                            toast.success('تم التراجع عن حذف الطالب واستعادته محلياً');
+                                                        }}
+                                                        className="h-7 px-2 text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-300 rounded-lg cursor-pointer flex items-center gap-1 font-bold"
+                                                        title="تراجع عن حذف الطالب واستعادته"
+                                                    >
+                                                        <RotateCcw className="h-3.5 w-3.5" />
+                                                        <span>تراجع</span>
+                                                    </Button>
+                                                ) : (
+                                                    <>
+                                                        <Button
+                                                            size="icon"
+                                                            variant="ghost"
+                                                            onClick={() => handleOpenEdit(st)}
+                                                            className="h-7 w-7 text-gray-500 hover:text-gray-900 rounded-lg cursor-pointer"
+                                                            title="تعديل البيانات"
+                                                        >
+                                                            <Edit2 className="h-3.5 w-3.5" />
+                                                        </Button>
 
-
-                                                <Button
-                                                    size="icon"
-                                                    variant="ghost"
-                                                    onClick={() => handleOpenEdit(st)}
-                                                    className="h-7 w-7 text-gray-500 hover:text-gray-900 rounded-lg cursor-pointer"
-                                                    title="تعديل البيانات"
-                                                >
-                                                    <Edit2 className="h-3.5 w-3.5" />
-                                                </Button>
-
-                                                <Button
-                                                    size="icon"
-                                                    variant="ghost"
-                                                    onClick={() => setDeletingStudent(st)}
-                                                    className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg cursor-pointer"
-                                                    title="حذف الطالب نهائياً"
-                                                >
-                                                    <Trash2 className="h-3.5 w-3.5" />
-                                                </Button>
+                                                        <Button
+                                                            size="icon"
+                                                            variant="ghost"
+                                                            onClick={() => setDeletingStudent(st)}
+                                                            className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg cursor-pointer"
+                                                            title="حذف الطالب نهائياً"
+                                                        >
+                                                            <Trash2 className="h-3.5 w-3.5" />
+                                                        </Button>
+                                                    </>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
-                                ))}
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>

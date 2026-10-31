@@ -4,6 +4,7 @@ import { TokenUtil } from '../common/utils/token.util.js';
 import type { IJwtPayload } from '../types/auth.types.js';
 import { cache, CacheKeys, CacheTTL } from '../infrastructure/cache/cache.service.js';
 import { UserModel } from '../database/models/user.model.js';
+import { PresenceService } from '../infrastructure/presence/presence.service.js';
 
 // Threshold: issue fresh token if less than 5 minutes remain
 const SLIDING_THRESHOLD_SECONDS = 5 * 60;
@@ -62,6 +63,22 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
         const freshToken = TokenUtil.generateAccessToken(cleanPayload as IJwtPayload);
         res.setHeader('X-New-Token', freshToken);
       }
+    }
+
+    // ── Track Live Presence Asynchronously (Zero Latency) ────────────
+    const userId = (payload as any).id || (payload as any)._id || payload.userId;
+    if (userId) {
+      PresenceService.recordActivity({
+        userId: String(userId),
+        name: (payload as any).name || 'مستخدم',
+        role: payload.role,
+        phone: (payload as any).phone,
+        teacherId: payload.teacherId ? String(payload.teacherId) : null,
+        centerName: (payload as any).centerName,
+        currentRoute: req.originalUrl || req.path,
+        ip: (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip,
+        userAgent: req.headers['user-agent'] as string | undefined,
+      }).catch(() => {});
     }
 
     next();

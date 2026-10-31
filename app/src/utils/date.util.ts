@@ -8,7 +8,7 @@ const ARABIC_DAYS = [
   'السبت',
 ];
 
-const ARABIC_MONTHS = [
+export const ARABIC_MONTHS = [
   'يناير',
   'فبراير',
   'مارس',
@@ -22,6 +22,16 @@ const ARABIC_MONTHS = [
   'نوفمبر',
   'ديسمبر',
 ];
+
+/**
+ * Returns Arabic month name from Date or string (e.g. 'أكتوبر')
+ */
+export function getArabicMonthName(dateStr?: string | Date | null): string {
+  if (!dateStr) return '';
+  const d = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
+  if (isNaN(d.getTime())) return '';
+  return ARABIC_MONTHS[d.getMonth()] || '';
+}
 
 /**
  * Returns formatted date in Arabic: "الأربعاء، 19 أغسطس"
