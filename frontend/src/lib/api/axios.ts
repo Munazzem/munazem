@@ -15,6 +15,11 @@ async function resolveOfflineData(url: string, params?: any): Promise<any | null
         const [cleanPath, queryString] = rawUrl.split('?');
         const cleanUrl = cleanPath.replace(/^https?:\/\/[^\/]+/, '');
 
+        // NEVER resolve offline data for auth routes
+        if (cleanUrl.startsWith('/auth') || cleanUrl.includes('/auth/')) {
+            return null;
+        }
+
         // Extract query parameters from URL string if present and merge with params object
         const urlParams: Record<string, any> = {};
         if (queryString) {
@@ -627,6 +632,11 @@ async function resolveOfflineMutation(config: any): Promise<any | null> {
         const [cleanPath] = rawUrl.split('?');
         const cleanUrl = cleanPath.replace(/^https?:\/\/[^\/]+/, '');
         const data = typeof config.data === 'string' ? JSON.parse(config.data || '{}') : (config.data || {});
+
+        // NEVER intercept or handle auth mutations offline
+        if (cleanUrl.startsWith('/auth') || cleanUrl.includes('/auth/')) {
+            return null;
+        }
 
         // 1. Create Student (POST /students)
         if (cleanUrl === '/students' && method === 'POST') {
@@ -1655,8 +1665,11 @@ apiClient.interceptors.request.use(async (config) => {
         }
 
         // Offline Adapter: Intercept GET reads and POST/PUT/DELETE mutations when disconnected
+        // NEVER intercept auth routes (login, register, me, etc.)
+        const rawUrl = config.url || '';
+        const isAuthRoute = rawUrl.startsWith('/auth') || rawUrl.includes('/auth/');
         const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
-        const skipOffline = Boolean(config.headers?.['x-skip-offline-adapter']);
+        const skipOffline = Boolean(config.headers?.['x-skip-offline-adapter']) || isAuthRoute;
         if (isOffline && !skipOffline) {
             if (config.method?.toLowerCase() === 'get') {
                 const offlinePayload = await resolveOfflineData(config.url || '', config.params);
@@ -1692,6 +1705,25 @@ apiClient.interceptors.request.use(async (config) => {
 // Response Interceptor: Auto-Cache & Handle Global Errors
 apiClient.interceptors.response.use(
     (response) => {
+        // Sliding Token renewal: If backend sent fresh token, update cookie and store state silently
+        if (typeof window !== 'undefined') {
+            const newToken = response.headers?.['x-new-token'] || (response.headers as any)?.get?.('x-new-token');
+            if (newToken && typeof newToken === 'string') {
+                try {
+                    Cookies.set('token', newToken, {
+                        expires: 1,
+                        path: '/',
+                        secure: process.env.NODE_ENV === 'production',
+                        sameSite: 'lax',
+                    });
+                    const currentUser = useAuthStore.getState().user;
+                    if (currentUser) {
+                        useAuthStore.setState({ token: newToken });
+                    }
+                } catch {}
+            }
+        }
+
         // Silently update IndexedDB cache in background when online GET requests succeed
         if (typeof window !== 'undefined' && response.config?.method?.toLowerCase() === 'get') {
             const rawUrl = response.config.url || '';
@@ -1775,18 +1807,19 @@ apiClient.interceptors.response.use(
         // Prevent showing toast from server side requests if applicable
         if (typeof window !== 'undefined') {
             const url: string = error.config?.url || '';
+            const isAuthRoute = url.startsWith('/auth') || url.includes('/auth/');
             const isLoginRequest = url.includes('/auth/login');
             const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
             const isNetworkError = isOffline || error.code === 'ERR_NETWORK' || error.message?.includes('Network');
 
-            // If a network error occurred on a GET, attempt offline fallback before failing
-            if (isNetworkError && error.config?.method?.toLowerCase() === 'get') {
+            // If a network error occurred on a GET, attempt offline fallback before failing (never for auth)
+            if (!isAuthRoute && isNetworkError && error.config?.method?.toLowerCase() === 'get') {
                 const fallback = await resolveOfflineData(url, error.config?.params);
                 if (fallback !== null) {
                     return fallback;
                 }
-            } else if (isNetworkError && error.config?.method && error.config.method.toLowerCase() !== 'get') {
-                // If a network error occurred on a write mutation, queue locally and return success
+            } else if (!isAuthRoute && isNetworkError && error.config?.method && error.config.method.toLowerCase() !== 'get') {
+                // If a network error occurred on a write mutation, queue locally and return success (never for auth)
                 const mutationFallback = await resolveOfflineMutation(error.config);
                 if (mutationFallback !== null) {
                     return mutationFallback;

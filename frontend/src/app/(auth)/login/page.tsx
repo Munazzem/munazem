@@ -5,9 +5,10 @@ import { useAuthStore } from '@/lib/store/auth.store';
 import { apiClient } from '@/lib/api/axios';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Eye, EyeOff } from 'lucide-react';
+import { OfflineStorageService } from '@/lib/offline/storage.service';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,11 +36,20 @@ export default function LoginPage() {
     const [isLoading, setIsLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
 
+    useEffect(() => {
+        // Automatically purge any accidental /auth mutations from IndexedDB
+        if (typeof window !== 'undefined') {
+            OfflineStorageService.getPendingGenericMutations().catch(() => {});
+        }
+    }, []);
+
     const onSubmit = async (data: { phone: string; password: string }) => {
         if (isLoading) return;
         setIsLoading(true);
         try {
-            const res = await apiClient.post('/auth/login', data);
+            const res = await apiClient.post('/auth/login', data, {
+                headers: { 'x-skip-offline-adapter': 'true' },
+            });
             
             // Expected backend response: { success: true, data: { token, user } }
             const responseData = (res as any)?.data || res;

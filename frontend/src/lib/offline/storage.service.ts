@@ -1625,6 +1625,10 @@ export class OfflineStorageService {
     // ── Generic Offline Mutations Outbox (CRUD Operations) ────────────────────
 
     static async queueGenericMutation(mutation: Omit<GenericOfflineMutation, 'id' | 'createdAt' | 'status'>): Promise<string> {
+        // NEVER queue authentication or authorization requests
+        if (mutation.url && (mutation.url.startsWith('/auth') || mutation.url.includes('/auth/'))) {
+            return '';
+        }
         const id = `mut_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
         const record: GenericOfflineMutation = {
             ...mutation,
@@ -1639,9 +1643,15 @@ export class OfflineStorageService {
 
     static async getPendingGenericMutations(): Promise<GenericOfflineMutation[]> {
         const all = await getAllFromStore<GenericOfflineMutation>(STORES.MUTATIONS);
-        return all
-            .filter(m => m.status === 'QUEUED' || (m.status === 'FAILED' && (m.retryCount || 0) < 5))
-            .sort((a, b) => a.createdAt - b.createdAt);
+        const valid = all.filter(m => {
+            // Clean up any stray auth mutations that should never have been queued
+            if (m.url && (m.url.startsWith('/auth') || m.url.includes('/auth/'))) {
+                this.removeGenericMutation(m.id).catch(() => {});
+                return false;
+            }
+            return m.status === 'QUEUED' || (m.status === 'FAILED' && (m.retryCount || 0) < 5);
+        });
+        return valid.sort((a, b) => a.createdAt - b.createdAt);
     }
 
     static async removeGenericMutation(id: string): Promise<void> {
