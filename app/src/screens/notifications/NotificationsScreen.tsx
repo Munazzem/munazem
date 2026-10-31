@@ -490,15 +490,9 @@ const styles = StyleSheet.create({
     color: colors.warningDark,
   },
   metaBox: {
-    backgroundColor: 'rgba(255, 255, 255, 0.72)',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(15, 76, 129, 0.12)',
-    gap: 5,
+    gap: 4,
     width: '100%',
-    marginTop: 2,
+    marginTop: 4,
   },
   metaRow: {
     flexDirection: 'row-reverse',
@@ -507,14 +501,14 @@ const styles = StyleSheet.create({
   },
   metaText: {
     fontFamily: typography.regular,
-    fontSize: 12,
-    color: '#1e293b',
+    fontSize: 13,
+    color: '#334155',
     textAlign: 'right',
   },
   metaTextBold: {
     fontFamily: typography.bold,
-    fontSize: 12,
-    color: colors.primaryDark,
+    fontSize: 13,
+    color: '#0f172a',
     textAlign: 'right',
   },
 });
