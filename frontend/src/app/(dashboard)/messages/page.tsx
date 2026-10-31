@@ -130,6 +130,10 @@ function TeacherMessagesContent() {
   } = useQuery({
     queryKey: QK.teacherMessages.list({ page, limit }),
     queryFn: () => fetchTeacherMessages({ page, limit }),
+    refetchInterval: (query: any) => {
+      const list = query.state.data?.messages || query.state.data?.data;
+      return Array.isArray(list) && list.some((m: any) => m.status === 'SENDING') ? 3000 : false;
+    },
   });
 
   const messages = messagesData?.messages || [];
