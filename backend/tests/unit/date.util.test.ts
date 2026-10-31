@@ -222,8 +222,7 @@ describe('resolveTransactionDate', () => {
     it('تاريخ اليوم YYYY-MM-DD يُرجع الوقت الحالي (مش noon)', () => {
         // نحسب تاريخ اليوم بتوقيت مصر (نفس منطق الكود)
         const now = new Date();
-        const egyptNow = new Date(now.getTime() + THREE_HOURS_MS);
-        const todayStr = egyptNow.toISOString().split('T')[0]!;
+        const todayStr = todayEgypt(now);
 
         const before = Date.now();
         const result = resolveTransactionDate(todayStr);
