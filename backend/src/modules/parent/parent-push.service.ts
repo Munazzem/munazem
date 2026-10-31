@@ -7,6 +7,7 @@ import { StudentModel } from '../../database/models/student.model.js';
 import { CenterStudentModel } from '../../database/models/center-student.model.js';
 import { UserModel } from '../../database/models/user.model.js';
 import { AttendanceModel } from '../../database/models/attendance.model.js';
+import { TeacherMessageModel } from '../../database/models/teacher-message.model.js';
 import { ParentNotificationType } from '../../types/parent.types.js';
 import { logger } from '../../common/utils/logger.util.js';
 import { normalizePhone } from './parent-auth.service.js';
@@ -1080,4 +1081,273 @@ export class ParentPushService {
       })
     );
   }
+
+  /**
+   * Broadcast a custom message from teacher to parents.
+   * Fire-and-forget; never blocks the caller.
+   */
+  static notifyTeacherMessage(messageId: string): void {
+    setImmediate(() => {
+      ParentPushService._sendTeacherMessage(messageId).catch((err) => {
+        logger.error('parent_push_teacher_message_unhandled_error', {
+          messageId,
+          error: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+        });
+      });
+    });
+  }
+
+  /**
+   * Internal implementation of broadcast teacher message.
+   * Public for testing.
+   */
+  static async _sendTeacherMessage(
+    messageId: string
+  ): Promise<{ insertedCount: number; pushCount: number }> {
+    try {
+      const msg = await TeacherMessageModel.findById(messageId);
+      if (!msg) {
+        logger.warn('teacher_message_not_found', { messageId });
+        return { insertedCount: 0, pushCount: 0 };
+      }
+
+      if (msg.status !== 'SENDING') {
+        logger.info('teacher_message_already_processed_or_not_sending', {
+          messageId,
+          status: msg.status,
+        });
+        return { insertedCount: 0, pushCount: 0 };
+      }
+
+      const { cleanName, cleanSubject, teacherSig } = await resolveTeacherSigInfo(
+        msg.teacherId.toString()
+      );
+
+      // Build target student query
+      const studentQuery: any = {
+        teacherId: msg.teacherId,
+        isActive: true,
+        centerId: null,
+      };
+      if (msg.targetType === 'GROUP') {
+        studentQuery.groupId = msg.groupId;
+      } else {
+        studentQuery.gradeLevel = msg.gradeLevel;
+      }
+
+      const students = await StudentModel.find(studentQuery)
+        .select('_id studentName')
+        .sort({ studentName: 1 })
+        .lean();
+
+      if (students.length === 0) {
+        msg.status = 'FAILED';
+        msg.targetStudentCount = 0;
+        msg.reachedParentCount = 0;
+        msg.pushSentCount = 0;
+        await msg.save();
+        return { insertedCount: 0, pushCount: 0 };
+      }
+
+      const allStudentIds = students.map((s) => s._id);
+
+      // Chunk student IDs in slices of 500 to fetch ACTIVE ParentStudent links
+      // Note: ONLY active links with studentModelType: 'Student' - NO regex fallback!
+      const CHUNK_SIZE = 500;
+      const activeLinks: { studentId: any; parentId: any }[] = [];
+
+      for (let i = 0; i < allStudentIds.length; i += CHUNK_SIZE) {
+        const slice = allStudentIds.slice(i, i + CHUNK_SIZE);
+        const links = await ParentStudentModel.find({
+          studentId: { $in: slice },
+          status: 'ACTIVE',
+          studentModelType: 'Student',
+        })
+          .select('studentId parentId')
+          .lean();
+        activeLinks.push(...links);
+      }
+
+      // Group students by parent (A parent with multiple children gets 1 notification)
+      const studentNameMap = new Map<string, string>();
+      students.forEach((s) => studentNameMap.set(s._id.toString(), s.studentName));
+
+      const parentToStudentsMap = new Map<string, { studentId: string; studentName: string }[]>();
+      for (const link of activeLinks) {
+        const pId = link.parentId.toString();
+        const sId = link.studentId.toString();
+        const sName = studentNameMap.get(sId);
+        if (!sName) continue;
+
+        const list = parentToStudentsMap.get(pId) || [];
+        if (!list.some((item) => item.studentId === sId)) {
+          list.push({ studentId: sId, studentName: sName });
+          list.sort((a, b) => a.studentName.localeCompare(b.studentName, 'ar'));
+          parentToStudentsMap.set(pId, list);
+        }
+      }
+
+      const uniqueParentIds = Array.from(parentToStudentsMap.keys());
+      if (uniqueParentIds.length === 0) {
+        msg.status = 'FAILED';
+        msg.targetStudentCount = students.length;
+        msg.reachedParentCount = 0;
+        msg.pushSentCount = 0;
+        await msg.save();
+        return { insertedCount: 0, pushCount: 0 };
+      }
+
+      // Fetch active devices in chunks of 500
+      const parentToTokensMap = new Map<string, string[]>();
+      for (let i = 0; i < uniqueParentIds.length; i += CHUNK_SIZE) {
+        const parentSlice = uniqueParentIds
+          .slice(i, i + CHUNK_SIZE)
+          .map((id) => new mongoose.Types.ObjectId(id));
+        const devices = await ParentDeviceModel.find({
+          parentId: { $in: parentSlice },
+          isActive: true,
+          fcmToken: { $ne: null, $exists: true },
+        })
+          .select('parentId fcmToken')
+          .lean();
+
+        for (const d of devices) {
+          const pid = d.parentId.toString();
+          const token = ((d.fcmToken as string) || '').trim();
+          if (isValidExpoPushToken(token)) {
+            const tokens = parentToTokensMap.get(pid) || [];
+            if (!tokens.includes(token)) {
+              tokens.push(token);
+              parentToTokensMap.set(pid, tokens);
+            }
+          }
+        }
+      }
+
+      // Build notification documents (1 doc per parent)
+      const notificationDocs: any[] = [];
+      const title = (msg.title || '').trim() || (teacherSig ? `رسالة من ${teacherSig}` : 'رسالة من المدرس');
+      const body = msg.body.trim();
+      const pushBody = body.length > 180 ? `${body.slice(0, 177)}...` : body;
+
+      for (const [parentId, childList] of parentToStudentsMap.entries()) {
+        const firstChild = childList[0]!;
+        const studentIds = childList.map((c) => c.studentId);
+        const studentNames = childList.map((c) => c.studentName);
+
+        const eventId = `teacher_message:${msg._id.toString()}`;
+        const data = {
+          kind: 'TEACHER_MESSAGE',
+          messageId: msg._id.toString(),
+          teacherName: cleanName,
+          subject: cleanSubject,
+          groupName: msg.groupName || null,
+          gradeLevel: msg.gradeLevel,
+          studentIds,
+          studentNames,
+        };
+
+        notificationDocs.push({
+          parentId: new mongoose.Types.ObjectId(parentId),
+          studentId: new mongoose.Types.ObjectId(firstChild.studentId),
+          teacherId: msg.teacherId,
+          type: ParentNotificationType.TEACHER_MESSAGE,
+          title,
+          body,
+          deepLink: 'monazem://notifications',
+          data,
+          eventId,
+        });
+      }
+
+      // Atomic insert in chunks of 500
+      let insertedDocs: any[] = [];
+      for (let i = 0; i < notificationDocs.length; i += CHUNK_SIZE) {
+        const chunk = notificationDocs.slice(i, i + CHUNK_SIZE);
+        try {
+          const res = (await ParentNotificationModel.insertMany(chunk, { ordered: false })) as any[];
+          insertedDocs.push(...res);
+        } catch (err: any) {
+          if (err.insertedDocs && Array.isArray(err.insertedDocs) && err.insertedDocs.length > 0) {
+            insertedDocs.push(...err.insertedDocs);
+          } else if (err.writeErrors && Array.isArray(err.writeErrors)) {
+            const failedIndices = new Set(err.writeErrors.map((e: any) => e.index));
+            const passed = chunk.filter((_, idx) => !failedIndices.has(idx));
+            insertedDocs.push(...passed);
+          } else {
+            logger.warn('teacher_message_insert_many_partial_failure', {
+              code: err.code,
+              message: err.message,
+            });
+          }
+        }
+      }
+
+      // Dispatch Push notifications ONLY for insertedDocs
+      const pushMessages: ExpoPushMessage[] = [];
+      const tokensInMessages: string[] = [];
+
+      for (const doc of insertedDocs) {
+        const parentIdStr = doc.parentId?.toString();
+        if (!parentIdStr) continue;
+        const tokens = parentToTokensMap.get(parentIdStr) || [];
+        for (const token of tokens) {
+          pushMessages.push({
+            to: token,
+            sound: 'default',
+            priority: 'high',
+            channelId: 'default',
+            title: doc.title,
+            body: pushBody,
+            data: doc.data,
+          });
+          tokensInMessages.push(token);
+        }
+      }
+
+      const PUSH_BATCH_SIZE = 100;
+      for (let i = 0; i < pushMessages.length; i += PUSH_BATCH_SIZE) {
+        const chunkMessages = pushMessages.slice(i, i + PUSH_BATCH_SIZE);
+        const chunkTokens = tokensInMessages.slice(i, i + PUSH_BATCH_SIZE);
+        try {
+          const tickets = await sendExpoMessages(chunkMessages);
+          await deactivateInvalidTokens(chunkTokens, tickets);
+        } catch (batchErr) {
+          logger.warn('expo_push_batch_send_error', { batchErr, offset: i });
+        }
+      }
+
+      msg.status = 'SENT';
+      msg.targetStudentCount = students.length;
+      msg.reachedParentCount = insertedDocs.length;
+      msg.pushSentCount = pushMessages.length;
+      await msg.save();
+
+      logger.info('teacher_message_sent_successfully', {
+        messageId: msg._id.toString(),
+        targetStudentCount: msg.targetStudentCount,
+        reachedParentCount: msg.reachedParentCount,
+        pushSentCount: msg.pushSentCount,
+      });
+
+      return { insertedCount: insertedDocs.length, pushCount: pushMessages.length };
+    } catch (error) {
+      logger.error('teacher_message_send_failed', {
+        messageId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      try {
+        await TeacherMessageModel.findByIdAndUpdate(messageId, {
+          $set: { status: 'FAILED' },
+        });
+      } catch (dbErr) {
+        logger.error('teacher_message_status_update_failed', { messageId, dbErr });
+      }
+
+      return { insertedCount: 0, pushCount: 0 };
+    }
+  }
 }
+

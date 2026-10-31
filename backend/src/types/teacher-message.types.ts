@@ -8,18 +8,18 @@ export interface ITeacherMessage {
   teacherId: Types.ObjectId;
   sentBy: Types.ObjectId;
   targetType: TeacherMessageTargetType;
-  groupId?: Types.ObjectId;
-  groupName?: string;
+  groupId?: Types.ObjectId | null | undefined;
+  groupName?: string | null | undefined;
   gradeLevel: GradeLevel;
-  title?: string;
+  title?: string | null | undefined;
   body: string;
   clientRequestId: string;
   status: TeacherMessageStatus;
   targetStudentCount: number;
   reachedParentCount: number;
   pushSentCount: number;
-  createdAt?: Date;
-  updatedAt?: Date;
+  createdAt?: Date | undefined;
+  updatedAt?: Date | undefined;
 }
 
 export interface ITeacherMessageDocument extends ITeacherMessage, Document {}
