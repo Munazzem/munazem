@@ -24,6 +24,7 @@ import { CenterTeacherModel } from '../../database/models/center-teacher.model.j
 import { assertParentStudentAccess } from '../../middlewares/parent-auth.middleware.js';
 import { NotFoundException } from '../../common/utils/response/error.responce.js';
 import { getPhoneSearchFilter } from './parent-auth.service.js';
+import { formatTimeEgypt, format24hToEgypt12h, getArabicMonthName } from '../../common/utils/date.util.js';
 
 function formatCenterName(name?: string, fallback = 'السنتر'): string {
   if (!name) return fallback;
@@ -856,22 +857,21 @@ export class ParentAppService {
 
       for (const checkIn of gateCheckIns) {
         const checkInDate = checkIn.checkInTime || checkIn.date;
-        const timeStr = checkIn.checkInTime
-          ? new Date(checkIn.checkInTime).toLocaleTimeString('ar-EG', {
-              hour: '2-digit',
-              minute: '2-digit',
-              timeZone: 'Africa/Cairo',
-            })
-          : '';
+        const timeStr = checkIn.checkInTime ? formatTimeEgypt(checkIn.checkInTime) : '';
+        const mName = getArabicMonthName(checkInDate);
 
         combined.push({
           id: checkIn._id.toString(),
           date: new Date(checkInDate).toISOString(),
+          time: timeStr,
           status: 'PRESENT',
           subject: 'دخول السنتر (البوابة)',
           teacherName: centerName,
           groupName: `بوابة السنتر (${checkIn.source || 'QR_SCAN'})`,
           notes: timeStr ? `تم تسجيل الحضور في تمام ${timeStr}` : (checkIn.notes || 'تسجيل دخول السنتر'),
+          cycleNumber: new Date(checkInDate).getMonth() + 1,
+          cycleMonth: mName,
+          cycleLabel: `شهر ${mName}`,
         });
       }
 
@@ -884,14 +884,22 @@ export class ParentAppService {
         else if (status === 'EXCUSED') status = 'EXCUSED';
         else status = 'ABSENT';
 
+        const attDate = att.scannedAt || att.date;
+        const timeStr = att.scannedAt ? formatTimeEgypt(att.scannedAt) : '';
+        const mName = getArabicMonthName(attDate);
+
         combined.push({
           id: att._id.toString(),
-          date: new Date(att.scannedAt || att.date).toISOString(),
+          date: new Date(attDate).toISOString(),
+          time: timeStr,
           status,
           subject: tch.subject || 'مادة دراسية',
           teacherName: tch.name || 'مدرس المادة',
           groupName: grp.name || 'مجموعة دراسية',
           notes: att.notes || (att.source === 'GATE_CHECKIN' ? 'تسجيل تلقائي عبر البوابة' : ''),
+          cycleNumber: new Date(attDate).getMonth() + 1,
+          cycleMonth: mName,
+          cycleLabel: `شهر ${mName}`,
         });
       }
 
@@ -927,9 +935,18 @@ export class ParentAppService {
 
     // ── Same priority dedup logic as ReportsService.getStudentReport ─────────
     const sessionMap = new Map<string, {
-      sessionId?: any; date: Date; status: string; priority: number;
-      subject: string; teacherName: string; groupName: string; notes: string;
-      isGuest?: boolean;
+      sessionId?: any;
+      date: Date;
+      scannedAt?: Date | undefined;
+      startTime?: string | undefined;
+      cycleNumber?: number | undefined;
+      status: string;
+      priority: number;
+      subject: string;
+      teacherName: string;
+      groupName: string;
+      notes: string;
+      isGuest?: boolean | undefined;
     }>();
 
     // 1. Direct attendance records
@@ -940,16 +957,17 @@ export class ParentAppService {
         path: 'studentId',
         populate: [
           { path: 'teacherId', select: 'name subject' },
-          { path: 'groupId', select: 'name' },
+          { path: 'groupId', select: 'name cycle' },
         ],
       })
-      .populate('sessionId', 'date')
+      .populate('sessionId', 'date startTime cycleContext')
       .lean();
 
     for (const r of rawRecords as any[]) {
       const student = r.studentId || {};
       const teacher = student.teacherId || {};
       const group = student.groupId || {};
+      const sessionDoc = r.sessionId;
 
       let status: string = r.status;
       let priority = 1;
@@ -958,16 +976,19 @@ export class ParentAppService {
       else if (r.status === 'EXCUSED') { status = 'EXCUSED'; priority = 2; }
       else { status = 'ABSENT'; priority = 1; }
 
-      const recordDate = r.sessionId?.date || r.scannedAt || r.createdAt;
-      const sessionKey = r.sessionId
-        ? (r.sessionId._id?.toString() ?? r.sessionId.toString())
+      const recordDate = sessionDoc?.date || r.scannedAt || r.createdAt;
+      const sessionKey = sessionDoc
+        ? (sessionDoc._id?.toString() ?? sessionDoc.toString())
         : r._id.toString();
 
       const existing = sessionMap.get(sessionKey);
       if (!existing || priority > existing.priority) {
         sessionMap.set(sessionKey, {
-          sessionId: r.sessionId,
+          sessionId: sessionDoc?._id || sessionDoc,
           date: recordDate,
+          scannedAt: r.scannedAt || existing?.scannedAt,
+          startTime: sessionDoc?.startTime,
+          cycleNumber: sessionDoc?.cycleContext?.cycleNumber || existing?.cycleNumber,
           status, priority,
           subject: teacher.subject || 'مادة',
           teacherName: teacher.name || 'المعلم',
@@ -978,7 +999,7 @@ export class ParentAppService {
       }
     }
 
-    // 2. AttendanceSnapshots (completed sessions — same as ReportsService)
+    // 2. AttendanceSnapshots (completed sessions)
     const snapshots = await AttendanceSnapshotModel.find({
       $or: targetStudentIds.map(sid => ({
         $or: [
@@ -993,6 +1014,20 @@ export class ParentAppService {
       guestStudents: 1, compensatedStudents: 1,
     }).sort({ date: -1 }).lean() as any[];
 
+    // Fetch any missing sessions from SessionModel to enrich snapshots with startTime & cycleContext
+    const missingSessionIds = snapshots
+      .map(s => s.sessionId ? s.sessionId.toString() : null)
+      .filter((id): id is string => !!id && !sessionMap.has(id));
+
+    const extraSessionMap = new Map<string, any>();
+    if (missingSessionIds.length > 0) {
+      const extras = await SessionModel.find(
+        { _id: { $in: missingSessionIds } },
+        { date: 1, startTime: 1, cycleContext: 1 }
+      ).lean();
+      extras.forEach(s => extraSessionMap.set(s._id.toString(), s));
+    }
+
     for (const snap of snapshots) {
       for (const sid of targetStudentIds) {
         const sidStr = sid.toString();
@@ -1003,18 +1038,35 @@ export class ParentAppService {
 
         let status = 'UNKNOWN';
         let priority = 0;
-        if (isCompensated || presentEntry?.status === 'EXCUSED') { status = 'EXCUSED'; priority = 2; }
-        else if (presentEntry) { status = 'PRESENT'; priority = 4; }
-        else if (guestEntry) { status = 'GUEST'; priority = 3; }
-        else if (isAbsent) { status = 'ABSENT'; priority = 1; }
+        let scannedAt: Date | undefined;
+
+        if (isCompensated || presentEntry?.status === 'EXCUSED') {
+          status = 'EXCUSED';
+          priority = 2;
+        } else if (presentEntry) {
+          status = 'PRESENT';
+          priority = 4;
+          scannedAt = presentEntry.scannedAt;
+        } else if (guestEntry) {
+          status = 'GUEST';
+          priority = 3;
+          scannedAt = guestEntry.scannedAt;
+        } else if (isAbsent) {
+          status = 'ABSENT';
+          priority = 1;
+        }
 
         if (status !== 'UNKNOWN' && snap.date) {
           const sessionKey = snap.sessionId ? snap.sessionId.toString() : (snap._id?.toString() || 'snap');
+          const extraDoc = snap.sessionId ? extraSessionMap.get(snap.sessionId.toString()) : null;
           const existing = sessionMap.get(sessionKey);
           if (!existing || priority > existing.priority) {
             sessionMap.set(sessionKey, {
               sessionId: snap.sessionId,
               date: snap.date,
+              scannedAt: scannedAt || existing?.scannedAt,
+              startTime: extraDoc?.startTime || existing?.startTime,
+              cycleNumber: extraDoc?.cycleContext?.cycleNumber || existing?.cycleNumber,
               status, priority,
               subject: existing?.subject || 'مادة',
               teacherName: existing?.teacherName || 'المعلم',
@@ -1027,7 +1079,7 @@ export class ParentAppService {
       }
     }
 
-    // 3. Filter out redundant EXCUSED entries if compensated by a GUEST session (exact same as ReportsService.getStudentReport)
+    // 3. Filter out redundant EXCUSED entries if compensated by a GUEST session
     const deduplicatedEntries = Array.from(sessionMap.values())
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
@@ -1046,15 +1098,60 @@ export class ParentAppService {
       return true;
     });
 
-    return effectiveEntries.map((e, i) => ({
-      id: e.sessionId?.toString() || `entry-${i}`,
-      date: new Date(e.date).toISOString(),
-      status: e.status,
-      subject: e.subject,
-      teacherName: e.teacherName,
-      groupName: e.groupName,
-      notes: e.notes,
-    }));
+    // 4. Calculate cycle start dates and month labels
+    const group = (baseStudent as any)?.groupId ? await GroupModel.findById((baseStudent as any).groupId).lean() : null;
+    const currentCycleNumber = (group as any)?.cycle?.currentCycleNumber || 1;
+    const rawGroupStartedAt = (group as any)?.cycle?.startedAt;
+    const cycleStartedAt = rawGroupStartedAt ? new Date(rawGroupStartedAt) : null;
+
+    // Group entries to determine earliest session per cycle
+    const cycleStartDates = new Map<number, Date>();
+    const chronologicalEntries = [...effectiveEntries].sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+    );
+
+    chronologicalEntries.forEach(e => {
+      let cNum: number = e.cycleNumber ?? 1;
+      if (!e.cycleNumber) {
+        if (cycleStartedAt && new Date(e.date) >= cycleStartedAt) {
+          cNum = currentCycleNumber;
+        } else {
+          cNum = currentCycleNumber > 1 ? currentCycleNumber - 1 : 1;
+        }
+      }
+      e.cycleNumber = cNum;
+      if (!cycleStartDates.has(cNum)) {
+        cycleStartDates.set(cNum, new Date(e.date));
+      }
+    });
+
+    return effectiveEntries.map((e, i) => {
+      const cNum = e.cycleNumber || 1;
+      const cStartDate = cycleStartDates.get(cNum) || new Date(e.date);
+      const cMonth = getArabicMonthName(cStartDate);
+      const cLabel = `دورة ${cNum} — شهر ${cMonth}`;
+
+      let timeStr = '';
+      if (e.scannedAt) {
+        timeStr = formatTimeEgypt(e.scannedAt);
+      } else if (e.startTime) {
+        timeStr = format24hToEgypt12h(e.startTime);
+      }
+
+      return {
+        id: e.sessionId?.toString() || `entry-${i}`,
+        date: new Date(e.date).toISOString(),
+        time: timeStr,
+        status: e.status,
+        subject: e.subject,
+        teacherName: e.teacherName,
+        groupName: e.groupName,
+        notes: e.notes,
+        cycleNumber: cNum,
+        cycleMonth: cMonth,
+        cycleLabel: cLabel,
+      };
+    });
   }
 
   /**
@@ -1182,9 +1279,13 @@ export class ParentAppService {
         fullPrice = enrollment.packageMonthlyPrice;
       }
 
+      const packageDate = payments[0]?.date ? new Date(payments[0].date) : new Date();
+      const cycleMonth = getArabicMonthName(packageDate);
+
       return [
         {
           cycleNumber: 1,
+          cycleMonth,
           cycleCapacity: 1,
           sessionsConsumed: 1,
           fullCyclePrice: fullPrice,
@@ -1272,8 +1373,12 @@ export class ParentAppService {
         const totalDiscount = unassignedPayments.reduce((s: number, p: any) => s + (p.discount || 0), 0);
         const totalPaid = unassignedPayments.reduce((s: number, p: any) => s + (p.amount || 0), 0);
 
+        const firstPaymentDate = unassignedPayments[0]?.date ? new Date(unassignedPayments[0].date) : (student.createdAt ? new Date(student.createdAt) : new Date());
+        const cycleMonth = getArabicMonthName(firstPaymentDate);
+
         results.push({
           cycleNumber: student.cycleNumber || 1,
+          cycleMonth,
           cycleCapacity: student.cycleCapacity || 8,
           sessionsConsumed: student.remainingSessions ? Math.max(0, (student.cycleCapacity || 8) - student.remainingSessions) : 0,
           fullCyclePrice: student.totalDebt || 0,
@@ -1308,8 +1413,17 @@ export class ParentAppService {
           // Actual cash paid = settled amount minus discounts
           const actualPaid = Math.max(0, (e.totalPaid || 0) - cycleTotalDiscount);
 
+          const attForCycle = (student.attendanceHistory || []).find((a: any) => a.cycleNumber === e.cycleNumber);
+          const cycleDate = attForCycle?.date
+            ? new Date(attForCycle.date)
+            : (cyclePayments[0]?.date
+              ? new Date(cyclePayments[0].date)
+              : ((e as any).createdAt ? new Date((e as any).createdAt) : new Date()));
+          const cycleMonth = getArabicMonthName(cycleDate);
+
           return {
             cycleNumber: e.cycleNumber,
+            cycleMonth,
             cycleCapacity: e.cycleCapacity || 8,
             sessionsConsumed: (e as any).sessionsConsumed || e.chargeableSessions || 0,
             fullCyclePrice: e.fullCyclePrice || 0,

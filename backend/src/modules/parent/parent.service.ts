@@ -6,6 +6,8 @@ import { CenterCheckInModel } from '../../database/models/center-checkin.model.j
 import { CenterAttendanceModel } from '../../database/models/center-attendance.model.js';
 import { CenterPackageModel } from '../../database/models/center-package.model.js';
 import { AttendanceSnapshotModel } from '../../database/models/attendance-snapshot.model.js';
+import { AttendanceModel } from '../../database/models/attendance.model.js';
+import { SessionModel } from '../../database/models/session.model.js';
 import { TransactionModel } from '../../database/models/transaction.model.js';
 import { ExamResultModel }  from '../../database/models/exam-result.model.js';
 import { GroupModel }       from '../../database/models/group.model.js';
@@ -13,6 +15,7 @@ import { UserModel }        from '../../database/models/user.model.js';
 import { CycleEnrollmentModel } from '../../database/models/cycle-enrollment.model.js';
 import { TransactionType, TransactionCategory, AttendanceStatus, CycleEnrollmentStatus } from '../../common/enums/enum.service.js';
 import { NotFoundException, BadRequestException } from '../../common/utils/response/error.responce.js';
+import { formatTimeEgypt, format24hToEgypt12h, getArabicMonthName } from '../../common/utils/date.util.js';
 
 export class ParentService {
 
@@ -72,66 +75,155 @@ export class ParentService {
         const teacher = await UserModel.findById(teacherId, { name: 1, subject: 1, features: 1 }).lean();
         const isHomeworkEnabled = Boolean((teacher as any)?.features?.homeworkTracking);
 
-        // Attendance snapshots
+        // 1. Attendance snapshots
         const snapshots = await AttendanceSnapshotModel.find({
             teacherId,
             $or: [
                 { 'presentStudents.studentId': studentId },
                 { 'absentStudents.studentId':  studentId },
                 { 'guestStudents.studentId':   studentId },
+                { 'compensatedStudents.studentId': studentId },
             ],
-        }, { date: 1, presentStudents: 1, absentStudents: 1, guestStudents: 1 })
+        }, { sessionId: 1, date: 1, presentStudents: 1, absentStudents: 1, guestStudents: 1, compensatedStudents: 1 })
             .sort({ date: -1 })
             .lean();
 
-        // Map and deduplicate by date (priority: PRESENT/LATE (4) > GUEST (3) > EXCUSED (2) > ABSENT (1))
-        const dayMap = new Map<string, { date: Date; status: string; homeworkDone?: boolean | null; priority: number }>();
+        // 2. Direct attendance records
+        const directAttendances = await AttendanceModel.find({ studentId })
+            .populate('sessionId', 'date startTime cycleContext status')
+            .sort({ createdAt: -1 })
+            .lean();
+
+        // 3. Cache session documents to obtain cycleContext & startTime
+        const sessionDocMap = new Map<string, any>();
+        directAttendances.forEach((a: any) => {
+            if (a.sessionId && typeof a.sessionId === 'object' && a.sessionId._id) {
+                sessionDocMap.set(a.sessionId._id.toString(), a.sessionId);
+            }
+        });
+
+        const missingSessionIds = snapshots
+            .map(s => s.sessionId ? s.sessionId.toString() : null)
+            .filter((id): id is string => !!id && !sessionDocMap.has(id));
+
+        if (missingSessionIds.length > 0) {
+            const extraSessions = await SessionModel.find(
+                { _id: { $in: missingSessionIds } },
+                { date: 1, startTime: 1, cycleContext: 1, status: 1 }
+            ).lean();
+            extraSessions.forEach(s => sessionDocMap.set(s._id.toString(), s));
+        }
+
+        // Map and deduplicate by session / date (priority: PRESENT/LATE (4) > GUEST (3) > EXCUSED (2) > ABSENT (1))
+        type SessionEntry = {
+            sessionId?: any;
+            date: Date;
+            scannedAt?: Date | undefined;
+            startTime?: string | undefined;
+            status: string;
+            homeworkDone?: boolean | null | undefined;
+            priority: number;
+            isGuest?: boolean | undefined;
+            cycleNumber?: number | undefined;
+        };
+
+        const sessionMap = new Map<string, SessionEntry>();
 
         for (const snap of snapshots) {
             const sid = studentId.toString();
             const presentStudent = snap.presentStudents?.find((s: any) => s.studentId?.toString() === sid);
             const isAbsent  = snap.absentStudents?.some((s: any)  => s.studentId?.toString() === sid);
             const isGuest   = snap.guestStudents?.some((s: any)  => s.studentId?.toString() === sid);
+            const isCompensated = (snap as any).compensatedStudents?.some((s: any) => s.studentId?.toString() === sid);
 
             let status = 'UNKNOWN';
             let priority = 0;
             let homeworkDone: boolean | null = null;
+            let scannedAt: Date | undefined;
 
-            if (presentStudent) {
-                const s = presentStudent.status || AttendanceStatus.PRESENT;
-                if (s === AttendanceStatus.EXCUSED) {
-                    status = 'EXCUSED';
-                    priority = 2;
-                } else {
-                    status = s; // PRESENT / LATE
-                    priority = 4;
-                    homeworkDone = typeof presentStudent.homeworkDone === 'boolean' ? presentStudent.homeworkDone : null;
-                }
+            if (isCompensated || presentStudent?.status === AttendanceStatus.EXCUSED) {
+                status = 'EXCUSED';
+                priority = 2;
+            } else if (presentStudent) {
+                status = presentStudent.status || AttendanceStatus.PRESENT;
+                priority = 4;
+                homeworkDone = typeof presentStudent.homeworkDone === 'boolean' ? presentStudent.homeworkDone : null;
+                scannedAt = presentStudent.scannedAt;
             } else if (isGuest) {
                 status = 'GUEST';
                 priority = 3;
                 const guestStudent = snap.guestStudents?.find((s: any) => s.studentId?.toString() === sid);
                 homeworkDone = typeof guestStudent?.homeworkDone === 'boolean' ? guestStudent.homeworkDone : null;
+                scannedAt = guestStudent?.scannedAt;
             } else if (isAbsent) {
                 status = 'ABSENT';
                 priority = 1;
             }
 
-            if (status !== 'UNKNOWN') {
-                const dayKey = snap.date ? (new Date(snap.date).toISOString().split('T')[0] || 'unknown') : ((snap as any)._id?.toString() || 'unknown');
-                const existing = dayMap.get(dayKey);
+            if (status !== 'UNKNOWN' && snap.date) {
+                const sessionKey = snap.sessionId ? snap.sessionId.toString() : (snap._id?.toString() || new Date(snap.date).toISOString().split('T')[0] || 'unknown');
+                const sessionDoc = snap.sessionId ? sessionDocMap.get(snap.sessionId.toString()) : null;
+                const existing = sessionMap.get(sessionKey);
                 if (!existing || priority > existing.priority) {
-                    dayMap.set(dayKey, { date: snap.date, status, homeworkDone, priority });
+                    sessionMap.set(sessionKey, {
+                        sessionId: snap.sessionId,
+                        date: snap.date,
+                        scannedAt: scannedAt || existing?.scannedAt,
+                        startTime: sessionDoc?.startTime,
+                        cycleNumber: sessionDoc?.cycleContext?.cycleNumber,
+                        status,
+                        homeworkDone,
+                        priority,
+                        isGuest: !!isGuest || status === 'GUEST',
+                    });
                 }
             }
         }
 
-        const deduplicatedEntries = Array.from(dayMap.values()).sort(
+        for (const att of directAttendances as any[]) {
+            let status = att.status as string;
+            let priority = 1;
+            if (att.isGuest && att.status === AttendanceStatus.PRESENT) {
+                status = 'GUEST';
+                priority = 3;
+            } else if (att.status === AttendanceStatus.PRESENT || att.status === AttendanceStatus.LATE) {
+                status = att.status;
+                priority = 4;
+            } else if (att.status === AttendanceStatus.EXCUSED) {
+                status = 'EXCUSED';
+                priority = 2;
+            } else {
+                status = 'ABSENT';
+                priority = 1;
+            }
+
+            const sidStr = att.sessionId ? (att.sessionId._id ? att.sessionId._id.toString() : att.sessionId.toString()) : att._id.toString();
+            const sessionDoc = sessionDocMap.get(sidStr);
+            const recordDate = sessionDoc?.date || att.scannedAt || att.createdAt;
+            if (!recordDate) continue;
+
+            const existing = sessionMap.get(sidStr);
+            if (!existing || priority > existing.priority) {
+                sessionMap.set(sidStr, {
+                    sessionId: att.sessionId?._id || att.sessionId,
+                    date: recordDate,
+                    scannedAt: att.scannedAt || existing?.scannedAt,
+                    startTime: sessionDoc?.startTime,
+                    cycleNumber: sessionDoc?.cycleContext?.cycleNumber,
+                    status,
+                    homeworkDone: typeof att.homeworkDone === 'boolean' ? att.homeworkDone : existing?.homeworkDone,
+                    priority,
+                    isGuest: !!att.isGuest || status === 'GUEST',
+                });
+            }
+        }
+
+        const deduplicatedEntries = Array.from(sessionMap.values()).sort(
             (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
         );
 
         // Filter out redundant EXCUSED entries if compensated by a GUEST session
-        const guestCount = deduplicatedEntries.filter(e => e.status === 'GUEST').length;
+        const guestCount = deduplicatedEntries.filter(e => e.status === 'GUEST' || e.isGuest).length;
         let availableGuestCredits = guestCount;
 
         const effectiveEntries = deduplicatedEntries.filter(e => {
@@ -144,14 +236,99 @@ export class ParentService {
             return true;
         });
 
+        // Group into Cycles
+        const currentCycleNumber = (group as any)?.cycle?.currentCycleNumber || 1;
+        const rawGroupStartedAt = (group as any)?.cycle?.startedAt;
+        const cycleStartedAt = rawGroupStartedAt ? new Date(rawGroupStartedAt) : null;
+
+        const cyclesMap = new Map<number, {
+            cycleNumber: number;
+            monthName: string;
+            cycleLabel: string;
+            isCurrent: boolean;
+            startDate: Date;
+            sessions: any[];
+        }>();
+
+        const chronologicalEntries = [...effectiveEntries].sort(
+            (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+        );
+
+        chronologicalEntries.forEach((entry) => {
+            let targetCycle: number;
+            if (entry.cycleNumber) {
+                targetCycle = entry.cycleNumber;
+            } else if (cycleStartedAt && new Date(entry.date) >= cycleStartedAt) {
+                targetCycle = currentCycleNumber;
+            } else {
+                targetCycle = currentCycleNumber > 1 ? currentCycleNumber - 1 : 1;
+            }
+
+            let timeStr = '';
+            if (entry.scannedAt) {
+                timeStr = formatTimeEgypt(entry.scannedAt);
+            } else if (entry.startTime) {
+                timeStr = format24hToEgypt12h(entry.startTime);
+            }
+
+            if (!cyclesMap.has(targetCycle)) {
+                const earliestDate = new Date(entry.date);
+                const monthName = getArabicMonthName(earliestDate);
+                cyclesMap.set(targetCycle, {
+                    cycleNumber: targetCycle,
+                    monthName,
+                    cycleLabel: `دورة ${targetCycle} — شهر ${monthName}`,
+                    isCurrent: targetCycle === currentCycleNumber,
+                    startDate: earliestDate,
+                    sessions: [],
+                });
+            }
+
+            const cycleObj = cyclesMap.get(targetCycle)!;
+            (entry as any).time = timeStr;
+            (entry as any).cycleNumber = targetCycle;
+            (entry as any).cycleMonth = cycleObj.monthName;
+            (entry as any).cycleLabel = cycleObj.cycleLabel;
+
+            cycleObj.sessions.push({
+                sessionId: entry.sessionId?.toString(),
+                sessionNumber: cycleObj.sessions.length + 1,
+                date: entry.date,
+                time: timeStr,
+                status: entry.status,
+                homeworkDone: isHomeworkEnabled ? (entry.homeworkDone ?? null) : null,
+            });
+        });
+
+        const cyclesList = Array.from(cyclesMap.values()).map(c => {
+            const pCount = c.sessions.filter(s => s.status === AttendanceStatus.PRESENT || s.status === AttendanceStatus.LATE || s.status === 'GUEST' || s.status === AttendanceStatus.EXCUSED).length;
+            const aCount = c.sessions.filter(s => s.status === AttendanceStatus.ABSENT).length;
+            return {
+                cycleNumber: c.cycleNumber,
+                monthName: c.monthName,
+                cycleLabel: c.cycleLabel,
+                isCurrent: c.isCurrent,
+                startDate: c.startDate.toISOString(),
+                totalSessions: c.sessions.length,
+                presentCount: pCount,
+                absentCount: aCount,
+                sessions: c.sessions,
+            };
+        }).sort((a, b) => b.cycleNumber - a.cycleNumber);
+
         const presentCount = effectiveEntries.filter(
             e => e.status === AttendanceStatus.PRESENT || e.status === AttendanceStatus.LATE || e.status === 'GUEST' || e.status === AttendanceStatus.EXCUSED
         ).length;
         const absentCount  = effectiveEntries.filter(e => e.status === AttendanceStatus.ABSENT).length;
-        const attendanceHistory = effectiveEntries.slice(0, 20).map(e => ({
+
+        const attendanceHistory = effectiveEntries.slice(0, 50).map(e => ({
             date: e.date,
+            time: (e as any).time || (e.scannedAt ? formatTimeEgypt(e.scannedAt) : (e.startTime ? format24hToEgypt12h(e.startTime) : '')),
             status: e.status,
             homeworkDone: isHomeworkEnabled ? (e.homeworkDone ?? null) : null,
+            cycleNumber: (e as any).cycleNumber,
+            cycleMonth: (e as any).cycleMonth,
+            cycleLabel: (e as any).cycleLabel,
         }));
 
         const totalSessions  = presentCount + absentCount;
@@ -172,16 +349,14 @@ export class ParentService {
         );
 
         // Active subscription for current cycle?
-        const currentCycleNumber = (group as any)?.cycle?.currentCycleNumber || 1;
         const currentEnrollment = await CycleEnrollmentModel.findOne({
             studentId,
             groupId: student.groupId,
             cycleNumber: currentCycleNumber,
         }).lean();
 
-        const cycleStartedAt = (group as any)?.cycle?.startedAt ? new Date((group as any).cycle.startedAt) : new Date('2099-01-01');
         const hasActiveSubscription = (currentEnrollment && currentEnrollment.status === CycleEnrollmentStatus.PAID)
-            || subscriptions.some(s => new Date(s.date) >= cycleStartedAt);
+            || (cycleStartedAt ? subscriptions.some(s => new Date(s.date) >= cycleStartedAt) : false);
 
         // Exam results
         const examResults = await ExamResultModel.find(
@@ -206,6 +381,7 @@ export class ParentService {
                 absentCount,
                 attendanceRate: `${attendanceRate}%`,
                 history: attendanceHistory,
+                cycles: cyclesList,
             },
             payments: {
                 totalPaid,
@@ -243,29 +419,77 @@ export class ParentService {
             CenterCheckInModel.find({
                 centerId: student.centerId,
                 studentId: student._id,
-            }).sort({ date: -1 }).limit(20).lean(),
+            }).sort({ date: -1 }).limit(50).lean(),
             CenterAttendanceModel.find({
                 centerId: student.centerId,
                 studentId: student._id,
-            }).sort({ date: -1 }).limit(20).lean(),
+            }).sort({ date: -1 }).limit(50).lean(),
         ]);
 
         const history: any[] = [];
         for (const c of gateCheckIns) {
+            const checkInDate = c.checkInTime || c.date;
+            const timeStr = c.checkInTime ? formatTimeEgypt(c.checkInTime) : '';
+            const mName = getArabicMonthName(checkInDate);
             history.push({
-                date: c.checkInTime || c.date,
+                date: checkInDate,
+                time: timeStr,
                 status: 'PRESENT',
                 homeworkDone: null,
+                cycleNumber: new Date(checkInDate).getMonth() + 1,
+                cycleMonth: mName,
+                cycleLabel: `شهر ${mName}`,
+                notes: timeStr ? `تسجيل حضور في تمام ${timeStr}` : 'دخول بوابة السنتر',
             });
         }
         for (const a of groupAttendances) {
+            const attDate = a.scannedAt || a.date;
+            const timeStr = a.scannedAt ? formatTimeEgypt(a.scannedAt) : '';
+            const mName = getArabicMonthName(attDate);
             history.push({
-                date: a.scannedAt || a.date,
+                date: attDate,
+                time: timeStr,
                 status: a.status,
                 homeworkDone: null,
+                cycleNumber: new Date(attDate).getMonth() + 1,
+                cycleMonth: mName,
+                cycleLabel: `شهر ${mName}`,
+                notes: timeStr ? `تسجيل حضور في تمام ${timeStr}` : 'حضور مجموعة دراسية',
             });
         }
         history.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+        // Group into monthly cycles for Center students
+        const centerMonthMap = new Map<string, any>();
+        history.forEach(h => {
+            const d = new Date(h.date);
+            const mKey = `${d.getFullYear()}-${d.getMonth()}`;
+            const monthName = h.cycleMonth || getArabicMonthName(d);
+            const cycleLabel = `شهر ${monthName}`;
+            if (!centerMonthMap.has(mKey)) {
+                centerMonthMap.set(mKey, {
+                    cycleNumber: d.getMonth() + 1,
+                    monthName,
+                    cycleLabel,
+                    isCurrent: true,
+                    startDate: h.date,
+                    sessions: [],
+                });
+            }
+            centerMonthMap.get(mKey).sessions.push(h);
+        });
+
+        const centerCycles = Array.from(centerMonthMap.values()).map(c => ({
+            cycleNumber: c.cycleNumber,
+            monthName: c.monthName,
+            cycleLabel: c.cycleLabel,
+            isCurrent: c.isCurrent,
+            startDate: new Date(c.startDate).toISOString(),
+            totalSessions: c.sessions.length,
+            presentCount: c.sessions.filter((s: any) => s.status === 'PRESENT' || s.status === 'LATE' || s.status === 'GUEST').length,
+            absentCount: c.sessions.filter((s: any) => s.status === 'ABSENT').length,
+            sessions: c.sessions,
+        }));
 
         const presentCount = history.filter(h => h.status === 'PRESENT' || h.status === 'LATE' || h.status === 'GUEST').length;
         const absentCount = history.filter(h => h.status === 'ABSENT').length;
@@ -299,7 +523,8 @@ export class ParentService {
                 presentCount,
                 absentCount,
                 attendanceRate: `${attendanceRate}%`,
-                history: history.slice(0, 20),
+                history: history.slice(0, 50),
+                cycles: centerCycles,
             },
             payments: {
                 totalPaid,
