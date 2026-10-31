@@ -2,6 +2,23 @@
  * Authentication Types
  */
 
+export interface IAssistantPermissions {
+    canTakeAttendance?:    boolean;
+    canEditAttendance?:    boolean;
+    canViewAttendance?:    boolean;
+    canManageSessions?:    boolean;
+    canRecordPayments?:    boolean;
+    canViewFinancials?:    boolean;
+    canManageStudents?:    boolean;
+    canManageGroups?:      boolean;
+    canCreateExams?:       boolean;
+    canGradeExams?:        boolean;
+    canManageNotebooks?:   boolean;
+    canSendNotifications?: boolean;
+}
+
+export type AssistantType = 'ATTENDANCE' | 'FINANCIAL' | 'ACADEMIC' | 'FULL' | 'CUSTOM';
+
 export interface User {
     id: string;
     name: string;
@@ -12,6 +29,8 @@ export interface User {
     centerName?: string;
     logoUrl?: string;
     assistantsAccessEnabled?: boolean;
+    assistantType?: AssistantType | null;
+    assistantPermissions?: IAssistantPermissions;
     planTier?: 'MINI' | 'BASIC' | 'PREMIUM' | 'CENTER' | null;
     centerId?: string | null;
     supervisorType?: 'FINANCIAL' | 'ATTENDANCE' | 'CUSTOM' | null;

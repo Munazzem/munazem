@@ -21,7 +21,9 @@ import {
     Edit2,
     RotateCcw,
     Clock,
+    Check,
 } from 'lucide-react';
+import { IAssistantPermissions, AssistantType } from '@/types/auth.types';
 import { OfflineStorageService } from '@/lib/offline/storage.service';
 import { TableSkeleton } from '@/components/layout/skeletons/TableSkeleton';
 import { Button } from '@/components/ui/button';
@@ -46,6 +48,98 @@ import {
 } from '@/components/ui/alert-dialog';
 
 // ─────────────────────────────────────────────────────────────────────────────
+const DEFAULT_ATTENDANCE_PERMS: IAssistantPermissions = {
+    canTakeAttendance:    true,
+    canEditAttendance:    true,
+    canViewAttendance:    true,
+    canManageSessions:    true,
+    canRecordPayments:    false,
+    canViewFinancials:    false,
+    canManageStudents:    true,
+    canManageGroups:      false,
+    canCreateExams:       false,
+    canGradeExams:        false,
+    canManageNotebooks:   false,
+    canSendNotifications: true,
+};
+
+const DEFAULT_FINANCIAL_PERMS: IAssistantPermissions = {
+    canTakeAttendance:    false,
+    canEditAttendance:    false,
+    canViewAttendance:    true,
+    canManageSessions:    false,
+    canRecordPayments:    true,
+    canViewFinancials:    true,
+    canManageStudents:    true,
+    canManageGroups:      false,
+    canCreateExams:       false,
+    canGradeExams:        false,
+    canManageNotebooks:   true,
+    canSendNotifications: false,
+};
+
+const DEFAULT_ACADEMIC_PERMS: IAssistantPermissions = {
+    canTakeAttendance:    true,
+    canEditAttendance:    false,
+    canViewAttendance:    true,
+    canManageSessions:    false,
+    canRecordPayments:    false,
+    canViewFinancials:    false,
+    canManageStudents:    true,
+    canManageGroups:      true,
+    canCreateExams:       true,
+    canGradeExams:        true,
+    canManageNotebooks:   false,
+    canSendNotifications: true,
+};
+
+const DEFAULT_FULL_PERMS: IAssistantPermissions = {
+    canTakeAttendance:    true,
+    canEditAttendance:    true,
+    canViewAttendance:    true,
+    canManageSessions:    true,
+    canRecordPayments:    true,
+    canViewFinancials:    true,
+    canManageStudents:    true,
+    canManageGroups:      true,
+    canCreateExams:       true,
+    canGradeExams:        true,
+    canManageNotebooks:   true,
+    canSendNotifications: true,
+};
+
+const ALL_ASSISTANT_PERMISSION_KEYS: Array<{ key: keyof IAssistantPermissions; label: string; group: string }> = [
+    { key: 'canTakeAttendance', label: 'تسجيل الحضور والغياب (باركود/يدوي)', group: 'الحضور والحصص' },
+    { key: 'canEditAttendance', label: 'تعديل سجلات الحضور السابقة', group: 'الحضور والحصص' },
+    { key: 'canViewAttendance', label: 'عرض كشوفات وسجلات الحضور', group: 'الحضور والحصص' },
+    { key: 'canManageSessions', label: 'بدء وإدارة وإنهاء الحصص', group: 'الحضور والحصص' },
+
+    { key: 'canRecordPayments', label: 'تسجيل تحصيل المصاريف والاشتراكات', group: 'الماليات والاشتراكات' },
+    { key: 'canViewFinancials', label: 'الاطلاع على ماليات ودفعات الطلاب', group: 'الماليات والاشتراكات' },
+
+    { key: 'canManageStudents', label: 'إدارة وتعديل بيانات الطلاب والكروت', group: 'الطلاب والمجموعات' },
+    { key: 'canManageGroups', label: 'إدارة وتعديل المجموعات الدراسية', group: 'الطلاب والمجموعات' },
+
+    { key: 'canCreateExams', label: 'إنشاء وتعديل الامتحانات', group: 'الامتحانات والدرجات' },
+    { key: 'canGradeExams', label: 'رصد وتعديل درجات الطلاب', group: 'الامتحانات والدرجات' },
+
+    { key: 'canManageNotebooks', label: 'بيع وإدارة المذكرات والكتب', group: 'المذكرات والتواصل' },
+    { key: 'canSendNotifications', label: 'إرسال إشعارات ورسائل للطلاب وأولياء الأمور', group: 'المذكرات والتواصل' },
+];
+
+const ASSISTANT_TYPE_LABELS: Record<AssistantType, { label: string; badgeClass: string }> = {
+    ATTENDANCE: { label: 'مساعد حضور وغياب', badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+    FINANCIAL:  { label: 'مساعد مالي واشتراكات', badgeClass: 'bg-amber-50 text-amber-700 border-amber-200' },
+    ACADEMIC:   { label: 'مساعد أكاديمي وامتحانات', badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+    FULL:       { label: 'مساعد شامل', badgeClass: 'bg-purple-50 text-purple-700 border-purple-200' },
+    CUSTOM:     { label: 'صلاحيات مخصصة', badgeClass: 'bg-sky-50 text-sky-700 border-sky-200' },
+};
+
+function countActivePermissions(perms?: IAssistantPermissions): number {
+    if (!perms) return 0;
+    return Object.values(perms).filter(Boolean).length;
+}
+
 export default function AssistantsPage() {
     const user = useAuthStore((s) => s.user);
 
@@ -72,7 +166,14 @@ function AssistantsContent() {
     const [showAdd,       setShowAdd]        = useState(false);
     const [deleteTarget,  setDeleteTarget]   = useState<{ id: string; name: string } | null>(null);
     const [salaryTarget,  setSalaryTarget]   = useState<{ id: string; name: string; salary: number | null } | null>(null);
-    const [editTarget,    setEditTarget]     = useState<{ id: string; name: string; phone: string; salary: number | null } | null>(null);
+    const [editTarget,    setEditTarget]     = useState<{
+        id: string;
+        name: string;
+        phone: string;
+        salary: number | null;
+        assistantType?: AssistantType;
+        assistantPermissions?: IAssistantPermissions;
+    } | null>(null);
 
     const [isAccessEnabled, setIsAccessEnabled] = useState(user?.assistantsAccessEnabled ?? true);
 
@@ -192,6 +293,7 @@ function AssistantsContent() {
                                 <thead>
                                     <tr className="border-b border-gray-50 bg-gray-50/50">
                                         <th className="text-right font-semibold text-gray-500 px-6 py-3">المساعد</th>
+                                        <th className="text-right font-semibold text-gray-500 px-4 py-3">نوع وصلاحيات المساعد</th>
                                         <th className="text-right font-semibold text-gray-500 px-4 py-3">رقم الهاتف</th>
                                         <th className="text-right font-semibold text-gray-500 px-4 py-3">الراتب الشهري</th>
                                         <th className="text-center font-semibold text-gray-500 px-4 py-3">الحالة</th>
@@ -219,6 +321,16 @@ function AssistantsContent() {
                                                             </span>
                                                         )}
                                                     </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <div className="flex flex-col gap-1 items-start">
+                                                    <span className={cn('text-[11px] font-bold px-2 py-0.5 rounded-full border', (ASSISTANT_TYPE_LABELS[a.assistantType as AssistantType] || ASSISTANT_TYPE_LABELS.CUSTOM).badgeClass)}>
+                                                        {(ASSISTANT_TYPE_LABELS[a.assistantType as AssistantType] || ASSISTANT_TYPE_LABELS.CUSTOM).label}
+                                                    </span>
+                                                    <span className="text-[11px] text-gray-400 font-medium">
+                                                        {countActivePermissions(a.assistantPermissions)} من 12 صلاحية
+                                                    </span>
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3 text-gray-600" dir="ltr">
@@ -265,8 +377,15 @@ function AssistantsContent() {
                                                             <Banknote className="h-4 w-4" />
                                                         </button>
                                                         <button
-                                                            onClick={() => setEditTarget({ id: a._id, name: a.name, phone: a.phone, salary: a.salary ?? null })}
-                                                            title="تعديل"
+                                                            onClick={() => setEditTarget({
+                                                                id: a._id,
+                                                                name: a.name,
+                                                                phone: a.phone,
+                                                                salary: a.salary ?? null,
+                                                                assistantType: a.assistantType || 'CUSTOM',
+                                                                assistantPermissions: a.assistantPermissions,
+                                                            })}
+                                                            title="تعديل الصلاحيات والبيانات"
                                                             className="inline-flex items-center justify-center h-8 w-8 rounded-lg text-blue-500 hover:bg-blue-50 hover:text-blue-700 transition-colors"
                                                         >
                                                             <Edit2 className="h-4 w-4" />
@@ -309,6 +428,14 @@ function AssistantsContent() {
                                                 ) : (
                                                     <p className="text-xs text-gray-400 truncate" dir="ltr">{a.phone ?? '—'}</p>
                                                 )}
+                                                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                                    <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full border', (ASSISTANT_TYPE_LABELS[a.assistantType as AssistantType] || ASSISTANT_TYPE_LABELS.CUSTOM).badgeClass)}>
+                                                        {(ASSISTANT_TYPE_LABELS[a.assistantType as AssistantType] || ASSISTANT_TYPE_LABELS.CUSTOM).label}
+                                                    </span>
+                                                    <span className="text-[10px] text-gray-400">
+                                                        ({countActivePermissions(a.assistantPermissions)} صلاحية)
+                                                    </span>
+                                                </div>
                                                 {a.salary != null && !a.isPendingDelete && (
                                                     <p className="text-xs text-green-600 font-medium mt-0.5">
                                                         راتب: {a.salary.toLocaleString('en-US')} ج
@@ -346,7 +473,14 @@ function AssistantsContent() {
                                                         <Banknote className="h-4 w-4" />
                                                     </button>
                                                     <button
-                                                        onClick={() => setEditTarget({ id: a._id, name: a.name, phone: a.phone, salary: a.salary ?? null })}
+                                                        onClick={() => setEditTarget({
+                                                            id: a._id,
+                                                            name: a.name,
+                                                            phone: a.phone,
+                                                            salary: a.salary ?? null,
+                                                            assistantType: a.assistantType || 'CUSTOM',
+                                                            assistantPermissions: a.assistantPermissions,
+                                                        })}
                                                         className="inline-flex items-center justify-center h-8 w-8 rounded-lg text-blue-500 hover:bg-blue-50 hover:text-blue-700 transition-colors"
                                                     >
                                                         <Edit2 className="h-4 w-4" />
@@ -435,21 +569,40 @@ function AddAssistantModal({
     onOpenChange: (v: boolean) => void;
     onSuccess: () => void;
 }) {
-    const [name,     setName]     = useState('');
-    const [phone,    setPhone]    = useState('');
-    const [password, setPassword] = useState('');
-    const [salary,   setSalary]   = useState('');
-    const [errors,   setErrors]   = useState<Record<string, string>>({});
+    const [name,          setName]          = useState('');
+    const [phone,         setPhone]         = useState('');
+    const [password,      setPassword]      = useState('');
+    const [salary,        setSalary]        = useState('');
+    const [assistantType, setAssistantType] = useState<AssistantType>('ATTENDANCE');
+    const [permissions,   setPermissions]   = useState<IAssistantPermissions>(DEFAULT_ATTENDANCE_PERMS);
+    const [errors,        setErrors]        = useState<Record<string, string>>({});
 
     const mutation = useMutation({
         mutationFn: (data: any) => addUser(data),
         onSuccess: () => {
-            toast.success('تم إضافة المساعد بنجاح');
+            toast.success('تم إضافة المساعد وتعيين صلاحياته بنجاح');
             setName(''); setPhone(''); setPassword(''); setSalary('');
+            setAssistantType('ATTENDANCE');
+            setPermissions(DEFAULT_ATTENDANCE_PERMS);
             onSuccess();
         },
-        
     });
+
+    const handleTypeChange = (type: AssistantType) => {
+        setAssistantType(type);
+        if (type === 'ATTENDANCE') setPermissions(DEFAULT_ATTENDANCE_PERMS);
+        else if (type === 'FINANCIAL') setPermissions(DEFAULT_FINANCIAL_PERMS);
+        else if (type === 'ACADEMIC') setPermissions(DEFAULT_ACADEMIC_PERMS);
+        else if (type === 'FULL') setPermissions(DEFAULT_FULL_PERMS);
+    };
+
+    const togglePermission = (key: keyof IAssistantPermissions) => {
+        setPermissions((prev) => ({
+            ...prev,
+            [key]: !prev[key],
+        }));
+        setAssistantType('CUSTOM');
+    };
 
     const validate = () => {
         const e: Record<string, string> = {};
@@ -465,21 +618,23 @@ function AddAssistantModal({
         e.preventDefault();
         if (!validate()) return;
         mutation.mutate({
-            name:     name.trim(),
-            phone:    phone.trim(),
+            name:                 name.trim(),
+            phone:                phone.trim(),
             password,
-            role:     'assistant',
-            salary:   salary ? Number(salary) : null,
+            role:                 'assistant',
+            salary:               salary ? Number(salary) : null,
+            assistantType,
+            assistantPermissions: permissions,
         });
     };
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-md bg-white rounded-2xl" dir="rtl">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-lg max-h-[90vh] overflow-y-auto bg-white rounded-2xl" dir="rtl">
                 <DialogHeader>
                     <DialogTitle className="text-lg font-bold border-b pb-3 flex items-center gap-2">
                         <UserPlus className="h-5 w-5 text-primary" />
-                        إضافة مساعد جديد
+                        إضافة مساعد جديد وتحديد صلاحياته
                     </DialogTitle>
                 </DialogHeader>
 
@@ -495,53 +650,125 @@ function AddAssistantModal({
                         {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
                     </div>
 
-                    <div>
-                        <label className="text-sm font-medium text-gray-700 block mb-1">رقم الهاتف *</label>
-                        <Input
-                            value={phone}
-                            onChange={(e) => setPhone(e.target.value)}
-                            placeholder="01xxxxxxxxx"
-                            dir="ltr"
-                            autoComplete="off"
-                        />
-                        {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
-                    </div>
-
-                    <div>
-                        <label className="text-sm font-medium text-gray-700 block mb-1">كلمة المرور *</label>
-                        <Input
-                            type="password"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            placeholder="6 أحرف على الأقل"
-                            dir="ltr"
-                            autoComplete="new-password"
-                        />
-                        {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
-                    </div>
-
-                    <div>
-                        <label className="text-sm font-medium text-gray-700 block mb-1">
-                            الراتب الشهري <span className="text-gray-400 font-normal">(اختياري)</span>
-                        </label>
-                        <div className="relative">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label className="text-sm font-medium text-gray-700 block mb-1">رقم الهاتف *</label>
                             <Input
-                                type="number"
-                                min="0"
-                                value={salary}
-                                onChange={(e) => setSalary(e.target.value)}
-                                placeholder="0"
+                                value={phone}
+                                onChange={(e) => setPhone(e.target.value)}
+                                placeholder="01xxxxxxxxx"
                                 dir="ltr"
-                                className="pl-10"
                                 autoComplete="off"
                             />
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">ج</span>
+                            {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
                         </div>
-                        {errors.salary && <p className="text-red-500 text-xs mt-1">{errors.salary}</p>}
+
+                        <div>
+                            <label className="text-sm font-medium text-gray-700 block mb-1">كلمة المرور *</label>
+                            <Input
+                                type="password"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                placeholder="6 أحرف على الأقل"
+                                dir="ltr"
+                                autoComplete="new-password"
+                            />
+                            {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
+                        </div>
                     </div>
 
-                    <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-amber-700">
-                        <strong>ملاحظة:</strong> المساعد سيتمكن من إدارة الطلاب، الحصص، الامتحانات، والمذكرات — لكن لن يرى التقارير المالية الشاملة.
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label className="text-sm font-medium text-gray-700 block mb-1">
+                                الراتب الشهري <span className="text-gray-400 font-normal">(اختياري)</span>
+                            </label>
+                            <div className="relative">
+                                <Input
+                                    type="number"
+                                    min="0"
+                                    value={salary}
+                                    onChange={(e) => setSalary(e.target.value)}
+                                    placeholder="0"
+                                    dir="ltr"
+                                    className="pl-10"
+                                    autoComplete="off"
+                                />
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">ج</span>
+                            </div>
+                            {errors.salary && <p className="text-red-500 text-xs mt-1">{errors.salary}</p>}
+                        </div>
+
+                        <div>
+                            <label className="text-sm font-medium text-gray-700 block mb-1">نوع المساعد وصلاحياته *</label>
+                            <select
+                                value={assistantType}
+                                onChange={(e) => handleTypeChange(e.target.value as AssistantType)}
+                                className="w-full h-10 px-3 rounded-xl border border-gray-200 bg-white text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary/20"
+                            >
+                                <option value="ATTENDANCE">مساعد حضور وغياب (تحضير وحصص)</option>
+                                <option value="FINANCIAL">مساعد مالي واشتراكات (دفعات ومذكرات)</option>
+                                <option value="ACADEMIC">مساعد أكاديمي (امتحانات ورصد درجات)</option>
+                                <option value="FULL">مساعد شامل (جميع الصلاحيات)</option>
+                                <option value="CUSTOM">صلاحيات مخصصة (تحديد يدوي)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    {/* Granular Permissions Checklist */}
+                    <div className="pt-2 border-t border-gray-100">
+                        <div className="flex items-center justify-between mb-2">
+                            <label className="text-xs font-bold text-gray-800">
+                                الصلاحيات التفصيلية الممنوحة ({countActivePermissions(permissions)} من 12):
+                            </label>
+                            <div className="flex gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => handleTypeChange('FULL')}
+                                    className="text-[11px] text-primary hover:underline font-bold"
+                                >
+                                    تحديد الكل
+                                </button>
+                                <span className="text-gray-300">•</span>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setAssistantType('CUSTOM');
+                                        setPermissions({});
+                                    }}
+                                    className="text-[11px] text-gray-500 hover:underline font-bold"
+                                >
+                                    إلغاء الكل
+                                </button>
+                            </div>
+                        </div>
+                        <div className="space-y-1.5 max-h-52 overflow-y-auto border border-gray-200 rounded-xl p-2.5 bg-gray-50/50">
+                            {ALL_ASSISTANT_PERMISSION_KEYS.map((perm) => {
+                                const isChecked = !!permissions[perm.key];
+                                return (
+                                    <div
+                                        key={perm.key}
+                                        onClick={() => togglePermission(perm.key)}
+                                        className={cn(
+                                            'flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors text-xs font-bold select-none',
+                                            isChecked
+                                                ? 'bg-primary/10 text-primary border border-primary/20'
+                                                : 'bg-white hover:bg-gray-100 text-gray-700 border border-transparent'
+                                        )}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <span>{perm.label}</span>
+                                            <span className="text-[10px] text-gray-400 font-normal">({perm.group})</span>
+                                        </div>
+                                        <div className={cn(
+                                            'h-4 w-4 rounded flex items-center justify-center border transition-all',
+                                            isChecked ? 'bg-primary border-primary text-white' : 'border-gray-300 bg-white'
+                                        )}>
+                                            {isChecked && <Check className="h-3 w-3 stroke-[3]" />}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </div>
 
                     <div className="flex gap-2 pt-2">
@@ -550,7 +777,7 @@ function AddAssistantModal({
                         </Button>
                         <Button type="submit" disabled={mutation.isPending} className="flex-1 gap-2">
                             {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                            إضافة
+                            إضافة المساعد
                         </Button>
                     </div>
                 </form>
@@ -564,23 +791,48 @@ function EditAssistantModal({
     open, assistant, onOpenChange, onSuccess,
 }: {
     open: boolean;
-    assistant: { id: string; name: string; phone: string; salary: number | null };
+    assistant: {
+        id: string;
+        name: string;
+        phone: string;
+        salary: number | null;
+        assistantType?: AssistantType;
+        assistantPermissions?: IAssistantPermissions;
+    };
     onOpenChange: (v: boolean) => void;
     onSuccess: () => void;
 }) {
-    const [name,     setName]     = useState(assistant.name);
-    const [phone,    setPhone]    = useState(assistant.phone || '');
-    const [password, setPassword] = useState('');
-    const [salary,   setSalary]   = useState(assistant.salary != null ? String(assistant.salary) : '');
-    const [errors,   setErrors]   = useState<Record<string, string>>({});
+    const [name,          setName]          = useState(assistant.name);
+    const [phone,         setPhone]         = useState(assistant.phone || '');
+    const [password,      setPassword]      = useState('');
+    const [salary,        setSalary]        = useState(assistant.salary != null ? String(assistant.salary) : '');
+    const [assistantType, setAssistantType] = useState<AssistantType>(assistant.assistantType || 'CUSTOM');
+    const [permissions,   setPermissions]   = useState<IAssistantPermissions>(assistant.assistantPermissions || DEFAULT_ATTENDANCE_PERMS);
+    const [errors,        setErrors]        = useState<Record<string, string>>({});
 
     const mutation = useMutation({
         mutationFn: (data: any) => updateUser({ id: assistant.id, data }),
         onSuccess: () => {
-            toast.success('تم تعديل بيانات المساعد بنجاح');
+            toast.success('تم تعديل بيانات وصلاحيات المساعد بنجاح');
             onSuccess();
         },
     });
+
+    const handleTypeChange = (type: AssistantType) => {
+        setAssistantType(type);
+        if (type === 'ATTENDANCE') setPermissions(DEFAULT_ATTENDANCE_PERMS);
+        else if (type === 'FINANCIAL') setPermissions(DEFAULT_FINANCIAL_PERMS);
+        else if (type === 'ACADEMIC') setPermissions(DEFAULT_ACADEMIC_PERMS);
+        else if (type === 'FULL') setPermissions(DEFAULT_FULL_PERMS);
+    };
+
+    const togglePermission = (key: keyof IAssistantPermissions) => {
+        setPermissions((prev) => ({
+            ...prev,
+            [key]: !prev[key],
+        }));
+        setAssistantType('CUSTOM');
+    };
 
     const validate = () => {
         const e: Record<string, string> = {};
@@ -597,9 +849,11 @@ function EditAssistantModal({
         if (!validate()) return;
         
         const data: any = {
-            name:     name.trim(),
-            phone:    phone.trim(),
-            salary:   salary ? Number(salary) : null,
+            name:                 name.trim(),
+            phone:                phone.trim(),
+            salary:               salary ? Number(salary) : null,
+            assistantType,
+            assistantPermissions: permissions,
         };
         if (password) data.password = password;
 
@@ -608,11 +862,11 @@ function EditAssistantModal({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-md bg-white rounded-2xl" dir="rtl">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-lg max-h-[90vh] overflow-y-auto bg-white rounded-2xl" dir="rtl">
                 <DialogHeader>
                     <DialogTitle className="text-lg font-bold border-b pb-3 flex items-center gap-2">
                         <Edit2 className="h-5 w-5 text-blue-600" />
-                        تعديل بيانات المساعد
+                        تعديل بيانات وصلاحيات المساعد
                     </DialogTitle>
                 </DialogHeader>
 
@@ -628,49 +882,125 @@ function EditAssistantModal({
                         {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
                     </div>
 
-                    <div>
-                        <label className="text-sm font-medium text-gray-700 block mb-1">رقم الهاتف *</label>
-                        <Input
-                            value={phone}
-                            onChange={(e) => setPhone(e.target.value)}
-                            placeholder="01xxxxxxxxx"
-                            dir="ltr"
-                            autoComplete="off"
-                        />
-                        {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
-                    </div>
-
-                    <div>
-                        <label className="text-sm font-medium text-gray-700 block mb-1">كلمة المرور الجديدة <span className="text-gray-400 font-normal">(اتركها فارغة إذا لم ترد التغيير)</span></label>
-                        <Input
-                            type="password"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            placeholder="6 أحرف على الأقل"
-                            dir="ltr"
-                            autoComplete="new-password"
-                        />
-                        {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
-                    </div>
-
-                    <div>
-                        <label className="text-sm font-medium text-gray-700 block mb-1">
-                            الراتب الشهري الثابت <span className="text-gray-400 font-normal">(اختياري)</span>
-                        </label>
-                        <div className="relative">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label className="text-sm font-medium text-gray-700 block mb-1">رقم الهاتف *</label>
                             <Input
-                                type="number"
-                                min="0"
-                                value={salary}
-                                onChange={(e) => setSalary(e.target.value)}
-                                placeholder="0"
+                                value={phone}
+                                onChange={(e) => setPhone(e.target.value)}
+                                placeholder="01xxxxxxxxx"
                                 dir="ltr"
-                                className="pl-10"
                                 autoComplete="off"
                             />
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">ج</span>
+                            {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
                         </div>
-                        {errors.salary && <p className="text-red-500 text-xs mt-1">{errors.salary}</p>}
+
+                        <div>
+                            <label className="text-sm font-medium text-gray-700 block mb-1">كلمة المرور الجديدة <span className="text-gray-400 font-normal">(اتركها فارغة للتخطي)</span></label>
+                            <Input
+                                type="password"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                placeholder="6 أحرف على الأقل"
+                                dir="ltr"
+                                autoComplete="new-password"
+                            />
+                            {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label className="text-sm font-medium text-gray-700 block mb-1">
+                                الراتب الشهري الثابت <span className="text-gray-400 font-normal">(اختياري)</span>
+                            </label>
+                            <div className="relative">
+                                <Input
+                                    type="number"
+                                    min="0"
+                                    value={salary}
+                                    onChange={(e) => setSalary(e.target.value)}
+                                    placeholder="0"
+                                    dir="ltr"
+                                    className="pl-10"
+                                    autoComplete="off"
+                                />
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">ج</span>
+                            </div>
+                            {errors.salary && <p className="text-red-500 text-xs mt-1">{errors.salary}</p>}
+                        </div>
+
+                        <div>
+                            <label className="text-sm font-medium text-gray-700 block mb-1">نوع المساعد وصلاحياته *</label>
+                            <select
+                                value={assistantType}
+                                onChange={(e) => handleTypeChange(e.target.value as AssistantType)}
+                                className="w-full h-10 px-3 rounded-xl border border-gray-200 bg-white text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary/20"
+                            >
+                                <option value="ATTENDANCE">مساعد حضور وغياب (تحضير وحصص)</option>
+                                <option value="FINANCIAL">مساعد مالي واشتراكات (دفعات ومذكرات)</option>
+                                <option value="ACADEMIC">مساعد أكاديمي (امتحانات ورصد درجات)</option>
+                                <option value="FULL">مساعد شامل (جميع الصلاحيات)</option>
+                                <option value="CUSTOM">صلاحيات مخصصة (تحديد يدوي)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    {/* Granular Permissions Checklist */}
+                    <div className="pt-2 border-t border-gray-100">
+                        <div className="flex items-center justify-between mb-2">
+                            <label className="text-xs font-bold text-gray-800">
+                                الصلاحيات التفصيلية الممنوحة ({countActivePermissions(permissions)} من 12):
+                            </label>
+                            <div className="flex gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => handleTypeChange('FULL')}
+                                    className="text-[11px] text-primary hover:underline font-bold"
+                                >
+                                    تحديد الكل
+                                </button>
+                                <span className="text-gray-300">•</span>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setAssistantType('CUSTOM');
+                                        setPermissions({});
+                                    }}
+                                    className="text-[11px] text-gray-500 hover:underline font-bold"
+                                >
+                                    إلغاء الكل
+                                </button>
+                            </div>
+                        </div>
+                        <div className="space-y-1.5 max-h-52 overflow-y-auto border border-gray-200 rounded-xl p-2.5 bg-gray-50/50">
+                            {ALL_ASSISTANT_PERMISSION_KEYS.map((perm) => {
+                                const isChecked = !!permissions[perm.key];
+                                return (
+                                    <div
+                                        key={perm.key}
+                                        onClick={() => togglePermission(perm.key)}
+                                        className={cn(
+                                            'flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors text-xs font-bold select-none',
+                                            isChecked
+                                                ? 'bg-primary/10 text-primary border border-primary/20'
+                                                : 'bg-white hover:bg-gray-100 text-gray-700 border border-transparent'
+                                        )}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <span>{perm.label}</span>
+                                            <span className="text-[10px] text-gray-400 font-normal">({perm.group})</span>
+                                        </div>
+                                        <div className={cn(
+                                            'h-4 w-4 rounded flex items-center justify-center border transition-all',
+                                            isChecked ? 'bg-primary border-primary text-white' : 'border-gray-300 bg-white'
+                                        )}>
+                                            {isChecked && <Check className="h-3 w-3 stroke-[3]" />}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </div>
 
                     <div className="flex gap-2 pt-2">
