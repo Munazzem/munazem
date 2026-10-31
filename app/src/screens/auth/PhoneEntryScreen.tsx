@@ -8,7 +8,6 @@ import {
   Platform,
   TouchableWithoutFeedback,
   Keyboard,
-  Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -21,6 +20,7 @@ import { Button } from '../../components/common/Button';
 import { isValidEgyptianPhone, normalizeEgyptianPhone } from '../../utils/phone.util';
 import { AuthApi } from '../../api/auth.api';
 import { useAuthStore } from '../../store/auth.store';
+import { confirmAction, showAlert } from '../../utils/alert.util';
 import { Phone, LogIn, QrCode } from 'lucide-react-native';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'PhoneEntry'>;
@@ -59,21 +59,18 @@ export const PhoneEntryScreen: React.FC<Props> = ({ navigation }) => {
       } else if (!err?.response) {
         message = 'تعذر الاتصال بالخادم. يرجى التأكد من اتصالك بالإنترنت والمحاولة مجدداً.';
       }
-
       if (err?.response?.status === 429) {
-        Alert.alert('محاولات متكررة', message, [
-          { text: 'حسناً', style: 'default' },
-        ]);
+        showAlert('محاولات متكررة', message);
         return;
       }
 
-      Alert.alert('تعذر تسجيل الدخول', message, [
-        {
-          text: 'مسح كارت الطالب',
-          onPress: () => navigation.navigate('BarcodeScanner', { parentPhone: normalized }),
-        },
-        { text: 'حاول مجدداً', style: 'cancel' },
-      ]);
+      confirmAction({
+        title: 'تعذر تسجيل الدخول',
+        message,
+        confirmText: 'مسح كارت الطالب',
+        cancelText: 'حاول مجدداً',
+        onConfirm: () => navigation.navigate('BarcodeScanner', { parentPhone: normalized }),
+      });
     } finally {
       setLoading(false);
     }

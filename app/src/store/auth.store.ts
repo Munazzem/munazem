@@ -2,6 +2,9 @@ import { create } from 'zustand';
 import { ParentUser, DiscoveredStudent } from '../types/auth.types';
 import { StorageService } from '../services/storage.service';
 import { NotificationService } from '../services/notification.service';
+import { AuthApi } from '../api/auth.api';
+import { useChildStore } from './child.store';
+import { queryClient } from '../api/queryClient';
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -90,8 +93,40 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: async () => {
-    await StorageService.clearSession();
-    await NotificationService.clearBadge();
+    // 1. Invalidate device token / session on backend (non-blocking best-effort)
+    try {
+      await AuthApi.logout();
+    } catch (e) {
+      console.warn('[AuthStore] Backend logout request failed (proceeding with local cleanup):', e);
+    }
+
+    // 2. Clear credentials and storage
+    try {
+      await StorageService.clearSession();
+    } catch (e) {
+      console.warn('[AuthStore] Failed to clear session storage:', e);
+    }
+
+    // 3. Clear app badge
+    try {
+      await NotificationService.clearBadge();
+    } catch {}
+
+    // 4. Reset selected child state
+    try {
+      await useChildStore.getState().clearSelectedChild();
+    } catch (e) {
+      console.warn('[AuthStore] Failed to clear selected child state:', e);
+    }
+
+    // 5. Reset React Query cache
+    try {
+      queryClient.clear();
+    } catch (e) {
+      console.warn('[AuthStore] Failed to clear query client cache:', e);
+    }
+
+    // 6. Reset auth state
     set({
       isAuthenticated: false,
       parent: null,

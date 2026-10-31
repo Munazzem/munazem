@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Alert, Switch, StatusBar, Linking, Modal, TouchableWithoutFeedback,
+  Switch, StatusBar, Linking, Modal, TouchableWithoutFeedback,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -9,12 +9,12 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../navigation/types';
 import { useAuthStore } from '../../store/auth.store';
 import { useChildStore } from '../../store/child.store';
-import { AuthApi } from '../../api/auth.api';
 import { useQuery } from '@tanstack/react-query';
 import { HomeApi } from '../../api/home.api';
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing, borderRadius, shadows } from '../../theme/spacing';
+import { confirmAction, showAlert } from '../../utils/alert.util';
 import {
   User, Phone, Users, Bell, HelpCircle, Info,
   LogOut, ChevronLeft, Shield, Star, X, MessageSquare, CheckCircle2,
@@ -36,13 +36,13 @@ export const SettingsScreen: React.FC = () => {
 
   const handleCallSupport = () => {
     Linking.openURL(`tel:${SUPPORT_PHONE}`).catch(() => {
-      Alert.alert('تنبيه', `يرجى الاتصال بالرقم: ${SUPPORT_PHONE}`);
+      showAlert('تنبيه', `يرجى الاتصال بالرقم: ${SUPPORT_PHONE}`);
     });
   };
 
   const handleWhatsAppSupport = () => {
     Linking.openURL(`https://wa.me/${SUPPORT_WHATSAPP}`).catch(() => {
-      Alert.alert('تنبيه', `يرجى مراسلة الرقم عبر واتساب: ${SUPPORT_PHONE}`);
+      showAlert('تنبيه', `يرجى مراسلة الرقم عبر واتساب: ${SUPPORT_PHONE}`);
     });
   };
 
@@ -53,17 +53,16 @@ export const SettingsScreen: React.FC = () => {
   });
 
   const handleLogout = () => {
-    Alert.alert('تسجيل الخروج', 'هل أنت متأكد من رغبتك في تسجيل الخروج؟', [
-      { text: 'إلغاء', style: 'cancel' },
-      {
-        text: 'تسجيل الخروج',
-        style: 'destructive',
-        onPress: async () => {
-          await AuthApi.logout();
-          await logout();
-        },
+    confirmAction({
+      title: 'تسجيل الخروج',
+      message: 'هل أنت متأكد من رغبتك في تسجيل الخروج؟',
+      confirmText: 'تسجيل الخروج',
+      cancelText: 'إلغاء',
+      isDestructive: true,
+      onConfirm: async () => {
+        await logout();
       },
-    ]);
+    });
   };
 
   const handleSwitchChild = () => {

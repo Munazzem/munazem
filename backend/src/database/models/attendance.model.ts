@@ -74,7 +74,20 @@ const attendanceSchema = new Schema<IAttendanceDocument>({
         consecutiveCountAtTime: {
             type: Number
         }
-    }
+    },
+    parentNotify: {
+        status: {
+            type: String,
+            enum: Object.values(AttendanceStatus),
+        },
+        rev: {
+            type: Number,
+            default: 0,
+        },
+        sentAt: {
+            type: Date,
+        },
+    },
 }, {
     timestamps: true,
 });
