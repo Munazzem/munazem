@@ -93,12 +93,18 @@ export default function App() {
           const studentId = path.replace('child/', '').split('?')[0];
           const tab = (parsed.queryParams?.tab as 'attendance' | 'exams' | 'financial') || 'attendance';
 
-          // Navigate to ChildDetails with proper tab
-          navigationRef.current.navigate('ChildDetails', {
-            studentId,
-            studentName: '',
-            initialTab: tab,
-          });
+          if (tab === 'attendance') {
+            navigationRef.current.navigate('MainTabs', { screen: 'AttendanceTab' } as any);
+          } else if (tab === 'exams') {
+            navigationRef.current.navigate('MainTabs', { screen: 'GradesTab' } as any);
+          } else if (tab === 'financial') {
+            navigationRef.current.navigate('FinanceDetail', {
+              studentId,
+              studentName: '',
+            });
+          } else {
+            navigationRef.current.navigate('MainTabs', { screen: 'HomeTab' } as any);
+          }
         } else if (path === 'notifications') {
           // Navigate to notifications tab
           navigationRef.current.navigate('MainTabs', {

@@ -13,6 +13,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../navigation/types';
 import { NotificationsApi } from '../../api/notifications.api';
+import { useChildStore } from '../../store/child.store';
 import { colors } from '../../theme/colors';
 import { typography, textStyles } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
@@ -87,7 +88,7 @@ export const NotificationsScreen: React.FC = () => {
           ListEmptyComponent={
             !isLoading ? (
               <EmptyState
-                title="أنت على اطلاع بكل جديد! 🎉"
+                title="أنت على اطلاع بكل جديد"
                 description="ستصلك إشعارات الحضور والغياب ودرجات الامتحانات والمدفوعات هنا فور تسجيلها."
                 icon={<BellRing size={48} color={colors.primary} />}
               />
@@ -100,18 +101,47 @@ export const NotificationsScreen: React.FC = () => {
                 if (!item.isRead) {
                   markReadMutation.mutate(item.id);
                 }
+
+                // If notification belongs to a student, activate that student & subject
                 if (item.studentId) {
-                  let initialTab: 'attendance' | 'exams' | 'financial' = 'attendance';
-                  if (item.type === 'PAYMENT_RECORDED' || item.type === 'CYCLE_STARTED') {
-                    initialTab = 'financial';
-                  } else if (item.type === 'EXAM_RESULT') {
-                    initialTab = 'exams';
+                  const familyData = queryClient.getQueryData<any>(['family-overview']);
+                  const targetChild = familyData?.children?.find(
+                    (c: any) =>
+                      c.id === item.studentId ||
+                      c.subjects?.some((s: any) => s.studentId === item.studentId)
+                  );
+                  if (targetChild) {
+                    useChildStore.getState().setSelectedChild(targetChild);
+                    const targetSub = targetChild.subjects?.find(
+                      (s: any) => s.studentId === item.studentId
+                    );
+                    if (targetSub) {
+                      useChildStore.getState().setSelectedSubjectId(targetSub.studentId);
+                    }
                   }
-                  navigation.navigate('ChildDetails', {
-                    studentId: item.studentId,
+                }
+
+                const notifType: string = String(item.type ?? '');
+                if (
+                  notifType === 'ATTENDANCE_ABSENT' ||
+                  notifType === 'ATTENDANCE_PRESENT' ||
+                  notifType.includes('ATTENDANCE')
+                ) {
+                  navigation.navigate('MainTabs', { screen: 'AttendanceTab' } as any);
+                } else if (notifType === 'EXAM_RESULT' || notifType.includes('EXAM')) {
+                  navigation.navigate('MainTabs', { screen: 'GradesTab' } as any);
+                } else if (
+                  notifType === 'PAYMENT_RECORDED' ||
+                  notifType === 'CYCLE_STARTED' ||
+                  notifType.includes('PAYMENT') ||
+                  notifType.includes('FINANCIAL')
+                ) {
+                  navigation.navigate('FinanceDetail', {
+                    studentId: item.studentId || '',
                     studentName: item.studentName || '',
-                    initialTab,
                   });
+                } else {
+                  navigation.navigate('MainTabs', { screen: 'HomeTab' } as any);
                 }
               }}
             >
@@ -168,31 +198,42 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   title: {
-    ...textStyles.h2,
-    color: colors.text,
+    fontFamily: typography.extraBold,
+    fontSize: 26,
+    color: '#ffffff',
   },
   unreadBadge: {
-    backgroundColor: colors.primaryLight,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: 12,
+    backgroundColor: 'rgba(56, 189, 248, 0.18)',
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.35)',
   },
   unreadBadgeText: {
     fontFamily: typography.bold,
     fontSize: 12,
-    color: colors.primary,
+    color: '#38bdf8',
   },
   listContent: {
     paddingBottom: 100,
   },
   notificationCard: {
-    marginBottom: spacing.sm,
-    backgroundColor: colors.surface,
+    marginBottom: spacing.sm + 2,
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
   },
   unreadCard: {
-    borderColor: colors.primary,
+    borderColor: '#0f4c81',
     borderWidth: 1.5,
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface,
   },
   cardHeader: {
     flexDirection: 'row-reverse',
@@ -202,10 +243,12 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   textWrapper: {
     flex: 1,
@@ -214,21 +257,21 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontFamily: typography.bold,
     fontSize: 15,
-    color: colors.text,
+    color: '#0f172a',
     textAlign: 'right',
   },
   cardBody: {
     fontFamily: typography.regular,
     fontSize: 13,
-    color: colors.textSecondary,
+    color: '#475569',
     textAlign: 'right',
     marginTop: 2,
     lineHeight: 18,
   },
   timeText: {
-    fontFamily: typography.regular,
+    fontFamily: typography.medium,
     fontSize: 11,
-    color: colors.textMuted,
+    color: '#64748b',
     marginTop: spacing.xs,
     textAlign: 'right',
   },

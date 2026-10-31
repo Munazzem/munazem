@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppTabsParamList } from './types';
@@ -14,11 +14,26 @@ import { Home, Bell, CalendarCheck, Award, Settings } from 'lucide-react-native'
 
 const Tab = createBottomTabNavigator<AppTabsParamList>();
 
-const TAB_HEIGHT = 60;
+const TAB_HEIGHT = 64;
+
+interface TabIconProps {
+  Icon: React.ComponentType<{ size: number; color: string; strokeWidth?: number }>;
+  focused: boolean;
+}
+
+const TabIcon: React.FC<TabIconProps> = ({ Icon, focused }) => (
+  <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
+    <Icon
+      size={20}
+      color={focused ? '#38bdf8' : '#64748b'}
+      strokeWidth={focused ? 2.4 : 1.8}
+    />
+  </View>
+);
 
 export const AppTabsNavigator: React.FC = () => {
   const insets = useSafeAreaInsets();
-  const bottomPadding = Math.max(insets.bottom, 8);
+  const bottomPadding = Math.max(insets.bottom, Platform.OS === 'android' ? 14 : 10);
   const tabHeight = TAB_HEIGHT + bottomPadding;
 
   return (
@@ -26,28 +41,29 @@ export const AppTabsNavigator: React.FC = () => {
       initialRouteName="HomeTab"
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textMuted,
+        tabBarActiveTintColor: '#38bdf8',
+        tabBarInactiveTintColor: '#94a3b8',
         tabBarStyle: {
-          backgroundColor: colors.card,
-          borderTopColor: colors.borderLight,
+          backgroundColor: '#07152b',
+          borderTopColor: 'rgba(255, 255, 255, 0.08)',
           borderTopWidth: 1,
           height: tabHeight,
           paddingBottom: bottomPadding,
           paddingTop: 8,
-          shadowColor: '#0f172a',
-          shadowOffset: { width: 0, height: -3 },
-          shadowOpacity: 0.08,
-          shadowRadius: 12,
-          elevation: 12,
+          shadowColor: '#000000',
+          shadowOffset: { width: 0, height: -6 },
+          shadowOpacity: 0.35,
+          shadowRadius: 16,
+          elevation: 16,
         },
         tabBarLabelStyle: {
           fontFamily: typography.bold,
           fontSize: 11,
           marginTop: 2,
+          paddingBottom: 2,
         },
-        tabBarIconStyle: {
-          marginTop: 2,
+        tabBarItemStyle: {
+          paddingVertical: 2,
         },
       }}
     >
@@ -56,7 +72,7 @@ export const AppTabsNavigator: React.FC = () => {
         component={HomeScreen}
         options={{
           tabBarLabel: 'الرئيسية',
-          tabBarIcon: ({ color, size }) => <Home size={size} color={color} strokeWidth={2} />,
+          tabBarIcon: ({ focused }) => <TabIcon Icon={Home} focused={focused} />,
         }}
       />
       <Tab.Screen
@@ -64,7 +80,7 @@ export const AppTabsNavigator: React.FC = () => {
         component={NotificationsScreen}
         options={{
           tabBarLabel: 'الإشعارات',
-          tabBarIcon: ({ color, size }) => <Bell size={size} color={color} strokeWidth={2} />,
+          tabBarIcon: ({ focused }) => <TabIcon Icon={Bell} focused={focused} />,
         }}
       />
       <Tab.Screen
@@ -72,7 +88,7 @@ export const AppTabsNavigator: React.FC = () => {
         component={AttendanceScreen}
         options={{
           tabBarLabel: 'الغياب والحضور',
-          tabBarIcon: ({ color, size }) => <CalendarCheck size={size} color={color} strokeWidth={2} />,
+          tabBarIcon: ({ focused }) => <TabIcon Icon={CalendarCheck} focused={focused} />,
         }}
       />
       <Tab.Screen
@@ -80,7 +96,7 @@ export const AppTabsNavigator: React.FC = () => {
         component={GradesScreen}
         options={{
           tabBarLabel: 'الدرجات',
-          tabBarIcon: ({ color, size }) => <Award size={size} color={color} strokeWidth={2} />,
+          tabBarIcon: ({ focused }) => <TabIcon Icon={Award} focused={focused} />,
         }}
       />
       <Tab.Screen
@@ -88,9 +104,22 @@ export const AppTabsNavigator: React.FC = () => {
         component={SettingsScreen}
         options={{
           tabBarLabel: 'الإعدادات',
-          tabBarIcon: ({ color, size }) => <Settings size={size} color={color} strokeWidth={2} />,
+          tabBarIcon: ({ focused }) => <TabIcon Icon={Settings} focused={focused} />,
         }}
       />
     </Tab.Navigator>
   );
 };
+
+const styles = StyleSheet.create({
+  iconContainer: {
+    width: 44,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconContainerActive: {
+    backgroundColor: 'rgba(56, 189, 248, 0.16)',
+  },
+});
