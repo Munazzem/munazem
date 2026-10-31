@@ -677,7 +677,7 @@ export default function CenterStudentProfilePage() {
             </div>
 
             {/* Profile Tabs */}
-            <Tabs defaultValue="overview" className="w-full">
+            <Tabs defaultValue="overview" dir="rtl" className="w-full">
                 <TabsList className="bg-gray-100/80 p-1 rounded-2xl border border-gray-200/50 mb-6 flex flex-wrap gap-1 h-auto">
                     <TabsTrigger
                         value="overview"

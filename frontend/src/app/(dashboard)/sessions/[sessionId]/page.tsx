@@ -28,6 +28,7 @@ const QRScannerPanel = dynamic(
 import type { ScanFeedback } from '@/components/sessions/QRScannerPanel';
 import { soundEffects } from '@/lib/utils/sound';
 import { BatchSubscriptionModal } from '@/components/payments/BatchSubscriptionModal';
+import { SessionQuickPaymentModal } from '@/components/sessions/SessionQuickPaymentModal';
 import { SetExcuseModal } from '@/components/sessions/SetExcuseModal';
 import { EditAttendanceDialog } from '@/components/sessions/EditAttendanceDialog';
 import { StudentSearchResults } from '@/components/sessions/StudentSearchResults';
@@ -59,6 +60,7 @@ import {
     Trash2,
     RefreshCw,
     WifiOff,
+    CreditCard,
 } from 'lucide-react';
 import { ReportCardSkeleton } from '@/components/layout/skeletons/ReportCardSkeleton';
 import { TableSkeleton } from '@/components/layout/skeletons/TableSkeleton';
@@ -139,6 +141,13 @@ export default function SessionDetailPage() {
     const [excuseStudent, setExcuseStudent] = useState<any | null>(null);
     const [showAllStudents, setShowAllStudents] = useState(false);
     const [scanFeedback, setScanFeedback] = useState<ScanFeedback | null>(null);
+    const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+    const [paymentModalStudentId, setPaymentModalStudentId] = useState<string | null>(null);
+
+    const handleOpenQuickPayment = (studentId?: string | null) => {
+        setPaymentModalStudentId(studentId || null);
+        setIsPaymentModalOpen(true);
+    };
 
     const handleDownloadAttendancePdf = async () => {
         setPdfLoading(true);
@@ -763,11 +772,16 @@ export default function SessionDetailPage() {
                 });
 
                 await refreshPendingCount(sessionId);
+                const offlineStudentDoc = (groupStudentsData?.data ?? []).find((s) => s._id === cardEntry.studentId);
+                const offlineHasDues = (offlineStudentDoc?.totalDebt || 0) > 0 || (subscriptionMap.get(cardEntry.studentId) === false);
+                const offlineDebt = offlineStudentDoc?.totalDebt || 0;
+
                 soundEffects.playSuccess();
                 setScanFeedback({
                     studentName: cardEntry.studentName,
                     studentCode: cardEntry.studentCode,
-                    hasDues: false,
+                    hasDues: offlineHasDues,
+                    debtAmount: offlineDebt > 0 ? offlineDebt : undefined,
                     timestamp: Date.now(),
                 });
                 toast.info(`تم حفظ حضور ${cardEntry.studentName} محلياً (⏳ سيتم رفعه عند الاتصال)`, {
@@ -917,13 +931,23 @@ export default function SessionDetailPage() {
                             })} — {session.startTime}
                         </p>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                         <span className={cn(
-                            'px-3 py-1 rounded-full text-xs font-medium',
+                            'px-2.5 sm:px-3 py-1 rounded-full text-xs font-medium shrink-0',
                             STATUS_COLORS[session.status]
                         )}>
                             {STATUS_LABELS[session.status]}
                         </span>
+                        {canWrite && (
+                            <Button
+                                size="sm"
+                                onClick={() => handleOpenQuickPayment(null)}
+                                className="gap-1.5 text-xs sm:text-sm bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-xs h-8 sm:h-9 px-2.5 sm:px-3"
+                            >
+                                <CreditCard className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                                <span>تحصيل مصاريف</span>
+                            </Button>
+                        )}
                         {canWrite && isSessionActive && !isFutureSession && (
                             <Button
                                 size="sm"
@@ -937,10 +961,10 @@ export default function SessionDetailPage() {
                                     }
                                     setShowCompleteConfirm(true);
                                 }}
-                                className="gap-1.5 text-xs sm:text-sm"
+                                className="gap-1 text-xs sm:text-sm rounded-xl h-8 sm:h-9 px-2.5 sm:px-3"
                             >
                                 <CheckCircle2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                                إنهاء الحصة
+                                <span>إنهاء الحصة</span>
                             </Button>
                         )}
                         {canWrite && (
@@ -948,10 +972,10 @@ export default function SessionDetailPage() {
                                 size="sm"
                                 variant="outline"
                                 onClick={() => setShowDeleteConfirm(true)}
-                                className="gap-1.5 text-xs sm:text-sm text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+                                className="gap-1 text-xs sm:text-sm text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 rounded-xl h-8 sm:h-9 px-2.5"
                             >
                                 <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                                حذف الحصة
+                                <span>حذف</span>
                             </Button>
                         )}
                     </div>
@@ -1193,8 +1217,8 @@ export default function SessionDetailPage() {
                                                     <span>
                                                         {student?.studentCode} · {' '}
                                                         {new Date(record.scannedAt).toLocaleTimeString('ar-EG', {
-                                                            hour: '2-digit',
-                                                            minute: '2-digit',
+                                                             hour: '2-digit',
+                                                             minute: '2-digit',
                                                         })}
                                                     </span>
 
@@ -1493,6 +1517,22 @@ export default function SessionDetailPage() {
                     onClose={() => setShowWhatsApp(false)}
                 />
             )}
+
+            {/* Quick In-Session Payment Modal */}
+            <SessionQuickPaymentModal
+                isOpen={isPaymentModalOpen}
+                onClose={() => {
+                    setIsPaymentModalOpen(false);
+                    setPaymentModalStudentId(null);
+                }}
+                sessionId={sessionId}
+                groupId={groupId}
+                defaultPrice={typeof session?.groupId === 'object' ? (session.groupId as any)?.customPrice || 0 : 0}
+                attendanceRecords={attendanceRecords}
+                subscriptionMap={subscriptionMap}
+                groupStudents={groupStudentsData?.data || []}
+                initialStudentId={paymentModalStudentId}
+            />
         </div>
     );
 }
