@@ -18,6 +18,7 @@ const isTest = process.env.NODE_ENV === 'test';
 export const teacherMessageLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   limit: isTest ? 1000 : 10,
+  keyGenerator: (req: Request) => (req as any).user?.userId || req.ip || 'anonymous',
   message: { message: 'تجاوزت الحد المسموح لإرسال الرسائل (10 رسائل في الساعة)، يرجى المحاولة لاحقاً' },
   standardHeaders: true,
   legacyHeaders: false,
