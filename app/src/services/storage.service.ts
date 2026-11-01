@@ -7,6 +7,7 @@ const STORAGE_KEYS = {
   DEVICE_ID: 'monazem_parent_device_id',
   USER_DATA: 'monazem_parent_user_data',
   PERMISSION_ASKED_AT: 'monazem_parent_permission_asked_at',
+  NOTIFICATIONS_ENABLED: '@monazem_notifications_enabled',
 } as const;
 
 // In-memory fallback for web/testing environment if SecureStore isn't native
@@ -114,5 +115,15 @@ export const StorageService = {
   },
   async deleteItem(key: string): Promise<void> {
     return deleteItem(key);
+  },
+
+  // Notification preference
+  async getNotificationsEnabled(): Promise<boolean> {
+    const val = await getItem(STORAGE_KEYS.NOTIFICATIONS_ENABLED);
+    if (val === null) return true; // Default enabled
+    return val === 'true';
+  },
+  async setNotificationsEnabled(enabled: boolean): Promise<void> {
+    return setItem(STORAGE_KEYS.NOTIFICATIONS_ENABLED, enabled ? 'true' : 'false');
   },
 };

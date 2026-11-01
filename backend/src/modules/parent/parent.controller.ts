@@ -176,15 +176,41 @@ parentRouter.post(
     try {
       const parentReq = req as AuthenticatedParentRequest;
       const { fcmToken, platform } = req.body;
+      const deviceId = req.body?.deviceId || parentReq.parent.deviceId;
       await ParentAuthService.registerPushToken(
         parentReq.parent.parentId,
-        parentReq.parent.deviceId,
+        deviceId,
         fcmToken,
         platform
       );
       return SuccessResponse({
         res,
         message: 'تم تسجيل رمز الإشعارات للجهاز بنجاح',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// DELETE /parent/device/token — Unregister Push Token
+parentRouter.delete(
+  '/device/token',
+  authenticateParent,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const parentReq = req as AuthenticatedParentRequest;
+      const deviceId =
+        req.body?.deviceId ||
+        (req.query?.deviceId as string) ||
+        parentReq.parent.deviceId;
+      await ParentAuthService.unregisterPushToken(
+        parentReq.parent.parentId,
+        deviceId
+      );
+      return SuccessResponse({
+        res,
+        message: 'تم إيقاف إشعارات الجهاز بنجاح',
       });
     } catch (error) {
       next(error);

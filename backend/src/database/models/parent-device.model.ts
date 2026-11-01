@@ -21,7 +21,7 @@ const parentDeviceSchema = new Schema<IParentDeviceDocument>(
     },
     platform: {
       type: String,
-      enum: ['ios', 'android'],
+      enum: ['ios', 'android', 'web'],
       required: true,
     },
     refreshTokenHash: {
