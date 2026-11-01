@@ -30,6 +30,7 @@ import {
   Users,
   BookOpen,
   RotateCcw,
+  MessageSquare,
 } from 'lucide-react-native';
 import { AttendanceNotificationData, ParentNotificationItem } from '../../types/notification.types';
 
@@ -68,6 +69,10 @@ export const NotificationsScreen: React.FC = () => {
       case 'PAYMENT_RECORDED':
       case 'CYCLE_STARTED':
         return <Wallet size={20} color={colors.warning} />;
+      case 'TEACHER_MESSAGE':
+        return <MessageSquare size={20} color={colors.primary} />;
+      case 'CENTER_CHECKIN':
+        return <CalendarCheck size={20} color={colors.info} />;
       default:
         return <BellRing size={20} color={colors.primary} />;
     }
@@ -231,6 +236,61 @@ export const NotificationsScreen: React.FC = () => {
     );
   };
 
+  const renderTeacherMessageDetails = (item: ParentNotificationItem) => {
+    const notifData = item.data;
+    const studentNamesList =
+      notifData?.studentNames && notifData.studentNames.length > 0
+        ? notifData.studentNames.join('، ')
+        : (item.studentName || '');
+
+    const teacherAndSubject = [notifData?.teacherName || item.teacherName, notifData?.subject]
+      .filter(Boolean)
+      .join(' • ');
+
+    const groupOrGrade = notifData?.groupName || notifData?.gradeLevel;
+
+    return (
+      <View style={styles.teacherMessageContainer}>
+        {/* Badges Row */}
+        <View style={styles.badgeRow}>
+          <View style={styles.teacherMsgBadge}>
+            <MessageSquare size={10} color={colors.primary} style={styles.msgBadgeIcon} />
+            <Text style={styles.teacherMsgBadgeText}>رسالة المعلم</Text>
+          </View>
+        </View>
+
+        {/* Structured Meta Box */}
+        {(studentNamesList || teacherAndSubject || groupOrGrade) ? (
+          <View style={styles.metaBox}>
+            {studentNamesList ? (
+              <View style={styles.metaRow}>
+                <Users size={12} color={colors.primary} />
+                <Text style={styles.metaText}>
+                  بخصوص:{' '}
+                  <Text style={styles.metaTextBold}>{studentNamesList}</Text>
+                </Text>
+              </View>
+            ) : null}
+
+            {teacherAndSubject ? (
+              <View style={styles.metaRow}>
+                <User size={12} color={colors.textSecondary} />
+                <Text style={styles.metaText}>{teacherAndSubject}</Text>
+              </View>
+            ) : null}
+
+            {groupOrGrade ? (
+              <View style={styles.metaRow}>
+                <BookOpen size={12} color={colors.textSecondary} />
+                <Text style={styles.metaText}>{groupOrGrade}</Text>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
@@ -265,7 +325,8 @@ export const NotificationsScreen: React.FC = () => {
             ) : null
           }
           renderItem={({ item }) => {
-            const hasStructuredAttendance = !!item.data?.kind;
+            const isTeacherMessage = item.type === 'TEACHER_MESSAGE';
+            const hasStructuredAttendance = !isTeacherMessage && !!item.data?.kind;
 
             return (
               <TouchableOpacity
@@ -273,6 +334,10 @@ export const NotificationsScreen: React.FC = () => {
                 onPress={() => {
                   if (!item.isRead) {
                     markReadMutation.mutate(item.id);
+                  }
+                  // Teacher messages: mark as read only, do NOT navigate to ChildDetails (Decision E2)
+                  if (item.type === 'TEACHER_MESSAGE') {
+                    return;
                   }
 
                   // If notification belongs to a student, activate that student & subject
@@ -333,6 +398,9 @@ export const NotificationsScreen: React.FC = () => {
                     </View>
                     <View style={styles.textWrapper}>
                       <Text style={styles.cardTitle}>{item.title}</Text>
+
+                      {/* Teacher Broadcast Message Meta */}
+                      {isTeacherMessage && renderTeacherMessageDetails(item)}
 
                       {/* Structured Attendance Details (Active when data.kind is present) */}
                       {hasStructuredAttendance && item.data ? (
@@ -510,5 +578,25 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#0f172a',
     textAlign: 'right',
+  },
+  teacherMessageContainer: {
+    width: '100%',
+    marginVertical: spacing.xs,
+  },
+  teacherMsgBadge: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    backgroundColor: colors.primaryLight,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  msgBadgeIcon: {
+    marginLeft: 4,
+  },
+  teacherMsgBadgeText: {
+    fontFamily: typography.bold,
+    fontSize: 11,
+    color: colors.primary,
   },
 });

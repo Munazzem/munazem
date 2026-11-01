@@ -27,6 +27,7 @@ import adminRouter  from './modules/admin/admin.controller.js';
 import whatsappRouter from './modules/whatsapp/whatsapp.controller.js';
 import cardsRouter  from './modules/cards/cards.controller.js';
 import centersRouter from './modules/centers/centers.controller.js';
+import teacherMessagesRouter from './modules/teacher-messages/teacher-messages.controller.js';
 import { startWhatsAppWorker }    from './infrastructure/queues/whatsapp.processor.js';
 import { startEmailWorker }       from './infrastructure/queues/email.processor.js';
 import { autoReconnectClients }   from './common/utils/whatsapp.service.js';
@@ -189,6 +190,7 @@ export function createApp() {
     app.use('/admin', adminRouter);
     app.use('/cards', cardsRouter);
     app.use('/centers', centersRouter);
+    app.use('/teacher-messages', teacherMessagesRouter);
 
     app.get('/health', (_req, res) => {
         const mem = process.memoryUsage();
