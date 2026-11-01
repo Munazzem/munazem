@@ -70,6 +70,18 @@ reportsRouter.use(authorizeRoles(UserRole.teacher, UserRole.assistant, UserRole.
 const resolveTeacherId = (user: any): string =>
     (user.role === UserRole.assistant || user.role === UserRole.centerSupervisor) ? user.teacherId : user.userId;
 
+// ─── GET /reports/offline-bundle — Preload full student profile reports in one fast shot
+reportsRouter.get(
+    '/offline-bundle',
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = resolveTeacherId((req as any).user);
+            const data = await ReportsService.getTeacherOfflineReportsBundle(teacherId);
+            return SuccessResponse({ res, data, message: 'تم تجهيز حزمة تقارير الطلاب للأوفلاين بنجاح' });
+        } catch (error) { next(error); }
+    }
+);
+
 // ─── GET /reports/student/:studentId — Full student report
 reportsRouter.get(
     '/student/:studentId',

@@ -3,13 +3,19 @@
  *
  * Proactive dataset preloader that caches vital entities:
  * - Groups
- * - Students
+ * - Students (ALL pages — no 1000 cap)
  * - Student Comprehensive Reports (Profiles, Attendance, Payments, Debts, Exam Grades)
  * - Sessions
  * - Exams & Exam Results
  * - Daily Summary & Financial Ledgers
  * into IndexedDB & React Query cache so teachers and staff can access
  * their entire workspace completely offline.
+ *
+ * FIXES:
+ * 1. Cross-tenant cache protection: detects user ID mismatch and purges stale data
+ * 2. Paginated student fetching: loops pages instead of single limit:1000 call
+ * 3. Mobile-safe operation: each store cleared separately, no large IDB transactions
+ * 4. Reduced stale window: 10 min instead of 15 to catch fresher account switches
  */
 
 'use client';
@@ -22,7 +28,7 @@ import { fetchGroups } from '@/lib/api/groups';
 import { fetchStudents } from '@/lib/api/students';
 import { fetchSessions } from '@/lib/api/sessions';
 import { fetchExams, getExamResults } from '@/lib/api/exams';
-import { fetchStudentReport, fetchDailySummary } from '@/lib/api/reports';
+import { fetchStudentReport, fetchDailySummary, fetchOfflineReportsBundle } from '@/lib/api/reports';
 import { getDailyLedger, getMonthlyLedger, getPriceSettings } from '@/lib/api/payments';
 import { fetchNotebooks, fetchReservations } from '@/lib/api/notebooks';
 import { fetchUsers } from '@/lib/api/users';
@@ -42,6 +48,13 @@ import {
 import { OfflineStorageService } from '@/lib/offline/storage.service';
 import { QK } from '@/lib/query-keys';
 import { toast } from 'sonner';
+
+/** Page size for paginated student preloading */
+const STUDENT_PRELOAD_PAGE_SIZE = 200;
+/** Maximum pages to fetch (safety cap: 200 * 30 = 6,000 students) */
+const STUDENT_MAX_PAGES = 30;
+/** Cache stale window: 10 minutes */
+const CACHE_STALE_MS = 10 * 60 * 1000;
 
 export function DataPreloader() {
     const queryClient = useQueryClient();
@@ -70,10 +83,38 @@ export function DataPreloader() {
         const currentYear = new Date().getFullYear();
         const currentMonth = new Date().getMonth() + 1;
 
+        // ── Cross-Tenant Guard ─────────────────────────────────────────────────
         /**
-         * Helper: Fast-warm React Query in-memory cache directly from local IndexedDB
-         * Runs immediately to make the UI instant even before server replies.
+         * Checks if the current logged-in user matches the user who last populated
+         * the IndexedDB cache. If different, wipes ALL cached data before loading.
+         * This prevents Teacher A's 1,400 students showing in Teacher B's account.
          */
+        const checkAndClearCrossUserCache = async (): Promise<boolean> => {
+            try {
+                const currentUserId = user?.id || (user as any)?._id;
+                if (!currentUserId) return false;
+
+                const cachedUserId = await OfflineStorageService.getCurrentUserId();
+
+                if (cachedUserId && cachedUserId !== String(currentUserId)) {
+                    console.warn(
+                        `[DataPreloader] ⚠️ Cross-tenant cache detected! Cached: ${cachedUserId}, Current: ${currentUserId}. Purging...`
+                    );
+                    // Purge all cached data but preserve outbox mutations in case they belong to this session
+                    await OfflineStorageService.clearAllOfflineData(true);
+                    // Also invalidate all React Query cache
+                    queryClient.removeQueries();
+                    console.log('[DataPreloader] ✅ Cross-tenant cache purged.');
+                    return true; // was dirty
+                }
+                return false;
+            } catch (err) {
+                console.warn('[DataPreloader] Cross-tenant check failed:', err);
+                return false;
+            }
+        };
+
+        // ── Teacher/Assistant: Warm local IndexedDB → React Query ──────────────
         const warmLocalCache = async () => {
             try {
                 const [
@@ -96,8 +137,6 @@ export function DataPreloader() {
                     OfflineStorageService.getOfflineNotebooks(),
                     OfflineStorageService.getOfflineReservations(),
                     OfflineStorageService.getOfflineUsers(),
-                    OfflineStorageService.getOfflineDashboardStats(),
-                    OfflineStorageService.getOfflineUnpaidStudents(),
                 ]);
 
                 if (localNotebooks.length > 0) {
@@ -115,7 +154,7 @@ export function DataPreloader() {
                     queryClient.setQueryData(QK.notebooks.reservations(''), { data: localReservations, pagination: { total: localReservations.length, page: 1, limit: 100, totalPages: 1 } });
                 }
 
-                if (localUsers.length > 0) {
+                if (localUsers.length > 0 && user?.role === 'teacher') {
                     const assistantsList = localUsers.filter((u: any) => u.role === 'assistant');
                     queryClient.setQueryData(['assistants', ''], { data: assistantsList });
                     queryClient.setQueryData(['assistants', undefined], { data: assistantsList });
@@ -133,56 +172,16 @@ export function DataPreloader() {
                 }
 
                 if (localStudents.length > 0) {
-                    // Seed general students list
+                    // Seed general students list for fast offline lookups
                     const studentsPayload = {
                         data: localStudents,
-                        pagination: { total: localStudents.length, page: 1, limit: 1000, totalPages: 1 },
+                        pagination: { total: localStudents.length, page: 1, limit: localStudents.length, totalPages: 1 },
                     };
                     queryClient.setQueryData(QK.students.list({ limit: 1000 }), studentsPayload);
 
-                    // Seed per-group student caches
-                    for (const group of localGroups) {
-                        const targetGid = group._id?.toString().trim();
-                        const groupStudents = localStudents.filter((s) => {
-                            let sGid = '';
-                            if (s.groupId) {
-                                if (typeof s.groupId === 'object' && s.groupId._id) {
-                                    sGid = s.groupId._id.toString().trim();
-                                } else {
-                                    sGid = s.groupId.toString().trim();
-                                }
-                            }
-                            return sGid === targetGid;
-                        });
-
-                        const infiniteData = {
-                            pages: [{
-                                data: groupStudents.slice(0, 20),
-                                pagination: {
-                                    page: 1,
-                                    limit: 20,
-                                    total: groupStudents.length,
-                                    totalPages: Math.ceil(groupStudents.length / 20) || 1,
-                                },
-                            }],
-                            pageParams: [1],
-                        };
-
-                        queryClient.setQueryData(QK.students.list({ limit: 20, search: '', groupId: group._id }), infiniteData);
-                        queryClient.setQueryData(QK.students.list({ limit: 20, search: undefined, groupId: group._id }), infiniteData);
-                        queryClient.setQueryData(QK.students.list({ groupId: group._id, limit: 200 }), {
-                            data: groupStudents,
-                            pagination: { page: 1, limit: 200, total: groupStudents.length, totalPages: 1 },
-                        });
-
-                        // Fast-warm student reports from IndexedDB
-                        for (const st of groupStudents) {
-                            const cachedReport = await OfflineStorageService.getOfflineStudentReport(st._id);
-                            if (cachedReport) {
-                                queryClient.setQueryData(QK.students.report(st._id), cachedReport);
-                            }
-                            queryClient.setQueryData(QK.students.detail(st._id), st);
-                        }
+                    // Seed individual student details from local storage
+                    for (const st of localStudents) {
+                        queryClient.setQueryData(QK.students.detail(st._id), st);
                     }
                 }
 
@@ -193,7 +192,7 @@ export function DataPreloader() {
                     });
 
                     for (const ex of localExams) {
-                        const results = await OfflineStorageService.getOfflineExamResults(ex._id);
+                        const results = await OfflineStorageService.getOfflineExamResults(ex._id).catch(() => null);
                         if (results) {
                             queryClient.setQueryData(['exam-results', ex._id], results);
                         }
@@ -214,11 +213,60 @@ export function DataPreloader() {
             }
         };
 
+        /**
+         * Fetch ALL students using pagination to overcome the backend's per-request cap.
+         * Saves each page batch IMMEDIATELY to IndexedDB and generates baseline profile reports,
+         * ensuring data is safe locally even if interrupted.
+         */
+        const fetchAllStudentsPaginated = async (): Promise<any[]> => {
+            const allStudents: any[] = [];
+            let currentPage = 1;
+            let hasMore = true;
+
+            while (hasMore && currentPage <= STUDENT_MAX_PAGES) {
+                try {
+                    const pageRes = await fetchStudents({
+                        page: currentPage,
+                        limit: STUDENT_PRELOAD_PAGE_SIZE,
+                    });
+                    const pageData = pageRes?.data ?? [];
+                    if (pageData.length > 0) {
+                        // Immediately persist this chunk into IndexedDB + generate baseline profile reports
+                        await OfflineStorageService.saveOfflineStudents(pageData);
+                        allStudents.push(...pageData);
+                    }
+
+                    const pagination = pageRes?.pagination;
+                    if (pagination && currentPage < pagination.totalPages) {
+                        currentPage++;
+                    } else {
+                        hasMore = false;
+                    }
+
+                    // Brief pause between pages to be kind to server
+                    if (hasMore) {
+                        await new Promise(r => setTimeout(r, 100));
+                    }
+                } catch (pageErr) {
+                    console.warn(`[DataPreloader] Student page ${currentPage} fetch failed:`, pageErr);
+                    hasMore = false;
+                }
+            }
+
+            console.log(`[DataPreloader] Fetched & saved ${allStudents.length} students across ${currentPage - 1 || 1} page(s).`);
+            return allStudents;
+        };
+
         const performPreload = async (isManual = false) => {
             if (typeof window === 'undefined' || isPreloadingRef.current) return;
 
-            // Step 1: Instantly warm React Query from local IndexedDB
-            await warmLocalCache();
+            // ── Step 0: Cross-Tenant Protection ───────────────────────────────
+            const wasDirty = await checkAndClearCrossUserCache();
+
+            // ── Step 1: Instantly warm React Query from local IndexedDB ONLY if offline ───
+            if (!navigator.onLine && !wasDirty) {
+                await warmLocalCache();
+            }
 
             // Cannot fetch from server if completely offline
             if (!navigator.onLine) return;
@@ -226,16 +274,13 @@ export function DataPreloader() {
             const stats = await OfflineStorageService.getOfflineStorageStats().catch(() => null);
             const isCacheEmpty = !stats ||
                 stats.studentsCount === 0 ||
-                stats.groupsCount === 0 ||
-                (stats.notebooksCount ?? 0) === 0 ||
-                (stats.usersCount ?? 0) === 0 ||
-                (stats.examsCount ?? 0) === 0;
+                stats.groupsCount === 0;
             const now = Date.now();
             const lastPreload = stats?.lastPreloadAt || 0;
-            const isStale = (now - lastPreload) > (15 * 60 * 1000); // 15 minutes
+            const isStale = (now - lastPreload) > CACHE_STALE_MS;
 
             // If not manual, not empty, and cache is fresh, skip background refetch
-            if (!isManual && !isCacheEmpty && !isStale) {
+            if (!isManual && !isCacheEmpty && !isStale && !wasDirty) {
                 return;
             }
 
@@ -256,88 +301,34 @@ export function DataPreloader() {
                     allGroups = groupsRes?.data ?? [];
                     if (allGroups.length > 0) {
                         await OfflineStorageService.saveOfflineGroups(allGroups);
-
-                        queryClient.setQueryData(QK.groups.list({ limit: 100 }), groupsRes);
-                        queryClient.setQueryData(['groups'], groupsRes);
+                        queryClient.invalidateQueries({ queryKey: QK.groups.all });
                     }
                 } catch (e) {
                     console.warn('[DataPreloader] Groups fetch failed:', e);
                 }
 
-                // 2. Fetch & Store Students (up to 1000)
+                // 2. Fetch & Store Students (ALL pages — paginated and saved page-by-page)
                 let allStudents: any[] = [];
                 try {
-                    const studentsRes = await fetchStudents({ limit: 1000 });
-                    allStudents = studentsRes?.data ?? [];
+                    allStudents = await fetchAllStudentsPaginated();
+
                     if (allStudents.length > 0) {
-                        await OfflineStorageService.saveOfflineStudents(allStudents);
-
-                        queryClient.setQueryData(QK.students.list({ limit: 1000 }), studentsRes);
-                        queryClient.setQueryData(
-                            QK.students.list({ limit: 20, search: '', groupId: undefined }),
-                            {
-                                pages: [{
-                                    data: allStudents.slice(0, 20),
-                                    pagination: { page: 1, limit: 20, total: allStudents.length, totalPages: Math.ceil(allStudents.length / 20) },
-                                }],
-                                pageParams: [1],
-                            }
-                        );
-
-                        // Seed per-group student queries for both infinite query and standard query
-                        for (const group of allGroups) {
-                            const targetGid = group._id?.toString().trim();
-                            const groupStudents = allStudents.filter((s) => {
-                                let sGid = '';
-                                if (s.groupId) {
-                                    if (typeof s.groupId === 'object' && s.groupId._id) {
-                                        sGid = s.groupId._id.toString().trim();
-                                    } else {
-                                        sGid = s.groupId.toString().trim();
-                                    }
-                                }
-                                return sGid === targetGid;
-                            });
-
-                            const infiniteData = {
-                                pages: [{
-                                    data: groupStudents.slice(0, 20),
-                                    pagination: {
-                                        page: 1,
-                                        limit: 20,
-                                        total: groupStudents.length,
-                                        totalPages: Math.ceil(groupStudents.length / 20) || 1,
-                                    },
-                                }],
-                                pageParams: [1],
-                            };
-
-                            queryClient.setQueryData(QK.students.list({ limit: 20, search: '', groupId: group._id }), infiniteData);
-                            queryClient.setQueryData(QK.students.list({ limit: 20, search: undefined, groupId: group._id }), infiniteData);
-                            queryClient.setQueryData(QK.students.list({ groupId: group._id, limit: 200 }), {
-                                data: groupStudents,
-                                pagination: { page: 1, limit: 200, total: groupStudents.length, totalPages: 1 },
-                            });
-                        }
-
-                        // 3. Preload Student Comprehensive Reports (Profiles, Attendance, Payments, Debts, Grades)
-                        // Concurrently in chunks of 5
-                        for (let i = 0; i < allStudents.length; i += 5) {
-                            const chunk = allStudents.slice(i, i + 5);
-                            await Promise.allSettled(chunk.map(async (st) => {
-                                try {
-                                    const report = await fetchStudentReport(st._id);
-                                    if (report) {
-                                        await OfflineStorageService.saveOfflineStudentReport(st._id, report);
-                                        queryClient.setQueryData(QK.students.report(st._id), report);
-                                        queryClient.setQueryData(QK.students.detail(st._id), st);
-                                    }
-                                } catch {}
-                            }));
-                        }
+                        // Invalidate students cache in React Query so any active screen revalidates live with server
+                        queryClient.invalidateQueries({ queryKey: QK.students.all });
                     }
                 } catch (e) {
                     console.warn('[DataPreloader] Students fetch failed:', e);
+                }
+
+                // 3. Preload all student profile reports (Attendance, Grades, Financials) in ONE ultra-fast batch request
+                try {
+                    const bundleRes = await fetchOfflineReportsBundle();
+                    const bundleReports = bundleRes?.reports ?? [];
+                    if (bundleReports.length > 0) {
+                        await OfflineStorageService.saveOfflineStudentReportsBundle(bundleReports);
+                    }
+                } catch (e) {
+                    console.warn('[DataPreloader] Offline reports bundle fetch warning:', e);
                 }
 
                 // 4. Fetch & Store Sessions
@@ -346,16 +337,7 @@ export function DataPreloader() {
                     const allSessions = sessionsRes?.data ?? [];
                     if (allSessions.length > 0) {
                         await OfflineStorageService.saveOfflineSessions(allSessions);
-
-                        queryClient.setQueryData(QK.sessions.list({ limit: 50 }), sessionsRes);
-                        queryClient.setQueryData(QK.sessions.list({ limit: 200 }), sessionsRes);
-                        queryClient.setQueryData(
-                            ['sessions', 1, '', '', today],
-                            {
-                                data: allSessions,
-                                pagination: { total: allSessions.length, page: 1, limit: 500, totalPages: 1 },
-                            }
-                        );
+                        queryClient.invalidateQueries({ queryKey: QK.sessions.all });
                     }
                 } catch (e) {
                     console.warn('[DataPreloader] Sessions fetch failed:', e);
@@ -367,53 +349,53 @@ export function DataPreloader() {
                     const allExams = examsRes?.data ?? [];
                     if (allExams.length > 0) {
                         await OfflineStorageService.saveOfflineExams(allExams);
+                        queryClient.invalidateQueries({ queryKey: ['exams'] });
 
-                        queryClient.setQueryData(
-                            ['exams', { page: 1, limit: 20, status: '', gradeLevel: '' }],
-                            {
-                                data: allExams.slice(0, 20),
-                                pagination: { page: 1, limit: 20, total: allExams.length, totalPages: Math.ceil(allExams.length / 20) },
-                            }
-                        );
-
-                        // Preload results for each exam
                         await Promise.allSettled(allExams.map(async (exam) => {
                             try {
                                 const results = await getExamResults(exam._id);
                                 if (results) {
                                     await OfflineStorageService.saveOfflineExamResults(exam._id, results);
-                                    queryClient.setQueryData(['exam-results', exam._id], results);
-                                    queryClient.setQueryData(['exam', exam._id], exam);
                                 }
                             } catch {}
                         }));
                     }
                 } catch (e) {
-                    console.warn('[DataPreloader] Exams fetch failed:', e);
+                    console.warn('[DataPreloader] Exams fetch warning:', e);
                 }
 
-                // 6. Fetch & Store Daily Summary & Financials (الجرد اليومي والماليات)
+                // 6. Fetch & Store Daily Summary & Financials
                 try {
-                    const [dailySummaryRes, dailyLedgerRes, monthlyLedgerRes, pricesRes] = await Promise.allSettled([
+                    const isTeacher = user?.role === 'teacher';
+                    const financialPromises: Promise<any>[] = [
                         fetchDailySummary(today),
                         getDailyLedger(today),
-                        getMonthlyLedger(currentYear, currentMonth),
                         getPriceSettings(),
-                    ]);
+                    ];
+                    // Monthly ledger is strictly restricted to teachers
+                    if (isTeacher) {
+                        financialPromises.push(getMonthlyLedger(currentYear, currentMonth));
+                    }
 
-                    if (dailySummaryRes.status === 'fulfilled' && dailySummaryRes.value) {
+                    const settledResults = await Promise.allSettled(financialPromises);
+                    const dailySummaryRes = settledResults[0];
+                    const dailyLedgerRes = settledResults[1];
+                    const pricesRes = settledResults[2];
+                    const monthlyLedgerRes = isTeacher ? settledResults[3] : undefined;
+
+                    if (dailySummaryRes?.status === 'fulfilled' && dailySummaryRes.value) {
                         await OfflineStorageService.saveDailySummary(today, dailySummaryRes.value);
                         queryClient.setQueryData(['daily-summary', today], dailySummaryRes.value);
                     }
-                    if (dailyLedgerRes.status === 'fulfilled' && dailyLedgerRes.value) {
+                    if (dailyLedgerRes?.status === 'fulfilled' && dailyLedgerRes.value) {
                         await OfflineStorageService.saveDailyLedger(today, dailyLedgerRes.value);
                         queryClient.setQueryData(QK.payments.dailyLedger(today), dailyLedgerRes.value);
                     }
-                    if (monthlyLedgerRes.status === 'fulfilled' && monthlyLedgerRes.value) {
+                    if (monthlyLedgerRes?.status === 'fulfilled' && monthlyLedgerRes.value) {
                         await OfflineStorageService.saveMonthlyLedger(currentYear, currentMonth, monthlyLedgerRes.value);
                         queryClient.setQueryData(QK.payments.monthlyLedger(currentYear, currentMonth), monthlyLedgerRes.value);
                     }
-                    if (pricesRes.status === 'fulfilled' && pricesRes.value) {
+                    if (pricesRes?.status === 'fulfilled' && pricesRes.value) {
                         await OfflineStorageService.savePriceSettings(pricesRes.value);
                         queryClient.setQueryData(QK.payments.priceSettings, pricesRes.value);
                     }
@@ -421,7 +403,7 @@ export function DataPreloader() {
                     console.warn('[DataPreloader] Financials fetch warning:', e);
                 }
 
-                // 7. Fetch & Store Notebooks & Store Inventory (المتجر والمذكرات)
+                // 7. Fetch & Store Notebooks & Store Inventory
                 let allNotebooks: any[] = [];
                 try {
                     const [notebooksRes, reservationsRes] = await Promise.allSettled([
@@ -456,25 +438,27 @@ export function DataPreloader() {
                     console.warn('[DataPreloader] Notebooks fetch warning:', e);
                 }
 
-                // 8. Fetch & Store Users & Assistants (المساعدين والمستخدمين)
+                // 8. Fetch & Store Users & Assistants (Teachers only; Assistants cannot manage or list other users)
                 let allUsers: any[] = [];
-                try {
-                    const usersRes = await fetchUsers();
-                    allUsers = Array.isArray((usersRes as any)?.data)
-                        ? (usersRes as any).data
-                        : Array.isArray(usersRes)
-                        ? usersRes
-                        : [];
-                    if (allUsers.length > 0) {
-                        await OfflineStorageService.saveOfflineUsers(allUsers);
-                        const assistantsList = allUsers.filter((u: any) => u.role === 'assistant');
-                        queryClient.setQueryData(['assistants', ''], { data: assistantsList });
-                        queryClient.setQueryData(['assistants', undefined], { data: assistantsList });
-                        queryClient.setQueryData(['assistants'], { data: assistantsList });
-                        queryClient.setQueryData(['users'], { data: allUsers });
+                if (user?.role === 'teacher') {
+                    try {
+                        const usersRes = await fetchUsers();
+                        allUsers = Array.isArray((usersRes as any)?.data)
+                            ? (usersRes as any).data
+                            : Array.isArray(usersRes)
+                            ? usersRes
+                            : [];
+                        if (allUsers.length > 0) {
+                            await OfflineStorageService.saveOfflineUsers(allUsers);
+                            const assistantsList = allUsers.filter((u: any) => u.role === 'assistant');
+                            queryClient.setQueryData(['assistants', ''], { data: assistantsList });
+                            queryClient.setQueryData(['assistants', undefined], { data: assistantsList });
+                            queryClient.setQueryData(['assistants'], { data: assistantsList });
+                            queryClient.setQueryData(['users'], { data: allUsers });
+                        }
+                    } catch (e) {
+                        console.warn('[DataPreloader] Users/Assistants fetch warning:', e);
                     }
-                } catch (e) {
-                    console.warn('[DataPreloader] Users/Assistants fetch warning:', e);
                 }
 
                 // 9. Fetch & Store Dashboard Summary & Unpaid Students
@@ -495,6 +479,11 @@ export function DataPreloader() {
                     console.warn('[DataPreloader] Dashboard/Unpaid stats fetch warning:', e);
                 }
 
+                // 10. Mark cache as belonging to this user
+                const currentUserId = user?.id || (user as any)?._id;
+                if (currentUserId) {
+                    await OfflineStorageService.setCurrentUserId(String(currentUserId));
+                }
                 await OfflineStorageService.setLastPreloadTime(Date.now());
 
                 if (isManual) {
@@ -512,9 +501,8 @@ export function DataPreloader() {
             }
         };
 
-        /**
-         * ── Center Preload Pipeline ──────────────────────────────────────────
-         */
+        // ── Center Owner/Supervisor Preload Pipeline ───────────────────────────
+
         const warmLocalCenterCache = async () => {
             try {
                 const [
@@ -582,7 +570,12 @@ export function DataPreloader() {
             if (isPreloadingRef.current) return;
             isPreloadingRef.current = true;
 
-            await warmLocalCenterCache();
+            // Cross-tenant check for center users too
+            const wasDirty = await checkAndClearCrossUserCache();
+
+            if (!navigator.onLine && !wasDirty) {
+                await warmLocalCenterCache();
+            }
 
             if (typeof navigator !== 'undefined' && !navigator.onLine) {
                 isPreloadingRef.current = false;
@@ -657,6 +650,11 @@ export function DataPreloader() {
                     queryClient.setQueryData(['center', 'supervisors'], supervisorsRes.value);
                 }
 
+                // Mark cache owner
+                const currentUserId = user?.id || (user as any)?._id;
+                if (currentUserId) {
+                    await OfflineStorageService.setCurrentUserId(String(currentUserId));
+                }
                 await OfflineStorageService.setLastPreloadTime();
 
                 if (isManual) {
@@ -682,6 +680,8 @@ export function DataPreloader() {
         }
 
         const handleOnline = () => {
+            // Revalidate all active queries immediately with the live server
+            queryClient.invalidateQueries();
             if (isCenterRole) {
                 performCenterPreload(false);
             } else {
@@ -690,6 +690,12 @@ export function DataPreloader() {
         };
 
         const handleOffline = async () => {
+            // Immediately warm React Query from local IndexedDB when network drops
+            if (isCenterRole) {
+                await warmLocalCenterCache();
+            } else {
+                await warmLocalCache();
+            }
             try {
                 const stats = await OfflineStorageService.getOfflineStorageStats().catch(() => null);
                 if (isCenterRole) {
@@ -705,13 +711,19 @@ export function DataPreloader() {
                     const count = stats?.studentsCount || 0;
                     const nbCount = stats?.notebooksCount || 0;
                     const userCount = stats?.usersCount || 0;
-                    toast.success('تم تجهيز كافة البيانات للعمل دون إنترنت بنجاح!', {
-                        id: 'munazem-offline-ready-toast',
-                        description: count > 0
-                            ? `تم حفظ ${count} طالب، والمساعدين (${userCount})، والمتجر والمذكرات (${nbCount})، والامتحانات، والماليات محلياً.`
-                            : 'كافة البيانات المسجلة محفوظة ومتاحة للعمل دون اتصال.',
-                        duration: 5000,
-                    });
+                    if (count > 0) {
+                        toast.success('تم الانتقال لوضع عدم الاتصال (أوفلاين)!', {
+                            id: 'munazem-offline-ready-toast',
+                            description: `تم حفظ ${count} طالب، والمساعدين (${userCount})، والمتجر والمذكرات (${nbCount})، والامتحانات، والماليات محلياً.`,
+                            duration: 5000,
+                        });
+                    } else {
+                        toast.warning('أنت الآن في وضع عدم الاتصال (أوفلاين)', {
+                            id: 'munazem-offline-ready-toast',
+                            description: 'لم تكتمل المزامنة الكاملة مسبقاً، سيتم عرض البيانات المتوفرة محلياً.',
+                            duration: 5000,
+                        });
+                    }
                 }
             } catch {
                 toast.info('أنت الآن في وضع عدم الاتصال (أوفلاين)');

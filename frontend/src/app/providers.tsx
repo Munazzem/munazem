@@ -18,7 +18,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
                 defaultOptions: {
                     queries: {
                         gcTime: 1000 * 60 * 60 * 24 * 7, // 7 days cache persistence for offline access
-                        staleTime: 1000 * 60 * 5,         // 5 minutes stale time
+                        staleTime: 1000 * 15,            // 15 seconds: enables stale-while-revalidate for live server counts
                         refetchOnWindowFocus: false,
                         retry: 1,
                         networkMode: 'offlineFirst',      // Read cache or pause gracefully when offline
@@ -52,7 +52,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
             persistOptions={{
                 persister,
                 maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days max age
-                buster: 'v2-idb',
+                buster: 'v3-live',
                 dehydrateOptions: {
                     shouldDehydrateQuery: (query) => {
                         // Persist successful queries that aren't transient errors

@@ -15,8 +15,10 @@ import {
     countStore,
     getKeyVal,
     setKeyVal,
+    clearAllOfflineData as dbClearAll,
 } from './db';
 import { OutboxService } from './outbox.service';
+
 
 export interface OfflineStorageStats {
     studentsCount: number;
@@ -52,10 +54,71 @@ export class OfflineStorageService {
 
     /**
      * Cache a list of students into IndexedDB.
+     * Also seeds baseline student reports so every student has an instant offline profile.
      */
     static async saveOfflineStudents(students: any[]): Promise<void> {
         if (!students || students.length === 0) return;
         await putManyInStore(STORES.STUDENTS, students);
+
+        // Pre-generate baseline reports for offline viewing ONLY if not already cached with real data
+        const existingReports = await getAllFromStore<any>(STORES.STUDENT_REPORTS);
+        const existingMap = new Map(existingReports.map(r => [r.studentId, r]));
+
+        const baselineReports: any[] = [];
+        for (const st of students) {
+            const existing = existingMap.get(st._id);
+            // If existing report has real attendance, grades, or payments, preserve it!
+            if (existing && existing.report && (
+                (existing.report.attendance?.totalSessions > 0) ||
+                (existing.report.grades?.total > 0) ||
+                (existing.report.payments?.totalPaid > 0) ||
+                (existing.report.payments?.subscriptions?.length > 0)
+            )) {
+                continue;
+            }
+
+            const groupName = typeof st.groupId === 'object' ? (st.groupId?.name || '—') : (st.groupDetails?.name || '—');
+            baselineReports.push({
+                studentId: st._id,
+                report: {
+                    student: {
+                        ...st,
+                        groupName,
+                        monthlySessionsQuota: st.monthlySessionsQuota || 8,
+                        remainingSessions: st.remainingSessions ?? 0,
+                    },
+                    attendance: {
+                        totalSessions: 0,
+                        presentCount: 0,
+                        absentCount: 0,
+                        attendanceRate: '100%',
+                        history: [],
+                        cycles: [],
+                    },
+                    payments: {
+                        totalPaid: 0,
+                        totalDiscount: 0,
+                        subscriptionsCount: st.hasActiveSubscription ? 1 : 0,
+                        notebookSalesCount: 0,
+                        history: [],
+                        subscriptions: [],
+                        cycleEnrollments: [],
+                        pastUnpaidCycles: [],
+                        pastCyclesDebt: st.totalDebt || 0,
+                        currentCycleNumber: 1,
+                    },
+                    grades: {
+                        total: 0,
+                        history: [],
+                    },
+                },
+                updatedAt: Date.now(),
+            });
+        }
+
+        if (baselineReports.length > 0) {
+            await putManyInStore(STORES.STUDENT_REPORTS, baselineReports);
+        }
     }
 
     /**
@@ -87,11 +150,13 @@ export class OfflineStorageService {
             filtered = filtered.filter(s => {
                 let sGid = '';
                 if (s.groupId) {
-                    if (typeof s.groupId === 'object' && s.groupId._id) {
-                        sGid = s.groupId._id.toString().trim();
+                    if (typeof s.groupId === 'object') {
+                        sGid = (s.groupId._id || s.groupId.id || '').toString().trim();
                     } else {
                         sGid = s.groupId.toString().trim();
                     }
+                } else if (s.groupDetails) {
+                    sGid = (s.groupDetails._id || s.groupDetails.id || '').toString().trim();
                 }
                 return sGid === targetGroupId;
             });
@@ -156,6 +221,19 @@ export class OfflineStorageService {
     }
 
     /**
+     * Cache batch student reports bundle into IndexedDB.
+     */
+    static async saveOfflineStudentReportsBundle(bundle: { studentId: string; report: any }[]): Promise<void> {
+        if (!bundle || bundle.length === 0) return;
+        const items = bundle.map(b => ({
+            studentId: b.studentId,
+            report: b.report,
+            updatedAt: Date.now(),
+        }));
+        await putManyInStore(STORES.STUDENT_REPORTS, items);
+    }
+
+    /**
      * Retrieve cached student report by studentId.
      */
     static async getOfflineStudentReport(studentId: string): Promise<any | undefined> {
@@ -206,22 +284,38 @@ export class OfflineStorageService {
     }
 
     /**
-     * Retrieve cached sessions, optionally filtered by groupId.
+     * Retrieve cached sessions, optionally filtered by groupId, date, or status.
      */
-    static async getOfflineSessions(groupId?: string): Promise<any[]> {
+    static async getOfflineSessions(filters?: { groupId?: string; date?: string; status?: string } | string): Promise<any[]> {
         const all = await getAllFromStore<any>(STORES.SESSIONS);
-        if (!groupId) return all;
-        const targetGid = groupId.toString().trim();
+        if (!filters) return all;
+
+        const groupId = typeof filters === 'string' ? filters : filters.groupId;
+        const date = typeof filters === 'object' ? filters.date : undefined;
+        const status = typeof filters === 'object' ? filters.status : undefined;
+
+        const targetGid = groupId ? groupId.toString().trim() : undefined;
+
         return all.filter(s => {
-            let sGid = '';
-            if (s.groupId) {
-                if (typeof s.groupId === 'object' && s.groupId._id) {
-                    sGid = s.groupId._id.toString().trim();
-                } else {
-                    sGid = s.groupId.toString().trim();
+            if (targetGid) {
+                let sGid = '';
+                if (s.groupId) {
+                    sGid = typeof s.groupId === 'object' && s.groupId._id ? s.groupId._id.toString().trim() : s.groupId.toString().trim();
                 }
+                if (sGid !== targetGid) return false;
             }
-            return sGid === targetGid;
+
+            if (status && s.status !== status) {
+                return false;
+            }
+
+            if (date) {
+                if (!s.date) return false;
+                const sDate = typeof s.date === 'string' ? s.date.split('T')[0] : new Date(s.date).toISOString().split('T')[0];
+                if (sDate !== date) return false;
+            }
+
+            return true;
         });
     }
 
@@ -301,6 +395,34 @@ export class OfflineStorageService {
     static async getOfflineExamResults(examId: string): Promise<any | undefined> {
         const item = await getByIdFromStore<any>(STORES.EXAM_RESULTS, examId);
         return item?.data;
+    }
+
+    /**
+     * Retrieve all exam grades for a specific student from cached exam results.
+     */
+    static async getOfflineStudentGrades(studentId: string): Promise<any[]> {
+        const allExamResults = await getAllFromStore<any>(STORES.EXAM_RESULTS);
+        const grades: any[] = [];
+        for (const item of allExamResults) {
+            const results = item.data?.results || [];
+            const exam = item.data?.exam;
+            const match = results.find((r: any) => (r.studentId?._id || r.studentId || '').toString() === studentId);
+            if (match) {
+                grades.push({
+                    _id: match._id,
+                    examId: item.examId,
+                    examTitle: exam?.title || 'امتحان',
+                    score: match.score,
+                    totalMarks: match.totalMarks,
+                    passingMarks: match.passingMarks,
+                    percentage: match.percentage,
+                    grade: match.grade,
+                    passed: match.passed,
+                    date: match.date || exam?.date,
+                });
+            }
+        }
+        return grades.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
     }
 
     // ── Financials & Daily Summary (Key-Value) ───────────────────────────────
@@ -1683,10 +1805,34 @@ export class OfflineStorageService {
         return ts || null;
     }
 
+    // ── Cross-Tenant Cache Protection ─────────────────────────────────────────
+
+    /**
+     * Store which user currently "owns" this device's offline cache.
+     * Used to detect account switches and purge stale cross-tenant data.
+     */
+    static async setCurrentUserId(userId: string): Promise<void> {
+        await setKeyVal('_current_cache_owner_id', userId);
+    }
+
+    static async getCurrentUserId(): Promise<string | null> {
+        return await getKeyVal<string>('_current_cache_owner_id') ?? null;
+    }
+
+    /**
+     * Full wipe of all offline data (except pending outbox mutations by default).
+     * Called on logout and when a different userId is detected on login.
+     * Preserves attendance outbox and generic mutations to avoid losing pending writes.
+     */
+    static async clearAllOfflineData(preserveOutbox = true): Promise<void> {
+        await dbClearAll(preserveOutbox);
+    }
+
     /**
      * Aggregate health metrics for offline dashboard status.
      */
     static async getOfflineStorageStats(): Promise<OfflineStorageStats> {
+
         const [
             students,
             groups,
