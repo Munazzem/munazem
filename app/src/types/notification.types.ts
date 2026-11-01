@@ -1,9 +1,11 @@
 export type NotificationType =
   | 'ATTENDANCE_ABSENT'
   | 'ATTENDANCE_PRESENT'
+  | 'CENTER_CHECKIN'
   | 'EXAM_RESULT'
   | 'PAYMENT_RECORDED'
-  | 'CYCLE_STARTED';
+  | 'CYCLE_STARTED'
+  | 'TEACHER_MESSAGE';
 
 export type AttendanceNotificationKind =
   | 'PRESENT'
@@ -13,13 +15,18 @@ export type AttendanceNotificationKind =
   | 'GUEST'
   | 'GUEST_COMPENSATED'
   | 'COMPENSATED_ADVANCE'
-  | 'CORRECTION';
+  | 'CORRECTION'
+  | 'TEACHER_MESSAGE'
+  | 'CENTER_CHECKIN';
 
 export type AttendanceNotificationStatus = 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED';
 
 export interface AttendanceNotificationData {
   deepLink?: string;
   studentId?: string;
+  studentIds?: string[];
+  studentNames?: string[];
+  messageId?: string;
   sessionId?: string;
   tab?: string;
   kind?: AttendanceNotificationKind;
@@ -30,6 +37,7 @@ export interface AttendanceNotificationData {
   teacherName?: string;
   subject?: string;
   groupName?: string | null;
+  gradeLevel?: string;
   isGuest?: boolean;
   isCorrection?: boolean;
   oldStatus?: AttendanceNotificationStatus;

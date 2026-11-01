@@ -23,6 +23,7 @@ import {
     Bot,
     CreditCard,
     UserCheck,
+    MessageSquare,
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { useUIStore } from '@/lib/store/ui.store';
@@ -88,9 +89,12 @@ const getNavItems = (role?: string, permissions?: any) => {
         { name: 'الإعدادات',         href: '/dashboard/settings',  icon: Settings        },
     ];
 
-    // Teacher gets an extra Assistants Management link
+    // Teacher gets extra links: Parent Messages and Assistants Management
     if (role === 'teacher') {
-        base.splice(8, 0, { name: 'المساعدين', href: '/assistants', icon: ShieldCheck });
+        base.splice(8, 0,
+            { name: 'رسائل أولياء الأمور', href: '/messages',   icon: MessageSquare },
+            { name: 'المساعدين',           href: '/assistants', icon: ShieldCheck   }
+        );
     }
 
     // Assistant permissions filter

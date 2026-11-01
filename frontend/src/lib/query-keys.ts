@@ -128,4 +128,11 @@ export const QK = {
         activity: (params?: object) => ['admin-activity', params] as const,
     },
 
+    // ── Teacher Messages ─────────────────────────────────────────────
+    teacherMessages: {
+        all:      ['teacherMessages'] as const,
+        list:     (params?: object) => ['teacherMessages', params] as const,
+        audience: (params?: object) => ['teacherMessages_audience', params] as const,
+    },
+
 } as const;
