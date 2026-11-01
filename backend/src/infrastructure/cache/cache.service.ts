@@ -92,6 +92,11 @@ export const cache = {
             const client = await getClient();
             if (!client) return;
 
+            if (key.endsWith(':dashboard')) {
+                await client.del(KEY_PREFIX + key, KEY_PREFIX + key + ':teacher', KEY_PREFIX + key + ':assistant');
+                return;
+            }
+
             await client.del(KEY_PREFIX + key);
         } catch {
             // Silently fail
@@ -146,7 +151,7 @@ export { getClient as getRedisClient };
 // Centralized key definitions to avoid typos and ensure consistent invalidation.
 
 export const CacheKeys = {
-    dashboard:     (teacherId: string) => `t:${teacherId}:dashboard`,
+    dashboard:     (teacherId: string, role?: string) => role ? `t:${teacherId}:dashboard:${role}` : `t:${teacherId}:dashboard`,
     priceSettings: (teacherId: string) => `t:${teacherId}:prices`,
     groups:        (teacherId: string) => `t:${teacherId}:groups`,
     assistantsAccess: (teacherId: string) => `t:${teacherId}:assistants_access`,

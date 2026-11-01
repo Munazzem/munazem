@@ -79,8 +79,16 @@ export default function StudentProfilePage() {
     const [payDebtOpen, setPayDebtOpen] = useState(false);
     const [payDebtAmount, setPayDebtAmount] = useState('');
 
-    // Fetch the single student (we use fetchStudents with search by ID for now, or just trust the report)
-    // Actually, report brings back student data anyway, but let's fetch students list filtered by ID.
+    // Fetch full student report
+    const { data: report, isLoading: reportLoading } = useQuery({
+        queryKey: QK.students.report(studentId),
+        queryFn: () => fetchStudentReport(studentId),
+        enabled: !!studentId,
+        staleTime: 0,
+        refetchOnMount: 'always',
+    });
+
+    // Fetch the single student
     const { data, isLoading: studentLoading } = useQuery({
         queryKey: QK.students.detail(studentId),
         queryFn: () => fetchStudentById(studentId),
@@ -89,8 +97,9 @@ export default function StudentProfilePage() {
         refetchOnMount: 'always',
     });
     
-    // fetchStudentById returns the Response wrapper (which has .data), or the student directly depending on interceptor
-    const student = (data as any)?.studentName ? (data as StudentWithGroup) : (data as any)?.data as StudentWithGroup | undefined;
+    // fetchStudentById returns the Response wrapper (which has .data), or the student directly, with fallback to report?.student
+    const student = ((data as any)?.studentName ? (data as StudentWithGroup) : ((data as any)?.data as StudentWithGroup | undefined))
+        || (report?.student as unknown as StudentWithGroup | undefined);
 
     useEffect(() => {
         if (!student) return;
@@ -102,15 +111,6 @@ export default function StudentProfilePage() {
             errorCorrectionLevel: 'H',
         }).then(url => setQrDataUrl(url));
     }, [student]);
-
-    // Fetch full student report
-    const { data: report, isLoading: reportLoading } = useQuery({
-        queryKey: QK.students.report(studentId),
-        queryFn: () => fetchStudentReport(studentId),
-        enabled: !!studentId,
-        staleTime: 0,
-        refetchOnMount: 'always',
-    });
 
     // Tabs Horizontal Scroll Controls
     const tabsContainerRef = useRef<HTMLDivElement>(null);
@@ -255,7 +255,7 @@ export default function StudentProfilePage() {
     };
 
 
-    if (studentLoading) {
+    if (studentLoading && !student) {
         return (
             <div className="min-h-screen bg-gray-50/30 p-4 sm:p-6 flex items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />

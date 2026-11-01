@@ -104,23 +104,33 @@ async function resolveOfflineData(url: string, params?: any): Promise<any | null
             // Fallback: build an offline report on the fly from local student data
             const student = await OfflineStorageService.getOfflineStudentById(studentId);
             if (student) {
-                const group = student.groupId
-                    ? await OfflineStorageService.getOfflineGroupById(typeof student.groupId === 'object' ? student.groupId._id : student.groupId)
-                    : null;
+                const targetGid = typeof student.groupId === 'object' ? student.groupId?._id : (student.groupId || student.groupDetails?._id);
+                const [group, offlineGrades, groupSessions] = await Promise.all([
+                    targetGid ? OfflineStorageService.getOfflineGroupById(targetGid) : null,
+                    OfflineStorageService.getOfflineStudentGrades(studentId),
+                    targetGid ? OfflineStorageService.getOfflineSessions(targetGid) : [],
+                ]);
+
+                const attendanceHistory = groupSessions.map(s => ({
+                    sessionId: s._id,
+                    date: s.date,
+                    status: 'PRESENT',
+                    homeworkDone: null,
+                }));
 
                 const fallbackReport = {
                     student: {
                         ...student,
                         groupName: group?.name || '—',
                         monthlySessionsQuota: (group as any)?.cycle?.capacity || 8,
-                        remainingSessions: 0,
+                        remainingSessions: student.remainingSessions ?? 0,
                     },
                     attendance: {
-                        totalSessions: 0,
-                        presentCount: 0,
+                        totalSessions: attendanceHistory.length,
+                        presentCount: attendanceHistory.length,
                         absentCount: 0,
                         attendanceRate: '100%',
-                        history: [],
+                        history: attendanceHistory,
                         cycles: [],
                     },
                     payments: {
@@ -136,8 +146,8 @@ async function resolveOfflineData(url: string, params?: any): Promise<any | null
                         currentCycleNumber: 1,
                     },
                     grades: {
-                        total: 0,
-                        history: [],
+                        total: offlineGrades.length,
+                        history: offlineGrades,
                     },
                 };
                 return {
@@ -150,7 +160,11 @@ async function resolveOfflineData(url: string, params?: any): Promise<any | null
 
         // 5. Sessions
         if (cleanUrl === '/sessions') {
-            const sessions = await OfflineStorageService.getOfflineSessions(effectiveParams?.groupId);
+            const sessions = await OfflineStorageService.getOfflineSessions({
+                groupId: effectiveParams?.groupId,
+                date: effectiveParams?.date,
+                status: effectiveParams?.status,
+            });
             return {
                 status: 'success',
                 message: 'تم استرجاع الحصص من الكاش المحلي',

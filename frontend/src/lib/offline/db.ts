@@ -362,3 +362,65 @@ export async function clearStore(storeName: string): Promise<void> {
         console.error(`[IDB] Failed to clear store ${storeName}:`, err);
     }
 }
+
+/**
+ * Clears ALL offline data stores (including KEYVAL) to prevent cross-tenant data leaks.
+ * Called on logout and when a different user account is detected on login.
+ * Does NOT clear the attendance outbox or generic mutations to avoid losing pending writes.
+ */
+export async function clearAllOfflineData(preserveOutbox = true): Promise<void> {
+    try {
+        const db = await getOfflineDB();
+
+        // Determine which stores to clear
+        const allStores = Object.values(STORES);
+        const storesToClear = preserveOutbox
+            ? allStores.filter(s => s !== STORES.OUTBOX && s !== STORES.MUTATIONS)
+            : allStores;
+
+        // Use separate transactions per store for maximum mobile compatibility (iOS Safari)
+        for (const storeName of storesToClear) {
+            try {
+                await new Promise<void>((resolve, reject) => {
+                    const tx = db.transaction(storeName, 'readwrite');
+                    const store = tx.objectStore(storeName);
+                    const req = store.clear();
+                    req.onsuccess = () => resolve();
+                    req.onerror = () => reject(req.error);
+                    tx.onerror = () => reject(tx.error);
+                });
+            } catch (storeErr) {
+                console.warn(`[IDB] Failed to clear store ${storeName}:`, storeErr);
+            }
+        }
+
+        console.log('[IDB] ✅ All offline data cleared (cross-tenant protection active).');
+    } catch (err) {
+        console.error('[IDB] clearAllOfflineData failed:', err);
+        // Last resort: try to delete and recreate the entire database
+        try {
+            if (dbPromise) {
+                try {
+                    const existingDb = await dbPromise;
+                    existingDb.close();
+                } catch {
+                    // ignore
+                }
+            }
+            dbPromise = null;
+            await new Promise<void>((resolve, reject) => {
+                const req = window.indexedDB.deleteDatabase(DB_NAME);
+                req.onsuccess = () => resolve();
+                req.onerror = () => reject(req.error);
+                req.onblocked = () => {
+                    console.warn('[IDB] deleteDatabase blocked by open connection, resolving anyway.');
+                    resolve();
+                };
+            });
+            console.log('[IDB] Database deleted and will be recreated on next access.');
+        } catch (deleteErr) {
+            console.error('[IDB] Failed to delete database:', deleteErr);
+        }
+    }
+}
+
