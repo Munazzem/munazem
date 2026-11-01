@@ -41,8 +41,8 @@ import { isRedisAvailable }       from './infrastructure/queues/redis.connection
 export function createApp() {
     const app = express();
 
-    // Trust the reverse proxy (e.g. Render, Nginx, Vercel) to get the real user IP
-    app.set('trust proxy', 1);
+    // Trust reverse proxies (e.g. Cloudflare, Render, Nginx, Vercel) to get real user IP
+    app.set('trust proxy', true);
 
     app.use(helmet());
     app.use(express.json({ limit: '15mb' }));
@@ -124,10 +124,31 @@ export function createApp() {
     const isTest = process.env.NODE_ENV === 'test';
     const globalLimiter = rateLimit({
         windowMs: 15 * 60 * 1000,
-        limit: isTest ? 30000 : 3000,
+        limit: isTest ? 30000 : 10000,
         message: { message: 'كثرة الطلبات، يرجى المحاولة لاحقاً' },
         standardHeaders: true,
         legacyHeaders: false,
+        skip: (req) => {
+            if (req.path === '/health') return true;
+
+            // Never rate limit attendance, sessions, or smart cards (critical operational workflow)
+            const path = req.path || '';
+            if (
+                path.startsWith('/attendance') ||
+                path.startsWith('/sessions') ||
+                path.startsWith('/cards') ||
+                path.startsWith('/centers/attendance')
+            ) {
+                return true;
+            }
+
+            // Never rate limit authenticated requests (teachers, assistants, staff with valid token)
+            if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+                return true;
+            }
+
+            return false;
+        },
     });
     app.use(globalLimiter);
 
@@ -143,8 +164,9 @@ export function createApp() {
 
     const loginLimiter = rateLimit({
         windowMs: 15 * 60 * 1000,
-        limit: isTest ? 100 : 10,
-        message: { message: 'كثرة محاولات تسجيل الدخول، يرجى المحاولة مرة أخرى بعد 15 دقيقة' },
+        limit: isTest ? 100 : 30,
+        skipSuccessfulRequests: true, // Only count failed logins, never block valid assistant/teacher shifts
+        message: { message: 'كثرة محاولات تسجيل الدخول الخاطئة، يرجى المحاولة مرة أخرى بعد 15 دقيقة' },
         standardHeaders: true,
         legacyHeaders: false,
     });

@@ -573,8 +573,8 @@ function AddAssistantModal({
     const [phone,         setPhone]         = useState('');
     const [password,      setPassword]      = useState('');
     const [salary,        setSalary]        = useState('');
-    const [assistantType, setAssistantType] = useState<AssistantType>('ATTENDANCE');
-    const [permissions,   setPermissions]   = useState<IAssistantPermissions>(DEFAULT_ATTENDANCE_PERMS);
+    const [assistantType, setAssistantType] = useState<AssistantType>('FULL');
+    const [permissions,   setPermissions]   = useState<IAssistantPermissions>(DEFAULT_FULL_PERMS);
     const [errors,        setErrors]        = useState<Record<string, string>>({});
 
     const mutation = useMutation({
@@ -582,8 +582,8 @@ function AddAssistantModal({
         onSuccess: () => {
             toast.success('تم إضافة المساعد وتعيين صلاحياته بنجاح');
             setName(''); setPhone(''); setPassword(''); setSalary('');
-            setAssistantType('ATTENDANCE');
-            setPermissions(DEFAULT_ATTENDANCE_PERMS);
+            setAssistantType('FULL');
+            setPermissions(DEFAULT_FULL_PERMS);
             onSuccess();
         },
     });
