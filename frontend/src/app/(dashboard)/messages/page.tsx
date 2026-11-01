@@ -494,7 +494,7 @@ function TeacherMessagesContent() {
                             <span className="font-semibold text-indigo-600 dark:text-indigo-400">
                               {msg.reachedParentCount}
                             </span>
-                            <span className="text-gray-400 text-[11px]"> من {msg.targetStudentCount} ولي أمر</span>
+                            <span className="text-gray-400 text-[11px]"> ولي أمر ({msg.targetStudentCount} طالب)</span>
                           </td>
 
                           <td className="py-3 px-2 text-center">
@@ -699,7 +699,7 @@ function TeacherMessagesContent() {
               <div className="flex justify-between items-center pb-2 border-b border-gray-100 dark:border-gray-800">
                 <span className="text-gray-400">إحصائيات التسليم:</span>
                 <span className="text-emerald-600 font-bold">
-                  وصلت إلى {viewingMessage.reachedParentCount} من {viewingMessage.targetStudentCount} ولي أمر
+                  وصلت إلى {viewingMessage.reachedParentCount} ولي أمر (من إجمالي {viewingMessage.targetStudentCount} طالب)
                 </span>
               </div>
 
