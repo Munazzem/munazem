@@ -71,4 +71,15 @@ export const AuthApi = {
       platform: Platform.OS,
     });
   },
+
+  /**
+   * Unregister device push notification token (disable notifications)
+   */
+  async unregisterDeviceToken(): Promise<void> {
+    const deviceId = await StorageService.getOrCreateDeviceId();
+    await apiClient.delete(ENDPOINTS.REGISTER_DEVICE_TOKEN, {
+      data: { deviceId },
+      params: { deviceId },
+    });
+  },
 };

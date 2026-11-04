@@ -15,6 +15,7 @@ import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 
 import { NotificationService } from '../services/notification.service';
+import { StorageService } from '../services/storage.service';
 import { AuthApi } from '../api/auth.api';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -30,11 +31,15 @@ export const RootNavigator: React.FC = () => {
 
   useEffect(() => {
     if (isAuthenticated) {
-      NotificationService.getPushToken().then((token) => {
-        if (token) {
-          AuthApi.registerDeviceToken(token).catch(() => {});
+      StorageService.getNotificationsEnabled().then((isEnabled) => {
+        if (isEnabled) {
+          NotificationService.getPushToken().then((token) => {
+            if (token) {
+              AuthApi.registerDeviceToken(token).catch(() => {});
+            }
+          }).catch(() => {});
         }
-      }).catch(() => {});
+      });
     }
   }, [isAuthenticated]);
 

@@ -37,10 +37,12 @@ export interface ExpoPushTicket {
 
 // ── Token validation helper ────────────────────────────────────────────────────
 export function isValidExpoPushToken(token: any): boolean {
-  return (
-    typeof token === 'string' &&
-    /^(ExponentPushToken|ExpoPushToken)\[.+\]$/.test(token.trim())
-  );
+  if (typeof token !== 'string') return false;
+  const trimmed = token.trim();
+  if (trimmed.startsWith('web-push-') || trimmed.startsWith('expo-go-')) {
+    return false;
+  }
+  return /^(ExponentPushToken|ExpoPushToken)\[.+\]$/.test(trimmed);
 }
 
 // ── Status label helper (Arabic) ──────────────────────────────────────────────
@@ -260,7 +262,13 @@ async function deactivateInvalidTokens(
       ticket.details?.error === 'DeviceNotRegistered'
     ) {
       const token = tokens[idx];
-      if (token !== undefined) invalidTokens.push(token);
+      if (
+        token !== undefined &&
+        !token.startsWith('web-push-') &&
+        !token.startsWith('expo-go-')
+      ) {
+        invalidTokens.push(token);
+      }
     }
   });
 

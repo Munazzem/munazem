@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Switch, StatusBar, Linking, Modal, TouchableWithoutFeedback,
@@ -15,6 +15,9 @@ import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing, borderRadius, shadows } from '../../theme/spacing';
 import { confirmAction, showAlert } from '../../utils/alert.util';
+import { NotificationService } from '../../services/notification.service';
+import { StorageService } from '../../services/storage.service';
+import { AuthApi } from '../../api/auth.api';
 import {
   User, Phone, Users, Bell, HelpCircle, Info,
   LogOut, ChevronLeft, Shield, Star, X, MessageSquare, CheckCircle2,
@@ -33,6 +36,65 @@ export const SettingsScreen: React.FC = () => {
   const [supportModalVisible, setSupportModalVisible] = useState(false);
   const [aboutModalVisible, setAboutModalVisible] = useState(false);
   const [privacyModalVisible, setPrivacyModalVisible] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(false);
+  const [isTogglingNotif, setIsTogglingNotif] = useState<boolean>(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const [storedPref, hasOsPerm] = await Promise.all([
+          StorageService.getNotificationsEnabled(),
+          NotificationService.hasPermission(),
+        ]);
+        if (isMounted) {
+          setNotificationsEnabled(storedPref && hasOsPerm);
+        }
+      } catch {
+        if (isMounted) {
+          setNotificationsEnabled(false);
+        }
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleToggleNotifications = async (nextValue: boolean) => {
+    if (isTogglingNotif) return;
+    setIsTogglingNotif(true);
+
+    try {
+      if (nextValue) {
+        const granted = await NotificationService.requestPermission();
+        if (!granted) {
+          setNotificationsEnabled(false);
+          await StorageService.setNotificationsEnabled(false);
+          showAlert(
+            'إذن الإشعارات مطلوب',
+            'تم رفض إذن الإشعارات. يرجى تفعيل إذن الإشعارات من إعدادات الجهاز أو المتصفح لتلقي التنبيهات.'
+          );
+          return;
+        }
+
+        const token = await NotificationService.getPushToken();
+        if (token) {
+          await AuthApi.registerDeviceToken(token).catch(() => {});
+        }
+        await StorageService.setNotificationsEnabled(true);
+        setNotificationsEnabled(true);
+      } else {
+        setNotificationsEnabled(false);
+        await StorageService.setNotificationsEnabled(false);
+        await AuthApi.unregisterDeviceToken().catch(() => {});
+      }
+    } catch (err) {
+      console.warn('[SettingsScreen] Failed to toggle notifications:', err);
+    } finally {
+      setIsTogglingNotif(false);
+    }
+  };
 
   const handleCallSupport = () => {
     Linking.openURL(`tel:${SUPPORT_PHONE}`).catch(() => {
@@ -143,17 +205,10 @@ export const SettingsScreen: React.FC = () => {
           <SettingsSection title="الإشعارات">
             <SettingsToggle
               icon={<Bell size={18} color={colors.textSecondary} />}
-              label="إشعارات الحضور"
-              sublabel="تنبيه فوري لحظة الحضور والغياب"
-              value={true}
-              onToggle={() => {}}
-            />
-            <SettingsToggle
-              icon={<Star size={18} color={colors.textSecondary} />}
-              label="إشعارات الدرجات"
-              sublabel="عند إضافة نتيجة اختبار جديدة"
-              value={true}
-              onToggle={() => {}}
+              label="تفعيل الإشعارات"
+              sublabel="تنبيهات الحضور والغياب والدرجات ورسائل المعلمين"
+              value={notificationsEnabled}
+              onToggle={handleToggleNotifications}
               isLast
             />
           </SettingsSection>

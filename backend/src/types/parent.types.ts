@@ -36,7 +36,7 @@ export interface IParentDeviceDocument extends Document {
   parentId: mongoose.Types.ObjectId;
   deviceId: string;
   fcmToken?: string;
-  platform: 'ios' | 'android';
+  platform: 'ios' | 'android' | 'web';
   refreshTokenHash: string;
   appVersion?: string;
   deviceModel?: string;
