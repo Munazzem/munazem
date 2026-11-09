@@ -41,6 +41,7 @@ import {
     checkInStudent,
     updateCheckInGroups,
     fetchDailyCheckIns,
+    fetchCenterStudents,
 } from '@/lib/api/centers';
 import {
     ICenterGroup,
@@ -146,8 +147,46 @@ export default function CenterAttendancePage() {
     });
     const allEnrollments = allEnrollmentsData || EMPTY_ENROLLMENTS;
 
+    // All active center students (paginated, backend caps limit at 100) — used for absence inventory
+    const { data: allActiveStudents = [] } = useQuery<any[]>({
+        queryKey: ['center', 'students', 'all-active-for-attendance'],
+        queryFn: async () => {
+            const all: any[] = [];
+            let page = 1;
+            let totalPages = 1;
+            do {
+                const res = await fetchCenterStudents({ isActive: true, page, limit: 100 });
+                all.push(...(res.data || []));
+                totalPages = res.totalPages || 1;
+                page++;
+            } while (page <= totalPages && page <= 100);
+            return all;
+        },
+        staleTime: 60_000,
+    });
+
     // ── Stage Grouping of Daily Check-Ins ─────────────────────────────────────
     const allCheckIns = dailyCheckInsData?.checkIns || [];
+
+    const presentStudentIds = new Set(
+        allCheckIns.map((ci) => String(ci.studentId?._id || ci.studentId))
+    );
+    const feedSearchTerm = feedSearch.trim().toLowerCase();
+    const allAbsentStudents = allActiveStudents.filter((s) => {
+        if (presentStudentIds.has(String(s._id))) return false;
+        if (!feedSearchTerm) return true;
+        return (
+            (s.studentName || '').toLowerCase().includes(feedSearchTerm) ||
+            (s.studentCode || '').toLowerCase().includes(feedSearchTerm) ||
+            (s.studentPhone || '').includes(feedSearchTerm)
+        );
+    });
+    const absentByStage = (stage: string) =>
+        allAbsentStudents.filter((s) => getStageForGrade(s.gradeLevel) === stage);
+    const secondaryAbsent = absentByStage('SECONDARY');
+    const prepAbsent = absentByStage('PREPARATORY');
+    const primaryAbsent = absentByStage('PRIMARY');
+    const otherAbsent = absentByStage('OTHER');
 
     const secondaryCheckIns = allCheckIns.filter(
         (ci) => getStageForGrade(ci.studentId?.gradeLevel) === 'SECONDARY'
@@ -403,15 +442,15 @@ export default function CenterAttendancePage() {
                     </div>
                     <div class="kpi-card">
                         <div class="kpi-title">المرحلة الثانوية</div>
-                        <div class="kpi-value" style="color: #4f46e5;">${secondaryCheckIns.length}</div>
+                        <div class="kpi-value" style="color: #4f46e5;">${secondaryCheckIns.length}<span className="text-xs font-bold text-rose-600 mr-2">/ {secondaryAbsent.length} غائب</span></div>
                     </div>
                     <div class="kpi-card">
                         <div class="kpi-title">المرحلة الإعدادية</div>
-                        <div class="kpi-value" style="color: #059669;">${prepCheckIns.length}</div>
+                        <div class="kpi-value" style="color: #059669;">${prepCheckIns.length}<span className="text-xs font-bold text-rose-600 mr-2">/ {prepAbsent.length} غائب</span></div>
                     </div>
                     <div class="kpi-card">
                         <div class="kpi-title">المرحلة الابتدائية</div>
-                        <div class="kpi-value" style="color: #d97706;">${primaryCheckIns.length}</div>
+                        <div class="kpi-value" style="color: #d97706;">${primaryCheckIns.length}<span className="text-xs font-bold text-rose-600 mr-2">/ {primaryAbsent.length} غائب</span></div>
                     </div>
                 </div>
 
@@ -599,6 +638,7 @@ export default function CenterAttendancePage() {
         subtitle: string;
         icon: any;
         items: typeof allCheckIns;
+        absent: any[];
         accentColor: string;
         borderClass: string;
         headerClass: string;
@@ -615,6 +655,7 @@ export default function CenterAttendancePage() {
             subtitle: 'الصف الأول الثانوي، الصف الثاني الثانوي، الصف الثالث الثانوي',
             icon: GraduationCap,
             items: secondaryCheckIns,
+            absent: secondaryAbsent,
             accentColor: 'indigo',
             borderClass: 'border-indigo-100',
             headerClass: 'bg-gradient-to-l from-indigo-50/90 via-white to-indigo-50/20 border-b border-indigo-100',
@@ -628,6 +669,7 @@ export default function CenterAttendancePage() {
             subtitle: 'الصف الأول الإعدادي، الصف الثاني الإعدادي، الصف الثالث الإعدادي',
             icon: BookOpen,
             items: prepCheckIns,
+            absent: prepAbsent,
             accentColor: 'emerald',
             borderClass: 'border-emerald-100',
             headerClass: 'bg-gradient-to-l from-emerald-50/90 via-white to-emerald-50/20 border-b border-emerald-100',
@@ -641,6 +683,7 @@ export default function CenterAttendancePage() {
             subtitle: 'صفوف المرحلة الابتدائية (من الصف الأول إلى السادس الابتدائي)',
             icon: Layers,
             items: primaryCheckIns,
+            absent: primaryAbsent,
             accentColor: 'amber',
             borderClass: 'border-amber-100',
             headerClass: 'bg-gradient-to-l from-amber-50/90 via-white to-amber-50/20 border-b border-amber-100',
@@ -650,13 +693,14 @@ export default function CenterAttendancePage() {
         },
     ];
 
-    if (otherCheckIns.length > 0) {
+    if (otherCheckIns.length > 0 || otherAbsent.length > 0) {
         stageSections.push({
             key: 'OTHER',
             title: 'مراحل أخرى / غير محددة',
             subtitle: 'طلاب غير مسجلين ضمن مرحلة دراسية محددة',
             icon: Users,
             items: otherCheckIns,
+            absent: otherAbsent,
             accentColor: 'gray',
             borderClass: 'border-gray-200',
             headerClass: 'bg-gray-50/80 border-b border-gray-200',
@@ -1033,7 +1077,7 @@ export default function CenterAttendancePage() {
                         >
                             <div className="space-y-0.5">
                                 <span className="text-[11px] font-bold text-gray-500 block">إجمالي حضور السنتر اليوم</span>
-                                <div className="text-2xl font-black text-gray-900">{allCheckIns.length}</div>
+                                <div className="text-2xl font-black text-gray-900">{allCheckIns.length}<span className="text-xs font-bold text-rose-600 mr-2">/ {allAbsentStudents.length} غائب</span></div>
                                 <span className="text-[10px] text-gray-400 font-medium block">
                                     طالب حاضر بالسنتر اليوم
                                 </span>
@@ -1054,7 +1098,7 @@ export default function CenterAttendancePage() {
                         >
                             <div className="space-y-0.5">
                                 <span className="text-[11px] font-bold text-indigo-700 block">المرحلة الثانوية</span>
-                                <div className="text-2xl font-black text-indigo-950">{secondaryCheckIns.length}</div>
+                                <div className="text-2xl font-black text-indigo-950">{secondaryCheckIns.length}<span className="text-xs font-bold text-rose-600 mr-2">/ {secondaryAbsent.length} غائب</span></div>
                                 <span className="text-[10px] text-indigo-600/70 font-medium block">
                                     الصف الأول، الثاني، والثالث الثانوي
                                 </span>
@@ -1075,7 +1119,7 @@ export default function CenterAttendancePage() {
                         >
                             <div className="space-y-0.5">
                                 <span className="text-[11px] font-bold text-emerald-700 block">المرحلة الإعدادية</span>
-                                <div className="text-2xl font-black text-emerald-950">{prepCheckIns.length}</div>
+                                <div className="text-2xl font-black text-emerald-950">{prepCheckIns.length}<span className="text-xs font-bold text-rose-600 mr-2">/ {prepAbsent.length} غائب</span></div>
                                 <span className="text-[10px] text-emerald-600/70 font-medium block">
                                     الصف الأول، الثاني، والثالث الإعدادي
                                 </span>
@@ -1096,7 +1140,7 @@ export default function CenterAttendancePage() {
                         >
                             <div className="space-y-0.5">
                                 <span className="text-[11px] font-bold text-amber-700 block">المرحلة الابتدائية</span>
-                                <div className="text-2xl font-black text-amber-950">{primaryCheckIns.length}</div>
+                                <div className="text-2xl font-black text-amber-950">{primaryCheckIns.length}<span className="text-xs font-bold text-rose-600 mr-2">/ {primaryAbsent.length} غائب</span></div>
                                 <span className="text-[10px] text-amber-600/70 font-medium block">
                                     صفوف المرحلة الابتدائية (1 - 6)
                                 </span>
@@ -1145,7 +1189,7 @@ export default function CenterAttendancePage() {
                                         : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'
                                 }`}
                             >
-                                كل المراحل ({allCheckIns.length})
+                                كل المراحل ({allCheckIns.length} حاضر / {allAbsentStudents.length} غائب)
                             </button>
                             <button
                                 type="button"
@@ -1156,7 +1200,7 @@ export default function CenterAttendancePage() {
                                         : 'bg-white text-indigo-700 border border-indigo-200 hover:bg-indigo-50'
                                 }`}
                             >
-                                المرحلة الثانوية ({secondaryCheckIns.length})
+                                المرحلة الثانوية ({secondaryCheckIns.length} حاضر / {secondaryAbsent.length} غائب)
                             </button>
                             <button
                                 type="button"
@@ -1167,7 +1211,7 @@ export default function CenterAttendancePage() {
                                         : 'bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50'
                                 }`}
                             >
-                                المرحلة الإعدادية ({prepCheckIns.length})
+                                المرحلة الإعدادية ({prepCheckIns.length} حاضر / {prepAbsent.length} غائب)
                             </button>
                             <button
                                 type="button"
@@ -1178,7 +1222,7 @@ export default function CenterAttendancePage() {
                                         : 'bg-white text-amber-700 border border-amber-200 hover:bg-amber-50'
                                 }`}
                             >
-                                المرحلة الابتدائية ({primaryCheckIns.length})
+                                المرحلة الابتدائية ({primaryCheckIns.length} حاضر / {primaryAbsent.length} غائب)
                             </button>
                         </div>
 
@@ -1187,7 +1231,7 @@ export default function CenterAttendancePage() {
                             <div className="py-20 text-center text-xs text-gray-400">
                                 جاري تحميل سجل الحضور اليومي...
                             </div>
-                        ) : allCheckIns.length === 0 ? (
+                        ) : allCheckIns.length === 0 && allAbsentStudents.length === 0 ? (
                             <div className="py-20 text-center text-gray-400 space-y-2">
                                 <UserCheck className="w-12 h-12 mx-auto text-gray-300" />
                                 <p className="text-sm font-bold text-gray-700">لا يوجد حضور مسجل اليوم حتى الآن</p>
@@ -1217,11 +1261,15 @@ export default function CenterAttendancePage() {
                                                 </div>
 
                                                 <span className={`text-xs font-black px-3 py-1 rounded-full border shadow-2xs ${section.badgeClass}`}>
-                                                    {section.items.length} طالب حاضر
+                                                    {section.items.length} حاضر
+                                                </span>
+                                                <span className="text-xs font-black px-3 py-1 rounded-full border shadow-2xs bg-rose-50 text-rose-700 border-rose-200 mr-2">
+                                                    {section.absent.length} غائب
                                                 </span>
                                             </div>
 
                                             {/* Stage Students Table */}
+<details open className="border-t border-emerald-100 bg-emerald-50/20"><summary className="cursor-pointer px-6 py-3 text-xs font-black text-emerald-700 flex items-center gap-2"><CheckCircle2 className="w-4 h-4" />كشف الحضور — {section.items.length} طالب حضر اليوم</summary>
                                             {section.items.length === 0 ? (
                                                 <div className="py-8 text-center text-xs text-gray-400 bg-gray-50/30">
                                                     {section.emptyText}
@@ -1338,6 +1386,56 @@ export default function CenterAttendancePage() {
                                                         </tbody>
                                                     </table>
                                                 </div>
+                                            )}
+</details>
+
+                                            {/* Absent Students Inventory */}
+                                            {section.absent.length > 0 && (
+                                                <details className="border-t border-rose-100 bg-rose-50/30">
+                                                    <summary className="cursor-pointer px-6 py-3 text-xs font-black text-rose-700 flex items-center gap-2">
+                                                        <XCircle className="w-4 h-4" />
+                                                        جرد الغياب — {section.absent.length} طالب لم يحضر اليوم
+                                                    </summary>
+                                                    <div className="overflow-x-auto">
+                                                        <table className="w-full text-sm">
+                                                            <thead>
+                                                                <tr className="border-b border-rose-100 text-right text-gray-500 text-xs bg-rose-50/50">
+                                                                    <th className="px-5 py-3 font-semibold">كود الطالب</th>
+                                                                    <th className="px-5 py-3 font-semibold">اسم الطالب</th>
+                                                                    <th className="px-5 py-3 font-semibold">الصف الدراسي</th>
+                                                                    <th className="px-5 py-3 font-semibold text-center">الحالة</th>
+                                                                    <th className="px-5 py-3 font-semibold text-center">الملف</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody className="divide-y divide-rose-50">
+                                                                {section.absent.map((s: any) => (
+                                                                    <tr key={s._id} className="hover:bg-rose-50/50 transition-colors">
+                                                                        <td className="px-5 py-3 font-mono font-bold text-xs text-gray-600 whitespace-nowrap">{s.studentCode || '—'}</td>
+                                                                        <td className="px-5 py-3">
+                                                                            <p className="font-bold text-gray-900">{s.studentName}</p>
+                                                                            {s.studentPhone && <p className="text-[11px] text-gray-400 dir-ltr text-right">{s.studentPhone}</p>}
+                                                                        </td>
+                                                                        <td className="px-5 py-3 text-xs font-bold whitespace-nowrap">
+                                                                            <span className="px-2 py-0.5 rounded-md bg-gray-100 text-gray-800">{s.gradeLevel || '—'}</span>
+                                                                        </td>
+                                                                        <td className="px-5 py-3 text-center whitespace-nowrap">
+                                                                            <Badge className="bg-rose-600 text-white font-bold text-[11px] gap-1 px-2.5 py-0.5">
+                                                                                <XCircle className="w-3 h-3" />
+                                                                                غائب
+                                                                            </Badge>
+                                                                        </td>
+                                                                        <td className="px-5 py-3 text-center whitespace-nowrap">
+                                                                            <Link href={`/center/students/${s._id}`} className="inline-flex items-center gap-1 text-xs text-primary hover:underline font-bold">
+                                                                                عرض
+                                                                                <ExternalLink className="w-3 h-3" />
+                                                                            </Link>
+                                                                        </td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </details>
                                             )}
                                         </div>
                                     );
