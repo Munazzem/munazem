@@ -63,12 +63,24 @@ reportsRouter.get(
     }
 );
 
-// All remaining routes: Teacher + Assistant (full access)
-reportsRouter.use(authorizeRoles(UserRole.teacher, UserRole.assistant));
+// All remaining routes: Teacher + Assistant + Center Roles (full access)
+reportsRouter.use(authorizeRoles(UserRole.teacher, UserRole.assistant, UserRole.centerOwner, UserRole.centerSupervisor));
 
-// Helper — resolves teacherId for both teacher and assistant
+// Helper — resolves teacherId for teacher, assistant, centerOwner, and centerSupervisor
 const resolveTeacherId = (user: any): string =>
-    user.role === UserRole.assistant ? user.teacherId : user.userId;
+    (user.role === UserRole.assistant || user.role === UserRole.centerSupervisor) ? user.teacherId : user.userId;
+
+// ─── GET /reports/offline-bundle — Preload full student profile reports in one fast shot
+reportsRouter.get(
+    '/offline-bundle',
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = resolveTeacherId((req as any).user);
+            const data = await ReportsService.getTeacherOfflineReportsBundle(teacherId);
+            return SuccessResponse({ res, data, message: 'تم تجهيز حزمة تقارير الطلاب للأوفلاين بنجاح' });
+        } catch (error) { next(error); }
+    }
+);
 
 // ─── GET /reports/student/:studentId — Full student report
 reportsRouter.get(

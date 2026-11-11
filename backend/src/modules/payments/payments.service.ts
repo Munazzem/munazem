@@ -1445,6 +1445,8 @@ export class PaymentsService {
             }
         }
         
+        const primaryCycleNumber = unpaidEnrollments[0]?.cycleNumber;
+
         const transaction = await withTransaction(async (session) => {
             const [tx] = await TransactionModel.create([{
                 teacherId,
@@ -1458,6 +1460,7 @@ export class PaymentsService {
                 paidAmount:     data.amount,
                 remainingAmount: 0,
                 date:           txDate,
+                ...(primaryCycleNumber != null ? { cycleNumber: primaryCycleNumber } : {}),
                 ...(data.idempotencyKey ? { idempotencyKey: data.idempotencyKey } : {}),
                 ...(data.description ? { description: data.description } : {}),
             }], { session });

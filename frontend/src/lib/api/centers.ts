@@ -26,6 +26,10 @@ import type {
     BulkCreateCenterStudentDTO,
     CenterCheckInResponse,
     DailyCheckInsResult,
+    ICenterSession,
+    CenterSessionDetailResponse,
+    CenterStudentFullProfileResponse,
+    WeeklyAttendanceReportResponse,
 } from '@/types/center.types';
 
 // ── Centers & Branches ────────────────────────────────────────────────────────
@@ -192,6 +196,7 @@ export interface FetchCenterStudentsParams {
     page?: number;
     limit?: number;
     includeCounts?: boolean | 'true' | 'false';
+    groupId?: string;
 }
 
 export interface FetchCenterStudentsResponse {
@@ -206,6 +211,7 @@ export interface FetchCenterStudentsResponse {
         preparatory: number;
         primary: number;
     };
+    gradeCounts?: Record<string, number>;
 }
 
 export const fetchCenterStudents = async (params: FetchCenterStudentsParams = {}): Promise<FetchCenterStudentsResponse> => {
@@ -215,6 +221,11 @@ export const fetchCenterStudents = async (params: FetchCenterStudentsParams = {}
 
 export const fetchCenterStudentById = async (id: string): Promise<ICenterStudent> => {
     const res = await apiClient.get(`/centers/students/${id}`);
+    return (res as any).data;
+};
+
+export const fetchCenterStudentFullProfile = async (id: string): Promise<CenterStudentFullProfileResponse> => {
+    const res = await apiClient.get(`/centers/students/${id}/full-profile`);
     return (res as any).data;
 };
 
@@ -580,4 +591,235 @@ export const getCenterCardBatchPrintUrl = (batchId: string, mode: 'dual_sided' |
     const token = Cookies.get('token') || '';
     return `${API_BASE_URL}/centers/cards/batch/${batchId}/print?mode=${mode}&token=${token}`;
 };
+
+// ── Scheduled Class Sessions (حصص اليوم والسناب شوت) ─────────────────────────
+
+export const fetchTodayCenterSessions = async (
+    paramsOrDate:
+        | {
+              date?: string;
+              stage?: string;
+              gradeLevel?: string;
+              includeAllClasses?: boolean;
+          }
+        | string = {},
+    includeAllClasses?: boolean
+): Promise<{
+    date: string;
+    arabicDay: string;
+    sessions: ICenterSession[];
+    otherClasses?: ICenterGroup[];
+    totalSessions: number;
+}> => {
+    const params =
+        typeof paramsOrDate === 'string'
+            ? { date: paramsOrDate, includeAllClasses }
+            : paramsOrDate;
+    const res = await apiClient.get('/centers/sessions/today', { params });
+    return (res as any).data;
+};
+
+export const fetchCenterSessionById = async (
+    sessionId: string,
+    date?: string
+): Promise<CenterSessionDetailResponse> => {
+    const res = await apiClient.get(`/centers/sessions/${sessionId}`, {
+        params: date ? { date } : undefined,
+    });
+    return (res as any).data;
+};
+
+export const recordCenterSessionAttendance = async (
+    sessionId: string,
+    data: {
+        studentId?: string;
+        studentIdOrCode?: string;
+        status?: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED';
+        source?: 'MANUAL' | 'QR_SCAN' | 'BARCODE' | 'GATE_CHECKIN';
+        notes?: string;
+        date?: string;
+    }
+): Promise<{
+    attendance: any;
+    student: ICenterStudent;
+    financialStatus: {
+        expectedAmount: number;
+        totalExpected?: number;
+        totalPaid: number;
+        totalRemaining: number;
+        totalRemainingDebt: number;
+        hasDebt: boolean;
+        hasActiveEnrollment: boolean;
+        enrollmentType?: string | null;
+    };
+    sessionStatus: string;
+    isCorrection: boolean;
+    isPostCompletionEdit?: boolean;
+}> => {
+    const payload = {
+        ...data,
+        studentIdOrCode: data.studentIdOrCode || data.studentId || '',
+    };
+    const res = await apiClient.post(`/centers/sessions/${sessionId}/attendance`, payload);
+    return (res as any).data;
+};
+
+export const completeCenterSession = async (
+    sessionId: string,
+    dateOrOptions?: string | { date?: string; sendParentNotifications?: boolean }
+): Promise<{
+    session: ICenterSession;
+    stats: { totalEnrolled: number; presentCount: number; absentCount: number };
+    notifications: { sentCount: number; sent: number };
+}> => {
+    const payload =
+        typeof dateOrOptions === 'string'
+            ? { date: dateOrOptions }
+            : dateOrOptions || {};
+    const res = await apiClient.post(`/centers/sessions/${sessionId}/complete`, payload);
+    const d = (res as any).data || {};
+    return {
+        ...d,
+        notifications: {
+            sentCount: d.notifications?.sentCount ?? d.stats?.totalEnrolled ?? 0,
+            sent: d.notifications?.sent ?? d.notifications?.sentCount ?? d.stats?.totalEnrolled ?? 0,
+        },
+    };
+};
+
+// ── Quick Check-In Absentee Notifications ─────────────────────────────────────
+
+export const notifyQuickCheckInAbsentees = async (data: {
+    date?: string;
+    stage?: string;
+    gradeLevel?: string;
+    studentIds?: string[];
+}): Promise<{
+    absentCount: number;
+    notifiedStudentsCount: number;
+    pushSentCount: number;
+    sent?: number;
+}> => {
+    const res = await apiClient.post('/centers/attendance/check-in/notify-absentees', data);
+    return (res as any).data;
+};
+
+// ── Financials Edit, Delete & Batch Delete ────────────────────────────────────
+
+export const updateCenterTransaction = async (
+    id: string,
+    data: {
+        category?: 'CENTER_PACKAGE' | 'CENTER_PRIVATE' | 'CENTER_COMBINED';
+        centerTeacherId?: string | null;
+        originalAmount?: number;
+        discountAmount?: number;
+        paidAmount?: number;
+        remainingAmount?: number;
+        description?: string;
+        date?: string;
+    }
+): Promise<ICenterTransaction> => {
+    const res = await apiClient.patch(`/centers/financials/transactions/${id}`, data);
+    return (res as any).data;
+};
+
+export const deleteCenterTransaction = async (id: string): Promise<void> => {
+    await apiClient.delete(`/centers/financials/transactions/${id}`);
+};
+
+export const batchDeleteCenterTransactions = async (transactionIds: string[]): Promise<{ deletedCount: number }> => {
+    const res = await apiClient.post('/centers/financials/transactions/batch-delete', { transactionIds });
+    return (res as any).data;
+};
+
+// ── Center Custom Broadcast Messages (رسائل مخصصة لأولياء الأمور) ─────────────
+
+export const fetchCenterMessageAudience = async (params: {
+    targetType: 'GROUP' | 'GRADE' | 'ALL';
+    groupId?: string;
+    gradeLevel?: string;
+}): Promise<{
+    targetStudentCount: number;
+    studentCount: number;
+    reachedParentCount: number;
+    studentsWithoutParentCount: number;
+    unlinkedStudentCount: number;
+}> => {
+    const res = await apiClient.get('/centers/messages/audience', { params });
+    const d = (res as any).data || {};
+    return {
+        ...d,
+        studentCount: d.studentCount ?? d.targetStudentCount ?? 0,
+        targetStudentCount: d.targetStudentCount ?? d.studentCount ?? 0,
+        unlinkedStudentCount: d.unlinkedStudentCount ?? d.studentsWithoutParentCount ?? 0,
+        studentsWithoutParentCount: d.studentsWithoutParentCount ?? d.unlinkedStudentCount ?? 0,
+    };
+};
+
+export const createCenterMessage = async (data: {
+    targetType: 'GROUP' | 'GRADE' | 'ALL';
+    groupId?: string | null;
+    gradeLevel?: string | null;
+    title?: string | null;
+    body: string;
+    clientRequestId: string;
+}): Promise<any> => {
+    const res = await apiClient.post('/centers/messages', data);
+    return (res as any).data;
+};
+
+export const fetchCenterMessages = async (
+    paramsOrPage: { page?: number; limit?: number } | number = {},
+    limit?: number
+): Promise<{
+    messages: any[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+}> => {
+    const params =
+        typeof paramsOrPage === 'number'
+            ? { page: paramsOrPage, limit: limit || 20 }
+            : paramsOrPage;
+    const res = await apiClient.get('/centers/messages', { params });
+    return (res as any).data;
+};
+
+// ── Weekly Attendance Sheet Report & Printable HTML ───────────────────────────
+
+export const fetchWeeklyAttendanceReport = async (params: {
+    mode?: 'CLASSES' | 'QUICK_CHECKIN';
+    stage?: string;
+    gradeLevel?: string;
+    groupId?: string;
+    weekStart?: string;
+    weekStartDate?: string;
+} = {}): Promise<WeeklyAttendanceReportResponse> => {
+    const normalized = {
+        ...params,
+        weekStart: params.weekStart || params.weekStartDate,
+    };
+    const res = await apiClient.get('/centers/reports/weekly-attendance', { params: normalized });
+    return (res as any).data;
+};
+
+export const getWeeklyAttendancePrintUrl = (params: {
+    mode?: 'CLASSES' | 'QUICK_CHECKIN';
+    stage?: string;
+    gradeLevel?: string;
+    groupId?: string;
+    weekStart?: string;
+} = {}): string => {
+    const token = Cookies.get('token') || '';
+    const searchParams = new URLSearchParams();
+    if (params.mode) searchParams.set('mode', params.mode);
+    if (params.stage) searchParams.set('stage', params.stage);
+    if (params.gradeLevel) searchParams.set('gradeLevel', params.gradeLevel);
+    if (params.groupId) searchParams.set('groupId', params.groupId);
+    if (params.weekStart) searchParams.set('weekStart', params.weekStart);
+    if (token) searchParams.set('token', token);
+    return `${API_BASE_URL}/centers/reports/weekly-attendance/print?${searchParams.toString()}`;
+};
+
 

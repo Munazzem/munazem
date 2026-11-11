@@ -2,7 +2,8 @@ import React, { useEffect, useRef } from 'react';
 import { I18nManager, View, ActivityIndicator, StyleSheet, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer, NavigationContainerRef, LinkingOptions } from '@react-navigation/native';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from './src/api/queryClient';
 import {
   useFonts,
   Cairo_400Regular,
@@ -45,17 +46,6 @@ const linking: LinkingOptions<RootStackParamList> = {
   },
 };
 
-// ── QueryClient: persisted for the full app lifecycle ─────────────────────────
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: 2,
-      staleTime: 1000 * 60 * 2, // 2 minutes cache
-      refetchOnWindowFocus: false,
-    },
-  },
-});
-
 export default function App() {
   const navigationRef = useRef<NavigationContainerRef<RootStackParamList>>(null);
 
@@ -93,12 +83,18 @@ export default function App() {
           const studentId = path.replace('child/', '').split('?')[0];
           const tab = (parsed.queryParams?.tab as 'attendance' | 'exams' | 'financial') || 'attendance';
 
-          // Navigate to ChildDetails with proper tab
-          navigationRef.current.navigate('ChildDetails', {
-            studentId,
-            studentName: '',
-            initialTab: tab,
-          });
+          if (tab === 'attendance') {
+            navigationRef.current.navigate('MainTabs', { screen: 'AttendanceTab' } as any);
+          } else if (tab === 'exams') {
+            navigationRef.current.navigate('MainTabs', { screen: 'GradesTab' } as any);
+          } else if (tab === 'financial') {
+            navigationRef.current.navigate('FinanceDetail', {
+              studentId,
+              studentName: '',
+            });
+          } else {
+            navigationRef.current.navigate('MainTabs', { screen: 'HomeTab' } as any);
+          }
         } else if (path === 'notifications') {
           // Navigate to notifications tab
           navigationRef.current.navigate('MainTabs', {

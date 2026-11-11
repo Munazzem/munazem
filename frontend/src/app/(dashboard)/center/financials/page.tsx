@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from '@/lib/hooks/use-debounce';
 import { toast } from 'sonner';
@@ -31,6 +31,9 @@ import {
     CalendarDays,
     BarChart3,
     Filter,
+    Edit2,
+    Trash2,
+    CheckSquare,
 } from 'lucide-react';
 import {
     fetchCenterFinancialSummary,
@@ -46,6 +49,9 @@ import {
     fetchCenterMonthlyTally,
     fetchCenterTransactions,
     fetchMyCenters,
+    updateCenterTransaction,
+    deleteCenterTransaction,
+    batchDeleteCenterTransactions,
 } from '@/lib/api/centers';
 import {
     ICenterFinancialSummary,
@@ -71,9 +77,11 @@ import {
     DialogContent,
     DialogHeader,
     DialogTitle,
+    DialogDescription,
     DialogFooter,
 } from '@/components/ui/dialog';
 import { printHtmlContent } from '@/lib/utils/print';
+import { cn } from '@/lib/utils';
 
 const MONTHS_AR = [
     'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
@@ -85,6 +93,54 @@ export default function CenterFinancialsPage() {
 
     // Active View Tab
     const [activeTab, setActiveTab] = useState<'daily' | 'monthly' | 'transactions' | 'teachers'>('daily');
+
+    // Tabs Horizontal Scroll Controls
+    const tabsContainerRef = useRef<HTMLDivElement>(null);
+    const [canScrollLeft, setCanScrollLeft] = useState(false);
+    const [canScrollRight, setCanScrollRight] = useState(true);
+
+    const updateScrollIndicators = () => {
+        const el = tabsContainerRef.current;
+        if (!el) return;
+        const { scrollLeft, scrollWidth, clientWidth } = el;
+        const maxScroll = scrollWidth - clientWidth;
+        if (maxScroll <= 5) {
+            setCanScrollLeft(false);
+            setCanScrollRight(false);
+            return;
+        }
+        const currentScroll = Math.abs(scrollLeft);
+        setCanScrollLeft(currentScroll > 8);
+        setCanScrollRight(currentScroll < maxScroll - 8);
+    };
+
+    useEffect(() => {
+        const el = tabsContainerRef.current;
+        if (!el) return;
+        updateScrollIndicators();
+        const timer = setTimeout(updateScrollIndicators, 200);
+        el.addEventListener('scroll', updateScrollIndicators, { passive: true });
+        window.addEventListener('resize', updateScrollIndicators);
+        return () => {
+            clearTimeout(timer);
+            el.removeEventListener('scroll', updateScrollIndicators);
+            window.removeEventListener('resize', updateScrollIndicators);
+        };
+    }, []);
+
+    // وظيفة سهم اليسار فقط: تمرير لليسار
+    const handleScrollLeft = () => {
+        const el = tabsContainerRef.current;
+        if (!el) return;
+        el.scrollBy({ left: -200, behavior: 'smooth' });
+    };
+
+    // وظيفة سهم اليمين فقط: تمرير لليمين
+    const handleScrollRight = () => {
+        const el = tabsContainerRef.current;
+        if (!el) return;
+        el.scrollBy({ left: 200, behavior: 'smooth' });
+    };
 
     // ── Centers for Branding Print ──────────────────────────────────────────
     const { data: centers = [] } = useQuery<ICenter[]>({
@@ -128,6 +184,103 @@ export default function CenterFinancialsPage() {
     const [txStartDate, setTxStartDate] = useState('');
     const [txEndDate, setTxEndDate] = useState('');
     const [txPage, setTxPage] = useState(1);
+
+    // ── Selection, Edit & Delete State for Transactions ─────────────────────
+    const [selectedTxIds, setSelectedTxIds] = useState<string[]>([]);
+    const [editingTx, setEditingTx] = useState<ICenterTransaction | null>(null);
+    const [editOriginalAmount, setEditOriginalAmount] = useState('');
+    const [editDiscountAmount, setEditDiscountAmount] = useState('0');
+    const [editPaidAmount, setEditPaidAmount] = useState('');
+    const [editCategory, setEditCategory] = useState<'CENTER_PACKAGE' | 'CENTER_PRIVATE' | 'CENTER_COMBINED'>('CENTER_PACKAGE');
+    const [editDescription, setEditDescription] = useState('');
+    const [editDate, setEditDate] = useState('');
+
+    const invalidateAllFinancialQueries = () => {
+        queryClient.invalidateQueries({ queryKey: ['center', 'financials-summary'] });
+        queryClient.invalidateQueries({ queryKey: ['center', 'daily-tally'] });
+        queryClient.invalidateQueries({ queryKey: ['center', 'monthly-tally'] });
+        queryClient.invalidateQueries({ queryKey: ['center', 'transactions'] });
+        queryClient.invalidateQueries({ queryKey: ['center', 'teacher-report'] });
+    };
+
+    const updateTxMutation = useMutation({
+        mutationFn: ({ id, payload }: { id: string; payload: any }) => updateCenterTransaction(id, payload),
+        onSuccess: () => {
+            toast.success('✅ تم تعديل المعاملة المالية بنجاح');
+            setEditingTx(null);
+            invalidateAllFinancialQueries();
+        },
+        onError: (err: any) => {
+            toast.error(err.response?.data?.message || 'حدث خطأ أثناء تعديل المعاملة');
+        },
+    });
+
+    const deleteTxMutation = useMutation({
+        mutationFn: (id: string) => deleteCenterTransaction(id),
+        onSuccess: (_res, deletedId) => {
+            toast.success('🗑️ تم حذف المعاملة المالية بنجاح');
+            setSelectedTxIds((prev) => prev.filter((id) => id !== deletedId));
+            invalidateAllFinancialQueries();
+        },
+        onError: (err: any) => {
+            toast.error(err.response?.data?.message || 'حدث خطأ أثناء حذف المعاملة');
+        },
+    });
+
+    const batchDeleteTxMutation = useMutation({
+        mutationFn: (ids: string[]) => batchDeleteCenterTransactions(ids),
+        onSuccess: (res) => {
+            toast.success(`🗑️ تم حذف ${res.deletedCount} معاملة مالية بنجاح`);
+            setSelectedTxIds([]);
+            invalidateAllFinancialQueries();
+        },
+        onError: (err: any) => {
+            toast.error(err.response?.data?.message || 'حدث خطأ أثناء حذف المعاملات المحددة');
+        },
+    });
+
+    const handleOpenEditTx = (tx: ICenterTransaction) => {
+        setEditingTx(tx);
+        setEditOriginalAmount(String(tx.originalAmount || 0));
+        setEditDiscountAmount(String(tx.discountAmount || 0));
+        setEditPaidAmount(String(tx.paidAmount || 0));
+        setEditCategory((tx.category as any) || 'CENTER_PACKAGE');
+        setEditDescription(tx.description || '');
+        setEditDate(
+            tx.date
+                ? new Date(tx.date).toISOString().split('T')[0]
+                : new Date().toISOString().split('T')[0]
+        );
+    };
+
+    const handleDeleteSingleTx = (tx: ICenterTransaction) => {
+        if (window.confirm(`هل أنت متأكد من حذف معاملة الطالب "${tx.studentName || 'طالب'}" بقيمة ${tx.paidAmount} ج.م؟`)) {
+            deleteTxMutation.mutate(tx._id);
+        }
+    };
+
+    const handleBatchDeleteSelected = () => {
+        if (selectedTxIds.length === 0) return;
+        if (window.confirm(`هل أنت متأكد من حذف ${selectedTxIds.length} معاملة مالية محددة نهائياً؟`)) {
+            batchDeleteTxMutation.mutate(selectedTxIds);
+        }
+    };
+
+    const toggleSelectTx = (id: string) => {
+        setSelectedTxIds((prev) =>
+            prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+        );
+    };
+
+    const toggleSelectAllTxList = (list: ICenterTransaction[]) => {
+        const listIds = list.map((t) => t._id);
+        const allSelected = listIds.length > 0 && listIds.every((id) => selectedTxIds.includes(id));
+        if (allSelected) {
+            setSelectedTxIds((prev) => prev.filter((id) => !listIds.includes(id)));
+        } else {
+            setSelectedTxIds((prev) => Array.from(new Set([...prev, ...listIds])));
+        }
+    };
 
     const {
         data: txData,
@@ -287,7 +440,11 @@ export default function CenterFinancialsPage() {
     const paymentMutation = useMutation({
         mutationFn: recordCenterPayment,
         onSuccess: (res: any) => {
-            toast.success('تم تسجيل المعاملة المالية بنجاح');
+            if (res?.offline || !navigator.onLine) {
+                toast.warning('تم تسجيل المعاملة المالية محلياً (أوفلاين) - سيتم ترحيلها للسيرفر فور استعادة الاتصال');
+            } else {
+                toast.success('تم تسجيل المعاملة المالية بنجاح');
+            }
             queryClient.invalidateQueries({ queryKey: ['center', 'financials-summary'] });
             queryClient.invalidateQueries({ queryKey: ['center', 'daily-tally'] });
             queryClient.invalidateQueries({ queryKey: ['center', 'monthly-tally'] });
@@ -725,40 +882,85 @@ export default function CenterFinancialsPage() {
 
             {/* Main Tabs Navigation */}
             <Tabs value={activeTab} onValueChange={(val: any) => setActiveTab(val)} className="space-y-6">
-                <div className="bg-white p-2 rounded-2xl border border-gray-100 shadow-sm">
-                    <TabsList className="bg-gray-100/80 p-1 rounded-xl h-auto flex flex-wrap gap-1">
-                        <TabsTrigger
-                            value="daily"
-                            className="rounded-lg font-bold text-xs py-2.5 px-4 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm gap-2"
-                        >
-                            <CalendarDays className="h-4 w-4" />
-                            الجرد اليومي (تقفيل الخزينة)
-                        </TabsTrigger>
+                <div className="relative bg-white p-2 rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                    {/* Left Arrow (الرجوع للتبويبات السابقة يساراً) */}
+                    <button
+                        type="button"
+                        onClick={handleScrollLeft}
+                        disabled={!canScrollLeft}
+                        className={cn(
+                            "absolute left-2 top-2 bottom-2 z-20 w-10 flex items-center justify-center bg-gradient-to-r from-white via-white/95 to-transparent transition-opacity duration-200 rounded-l-xl",
+                            canScrollLeft
+                                ? "text-gray-700 hover:text-primary cursor-pointer opacity-100 pointer-events-auto"
+                                : "opacity-0 pointer-events-none"
+                        )}
+                        title="الرجوع للتبويبات السابقة يساراً"
+                        aria-label="الرجوع للتبويبات السابقة يساراً"
+                    >
+                        <div className="w-6 h-6 rounded-full bg-white shadow-xs border border-gray-200/80 flex items-center justify-center hover:bg-gray-50">
+                            <ChevronLeft className="h-3.5 w-3.5 text-gray-600" />
+                        </div>
+                    </button>
 
-                        <TabsTrigger
-                            value="monthly"
-                            className="rounded-lg font-bold text-xs py-2.5 px-4 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm gap-2"
-                        >
-                            <FileText className="h-4 w-4" />
-                            الجرد الشهري (التقفيل المالي)
-                        </TabsTrigger>
+                    {/* Native Scrollable Div with guaranteed ref & onScroll */}
+                    <div
+                        ref={tabsContainerRef}
+                        onScroll={updateScrollIndicators}
+                        className="w-full overflow-x-auto no-scrollbar scroll-smooth flex items-center px-4 sm:px-1.5"
+                    >
+                        <TabsList className="bg-gray-100/80 p-1.5 rounded-xl h-auto flex w-full justify-start sm:justify-center gap-1.5 flex-nowrap">
+                            <TabsTrigger
+                                value="daily"
+                                className="rounded-lg font-bold text-xs py-2 px-3 sm:px-4 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm gap-2 shrink-0 whitespace-nowrap"
+                            >
+                                <CalendarDays className="h-4 w-4" />
+                                الجرد اليومي (تقفيل الخزينة)
+                            </TabsTrigger>
 
-                        <TabsTrigger
-                            value="transactions"
-                            className="rounded-lg font-bold text-xs py-2.5 px-4 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm gap-2"
-                        >
-                            <History className="h-4 w-4" />
-                            سجل كافة المعاملات
-                        </TabsTrigger>
+                            <TabsTrigger
+                                value="monthly"
+                                className="rounded-lg font-bold text-xs py-2 px-3 sm:px-4 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm gap-2 shrink-0 whitespace-nowrap"
+                            >
+                                <FileText className="h-4 w-4" />
+                                الجرد الشهري (التقفيل المالي)
+                            </TabsTrigger>
 
-                        <TabsTrigger
-                            value="teachers"
-                            className="rounded-lg font-bold text-xs py-2.5 px-4 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm gap-2"
-                        >
-                            <GraduationCap className="h-4 w-4" />
-                            كشف حساب المدرسين
-                        </TabsTrigger>
-                    </TabsList>
+                            <TabsTrigger
+                                value="transactions"
+                                className="rounded-lg font-bold text-xs py-2 px-3 sm:px-4 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm gap-2 shrink-0 whitespace-nowrap"
+                            >
+                                <History className="h-4 w-4" />
+                                سجل كافة المعاملات
+                            </TabsTrigger>
+
+                            <TabsTrigger
+                                value="teachers"
+                                className="rounded-lg font-bold text-xs py-2 px-3 sm:px-4 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm gap-2 shrink-0 whitespace-nowrap"
+                            >
+                                <GraduationCap className="h-4 w-4" />
+                                كشف حساب المدرسين
+                            </TabsTrigger>
+                        </TabsList>
+                    </div>
+
+                    {/* Right Arrow (المزيد من التبويبات يميناً) */}
+                    <button
+                        type="button"
+                        onClick={handleScrollRight}
+                        disabled={!canScrollRight}
+                        className={cn(
+                            "absolute right-2 top-2 bottom-2 z-20 w-9 flex items-center justify-center bg-gradient-to-l from-white via-white/95 to-transparent transition-opacity duration-200 rounded-r-xl",
+                            canScrollRight
+                                ? "text-primary hover:text-primary/80 cursor-pointer opacity-100 pointer-events-auto"
+                                : "opacity-0 pointer-events-none"
+                        )}
+                        title="المزيد من التبويبات يميناً"
+                        aria-label="المزيد من التبويبات يميناً"
+                    >
+                        <div className="w-6 h-6 rounded-full bg-white shadow-xs border border-primary/40 flex items-center justify-center hover:bg-gray-50 text-primary">
+                            <ChevronRight className="h-3.5 w-3.5 text-primary" />
+                        </div>
+                    </button>
                 </div>
 
                 {/* ══════════════════════════════════════════════════════════════════
@@ -779,30 +981,32 @@ export default function CenterFinancialsPage() {
                             </div>
 
                             {/* Date Quick Controls & Print Button */}
-                            <div className="flex flex-wrap items-center gap-2">
-                                <div className="flex items-center bg-gray-50 p-1 rounded-xl border border-gray-200">
-                                    <button
-                                        type="button"
-                                        onClick={() => setDailyDate(todayStr)}
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                            dailyDate === todayStr ? 'bg-white shadow-sm text-primary font-black' : 'text-gray-600 hover:text-gray-900'
-                                        }`}
-                                    >
-                                        اليوم
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            const y = new Date();
-                                            y.setDate(y.getDate() - 1);
-                                            setDailyDate(y.toISOString().split('T')[0]);
-                                        }}
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                            dailyDate !== todayStr ? 'bg-white shadow-sm text-primary font-black' : 'text-gray-600 hover:text-gray-900'
-                                        }`}
-                                    >
-                                        أمس
-                                    </button>
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+                                <div className="flex items-center justify-between bg-gray-50 p-1 rounded-xl border border-gray-200">
+                                    <div className="flex items-center">
+                                        <button
+                                            type="button"
+                                            onClick={() => setDailyDate(todayStr)}
+                                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                                dailyDate === todayStr ? 'bg-white shadow-sm text-primary font-black' : 'text-gray-600 hover:text-gray-900'
+                                            }`}
+                                        >
+                                            اليوم
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const y = new Date();
+                                                y.setDate(y.getDate() - 1);
+                                                setDailyDate(y.toISOString().split('T')[0]);
+                                            }}
+                                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                                dailyDate !== todayStr ? 'bg-white shadow-sm text-primary font-black' : 'text-gray-600 hover:text-gray-900'
+                                            }`}
+                                        >
+                                            أمس
+                                        </button>
+                                    </div>
                                     <input
                                         type="date"
                                         value={dailyDate}
@@ -811,24 +1015,26 @@ export default function CenterFinancialsPage() {
                                     />
                                 </div>
 
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => refetchDaily()}
-                                    className="rounded-xl h-9 text-xs"
-                                    title="تحديث البيانات"
-                                >
-                                    <RefreshCw className="h-3.5 w-3.5" />
-                                </Button>
+                                <div className="flex items-center gap-2">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => refetchDaily()}
+                                        className="rounded-xl h-9 text-xs shrink-0"
+                                        title="تحديث البيانات"
+                                    >
+                                        <RefreshCw className="h-3.5 w-3.5" />
+                                    </Button>
 
-                                <Button
-                                    onClick={handlePrintDailyTally}
-                                    disabled={!dailyTally || dailyTally.transactionCount === 0}
-                                    className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold gap-1.5 h-9"
-                                >
-                                    <Printer className="h-4 w-4" />
-                                    طباعة كشف جرد الخزينة اليومي
-                                </Button>
+                                    <Button
+                                        onClick={handlePrintDailyTally}
+                                        disabled={!dailyTally || dailyTally.transactionCount === 0}
+                                        className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold gap-1.5 h-9 flex-1 sm:flex-initial"
+                                    >
+                                        <Printer className="h-4 w-4" />
+                                        طباعة كشف جرد الخزينة اليومي
+                                    </Button>
+                                </div>
                             </div>
                         </div>
 
@@ -878,13 +1084,50 @@ export default function CenterFinancialsPage() {
 
                                 {/* Daily Transactions Table */}
                                 <div>
-                                    <div className="flex items-center justify-between mb-3">
+                                    <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                                         <h3 className="font-bold text-gray-900 text-sm flex items-center gap-2">
                                             <span>حركات وسجلات الخزينة اليومية</span>
                                             <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs">
                                                 {dailyTally?.transactions?.length || 0} حركة
                                             </Badge>
                                         </h3>
+
+                                        {(dailyTally?.transactions?.length || 0) > 0 && (
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => toggleSelectAllTxList(dailyTally?.transactions || [])}
+                                                    className="h-8 px-2.5 text-xs font-bold rounded-lg gap-1.5"
+                                                >
+                                                    <CheckSquare className="h-3.5 w-3.5 text-primary" />
+                                                    <span>
+                                                        {(dailyTally?.transactions || []).every((t) => selectedTxIds.includes(t._id))
+                                                            ? 'إلغاء تحديد الكل'
+                                                            : 'تحديد الكل'}
+                                                    </span>
+                                                </Button>
+
+                                                {selectedTxIds.length > 0 && (
+                                                    <Button
+                                                        type="button"
+                                                        variant="destructive"
+                                                        size="sm"
+                                                        disabled={batchDeleteTxMutation.isPending}
+                                                        onClick={handleBatchDeleteSelected}
+                                                        className="h-8 px-3 text-xs font-bold rounded-lg gap-1.5 bg-rose-600 hover:bg-rose-700 text-white"
+                                                    >
+                                                        {batchDeleteTxMutation.isPending ? (
+                                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                        ) : (
+                                                            <Trash2 className="h-3.5 w-3.5" />
+                                                        )}
+                                                        <span>حذف المحدد ({selectedTxIds.length})</span>
+                                                    </Button>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
 
                                     {dailyTally?.transactions?.length === 0 ? (
@@ -894,92 +1137,239 @@ export default function CenterFinancialsPage() {
                                             <p className="text-[11px] text-gray-400 mt-1">يمكنك تسجيل دفعة نقدية جديدة من الزر أعلاه</p>
                                         </div>
                                     ) : (
-                                        <div className="overflow-x-auto rounded-xl border border-gray-100">
-                                            <table className="w-full text-right text-xs">
-                                                <thead className="bg-gray-50 text-gray-500 font-bold border-b border-gray-100">
-                                                    <tr>
-                                                        <th className="py-3 px-3 text-center">#</th>
-                                                        <th className="py-3 px-3">الوقت</th>
-                                                        <th className="py-3 px-3">الطالب</th>
-                                                        <th className="py-3 px-3">نوع الاشتراك</th>
-                                                        <th className="py-3 px-3">البيان / المدرس</th>
-                                                        <th className="py-3 px-3 text-center">المطلوب</th>
-                                                        <th className="py-3 px-3 text-center">الخصم</th>
-                                                        <th className="py-3 px-3 text-center">المدفوع نقداً</th>
-                                                        <th className="py-3 px-3 text-center">المتبقي</th>
-                                                        <th className="py-3 px-3">المسؤول</th>
-                                                        <th className="py-3 px-3 text-center">إيصال</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-gray-100">
-                                                    {dailyTally?.transactions?.map((tx, idx) => (
-                                                        <tr key={tx._id} className="hover:bg-gray-50/60 transition-colors">
-                                                            <td className="py-3 px-3 text-center font-mono text-gray-400 font-bold">
-                                                                {idx + 1}
-                                                            </td>
-                                                            <td className="py-3 px-3 font-mono text-[11px] text-gray-500">
-                                                                {new Date(tx.date || tx.createdAt || '').toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
-                                                            </td>
-                                                            <td className="py-3 px-3">
-                                                                <div className="font-bold text-gray-900">{tx.studentName || 'طالب'}</div>
-                                                                <div className="text-[10px] text-gray-400 font-mono flex items-center gap-1.5 mt-0.5">
-                                                                    {tx.studentCode && <span>كود: {tx.studentCode}</span>}
-                                                                    {tx.gradeLevel && <span>• {tx.gradeLevel}</span>}
+                                        <>
+                                            {/* Mobile Cards View */}
+                                            <div className="sm:hidden space-y-2.5">
+                                                {dailyTally?.transactions?.map((tx, idx) => {
+                                                    const isSelected = selectedTxIds.includes(tx._id);
+                                                    return (
+                                                        <div
+                                                            key={tx._id}
+                                                            className={cn(
+                                                                "bg-white p-3.5 rounded-xl border shadow-xs space-y-2.5 transition-colors",
+                                                                isSelected ? "border-primary bg-primary/5" : "border-gray-100"
+                                                            )}
+                                                        >
+                                                            <div className="flex items-center justify-between">
+                                                                <div className="flex items-center gap-2">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={isSelected}
+                                                                        onChange={() => toggleSelectTx(tx._id)}
+                                                                        className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                                                                    />
+                                                                    <span className="font-mono text-xs font-bold text-gray-400">#{idx + 1}</span>
+                                                                    <span className="font-bold text-gray-900 text-sm">{tx.studentName || 'طالب'}</span>
                                                                 </div>
-                                                            </td>
-                                                            <td className="py-3 px-3">
                                                                 <Badge
                                                                     variant="outline"
                                                                     className={
                                                                         tx.category === 'CENTER_PACKAGE'
-                                                                            ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                                                            ? 'bg-blue-50 text-blue-700 border-blue-200 text-[10px]'
                                                                             : tx.category === 'CENTER_PRIVATE'
-                                                                            ? 'bg-purple-50 text-purple-700 border-purple-200'
-                                                                            : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                                            ? 'bg-purple-50 text-purple-700 border-purple-200 text-[10px]'
+                                                                            : 'bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]'
                                                                     }
                                                                 >
                                                                     {tx.category === 'CENTER_PACKAGE' ? 'باقة سنتر' : tx.category === 'CENTER_PRIVATE' ? 'برايفت' : 'شامل مجمع'}
                                                                 </Badge>
-                                                            </td>
-                                                            <td className="py-3 px-3 text-gray-600 font-medium">
-                                                                {tx.description || (tx.centerTeacherId ? `مدرس: ${tx.centerTeacherId.name}` : '—')}
-                                                            </td>
-                                                            <td className="py-3 px-3 text-center font-mono font-bold text-gray-700">
-                                                                {tx.originalAmount} ج.م
-                                                            </td>
-                                                            <td className="py-3 px-3 text-center font-mono font-bold text-emerald-600">
-                                                                {tx.discountAmount > 0 ? `-${tx.discountAmount} ج.م` : '—'}
-                                                            </td>
-                                                            <td className="py-3 px-3 text-center font-mono font-black text-emerald-700 bg-emerald-50/40">
-                                                                {tx.paidAmount} ج.م
-                                                            </td>
-                                                            <td className="py-3 px-3 text-center font-mono font-bold">
-                                                                {tx.remainingAmount > 0 ? (
-                                                                    <span className="text-rose-600">{tx.remainingAmount} ج.م</span>
-                                                                ) : (
-                                                                    <span className="text-gray-400">0</span>
-                                                                )}
-                                                            </td>
-                                                            <td className="py-3 px-3 text-gray-500 text-[11px]">
-                                                                {tx.createdBy?.name || 'السيستم'}
-                                                            </td>
-                                                            <td className="py-3 px-3 text-center">
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    size="sm"
-                                                                    onClick={() => printReceipt(centerName, tx)}
-                                                                    className="h-7 px-2 text-xs font-bold text-primary hover:bg-primary/10 rounded-lg gap-1"
-                                                                    title="طباعة إيصال السداد"
-                                                                >
-                                                                    <Printer className="h-3.5 w-3.5" />
-                                                                    <span>إيصال</span>
-                                                                </Button>
-                                                            </td>
+                                                            </div>
+                                                            <div className="flex items-center justify-between text-xs text-gray-500">
+                                                                <span>{tx.description || (tx.centerTeacherId ? `مدرس: ${tx.centerTeacherId.name}` : '—')}</span>
+                                                                <span className="font-mono text-[11px] text-gray-400">
+                                                                    {new Date(tx.date || tx.createdAt || '').toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
+                                                                </span>
+                                                            </div>
+                                                            <div className="grid grid-cols-3 gap-2 bg-gray-50/80 p-2 rounded-lg text-center text-xs">
+                                                                <div>
+                                                                    <span className="text-[10px] text-gray-400 block">المطلوب</span>
+                                                                    <span className="font-bold text-gray-700 font-mono">{tx.originalAmount} ج</span>
+                                                                </div>
+                                                                <div>
+                                                                    <span className="text-[10px] text-gray-400 block">المدفوع</span>
+                                                                    <span className="font-black text-emerald-600 font-mono">{tx.paidAmount} ج</span>
+                                                                </div>
+                                                                <div>
+                                                                    <span className="text-[10px] text-gray-400 block">المتبقي</span>
+                                                                    <span className={cn("font-bold font-mono", tx.remainingAmount > 0 ? "text-rose-600" : "text-gray-400")}>
+                                                                        {tx.remainingAmount > 0 ? `${tx.remainingAmount} ج` : '0'}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center justify-between pt-1 border-t border-gray-100">
+                                                                <span className="text-[10px] text-gray-400">المسؤول: {tx.createdBy?.name || 'الخزينة'}</span>
+                                                                <div className="flex items-center gap-1">
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        onClick={() => printReceipt(centerName, tx)}
+                                                                        className="h-7 px-2 text-xs font-bold text-primary hover:bg-primary/10 rounded-lg gap-1"
+                                                                    >
+                                                                        <Printer className="h-3.5 w-3.5" />
+                                                                        <span>إيصال</span>
+                                                                    </Button>
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        onClick={() => handleOpenEditTx(tx)}
+                                                                        className="h-7 px-2 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded-lg gap-1"
+                                                                    >
+                                                                        <Edit2 className="h-3.5 w-3.5" />
+                                                                        <span>تعديل</span>
+                                                                    </Button>
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        onClick={() => handleDeleteSingleTx(tx)}
+                                                                        className="h-7 px-2 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-lg"
+                                                                    >
+                                                                        <Trash2 className="h-3.5 w-3.5" />
+                                                                    </Button>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+
+                                            {/* Desktop Table View */}
+                                            <div className="hidden sm:block overflow-x-auto rounded-xl border border-gray-100">
+                                                <table className="w-full text-right text-xs">
+                                                    <thead className="bg-gray-50 text-gray-500 font-bold border-b border-gray-100">
+                                                        <tr>
+                                                            <th className="py-3 px-3 text-center w-9">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={
+                                                                        (dailyTally?.transactions?.length || 0) > 0 &&
+                                                                        (dailyTally?.transactions || []).every((t) => selectedTxIds.includes(t._id))
+                                                                    }
+                                                                    onChange={() => toggleSelectAllTxList(dailyTally?.transactions || [])}
+                                                                    className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                                                                    title="تحديد الكل"
+                                                                />
+                                                            </th>
+                                                            <th className="py-3 px-3 text-center">#</th>
+                                                            <th className="py-3 px-3">الوقت</th>
+                                                            <th className="py-3 px-3">الطالب</th>
+                                                            <th className="py-3 px-3">نوع الاشتراك</th>
+                                                            <th className="py-3 px-3">البيان / المدرس</th>
+                                                            <th className="py-3 px-3 text-center">المطلوب</th>
+                                                            <th className="py-3 px-3 text-center">الخصم</th>
+                                                            <th className="py-3 px-3 text-center">المدفوع نقداً</th>
+                                                            <th className="py-3 px-3 text-center">المتبقي</th>
+                                                            <th className="py-3 px-3">المسؤول</th>
+                                                            <th className="py-3 px-3 text-center">إجراءات</th>
                                                         </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-gray-100">
+                                                        {dailyTally?.transactions?.map((tx, idx) => {
+                                                            const isSelected = selectedTxIds.includes(tx._id);
+                                                            return (
+                                                                <tr
+                                                                    key={tx._id}
+                                                                    className={cn(
+                                                                        "hover:bg-gray-50/60 transition-colors",
+                                                                        isSelected && "bg-primary/5"
+                                                                    )}
+                                                                >
+                                                                    <td className="py-3 px-3 text-center">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={isSelected}
+                                                                            onChange={() => toggleSelectTx(tx._id)}
+                                                                            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                                                                        />
+                                                                    </td>
+                                                                    <td className="py-3 px-3 text-center font-mono text-gray-400 font-bold">
+                                                                        {idx + 1}
+                                                                    </td>
+                                                                    <td className="py-3 px-3 font-mono text-[11px] text-gray-500">
+                                                                        {new Date(tx.date || tx.createdAt || '').toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
+                                                                    </td>
+                                                                    <td className="py-3 px-3">
+                                                                        <div className="font-bold text-gray-900">{tx.studentName || 'طالب'}</div>
+                                                                        <div className="text-[10px] text-gray-400 font-mono flex items-center gap-1.5 mt-0.5">
+                                                                            {tx.studentCode && <span>كود: {tx.studentCode}</span>}
+                                                                            {tx.gradeLevel && <span>• {tx.gradeLevel}</span>}
+                                                                        </div>
+                                                                    </td>
+                                                                    <td className="py-3 px-3">
+                                                                        <Badge
+                                                                            variant="outline"
+                                                                            className={
+                                                                                tx.category === 'CENTER_PACKAGE'
+                                                                                    ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                                                                    : tx.category === 'CENTER_PRIVATE'
+                                                                                    ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                                                                    : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                                            }
+                                                                        >
+                                                                            {tx.category === 'CENTER_PACKAGE' ? 'باقة سنتر' : tx.category === 'CENTER_PRIVATE' ? 'برايفت' : 'شامل مجمع'}
+                                                                        </Badge>
+                                                                    </td>
+                                                                    <td className="py-3 px-3 text-gray-600 font-medium">
+                                                                        {tx.description || (tx.centerTeacherId ? `مدرس: ${tx.centerTeacherId.name}` : '—')}
+                                                                    </td>
+                                                                    <td className="py-3 px-3 text-center font-mono font-bold text-gray-700">
+                                                                        {tx.originalAmount} ج.م
+                                                                    </td>
+                                                                    <td className="py-3 px-3 text-center font-mono font-bold text-emerald-600">
+                                                                        {tx.discountAmount > 0 ? `-${tx.discountAmount} ج.م` : '—'}
+                                                                    </td>
+                                                                    <td className="py-3 px-3 text-center font-mono font-black text-emerald-700 bg-emerald-50/40">
+                                                                        {tx.paidAmount} ج.م
+                                                                    </td>
+                                                                    <td className="py-3 px-3 text-center font-mono font-bold">
+                                                                        {tx.remainingAmount > 0 ? (
+                                                                            <span className="text-rose-600">{tx.remainingAmount} ج.م</span>
+                                                                        ) : (
+                                                                            <span className="text-gray-400">0</span>
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="py-3 px-3 text-gray-500 text-[11px]">
+                                                                        {tx.createdBy?.name || 'السيستم'}
+                                                                    </td>
+                                                                    <td className="py-3 px-3 text-center">
+                                                                        <div className="flex items-center justify-center gap-1">
+                                                                            <Button
+                                                                                variant="ghost"
+                                                                                size="sm"
+                                                                                onClick={() => printReceipt(centerName, tx)}
+                                                                                className="h-7 px-2 text-xs font-bold text-primary hover:bg-primary/10 rounded-lg gap-1"
+                                                                                title="طباعة إيصال السداد"
+                                                                            >
+                                                                                <Printer className="h-3.5 w-3.5" />
+                                                                                <span>إيصال</span>
+                                                                            </Button>
+                                                                            <Button
+                                                                                variant="ghost"
+                                                                                size="sm"
+                                                                                onClick={() => handleOpenEditTx(tx)}
+                                                                                className="h-7 px-2 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded-lg gap-1"
+                                                                                title="تعديل المعاملة"
+                                                                            >
+                                                                                <Edit2 className="h-3.5 w-3.5" />
+                                                                                <span>تعديل</span>
+                                                                            </Button>
+                                                                            <Button
+                                                                                variant="ghost"
+                                                                                size="sm"
+                                                                                onClick={() => handleDeleteSingleTx(tx)}
+                                                                                className="h-7 px-2 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-lg"
+                                                                                title="حذف المعاملة"
+                                                                            >
+                                                                                <Trash2 className="h-3.5 w-3.5" />
+                                                                            </Button>
+                                                                        </div>
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </>
                                     )}
                                 </div>
                             </>
@@ -1005,12 +1395,12 @@ export default function CenterFinancialsPage() {
                             </div>
 
                             {/* Month & Year Selectors + Print */}
-                            <div className="flex flex-wrap items-center gap-2.5">
-                                <div className="flex items-center gap-2 bg-gray-50 p-1 rounded-xl border border-gray-200">
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full sm:w-auto">
+                                <div className="flex items-center gap-2 bg-gray-50 p-1 rounded-xl border border-gray-200 justify-between">
                                     <select
                                         value={selectedMonth}
                                         onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                                        className="h-8 px-2 rounded-lg bg-white border border-gray-200 text-xs font-bold text-gray-800"
+                                        className="h-8 px-2 rounded-lg bg-white border border-gray-200 text-xs font-bold text-gray-800 flex-1 sm:flex-initial"
                                     >
                                         {MONTHS_AR.map((m, idx) => (
                                             <option key={idx + 1} value={idx + 1}>
@@ -1022,7 +1412,7 @@ export default function CenterFinancialsPage() {
                                     <select
                                         value={selectedYear}
                                         onChange={(e) => setSelectedYear(Number(e.target.value))}
-                                        className="h-8 px-2 rounded-lg bg-white border border-gray-200 text-xs font-bold text-gray-800"
+                                        className="h-8 px-2 rounded-lg bg-white border border-gray-200 text-xs font-bold text-gray-800 flex-1 sm:flex-initial"
                                     >
                                         {[currentYear - 1, currentYear, currentYear + 1].map((y) => (
                                             <option key={y} value={y}>
@@ -1032,23 +1422,25 @@ export default function CenterFinancialsPage() {
                                     </select>
                                 </div>
 
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => refetchMonthly()}
-                                    className="rounded-xl h-9 text-xs"
-                                >
-                                    <RefreshCw className="h-3.5 w-3.5" />
-                                </Button>
+                                <div className="flex items-center gap-2">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => refetchMonthly()}
+                                        className="rounded-xl h-9 text-xs shrink-0"
+                                    >
+                                        <RefreshCw className="h-3.5 w-3.5" />
+                                    </Button>
 
-                                <Button
-                                    onClick={handlePrintMonthlyTally}
-                                    disabled={!monthlyTally || monthlyTally.transactionCount === 0}
-                                    className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold gap-1.5 h-9"
-                                >
-                                    <Printer className="h-4 w-4" />
-                                    طباعة تقرير الجرد الشهري المعتمد
-                                </Button>
+                                    <Button
+                                        onClick={handlePrintMonthlyTally}
+                                        disabled={!monthlyTally || monthlyTally.transactionCount === 0}
+                                        className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold gap-1.5 h-9 flex-1 sm:flex-initial"
+                                    >
+                                        <Printer className="h-4 w-4" />
+                                        طباعة تقرير الجرد الشهري المعتمد
+                                    </Button>
+                                </div>
                             </div>
                         </div>
 
@@ -1108,48 +1500,87 @@ export default function CenterFinancialsPage() {
                                             لا توجد معاملات مسجلة في هذا الشهر
                                         </div>
                                     ) : (
-                                        <div className="overflow-x-auto rounded-xl border border-gray-100">
-                                            <table className="w-full text-right text-xs">
-                                                <thead className="bg-gray-50 text-gray-500 font-bold border-b border-gray-100">
-                                                    <tr>
-                                                        <th className="py-2.5 px-3">اليوم</th>
-                                                        <th className="py-2.5 px-3 text-center">عدد العمليات</th>
-                                                        <th className="py-2.5 px-3 text-center">إيراد الباقات</th>
-                                                        <th className="py-2.5 px-3 text-center">إيراد البرايفت</th>
-                                                        <th className="py-2.5 px-3 text-center">إيراد المجمع</th>
-                                                        <th className="py-2.5 px-3 text-center">المحصل لليوم</th>
-                                                        <th className="py-2.5 px-3 text-center">المتبقيات (الديون)</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-gray-100">
-                                                    {monthlyTally?.dailyBreakdown?.map((d) => (
-                                                        <tr key={d.day} className="hover:bg-gray-50/60">
-                                                            <td className="py-2.5 px-3 font-bold text-gray-900">
-                                                                يوم {d.day} {MONTHS_AR[selectedMonth - 1]}
-                                                            </td>
-                                                            <td className="py-2.5 px-3 text-center font-mono font-bold text-gray-700">
-                                                                {d.count}
-                                                            </td>
-                                                            <td className="py-2.5 px-3 text-center font-mono text-blue-600 font-bold">
-                                                                {d.packageRevenue.toLocaleString()} ج.م
-                                                            </td>
-                                                            <td className="py-2.5 px-3 text-center font-mono text-purple-600 font-bold">
-                                                                {d.privateRevenue.toLocaleString()} ج.م
-                                                            </td>
-                                                            <td className="py-2.5 px-3 text-center font-mono text-amber-600 font-bold">
-                                                                {(d.combinedRevenue || 0).toLocaleString()} ج.م
-                                                            </td>
-                                                            <td className="py-2.5 px-3 text-center font-mono font-black text-emerald-700 bg-emerald-50/30">
-                                                                {d.totalPaid.toLocaleString()} ج.م
-                                                            </td>
-                                                            <td className="py-2.5 px-3 text-center font-mono text-rose-600 font-bold">
-                                                                {d.totalDebt.toLocaleString()} ج.م
-                                                            </td>
+                                        <>
+                                            {/* Mobile Cards for Daily Breakdown */}
+                                            <div className="sm:hidden space-y-2.5">
+                                                {monthlyTally?.dailyBreakdown?.map((d) => (
+                                                    <div key={d.day} className="bg-white p-3.5 rounded-xl border border-gray-100 shadow-xs space-y-2">
+                                                        <div className="flex items-center justify-between">
+                                                            <span className="font-bold text-gray-900 text-sm">يوم {d.day} {MONTHS_AR[selectedMonth - 1]}</span>
+                                                            <Badge variant="outline" className="text-[11px] bg-blue-50 text-blue-700 border-blue-200 font-mono">
+                                                                {d.count} عملية
+                                                            </Badge>
+                                                        </div>
+                                                        <div className="grid grid-cols-2 gap-2 text-xs bg-gray-50/70 p-2 rounded-lg">
+                                                            <div>
+                                                                <span className="text-[10px] text-gray-400 block">إيراد باقات:</span>
+                                                                <span className="font-bold font-mono text-blue-600">{d.packageRevenue.toLocaleString()} ج.م</span>
+                                                            </div>
+                                                            <div>
+                                                                <span className="text-[10px] text-gray-400 block">إيراد برايفت:</span>
+                                                                <span className="font-bold font-mono text-purple-600">{d.privateRevenue.toLocaleString()} ج.م</span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex items-center justify-between pt-1 border-t border-gray-100/80 text-xs">
+                                                            <div>
+                                                                <span className="text-[10px] text-gray-400 block">المحصل لليوم</span>
+                                                                <span className="font-black font-mono text-emerald-700 text-sm">{d.totalPaid.toLocaleString()} ج.م</span>
+                                                            </div>
+                                                            <div className="text-left">
+                                                                <span className="text-[10px] text-gray-400 block">المتبقيات (ديون)</span>
+                                                                <span className={cn("font-bold font-mono text-xs", d.totalDebt > 0 ? "text-rose-600" : "text-gray-400")}>
+                                                                    {d.totalDebt.toLocaleString()} ج.م
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            {/* Desktop Table */}
+                                            <div className="hidden sm:block overflow-x-auto rounded-xl border border-gray-100">
+                                                <table className="w-full text-right text-xs">
+                                                    <thead className="bg-gray-50 text-gray-500 font-bold border-b border-gray-100">
+                                                        <tr>
+                                                            <th className="py-2.5 px-3">اليوم</th>
+                                                            <th className="py-2.5 px-3 text-center">عدد العمليات</th>
+                                                            <th className="py-2.5 px-3 text-center">إيراد الباقات</th>
+                                                            <th className="py-2.5 px-3 text-center">إيراد البرايفت</th>
+                                                            <th className="py-2.5 px-3 text-center">إيراد المجمع</th>
+                                                            <th className="py-2.5 px-3 text-center">المحصل لليوم</th>
+                                                            <th className="py-2.5 px-3 text-center">المتبقيات (الديون)</th>
                                                         </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-gray-100">
+                                                        {monthlyTally?.dailyBreakdown?.map((d) => (
+                                                            <tr key={d.day} className="hover:bg-gray-50/60">
+                                                                <td className="py-2.5 px-3 font-bold text-gray-900">
+                                                                    يوم {d.day} {MONTHS_AR[selectedMonth - 1]}
+                                                                </td>
+                                                                <td className="py-2.5 px-3 text-center font-mono font-bold text-gray-700">
+                                                                    {d.count}
+                                                                </td>
+                                                                <td className="py-2.5 px-3 text-center font-mono text-blue-600 font-bold">
+                                                                    {d.packageRevenue.toLocaleString()} ج.م
+                                                                </td>
+                                                                <td className="py-2.5 px-3 text-center font-mono text-purple-600 font-bold">
+                                                                    {d.privateRevenue.toLocaleString()} ج.م
+                                                                </td>
+                                                                <td className="py-2.5 px-3 text-center font-mono text-amber-600 font-bold">
+                                                                    {(d.combinedRevenue || 0).toLocaleString()} ج.م
+                                                                </td>
+                                                                <td className="py-2.5 px-3 text-center font-mono font-black text-emerald-700 bg-emerald-50/30">
+                                                                    {d.totalPaid.toLocaleString()} ج.م
+                                                                </td>
+                                                                <td className="py-2.5 px-3 text-center font-mono text-rose-600 font-bold">
+                                                                    {d.totalDebt.toLocaleString()} ج.م
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </>
                                     )}
                                 </div>
                             </>
@@ -1174,7 +1605,7 @@ export default function CenterFinancialsPage() {
                                 </p>
                             </div>
 
-                            <div className="flex flex-wrap items-center gap-2.5">
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto">
                                 <div className="relative w-full sm:w-56">
                                     <Search className="h-4 w-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2" />
                                     <Input
@@ -1184,39 +1615,41 @@ export default function CenterFinancialsPage() {
                                             setTxPage(1);
                                         }}
                                         placeholder="بحث باسم الطالب أو البيان..."
-                                        className="h-9 pr-9 text-xs rounded-xl"
+                                        className="h-9 pr-9 text-xs rounded-xl w-full"
                                     />
                                 </div>
 
-                                <select
-                                    value={txCategory}
-                                    onChange={(e) => {
-                                        setTxCategory(e.target.value);
-                                        setTxPage(1);
-                                    }}
-                                    className="h-9 px-3 rounded-xl border border-gray-200 bg-white text-xs font-bold text-gray-700"
-                                >
-                                    <option value="">كل أنواع المعاملات</option>
-                                    <option value="CENTER_PACKAGE">اشتراكات باقة</option>
-                                    <option value="CENTER_PRIVATE">اشتراكات برايفت</option>
-                                    <option value="CENTER_COMBINED">اشتراكات مجمعة</option>
-                                </select>
+                                <div className="flex items-center gap-2 w-full sm:w-auto">
+                                    <select
+                                        value={txCategory}
+                                        onChange={(e) => {
+                                            setTxCategory(e.target.value);
+                                            setTxPage(1);
+                                        }}
+                                        className="h-9 px-3 rounded-xl border border-gray-200 bg-white text-xs font-bold text-gray-700 flex-1 sm:flex-initial"
+                                    >
+                                        <option value="">كل أنواع المعاملات</option>
+                                        <option value="CENTER_PACKAGE">اشتراكات باقة</option>
+                                        <option value="CENTER_PRIVATE">اشتراكات برايفت</option>
+                                        <option value="CENTER_COMBINED">اشتراكات مجمعة</option>
+                                    </select>
 
-                                <select
-                                    value={txTeacherId}
-                                    onChange={(e) => {
-                                        setTxTeacherId(e.target.value);
-                                        setTxPage(1);
-                                    }}
-                                    className="h-9 px-3 rounded-xl border border-gray-200 bg-white text-xs font-bold text-gray-700"
-                                >
-                                    <option value="">كل المدرسين</option>
-                                    {teachers.map((t) => (
-                                        <option key={t._id} value={t._id}>
-                                            {t.name}
-                                        </option>
-                                    ))}
-                                </select>
+                                    <select
+                                        value={txTeacherId}
+                                        onChange={(e) => {
+                                            setTxTeacherId(e.target.value);
+                                            setTxPage(1);
+                                        }}
+                                        className="h-9 px-3 rounded-xl border border-gray-200 bg-white text-xs font-bold text-gray-700 flex-1 sm:flex-initial"
+                                    >
+                                        <option value="">كل المدرسين</option>
+                                        {teachers.map((t) => (
+                                            <option key={t._id} value={t._id}>
+                                                {t.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
                             </div>
                         </div>
 
@@ -1231,89 +1664,316 @@ export default function CenterFinancialsPage() {
                                 لا توجد معاملات مطابقة للبحث المحدد
                             </div>
                         ) : (
-                            <div className="space-y-4">
-                                <div className="overflow-x-auto rounded-xl border border-gray-100">
-                                    <table className="w-full text-right text-xs">
-                                        <thead className="bg-gray-50 text-gray-500 font-bold border-b border-gray-100">
-                                            <tr>
-                                                <th className="py-3 px-3">التاريخ والوقت</th>
-                                                <th className="py-3 px-3">الطالب</th>
-                                                <th className="py-3 px-3">النوع</th>
-                                                <th className="py-3 px-3">البيان</th>
-                                                <th className="py-3 px-3 text-center">المطلوب</th>
-                                                <th className="py-3 px-3 text-center">الخصم</th>
-                                                <th className="py-3 px-3 text-center">المدفوع</th>
-                                                <th className="py-3 px-3 text-center">المتبقي</th>
-                                                <th className="py-3 px-3">المسؤول</th>
-                                                <th className="py-3 px-3 text-center">إيصال</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-gray-100">
-                                            {txData?.transactions?.map((tx: any) => (
-                                                <tr key={tx._id} className="hover:bg-gray-50/60">
-                                                    <td className="py-3 px-3 font-mono text-[11px] text-gray-500">
-                                                        <div>{new Date(tx.date || tx.createdAt).toLocaleDateString('ar-EG')}</div>
-                                                        <div className="text-[10px] text-gray-400">{new Date(tx.date || tx.createdAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</div>
-                                                    </td>
-                                                    <td className="py-3 px-3">
-                                                        <div className="font-bold text-gray-900">{tx.studentName || 'طالب'}</div>
-                                                        <div className="text-[10px] text-gray-400 font-mono mt-0.5">
-                                                            {tx.studentCode && <span>كود: {tx.studentCode}</span>}
-                                                            {tx.gradeLevel && <span> • {tx.gradeLevel}</span>}
+                                <div className="space-y-4">
+                                    {/* Bulk Selection Toolbar */}
+                                    <div className="flex flex-wrap items-center justify-between gap-2 bg-gray-50/80 p-2.5 rounded-xl border border-gray-100">
+                                        <div className="flex items-center gap-2">
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => toggleSelectAllTxList(txData?.transactions || [])}
+                                                className="h-8 px-2.5 text-xs font-bold rounded-lg gap-1.5 bg-white"
+                                            >
+                                                <CheckSquare className="h-3.5 w-3.5 text-primary" />
+                                                <span>
+                                                    {(txData?.transactions || []).every((t: any) => selectedTxIds.includes(t._id))
+                                                        ? 'إلغاء تحديد الكل'
+                                                        : 'تحديد الكل في الصفحة'}
+                                                </span>
+                                            </Button>
+
+                                            {selectedTxIds.length > 0 && (
+                                                <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20 text-xs font-bold">
+                                                    تم تحديد {selectedTxIds.length} معاملة
+                                                </Badge>
+                                            )}
+                                        </div>
+
+                                        {selectedTxIds.length > 0 && (
+                                            <div className="flex items-center gap-2">
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => setSelectedTxIds([])}
+                                                    className="h-8 px-2.5 text-xs text-gray-500"
+                                                >
+                                                    إلغاء التحديد
+                                                </Button>
+                                                <Button
+                                                    type="button"
+                                                    variant="destructive"
+                                                    size="sm"
+                                                    disabled={batchDeleteTxMutation.isPending}
+                                                    onClick={handleBatchDeleteSelected}
+                                                    className="h-8 px-3 text-xs font-bold rounded-lg gap-1.5 bg-rose-600 hover:bg-rose-700 text-white"
+                                                >
+                                                    {batchDeleteTxMutation.isPending ? (
+                                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                    ) : (
+                                                        <Trash2 className="h-3.5 w-3.5" />
+                                                    )}
+                                                    <span>حذف المحدد ({selectedTxIds.length})</span>
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Mobile Cards for Transactions */}
+                                    <div className="sm:hidden space-y-2.5">
+                                        {txData?.transactions?.map((tx: any) => {
+                                            const isSelected = selectedTxIds.includes(tx._id);
+                                            const isOffline = Boolean(tx.offlinePending || tx.isOfflineCreated);
+                                            return (
+                                                <div
+                                                    key={tx._id}
+                                                    className={cn(
+                                                        "bg-white p-3.5 rounded-xl border shadow-xs space-y-2 transition-colors",
+                                                        isSelected ? "border-primary bg-primary/5" : "border-gray-100"
+                                                    )}
+                                                >
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex items-start gap-2.5">
+                                                            {!isOffline && (
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={isSelected}
+                                                                    onChange={() => toggleSelectTx(tx._id)}
+                                                                    className="h-4 w-4 mt-1 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                                                                />
+                                                            )}
+                                                            <div>
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="font-bold text-gray-900 text-sm">{tx.studentName || 'طالب'}</div>
+                                                                    {isOffline && (
+                                                                        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300 text-[9px] font-bold">
+                                                                            معلق للرفع
+                                                                        </Badge>
+                                                                    )}
+                                                                </div>
+                                                                <div className="text-[10px] text-gray-400 font-mono">
+                                                                    {new Date(tx.date || tx.createdAt).toLocaleDateString('ar-EG')} • {new Date(tx.date || tx.createdAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
+                                                                </div>
+                                                            </div>
                                                         </div>
-                                                    </td>
-                                                    <td className="py-3 px-3">
                                                         <Badge
                                                             variant="outline"
                                                             className={
                                                                 tx.category === 'CENTER_PACKAGE'
-                                                                    ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                                                    ? 'bg-blue-50 text-blue-700 border-blue-200 text-[10px]'
                                                                     : tx.category === 'CENTER_PRIVATE'
-                                                                    ? 'bg-purple-50 text-purple-700 border-purple-200'
-                                                                    : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                                    ? 'bg-purple-50 text-purple-700 border-purple-200 text-[10px]'
+                                                                    : 'bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]'
                                                             }
                                                         >
                                                             {tx.category === 'CENTER_PACKAGE' ? 'باقة سنتر' : tx.category === 'CENTER_PRIVATE' ? 'برايفت' : 'شامل مجمع'}
                                                         </Badge>
-                                                    </td>
-                                                    <td className="py-3 px-3 text-gray-600 font-medium max-w-xs truncate">
-                                                        {tx.description || (tx.centerTeacherId ? `مدرس: ${tx.centerTeacherId.name}` : '—')}
-                                                    </td>
-                                                    <td className="py-3 px-3 text-center font-mono font-bold text-gray-700">
-                                                        {tx.originalAmount} ج.م
-                                                    </td>
-                                                    <td className="py-3 px-3 text-center font-mono font-bold text-emerald-600">
-                                                        {tx.discountAmount > 0 ? `-${tx.discountAmount} ج.م` : '—'}
-                                                    </td>
-                                                    <td className="py-3 px-3 text-center font-mono font-black text-emerald-700 bg-emerald-50/40">
-                                                        {tx.paidAmount} ج.م
-                                                    </td>
-                                                    <td className="py-3 px-3 text-center font-mono font-bold">
-                                                        {tx.remainingAmount > 0 ? (
-                                                            <span className="text-rose-600">{tx.remainingAmount} ج.م</span>
-                                                        ) : (
-                                                            <span className="text-gray-400">0</span>
-                                                        )}
-                                                    </td>
-                                                    <td className="py-3 px-3 text-gray-500 text-[11px]">
-                                                        {tx.createdBy?.name || 'السيستم'}
-                                                    </td>
-                                                    <td className="py-3 px-3 text-center">
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            onClick={() => printReceipt(centerName, tx)}
-                                                            className="h-7 px-2 text-xs font-bold text-primary hover:bg-primary/10 rounded-lg gap-1"
-                                                        >
-                                                            <Printer className="h-3.5 w-3.5" />
-                                                            <span>طباعة</span>
-                                                        </Button>
-                                                    </td>
+                                                    </div>
+                                                    {tx.description && (
+                                                        <p className="text-xs text-gray-500 bg-gray-50/70 p-1.5 rounded-lg">{tx.description}</p>
+                                                    )}
+                                                    <div className="grid grid-cols-3 gap-2 bg-gray-50/80 p-2 rounded-lg text-center text-xs">
+                                                        <div>
+                                                            <span className="text-[10px] text-gray-400 block">المطلوب</span>
+                                                            <span className="font-bold text-gray-700 font-mono">{tx.originalAmount} ج</span>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-[10px] text-gray-400 block">المدفوع</span>
+                                                            <span className="font-black text-emerald-600 font-mono">{tx.paidAmount} ج</span>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-[10px] text-gray-400 block">المتبقي</span>
+                                                            <span className={cn("font-bold font-mono", tx.remainingAmount > 0 ? "text-rose-600" : "text-gray-400")}>
+                                                                {tx.remainingAmount > 0 ? `${tx.remainingAmount} ج` : '0'}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center justify-between pt-1 border-t border-gray-100">
+                                                        <span className="text-[10px] text-gray-400">المسؤول: {tx.createdBy?.name || 'السيستم'}</span>
+                                                        <div className="flex items-center gap-1">
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                onClick={() => printReceipt(centerName, tx)}
+                                                                className="h-7 px-2 text-xs font-bold text-primary hover:bg-primary/10 rounded-lg gap-1"
+                                                            >
+                                                                <Printer className="h-3.5 w-3.5" />
+                                                                <span>طباعة</span>
+                                                            </Button>
+                                                            {!isOffline && (
+                                                                <>
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        onClick={() => handleOpenEditTx(tx)}
+                                                                        className="h-7 px-2 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded-lg gap-1"
+                                                                    >
+                                                                        <Edit2 className="h-3.5 w-3.5" />
+                                                                        <span>تعديل</span>
+                                                                    </Button>
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        onClick={() => handleDeleteSingleTx(tx)}
+                                                                        className="h-7 px-2 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-lg"
+                                                                    >
+                                                                        <Trash2 className="h-3.5 w-3.5" />
+                                                                    </Button>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {/* Desktop Table */}
+                                    <div className="hidden sm:block overflow-x-auto rounded-xl border border-gray-100">
+                                        <table className="w-full text-right text-xs">
+                                            <thead className="bg-gray-50 text-gray-500 font-bold border-b border-gray-100">
+                                                <tr>
+                                                    <th className="py-3 px-3 text-center w-9">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={
+                                                                (txData?.transactions?.length || 0) > 0 &&
+                                                                (txData?.transactions || []).every((t: any) => selectedTxIds.includes(t._id))
+                                                            }
+                                                            onChange={() => toggleSelectAllTxList(txData?.transactions || [])}
+                                                            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                                                            title="تحديد الكل"
+                                                        />
+                                                    </th>
+                                                    <th className="py-3 px-3">التاريخ والوقت</th>
+                                                    <th className="py-3 px-3">الطالب</th>
+                                                    <th className="py-3 px-3">النوع</th>
+                                                    <th className="py-3 px-3">البيان</th>
+                                                    <th className="py-3 px-3 text-center">المطلوب</th>
+                                                    <th className="py-3 px-3 text-center">الخصم</th>
+                                                    <th className="py-3 px-3 text-center">المدفوع</th>
+                                                    <th className="py-3 px-3 text-center">المتبقي</th>
+                                                    <th className="py-3 px-3">المسؤول</th>
+                                                    <th className="py-3 px-3 text-center">إجراءات</th>
                                                 </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-100">
+                                                {txData?.transactions?.map((tx: any) => {
+                                                    const isSelected = selectedTxIds.includes(tx._id);
+                                                    const isOffline = Boolean(tx.offlinePending || tx.isOfflineCreated);
+                                                    return (
+                                                        <tr
+                                                            key={tx._id}
+                                                            className={cn(
+                                                                "hover:bg-gray-50/60 transition-colors",
+                                                                isSelected && "bg-primary/5"
+                                                            )}
+                                                        >
+                                                            <td className="py-3 px-3 text-center">
+                                                                {!isOffline && (
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={isSelected}
+                                                                        onChange={() => toggleSelectTx(tx._id)}
+                                                                        className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                                                                    />
+                                                                )}
+                                                            </td>
+                                                            <td className="py-3 px-3 font-mono text-[11px] text-gray-500">
+                                                                <div>{new Date(tx.date || tx.createdAt).toLocaleDateString('ar-EG')}</div>
+                                                                <div className="text-[10px] text-gray-400">{new Date(tx.date || tx.createdAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</div>
+                                                            </td>
+                                                            <td className="py-3 px-3">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="font-bold text-gray-900">{tx.studentName || 'طالب'}</span>
+                                                                    {isOffline && (
+                                                                        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300 text-[10px] font-bold">
+                                                                            معلق للرفع
+                                                                        </Badge>
+                                                                    )}
+                                                                </div>
+                                                                <div className="text-[10px] text-gray-400 font-mono mt-0.5">
+                                                                    {tx.studentCode && <span>كود: {tx.studentCode}</span>}
+                                                                    {tx.gradeLevel && <span> • {tx.gradeLevel}</span>}
+                                                                </div>
+                                                            </td>
+                                                            <td className="py-3 px-3">
+                                                                <Badge
+                                                                    variant="outline"
+                                                                    className={
+                                                                        tx.category === 'CENTER_PACKAGE'
+                                                                            ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                                                            : tx.category === 'CENTER_PRIVATE'
+                                                                            ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                                                            : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                                    }
+                                                                >
+                                                                    {tx.category === 'CENTER_PACKAGE' ? 'باقة سنتر' : tx.category === 'CENTER_PRIVATE' ? 'برايفت' : 'شامل مجمع'}
+                                                                </Badge>
+                                                            </td>
+                                                            <td className="py-3 px-3 text-gray-600 font-medium max-w-xs truncate">
+                                                                {tx.description || (tx.centerTeacherId ? `مدرس: ${tx.centerTeacherId.name}` : '—')}
+                                                            </td>
+                                                            <td className="py-3 px-3 text-center font-mono font-bold text-gray-700">
+                                                                {tx.originalAmount} ج.م
+                                                            </td>
+                                                            <td className="py-3 px-3 text-center font-mono font-bold text-emerald-600">
+                                                                {tx.discountAmount > 0 ? `-${tx.discountAmount} ج.م` : '—'}
+                                                            </td>
+                                                            <td className="py-3 px-3 text-center font-mono font-black text-emerald-700 bg-emerald-50/40">
+                                                                {tx.paidAmount} ج.م
+                                                            </td>
+                                                            <td className="py-3 px-3 text-center font-mono font-bold">
+                                                                {tx.remainingAmount > 0 ? (
+                                                                    <span className="text-rose-600">{tx.remainingAmount} ج.م</span>
+                                                                ) : (
+                                                                    <span className="text-gray-400">0</span>
+                                                                )}
+                                                            </td>
+                                                            <td className="py-3 px-3 text-gray-500 text-[11px]">
+                                                                {tx.createdBy?.name || 'السيستم'}
+                                                            </td>
+                                                            <td className="py-3 px-3 text-center">
+                                                                <div className="flex items-center justify-center gap-1">
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        onClick={() => printReceipt(centerName, tx)}
+                                                                        className="h-7 px-2 text-xs font-bold text-primary hover:bg-primary/10 rounded-lg gap-1"
+                                                                    >
+                                                                        <Printer className="h-3.5 w-3.5" />
+                                                                        <span>طباعة</span>
+                                                                    </Button>
+                                                                    {!isOffline && (
+                                                                        <>
+                                                                            <Button
+                                                                                variant="ghost"
+                                                                                size="sm"
+                                                                                onClick={() => handleOpenEditTx(tx)}
+                                                                                className="h-7 px-2 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded-lg gap-1"
+                                                                            >
+                                                                                <Edit2 className="h-3.5 w-3.5" />
+                                                                                <span>تعديل</span>
+                                                                            </Button>
+                                                                            <Button
+                                                                                variant="ghost"
+                                                                                size="sm"
+                                                                                onClick={() => handleDeleteSingleTx(tx)}
+                                                                                className="h-7 px-2 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-lg"
+                                                                            >
+                                                                                <Trash2 className="h-3.5 w-3.5" />
+                                                                            </Button>
+                                                                        </>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
 
                                 {/* Pagination */}
                                 {Boolean(txData && txData.totalPages > 1) && (
@@ -1417,52 +2077,94 @@ export default function CenterFinancialsPage() {
                                 {teacherReport?.transactions?.length === 0 ? (
                                     <p className="text-center text-xs text-gray-400 py-6">لا توجد معاملات مسجلة لهذا المدرس حتى الآن</p>
                                 ) : (
-                                    <div className="overflow-x-auto rounded-xl border border-gray-100">
-                                        <table className="w-full text-right text-xs">
-                                            <thead className="bg-gray-50/80 border-b border-gray-100 text-gray-400 font-bold">
-                                                <tr>
-                                                    <th className="py-3 px-4">الطالب</th>
-                                                    <th className="py-3 px-4">المبلغ الأصلي</th>
-                                                    <th className="py-3 px-4">المدفوع</th>
-                                                    <th className="py-3 px-4">المتبقي</th>
-                                                    <th className="py-3 px-4">التاريخ</th>
-                                                    <th className="py-3 px-4 text-center">إيصال</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-gray-100">
-                                                {teacherReport?.transactions?.map((tx: any) => (
-                                                    <tr key={tx._id} className="hover:bg-gray-50/50">
-                                                        <td className="py-3 px-4 font-bold text-gray-900">
-                                                            {tx.studentName || 'طالب'}
-                                                        </td>
-                                                        <td className="py-3 px-4 font-bold text-gray-600 font-mono">
-                                                            {tx.originalAmount} ج.م
-                                                        </td>
-                                                        <td className="py-3 px-4 font-bold text-emerald-600 font-mono">
-                                                            {tx.paidAmount} ج.م
-                                                        </td>
-                                                        <td className="py-3 px-4 font-bold text-rose-600 font-mono">
-                                                            {tx.remainingAmount} ج.م
-                                                        </td>
-                                                        <td className="py-3 px-4 text-gray-400 font-medium">
-                                                            {new Date(tx.date).toLocaleDateString('ar-EG')}
-                                                        </td>
-                                                        <td className="py-3 px-4 text-center">
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="sm"
-                                                                onClick={() => printReceipt(centerName, tx)}
-                                                                className="h-7 px-2 text-xs font-bold text-primary hover:bg-primary/10 rounded-lg gap-1"
-                                                            >
-                                                                <Printer className="h-3.5 w-3.5" />
-                                                                <span>إيصال</span>
-                                                            </Button>
-                                                        </td>
+                                    <>
+                                        {/* Mobile Cards for Teacher Transactions */}
+                                        <div className="sm:hidden space-y-2.5">
+                                            {teacherReport?.transactions?.map((tx: any) => (
+                                                <div key={tx._id} className="bg-white p-3.5 rounded-xl border border-gray-100 shadow-xs space-y-2">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="font-bold text-gray-900 text-sm">{tx.studentName || 'طالب'}</span>
+                                                        <span className="text-[11px] text-gray-400 font-mono">{new Date(tx.date).toLocaleDateString('ar-EG')}</span>
+                                                    </div>
+                                                    <div className="grid grid-cols-3 gap-2 bg-gray-50/80 p-2 rounded-lg text-center text-xs">
+                                                        <div>
+                                                            <span className="text-[10px] text-gray-400 block">الأصلي</span>
+                                                            <span className="font-bold text-gray-700 font-mono">{tx.originalAmount} ج</span>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-[10px] text-gray-400 block">المدفوع</span>
+                                                            <span className="font-black text-emerald-600 font-mono">{tx.paidAmount} ج</span>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-[10px] text-gray-400 block">المتبقي</span>
+                                                            <span className={cn("font-bold font-mono", tx.remainingAmount > 0 ? "text-rose-600" : "text-gray-400")}>
+                                                                {tx.remainingAmount > 0 ? `${tx.remainingAmount} ج` : '0'}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex justify-end pt-1">
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => printReceipt(centerName, tx)}
+                                                            className="h-7 px-2.5 text-xs font-bold text-primary hover:bg-primary/10 rounded-lg gap-1"
+                                                        >
+                                                            <Printer className="h-3.5 w-3.5" />
+                                                            <span>إيصال</span>
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {/* Desktop Table */}
+                                        <div className="hidden sm:block overflow-x-auto rounded-xl border border-gray-100">
+                                            <table className="w-full text-right text-xs">
+                                                <thead className="bg-gray-50/80 border-b border-gray-100 text-gray-400 font-bold">
+                                                    <tr>
+                                                        <th className="py-3 px-4">الطالب</th>
+                                                        <th className="py-3 px-4">المبلغ الأصلي</th>
+                                                        <th className="py-3 px-4">المدفوع</th>
+                                                        <th className="py-3 px-4">المتبقي</th>
+                                                        <th className="py-3 px-4">التاريخ</th>
+                                                        <th className="py-3 px-4 text-center">إيصال</th>
                                                     </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-100">
+                                                    {teacherReport?.transactions?.map((tx: any) => (
+                                                        <tr key={tx._id} className="hover:bg-gray-50/50">
+                                                            <td className="py-3 px-4 font-bold text-gray-900">
+                                                                {tx.studentName || 'طالب'}
+                                                            </td>
+                                                            <td className="py-3 px-4 font-bold text-gray-600 font-mono">
+                                                                {tx.originalAmount} ج.م
+                                                            </td>
+                                                            <td className="py-3 px-4 font-bold text-emerald-600 font-mono">
+                                                                {tx.paidAmount} ج.م
+                                                            </td>
+                                                            <td className="py-3 px-4 font-bold text-rose-600 font-mono">
+                                                                {tx.remainingAmount} ج.م
+                                                            </td>
+                                                            <td className="py-3 px-4 text-gray-400 font-medium">
+                                                                {new Date(tx.date).toLocaleDateString('ar-EG')}
+                                                            </td>
+                                                            <td className="py-3 px-4 text-center">
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    onClick={() => printReceipt(centerName, tx)}
+                                                                    className="h-7 px-2 text-xs font-bold text-primary hover:bg-primary/10 rounded-lg gap-1"
+                                                                >
+                                                                    <Printer className="h-3.5 w-3.5" />
+                                                                    <span>إيصال</span>
+                                                                </Button>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </>
                                 )}
                             </div>
                         )}
@@ -1474,14 +2176,15 @@ export default function CenterFinancialsPage() {
                 Record Payment Dialog
             ══════════════════════════════════════════════════════════════════ */}
             <Dialog open={isPaymentOpen} onOpenChange={setIsPaymentOpen}>
-                <DialogContent className="sm:max-w-md text-right font-sans" dir="rtl">
-                    <DialogHeader>
-                        <DialogTitle className="text-lg font-black text-gray-900">
+                <DialogContent className="sm:max-w-md text-right font-sans p-0 overflow-hidden flex flex-col max-h-[calc(100dvh-2rem)]" dir="rtl">
+                    <DialogHeader className="px-5 sm:px-6 pt-4 sm:pt-5 pb-3 border-b border-gray-100 shrink-0">
+                        <DialogTitle className="text-base sm:text-lg font-black text-gray-900">
                             تسجيل دفعة نقدية بالسنتر
                         </DialogTitle>
                     </DialogHeader>
 
-                    <form onSubmit={handleSubmitPayment} className="space-y-4 py-2">
+                    <form onSubmit={handleSubmitPayment} className="flex flex-col flex-1 overflow-hidden">
+                        <div className="px-5 sm:px-6 py-4 space-y-4 overflow-y-auto flex-1">
                         {/* Student Search */}
                         <div>
                             <label className="text-xs font-bold text-gray-700 block mb-1">
@@ -1746,27 +2449,162 @@ export default function CenterFinancialsPage() {
                             </div>
                         )}
 
-                        <DialogFooter className="gap-2 pt-2 sm:justify-start">
+                        </div>
+
+                        <DialogFooter className="px-5 sm:px-6 py-3.5 border-t border-gray-100 flex flex-col-reverse sm:flex-row gap-2 shrink-0 sm:justify-start">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={handleClosePayment}
+                                className="w-full sm:w-auto rounded-xl h-10"
+                            >
+                                إلغاء
+                            </Button>
                             <Button
                                 type="submit"
                                 disabled={paymentMutation.isPending}
-                                className="bg-primary hover:bg-primary/95 text-white font-bold rounded-xl"
+                                className="w-full sm:flex-1 bg-primary hover:bg-primary/95 text-white font-bold rounded-xl h-10"
                             >
                                 {paymentMutation.isPending && (
                                     <Loader2 className="h-4 w-4 animate-spin ml-2" />
                                 )}
                                 حفظ المعاملة وطباعة الإيصال
                             </Button>
-                            <Button
-                                type="button"
-                                variant="outline"
-                                onClick={handleClosePayment}
-                                className="rounded-xl"
-                            >
-                                إلغاء
-                            </Button>
                         </DialogFooter>
                     </form>
+                </DialogContent>
+            </Dialog>
+
+            {/* ── Edit Financial Transaction Modal ── */}
+            <Dialog open={!!editingTx} onOpenChange={(open) => !open && setEditingTx(null)}>
+                <DialogContent className="w-[95vw] sm:max-w-[460px] rounded-2xl p-0 max-h-[90vh] flex flex-col overflow-hidden" dir="rtl">
+                    <DialogHeader className="px-5 sm:px-6 pt-5 pb-3 border-b border-gray-100 shrink-0">
+                        <DialogTitle className="font-bold text-gray-900 flex items-center gap-2">
+                            <Edit2 className="h-5 w-5 text-blue-600" />
+                            <span>تعديل معاملة مالية — {editingTx?.studentName || 'طالب'}</span>
+                        </DialogTitle>
+                        <DialogDescription className="text-xs text-gray-500">
+                            تعديل قيم المعاملة أو تاريخها أو بيانها، وسيتم تحديث المتبقي وحساب الخزينة تلقائياً.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    {editingTx && (
+                        <form
+                            onSubmit={(e) => {
+                                e.preventDefault();
+                                updateTxMutation.mutate({
+                                    id: editingTx._id,
+                                    payload: {
+                                        category: editCategory,
+                                        originalAmount: Number(editOriginalAmount || 0),
+                                        discountAmount: Number(editDiscountAmount || 0),
+                                        paidAmount: Number(editPaidAmount || 0),
+                                        description: editDescription.trim() || undefined,
+                                        date: editDate || undefined,
+                                    },
+                                });
+                            }}
+                            className="flex flex-col flex-1 min-h-0 overflow-hidden"
+                        >
+                            <div className="flex-1 overflow-y-auto px-5 sm:px-6 py-4 space-y-3.5">
+                                <div>
+                                    <label className="text-xs font-bold text-gray-700 block mb-1">نوع الاشتراك</label>
+                                    <select
+                                        value={editCategory}
+                                        onChange={(e) => setEditCategory(e.target.value as any)}
+                                        className="w-full h-10 px-3 rounded-xl border border-gray-200 bg-white text-xs font-bold text-gray-900"
+                                    >
+                                        <option value="CENTER_PACKAGE">باقة سنتر</option>
+                                        <option value="CENTER_PRIVATE">حصة برايفت</option>
+                                        <option value="CENTER_COMBINED">اشتراك مجمع (باقة + برايفت)</option>
+                                    </select>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-700 block mb-1">المبلغ المطلوب (ج.م)</label>
+                                        <Input
+                                            type="number"
+                                            min="0"
+                                            value={editOriginalAmount}
+                                            onChange={(e) => setEditOriginalAmount(e.target.value)}
+                                            className="rounded-xl font-mono font-bold"
+                                            required
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-700 block mb-1">الخصم (ج.م)</label>
+                                        <Input
+                                            type="number"
+                                            min="0"
+                                            value={editDiscountAmount}
+                                            onChange={(e) => setEditDiscountAmount(e.target.value)}
+                                            className="rounded-xl font-mono"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-700 block mb-1">المسدد الفعلي (ج.م)</label>
+                                        <Input
+                                            type="number"
+                                            min="0"
+                                            value={editPaidAmount}
+                                            onChange={(e) => setEditPaidAmount(e.target.value)}
+                                            className="rounded-xl font-mono font-black text-emerald-700"
+                                            required
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-700 block mb-1">تاريخ المعاملة</label>
+                                        <Input
+                                            type="date"
+                                            value={editDate}
+                                            onChange={(e) => setEditDate(e.target.value)}
+                                            className="rounded-xl font-mono text-xs"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="text-xs font-bold text-gray-700 block mb-1">البيان / الملاحظات</label>
+                                    <Input
+                                        value={editDescription}
+                                        onChange={(e) => setEditDescription(e.target.value)}
+                                        placeholder="وصف المعاملة..."
+                                        className="rounded-xl text-xs"
+                                    />
+                                </div>
+
+                                <div className="p-3 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-between text-xs">
+                                    <span className="font-bold text-gray-600">المتبقي المحسوب بعد التعديل:</span>
+                                    <span className="font-mono font-black text-rose-600 text-sm">
+                                        {Math.max(0, Number(editOriginalAmount || 0) - Number(editDiscountAmount || 0) - Number(editPaidAmount || 0))} ج.م
+                                    </span>
+                                </div>
+                            </div>
+
+                            <DialogFooter className="px-5 sm:px-6 py-3.5 border-t border-gray-100 flex flex-col-reverse sm:flex-row gap-2 shrink-0 sm:justify-start">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => setEditingTx(null)}
+                                    className="w-full sm:w-auto rounded-xl h-10"
+                                >
+                                    إلغاء
+                                </Button>
+                                <Button
+                                    type="submit"
+                                    disabled={updateTxMutation.isPending}
+                                    className="w-full sm:flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl h-10"
+                                >
+                                    {updateTxMutation.isPending && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
+                                    حفظ التعديلات
+                                </Button>
+                            </DialogFooter>
+                        </form>
+                    )}
                 </DialogContent>
             </Dialog>
         </div>

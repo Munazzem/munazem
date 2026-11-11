@@ -2,6 +2,23 @@ import { Document, Types } from 'mongoose';
 import { UserRole, TeacherStage, CenterSupervisorType } from '../common/enums/enum.service.js';
 import type { ISupervisorPermissions } from './center.types.js';
 
+export interface IAssistantPermissions {
+  canTakeAttendance:    boolean; // تسجيل الحضور والغياب (باركود/يدوي)
+  canEditAttendance:    boolean; // تعديل سجلات الحضور السابقة
+  canViewAttendance:    boolean; // عرض كشوفات وسجلات الحضور
+  canManageSessions:    boolean; // إنشاء وإدارة الحصص
+  canRecordPayments:    boolean; // تحصيل وتسجيل اشتراكات الطلاب
+  canViewFinancials:    boolean; // الاطلاع على التقارير المالية والخزينة
+  canManageStudents:    boolean; // إضافة وتعديل بيانات الطلاب
+  canManageGroups:      boolean; // إدارة المجموعات والمواعيد
+  canCreateExams:       boolean; // إنشاء وتعديل الامتحانات
+  canGradeExams:        boolean; // تصحيح ورصد درجات الامتحانات
+  canManageNotebooks:   boolean; // إدارة المذكرات والملازم
+  canSendNotifications: boolean; // إرسال الرسائل والإشعارات
+}
+
+export type AssistantType = 'ATTENDANCE' | 'FINANCIAL' | 'ACADEMIC' | 'FULL' | 'CUSTOM';
+
 export interface IUser {
   name:      string;
   email:     string;
@@ -23,13 +40,8 @@ export interface IUser {
     showQrBg?:      boolean;
     showCardNumber?: boolean;
   };
-  assistantPermissions?: {
-    canTakeAttendance: boolean;
-    canEditAttendance: boolean;
-    canViewAttendance: boolean;
-    canRecordPayments: boolean;
-    canViewReports:    boolean;
-  };
+  assistantType?:        AssistantType | null;
+  assistantPermissions?: IAssistantPermissions;
   whatsappQr?:     string | null;   // QR data for frontend rendering
   whatsappStatus?: 'disconnected' | 'pending' | 'connected';
   subject?:        string;

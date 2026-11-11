@@ -113,11 +113,15 @@ export interface StudentCardData {
 export interface AttendanceRecord {
   id: string;
   date: string;
+  time?: string;
   status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED' | 'GUEST';
   subject: string;
   teacherName: string;
   groupName: string;
   notes?: string;
+  cycleNumber?: number;
+  cycleMonth?: string;
+  cycleLabel?: string;
 }
 
 export interface ExamRecord {
@@ -135,6 +139,7 @@ export interface ExamRecord {
 
 export interface FinancialRecord {
   cycleNumber: number;
+  cycleMonth?: string;
   cycleCapacity: number;
   sessionsConsumed: number;
   fullCyclePrice: number;

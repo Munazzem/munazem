@@ -23,12 +23,36 @@ import {
     Smartphone,
     X,
     RotateCcw,
-    Download
+    Download,
+    Clock,
+    Calendar
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-interface AttendanceEntry { date: string; status: 'PRESENT' | 'ABSENT' | 'GUEST' | 'EXCUSED' | 'LATE'; homeworkDone?: boolean | null }
+interface AttendanceEntry {
+    sessionId?: string;
+    date: string;
+    time?: string;
+    status: 'PRESENT' | 'ABSENT' | 'GUEST' | 'EXCUSED' | 'LATE';
+    homeworkDone?: boolean | null;
+    cycleNumber?: number;
+    cycleMonth?: string;
+    cycleLabel?: string;
+}
+
+interface AttendanceCycle {
+    cycleNumber: number;
+    monthName: string;
+    cycleLabel: string;
+    isCurrent: boolean;
+    startDate: string;
+    totalSessions: number;
+    presentCount: number;
+    absentCount: number;
+    sessions: AttendanceEntry[];
+}
+
 interface PaymentEntry    { date: string; paidAmount: number; discountAmount: number; category: string }
 interface ExamEntry       { examId: string; examName: string; score: number | null; totalMarks: number; date: string }
 
@@ -49,6 +73,7 @@ interface StudentSummary {
         absentCount:     number;
         attendanceRate:  string;
         history:         AttendanceEntry[];
+        cycles?:         AttendanceCycle[];
     };
     payments: {
         totalPaid:          number;
@@ -92,6 +117,44 @@ function UnifiedChildCard({ childGroup }: { childGroup: ChildGroup }) {
     const [tab, setTab] = useState<'attendance' | 'payments' | 'exams'>('attendance');
 
     const s = enrollments[selectedTeacherIdx] || enrollments[0];
+
+    const displayCycles = useMemo(() => {
+        if (!s) return [];
+        if (s.attendance?.cycles && s.attendance.cycles.length > 0) {
+            return s.attendance.cycles;
+        }
+        if (!s.attendance?.history || s.attendance.history.length === 0) {
+            return [];
+        }
+        const map = new Map<string, AttendanceCycle>();
+        for (const h of s.attendance.history) {
+            const cNum = h.cycleNumber || 1;
+            const cMonth = h.cycleMonth || 'الحالية';
+            const cLabel = h.cycleLabel || `دورة ${cNum} — شهر ${cMonth}`;
+            if (!map.has(cLabel)) {
+                map.set(cLabel, {
+                    cycleNumber: cNum,
+                    monthName: cMonth,
+                    cycleLabel: cLabel,
+                    isCurrent: true,
+                    startDate: h.date,
+                    totalSessions: 0,
+                    presentCount: 0,
+                    absentCount: 0,
+                    sessions: [],
+                });
+            }
+            const grp = map.get(cLabel)!;
+            grp.sessions.push(h);
+            grp.totalSessions += 1;
+            if (h.status === 'PRESENT' || h.status === 'LATE' || h.status === 'GUEST' || h.status === 'EXCUSED') {
+                grp.presentCount += 1;
+            } else {
+                grp.absentCount += 1;
+            }
+        }
+        return Array.from(map.values());
+    }, [s]);
 
     return (
         <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden transition-all">
@@ -187,7 +250,7 @@ function UnifiedChildCard({ childGroup }: { childGroup: ChildGroup }) {
                             <p className="text-xs text-gray-400 mt-0.5">نسبة الحضور</p>
                         </div>
                         <div className="bg-gray-50 rounded-xl p-3 text-center border border-gray-100/60">
-                            <p className="text-lg font-extrabold text-gray-800">{s.payments.totalPaid.toLocaleString('ar-EG')}</p>
+                            <p className="text-lg font-extrabold text-gray-800">{s.payments.totalPaid.toLocaleString('en-US')}</p>
                             <p className="text-xs text-gray-400 mt-0.5">المدفوع (ج)</p>
                         </div>
                         <div className="bg-gray-50 rounded-xl p-3 text-center border border-gray-100/60">
@@ -226,56 +289,105 @@ function UnifiedChildCard({ childGroup }: { childGroup: ChildGroup }) {
                 {/* ── Attendance Tab ── */}
                 {tab === 'attendance' && (
                     <div className="space-y-4">
-                        <div className="flex items-center justify-between text-sm">
-                            <span className="text-gray-500">
-                                حضر <strong className="text-emerald-600">{s.attendance.presentCount}</strong> من إجمالي <strong>{s.attendance.totalSessions}</strong> حصة
+                        <div className="flex items-center justify-between text-sm flex-wrap gap-2">
+                            <span className="text-gray-600 text-xs sm:text-sm">
+                                إجمالي الحضور: <strong className="text-emerald-600 font-bold">{s.attendance.presentCount}</strong> من <strong>{s.attendance.totalSessions}</strong> حصة
                             </span>
-                            <span className="text-gray-400 text-xs">آخر {s.attendance.history.length} حصة</span>
+                            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-blue-50 text-[#1e3a6e] border border-blue-100">
+                                نسبة الحضور: {s.attendance.attendanceRate}
+                            </span>
                         </div>
 
                         {s.attendance.history.length === 0 ? (
-                            <p className="text-center text-gray-400 text-sm py-6">لا توجد بيانات حضور مسجلة مع هذا المعلم بعد</p>
+                            <p className="text-center text-gray-400 text-sm py-6">لا توجد بيانات حضور مسجلة بعد</p>
                         ) : (
                             <>
-                                {/* Dot grid */}
-                                <div className="flex flex-wrap gap-2 p-3 bg-gray-50 rounded-xl border border-gray-100">
-                                    {[...s.attendance.history].reverse().map((h, i) => (
-                                        <AttendanceDot key={i} status={h.status} />
-                                    ))}
+                                {/* Dot grid & Legend */}
+                                <div className="p-3 bg-gray-50/80 rounded-2xl border border-gray-100 space-y-2">
+                                    <div className="flex flex-wrap gap-2">
+                                        {[...s.attendance.history].reverse().map((h, i) => (
+                                            <AttendanceDot key={i} status={h.status} />
+                                        ))}
+                                    </div>
+                                    <div className="flex flex-wrap gap-3 pt-1 text-[11px] text-gray-400">
+                                        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-green-400 inline-block" /> حضر</span>
+                                        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-400 inline-block" /> غاب</span>
+                                        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-indigo-400 inline-block" /> معوض</span>
+                                        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-400 inline-block" /> ضيف</span>
+                                    </div>
                                 </div>
 
-                                {/* Legend */}
-                                <div className="flex flex-wrap gap-4 text-xs text-gray-400">
-                                    <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-green-400 inline-block" /> حضر</span>
-                                    <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-red-400 inline-block" /> غاب</span>
-                                    <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-indigo-400 inline-block" /> معوض</span>
-                                    <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-amber-400 inline-block" /> ضيف</span>
-                                </div>
-
-                                {/* Entries list */}
-                                <div className="divide-y divide-gray-100 mt-3">
-                                    {s.attendance.history.map((h, i) => (
-                                        <div key={i} className="flex items-center justify-between py-2.5">
-                                            <span className="text-sm font-medium text-gray-700">{formatDate(h.date)}</span>
-                                            <div className="flex items-center gap-2 shrink-0">
-                                                {typeof h.homeworkDone === 'boolean' && (h.status === 'PRESENT' || h.status === 'LATE' || h.status === 'GUEST') && (
-                                                    <span className={cn(
-                                                        'text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0',
-                                                        h.homeworkDone
-                                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                                            : 'bg-rose-50 text-rose-700 border-rose-200'
-                                                    )}>
-                                                        {h.homeworkDone ? 'الواجب ✓' : 'لم يؤدِّ الواجب ✗'}
+                                {/* Grouped Cycles List */}
+                                <div className="space-y-3 pt-1">
+                                    {displayCycles.map((cycle, cycleIdx) => (
+                                        <div key={cycleIdx} className="bg-white rounded-2xl border border-gray-200/90 shadow-xs overflow-hidden">
+                                            {/* Cycle Header */}
+                                            <div className="p-3.5 bg-gradient-to-r from-gray-50 to-blue-50/30 border-b border-gray-100 flex items-center justify-between gap-2 flex-wrap">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="h-6 w-6 rounded-md bg-[#1e3a6e] text-white flex items-center justify-center font-bold text-xs shrink-0">
+                                                        {cycle.cycleNumber || (cycleIdx + 1)}
                                                     </span>
-                                                )}
-                                                <span className={cn(
-                                                    'text-xs font-semibold px-2.5 py-0.5 rounded-full',
-                                                    h.status === 'PRESENT' || h.status === 'LATE' ? 'bg-emerald-50 text-emerald-700' :
-                                                    h.status === 'ABSENT'  ? 'bg-rose-50 text-rose-600' :
-                                                    h.status === 'EXCUSED' ? 'bg-indigo-50 text-indigo-700' : 'bg-amber-50 text-amber-700'
-                                                )}>
-                                                    {h.status === 'PRESENT' ? 'حاضر' : h.status === 'LATE' ? 'متأخر' : h.status === 'ABSENT' ? 'غائب' : h.status === 'EXCUSED' ? 'معوّض' : 'ضيف'}
+                                                    <div>
+                                                        <h4 className="font-bold text-sm text-gray-900 flex items-center gap-2">
+                                                            {cycle.cycleLabel}
+                                                            {cycle.isCurrent && (
+                                                                <span className="text-[10px] font-bold px-2 py-0.2 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                                    الدورة الحالية
+                                                                </span>
+                                                            )}
+                                                        </h4>
+                                                    </div>
+                                                </div>
+                                                <span className="text-[11px] font-semibold text-gray-500 bg-white px-2.5 py-1 rounded-lg border border-gray-100">
+                                                    حضر <strong className="text-emerald-600">{cycle.presentCount}</strong> من <strong>{cycle.totalSessions}</strong> حصة
                                                 </span>
+                                            </div>
+
+                                            {/* Sessions under this cycle */}
+                                            <div className="divide-y divide-gray-100 p-2 sm:p-2.5">
+                                                {cycle.sessions.map((h, i) => (
+                                                    <div key={i} className="flex items-center justify-between py-2.5 px-2 hover:bg-gray-50/60 rounded-xl transition-colors">
+                                                        <div className="space-y-1">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-xs sm:text-sm font-semibold text-gray-800">
+                                                                    {formatDate(h.date)}
+                                                                </span>
+                                                            </div>
+                                                            {/* Exact Attendance Time */}
+                                                            {h.time ? (
+                                                                <div className="flex items-center gap-1.5 text-[11px] text-blue-800 bg-blue-50/90 px-2 py-0.5 rounded-md w-fit border border-blue-100/70 font-medium">
+                                                                    <Clock className="h-3 w-3 text-blue-600 shrink-0" />
+                                                                    <span>الحضور بالظبط: <strong className="font-bold">{h.time}</strong></span>
+                                                                </div>
+                                                            ) : h.status === 'ABSENT' ? (
+                                                                <div className="text-[11px] text-rose-500 font-medium">
+                                                                    لم يسجل حضور (غائب)
+                                                                </div>
+                                                            ) : null}
+                                                        </div>
+
+                                                        <div className="flex items-center gap-1.5 shrink-0">
+                                                            {typeof h.homeworkDone === 'boolean' && (h.status === 'PRESENT' || h.status === 'LATE' || h.status === 'GUEST') && (
+                                                                <span className={cn(
+                                                                    'text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0',
+                                                                    h.homeworkDone
+                                                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                                        : 'bg-rose-50 text-rose-700 border-rose-200'
+                                                                )}>
+                                                                    {h.homeworkDone ? 'الواجب ✓' : 'لم يؤدِّ الواجب ✗'}
+                                                                </span>
+                                                            )}
+                                                            <span className={cn(
+                                                                'text-xs font-semibold px-2.5 py-0.5 rounded-full',
+                                                                h.status === 'PRESENT' || h.status === 'LATE' ? 'bg-emerald-50 text-emerald-700' :
+                                                                h.status === 'ABSENT'  ? 'bg-rose-50 text-rose-600' :
+                                                                h.status === 'EXCUSED' ? 'bg-indigo-50 text-indigo-700' : 'bg-amber-50 text-amber-700'
+                                                            )}>
+                                                                {h.status === 'PRESENT' ? 'حاضر' : h.status === 'LATE' ? 'متأخر' : h.status === 'ABSENT' ? 'غائب' : h.status === 'EXCUSED' ? 'معوّض' : 'ضيف'}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                ))}
                                             </div>
                                         </div>
                                     ))}
@@ -307,7 +419,7 @@ function UnifiedChildCard({ childGroup }: { childGroup: ChildGroup }) {
                                     <div key={i} className="flex items-center justify-between py-3">
                                         <div>
                                             <p className="text-sm text-gray-800 font-bold">
-                                                {p.paidAmount.toLocaleString('ar-EG')} ج
+                                                {p.paidAmount.toLocaleString('en-US')} ج
                                             </p>
                                             {p.discountAmount > 0 && (
                                                 <p className="text-xs text-amber-600 font-medium">خصم: {p.discountAmount} ج</p>

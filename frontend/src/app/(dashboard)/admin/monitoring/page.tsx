@@ -345,7 +345,7 @@ export default function AdminMonitoringPage() {
                                 ) : (
                                     messagesData?.data?.map((msg: any) => (
                                         <tr key={msg._id} className="hover:bg-gray-50 transition-colors">
-                                            <td className="py-3 px-4 text-gray-500" dir="ltr">{new Date(msg.createdAt).toLocaleString('ar-EG')}</td>
+                                            <td className="py-3 px-4 text-gray-500" dir="ltr">{new Date(msg.createdAt).toLocaleString('ar-EG-u-nu-latn')}</td>
                                             <td className="py-3 px-4 font-medium text-gray-900">{msg.teacherId?.name || 'مجهول'}</td>
                                             <td className="py-3 px-4 text-gray-600" dir="ltr">{msg.parentPhone}</td>
                                             <td className="py-3 px-4 text-gray-600">

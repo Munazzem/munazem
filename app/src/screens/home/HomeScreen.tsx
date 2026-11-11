@@ -35,7 +35,10 @@ import {
   TrendingUp,
   TrendingDown,
   Minus,
+  Calendar,
+  QrCode,
 } from 'lucide-react-native';
+import { StudentQrCardModal } from '../../components/common/StudentQrCardModal';
 
 const NavyHeader: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <View style={hdrStyles.wrap}>{children}</View>
@@ -84,6 +87,33 @@ export const HomeScreen: React.FC = () => {
   const displayExam = activeSubject?.latestExam ?? null;
   const latestExamScore = displayExam && displayExam.totalMarks ? Math.round((displayExam.score / displayExam.totalMarks) * 100) : null;
 
+  const [qrModalVisible, setQrModalVisible] = useState(false);
+
+  const primarySub = activeSubject || subjects[0];
+  const cardData = child
+    ? {
+        studentId: activeSubject?.studentId || child.id,
+        studentName: child.studentName || 'طالب',
+        gradeLevel: child.gradeLevel || '',
+        studentCode: activeSubject?.studentCode || child.studentCode || '',
+        barcode: activeSubject?.barcode || child.barcode || '',
+        qrValue:
+          (activeSubject as any)?.qrValue ||
+          activeSubject?.barcode ||
+          child.barcode ||
+          child.studentCode ||
+          child.id,
+        teacherName: activeSubject
+          ? activeSubject.teacherName?.startsWith('أ.')
+            ? activeSubject.teacherName
+            : `أ. ${activeSubject.teacherName}`
+          : primarySub?.teacherName || '',
+        subject: activeSubject?.subject || primarySub?.subject || '',
+        centerName: activeSubject?.centerName || primarySub?.centerName || '',
+        groupName: activeSubject?.groupName || primarySub?.groupName || '',
+      }
+    : null;
+
   return (
     <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={colors.navy} />
@@ -104,39 +134,63 @@ export const HomeScreen: React.FC = () => {
           <NavyHeader>
             {/* Top Bar */}
             <View style={styles.topBar}>
-              <Text style={styles.dateText}>{formatArabicDateToday()}</Text>
-              <Text style={styles.greeting}>
-                أهلاً، {parent?.name?.split(' ')[0] ?? 'ولي الأمر'} 👋
-              </Text>
+              <View style={styles.dateBadge}>
+                <Calendar size={13} color="#ffffff" />
+                <Text style={styles.dateText}>{formatArabicDateToday()}</Text>
+              </View>
+              <View style={styles.greetingWrap}>
+                <Text style={styles.greeting}>مرحباً ولي الأمر</Text>
+                {parent?.name && parent.name !== 'ولي الأمر' ? (
+                  <Text style={styles.greetingSub}>أ. {parent.name}</Text>
+                ) : (
+                  <Text style={styles.greetingSub}>متابعة شؤون الطلاب</Text>
+                )}
+              </View>
             </View>
 
-            {/* Student Chip */}
+            {/* Student Card */}
             {isLoading && !child ? (
               <View style={styles.studentChipSkeleton}>
-                <ActivityIndicator size="small" color={colors.skyBlue} />
+                <ActivityIndicator size="small" color="#38bdf8" />
               </View>
             ) : child ? (
-              <TouchableOpacity
-                style={styles.studentChip}
-                onPress={canSwitch ? handleSwitchChild : undefined}
-                activeOpacity={canSwitch ? 0.75 : 1}
-              >
-                <View style={styles.chipLeft}>
+              <View style={styles.studentCard}>
+                <TouchableOpacity
+                  style={styles.studentInfoRow}
+                  onPress={canSwitch ? handleSwitchChild : () => setQrModalVisible(true)}
+                  activeOpacity={canSwitch ? 0.75 : 0.9}
+                >
                   <View style={styles.chipAvatar}>
                     <Text style={styles.chipAvatarText}>{(child.studentName || 'ط').charAt(0)}</Text>
                   </View>
-                  <View>
-                    <Text style={styles.chipName}>{child.studentName || 'طالب'}</Text>
-                    <Text style={styles.chipGrade}>{child.gradeLevel || ''}</Text>
+                  <View style={styles.chipInfo}>
+                    <Text style={styles.chipName} numberOfLines={1}>{child.studentName || 'طالب'}</Text>
+                    <Text style={styles.chipGrade} numberOfLines={1}>{child.gradeLevel || 'طالب مسجل'}</Text>
                   </View>
+                </TouchableOpacity>
+
+                <View style={styles.studentActionsRow}>
+                  <TouchableOpacity
+                    style={styles.qrActionBtn}
+                    onPress={() => setQrModalVisible(true)}
+                    activeOpacity={0.8}
+                  >
+                    <QrCode size={15} color="#ffffff" />
+                    <Text style={styles.qrActionBtnText}>كارت QR الطالب</Text>
+                  </TouchableOpacity>
+
+                  {canSwitch && (
+                    <TouchableOpacity
+                      style={styles.switchActionBtn}
+                      onPress={handleSwitchChild}
+                      activeOpacity={0.8}
+                    >
+                      <Users size={14} color="#38bdf8" />
+                      <Text style={styles.switchActionBtnText}>تبديل الطالب</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
-                {canSwitch && (
-                  <View style={styles.switchBadge}>
-                    <Users size={13} color={colors.skyBlue} />
-                    <Text style={styles.switchText}>تبديل</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
+              </View>
             ) : null}
 
             {/* Teacher Tabs when enrolled with multiple teachers */}
@@ -156,7 +210,7 @@ export const HomeScreen: React.FC = () => {
             {/* Loading State */}
             {isLoading && !child ? (
               <View style={styles.loadingWrap}>
-                <ActivityIndicator size="large" color={colors.primary} />
+                <ActivityIndicator size="large" color="#38bdf8" />
                 <Text style={styles.loadingText}>جاري تحميل بيانات الطالب...</Text>
               </View>
             ) : child ? (
@@ -166,7 +220,7 @@ export const HomeScreen: React.FC = () => {
                   <View style={styles.packageCardWrap}>
                     <View style={styles.packageCardHeader}>
                       <View style={styles.packageCardHeaderLeft}>
-                        <Users size={16} color={colors.primary} />
+                        <Users size={16} color="#0f4c81" />
                         <Text style={styles.packageCardTitle}>معلمو الباقة بالسنتر</Text>
                       </View>
                       <Text style={styles.packageCardSubtitle}>
@@ -191,49 +245,48 @@ export const HomeScreen: React.FC = () => {
 
                 {/* ── Attendance Card ──────────────────────────────── */}
                 <SectionCard
-                  icon={<CalendarCheck size={18} color={colors.primary} />}
+                  icon={<CalendarCheck size={17} color="#0f4c81" />}
                   title="متابعة الغياب والحضور"
-                  ctaLabel="عرض سجل الحضور"
+                  ctaLabel="سجل الحصص"
                   onCta={() => navigation.navigate('MainTabs', { screen: 'AttendanceTab' } as any)}
                 >
-                  {activeSubject ? (
-                    <TouchableOpacity
-                      style={styles.attendanceSimpleRow}
-                      onPress={() => navigation.navigate('MainTabs', { screen: 'AttendanceTab' } as any)}
-                      activeOpacity={0.7}
-                    >
-                      <View style={styles.attendanceSimpleLabel}>
-                        <BookOpen size={13} color={colors.textMuted} />
-                        <Text style={styles.attendanceSimpleLabelText}>
-                          {(activeSubject as any)?.isPackage
-                            ? `حضور وغياب السنتر (${(activeSubject as any)?.groupName || 'الباقة'})`
-                            : `${activeSubject.subject} (أ. ${activeSubject.teacherName})`}
-                        </Text>
-                      </View>
-                      <View style={styles.attendanceSimpleBadge}>
-                        <Text style={styles.attendanceSimpleBadgeText}>
-                          {(activeSubject as any)?.isPackage ? 'سجل السنتر' : 'سجل الحصص'}
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  ) : (
-                    <TouchableOpacity
-                      style={styles.attendanceSimpleRow}
-                      onPress={() => navigation.navigate('MainTabs', { screen: 'AttendanceTab' } as any)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.attendanceSimpleDesc}>
-                        اضغط للاطلاع على سجل الحصص والغياب والحصص التعويضية
-                      </Text>
-                    </TouchableOpacity>
-                  )}
+                  <View style={styles.cardSubjectRow}>
+                    <BookOpen size={13} color="#0f4c81" />
+                    <Text style={styles.cardSubjectText} numberOfLines={1}>
+                      {(activeSubject as any)?.isPackage
+                        ? `باقة السنتر (${(activeSubject as any)?.groupName || 'الباقة'})`
+                        : `${activeSubject?.subject ?? 'المادة'} (أ. ${activeSubject?.teacherName ?? 'المعلم'})`}
+                    </Text>
+                  </View>
+
+                  <View style={styles.statsTabBar}>
+                    <View style={styles.statTabItem}>
+                      <Text style={[styles.statTabVal, { color: '#16a34a' }]}>{presentCount}</Text>
+                      <Text style={styles.statTabLbl}>حاضر</Text>
+                    </View>
+                    <View style={styles.statTabDivider} />
+                    <View style={styles.statTabItem}>
+                      <Text style={[styles.statTabVal, { color: '#dc2626' }]}>{absentCount}</Text>
+                      <Text style={styles.statTabLbl}>غائب</Text>
+                    </View>
+                    <View style={styles.statTabDivider} />
+                    <View style={styles.statTabItem}>
+                      <Text style={[styles.statTabVal, { color: '#d97706' }]}>{excusedCount}</Text>
+                      <Text style={styles.statTabLbl}>معوض</Text>
+                    </View>
+                    <View style={styles.statTabDivider} />
+                    <View style={styles.statTabItem}>
+                      <Text style={[styles.statTabVal, { color: '#0f4c81' }]}>{attendanceRate}%</Text>
+                      <Text style={styles.statTabLbl}>النسبة</Text>
+                    </View>
+                  </View>
                 </SectionCard>
 
                 {/* ── Finance Card ─────────────────────────────────── */}
                 <SectionCard
-                  icon={<Wallet size={18} color={hasDebt ? colors.absent : colors.primary} />}
+                  icon={<Wallet size={17} color={hasDebt && remaining > 0 ? '#dc2626' : '#0f4c81'} />}
                   title="المالية"
-                  ctaLabel="عرض التفاصيل"
+                  ctaLabel="التفاصيل"
                   onCta={() =>
                     navigation.navigate('FinanceDetail', {
                       studentId: (activeSubject as any)?.rawStudentId ?? activeSubject?.studentId ?? child.id,
@@ -241,59 +294,32 @@ export const HomeScreen: React.FC = () => {
                     })
                   }
                 >
-                  {subjects.length > 1 ? (
-                    <View style={styles.financeRow}>
-                      <View style={styles.financeLabel}>
-                        <BookOpen size={13} color={colors.textMuted} />
-                        <Text style={styles.financeLabelText}>
-                          {(activeSubject as any)?.isPackage
-                            ? `اشتراك باقة السنتر (${(activeSubject as any)?.groupName || 'الباقة'})`
-                            : `${activeSubject?.subject ?? 'المادة'} (أ. ${activeSubject?.teacherName ?? 'المعلم'})`}
-                        </Text>
-                      </View>
-                      {hasDebt && remaining > 0 && (
-                        <View style={[styles.debtBadge, { backgroundColor: colors.absentLight }]}>
-                          <Text style={[styles.debtText, { color: colors.absent }]}>
-                            متبقي {remaining} ج
-                          </Text>
-                        </View>
-                      )}
+                  <View style={styles.financeCompactRow}>
+                    <View style={styles.cardSubjectRow}>
+                      <BookOpen size={13} color="#0f4c81" />
+                      <Text style={styles.cardSubjectText} numberOfLines={1}>
+                        {(activeSubject as any)?.isPackage
+                          ? `باقة السنتر (${(activeSubject as any)?.groupName || 'الباقة'})`
+                          : `${activeSubject?.subject ?? 'المادة'} (أ. ${activeSubject?.teacherName ?? 'المعلم'})`}
+                      </Text>
                     </View>
-                  ) : child.subjects?.map((subj, i) => {
-                    const subjHasDebt = Boolean(subj?.financialSummary?.hasOutstandingDebt && (subj?.financialSummary?.remainingAmount ?? 0) > 0);
-                    const subjRemain = subj?.financialSummary?.remainingAmount ?? 0;
-                    return (
-                      <View key={i} style={styles.financeRow}>
-                        <View style={styles.financeLabel}>
-                          <BookOpen size={13} color={colors.textMuted} />
-                          <Text style={styles.financeLabelText}>{subj?.subject || 'مادة دراسية'}</Text>
-                        </View>
-                        {subjHasDebt && (
-                          <View style={[styles.debtBadge, { backgroundColor: colors.absentLight }]}>
-                            <Text style={[styles.debtText, { color: colors.absent }]}>
-                              متبقي {subjRemain} ج
-                            </Text>
-                          </View>
-                        )}
+                    {hasDebt && remaining > 0 ? (
+                      <View style={styles.debtPill}>
+                        <Text style={styles.debtPillText}>متبقي {remaining} ج</Text>
                       </View>
-                    );
-                  })}
-                  {(!child.subjects || child.subjects.length === 0) && hasDebt && remaining > 0 ? (
-                    <View style={styles.financeRow}>
-                      <View style={[styles.debtBadge, { backgroundColor: colors.absentLight }]}>
-                        <Text style={[styles.debtText, { color: colors.absent }]}>
-                          متبقي {remaining} ج
-                        </Text>
+                    ) : (
+                      <View style={styles.paidPill}>
+                        <Text style={styles.paidPillText}>خالص تماماً</Text>
                       </View>
-                    </View>
-                  ) : null}
+                    )}
+                  </View>
                 </SectionCard>
 
                 {/* ── Grades Card ──────────────────────────────────── */}
                 <SectionCard
-                  icon={<Award size={18} color={colors.royalBlue} />}
+                  icon={<Award size={17} color="#d97706" />}
                   title="الدرجات"
-                  ctaLabel="عرض كل الدرجات"
+                  ctaLabel="كل الدرجات"
                   onCta={() => navigation.navigate('MainTabs', { screen: 'GradesTab' } as any)}
                 >
                   {displayExam ? (
@@ -307,17 +333,17 @@ export const HomeScreen: React.FC = () => {
                       <View style={styles.gradeRight}>
                         <Text style={[
                           styles.gradeScore,
-                          { color: latestExamScore && latestExamScore >= 60 ? colors.present : colors.absent },
+                          { color: latestExamScore && latestExamScore >= 60 ? '#16a34a' : '#dc2626' },
                         ]}>
                           {displayExam.score}/{displayExam.totalMarks}
                         </Text>
                         <View style={styles.gradePerf}>
                           {latestExamScore && latestExamScore >= 75 ? (
-                            <TrendingUp size={14} color={colors.present} />
+                            <TrendingUp size={13} color="#16a34a" />
                           ) : latestExamScore && latestExamScore >= 50 ? (
-                            <Minus size={14} color={colors.warning} />
+                            <Minus size={13} color="#d97706" />
                           ) : (
-                            <TrendingDown size={14} color={colors.absent} />
+                            <TrendingDown size={13} color="#dc2626" />
                           )}
                           <Text style={styles.gradePct}>{latestExamScore ?? 0}%</Text>
                         </View>
@@ -332,14 +358,13 @@ export const HomeScreen: React.FC = () => {
                 {child.subjects?.length > 0 && (
                   <View style={styles.nextLesson}>
                     <View style={styles.nextLessonLeft}>
-                      <Clock size={16} color={colors.skyBlue} />
+                      <Clock size={16} color="#0f4c81" />
                     </View>
                     <View style={styles.nextLessonInfo}>
                       <Text style={styles.nextLessonLabel}>الحصة القادمة</Text>
                       <Text style={styles.nextLessonSubject}>
                         {(activeSubject?.subject || child.subjects[0]?.subject)} — {(activeSubject?.teacherName ? `أ. ${activeSubject.teacherName}` : child.subjects[0]?.teacherName)}
                       </Text>
-
                     </View>
                   </View>
                 )}
@@ -359,6 +384,13 @@ export const HomeScreen: React.FC = () => {
           </View>
         </ScrollView>
       </SafeAreaView>
+
+      {/* Student QR Card Modal */}
+      <StudentQrCardModal
+        visible={qrModalVisible}
+        onClose={() => setQrModalVisible(false)}
+        cardData={cardData}
+      />
     </View>
   );
 };
@@ -370,10 +402,10 @@ const styles = StyleSheet.create({
   },
   safe: {
     flex: 1,
-    backgroundColor: colors.navy,
+    backgroundColor: colors.background,
   },
   scroll: {
-    paddingBottom: 110,
+    paddingBottom: 130,
     backgroundColor: colors.background,
   },
   // Top Bar
@@ -381,38 +413,60 @@ const styles = StyleSheet.create({
     flexDirection: 'row-reverse',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: spacing.md,
-    marginBottom: spacing.lg,
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  greetingWrap: {
+    alignItems: 'flex-end',
   },
   greeting: {
-    fontFamily: typography.bold,
-    fontSize: 18,
-    color: colors.textInverse,
+    fontFamily: typography.extraBold,
+    fontSize: 22,
+    color: '#ffffff',
+    textAlign: 'right',
   },
-  dateText: {
-    fontFamily: typography.regular,
-    fontSize: 12,
-    color: '#64748b',
+  greetingSub: {
+    fontFamily: typography.medium,
+    fontSize: 13,
+    color: '#93c5fd',
+    marginTop: 2,
+    textAlign: 'right',
   },
-  // Student Chip
-  studentChip: {
+  dateBadge: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.navyMid,
-    borderRadius: borderRadius.xl,
-    padding: spacing.md,
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: borderRadius.full,
     borderWidth: 1,
-    borderColor: colors.navyLight,
+    borderColor: 'rgba(255,255,255,0.22)',
+  },
+  dateText: {
+    fontFamily: typography.bold,
+    fontSize: 12,
+    color: '#ffffff',
+  },
+  // Student Card
+  studentCard: {
+    backgroundColor: '#102d57',
+    borderRadius: 16,
+    padding: spacing.md,
+    borderWidth: 1.5,
+    borderColor: '#1e4880',
+    marginTop: spacing.xs,
+    gap: 12,
   },
   studentChipSkeleton: {
-    height: 68,
-    borderRadius: borderRadius.xl,
-    backgroundColor: colors.navyMid,
+    height: 104,
+    borderRadius: 16,
+    backgroundColor: '#102d57',
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: spacing.xs,
   },
-  chipLeft: {
+  studentInfoRow: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
     gap: spacing.md,
@@ -421,118 +475,168 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(56,189,248,0.15)',
+    backgroundColor: '#1e3a6e',
     borderWidth: 2,
-    borderColor: colors.skyBlue,
+    borderColor: '#38bdf8',
     alignItems: 'center',
     justifyContent: 'center',
   },
   chipAvatarText: {
     fontFamily: typography.extraBold,
     fontSize: 20,
-    color: colors.skyBlue,
+    color: '#ffffff',
+  },
+  chipInfo: {
+    flex: 1,
+    alignItems: 'flex-end',
   },
   chipName: {
     fontFamily: typography.bold,
     fontSize: 17,
-    color: colors.textInverse,
+    color: '#ffffff',
     textAlign: 'right',
   },
   chipGrade: {
-    fontFamily: typography.regular,
+    fontFamily: typography.medium,
     fontSize: 12,
-    color: '#94a3b8',
+    color: '#93c5fd',
     textAlign: 'right',
     marginTop: 2,
   },
-  switchBadge: {
+  studentActionsRow: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: colors.skyBlueFaint,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 5,
-    borderRadius: borderRadius.full,
-    borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.25)',
+    gap: 8,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
   },
-  switchText: {
+  qrActionBtn: {
+    flex: 1,
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#0f4c81',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#38bdf8',
+  },
+  qrActionBtnText: {
     fontFamily: typography.bold,
-    fontSize: 11,
-    color: colors.skyBlue,
+    fontSize: 12,
+    color: '#ffffff',
+  },
+  switchActionBtn: {
+    flex: 1,
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(56,189,248,0.14)',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.35)',
+  },
+  switchActionBtnText: {
+    fontFamily: typography.bold,
+    fontSize: 12,
+    color: '#38bdf8',
   },
   // Cards area
   cards: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
+    paddingHorizontal: spacing.md + 2,
+    paddingTop: spacing.sm,
     backgroundColor: colors.background,
   },
-  // Attendance
-  attendanceSimpleRow: {
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.xs,
-  },
-  attendanceSimpleLabel: {
+  cardSubjectRow: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
     gap: 6,
-    flex: 1,
+    marginBottom: spacing.xs + 2,
   },
-  attendanceSimpleLabelText: {
-    fontFamily: typography.medium,
-    fontSize: 13,
-    color: colors.textSecondary,
-  },
-  attendanceSimpleBadge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.primaryLight,
-  },
-  attendanceSimpleBadgeText: {
+  cardSubjectText: {
     fontFamily: typography.bold,
-    fontSize: 12,
-    color: colors.primary,
-  },
-  attendanceSimpleDesc: {
-    fontFamily: typography.regular,
     fontSize: 13,
-    color: colors.textMuted,
+    color: '#1e3a6e',
+    flex: 1,
     textAlign: 'right',
   },
-  // Finance
-  financeRow: {
+  statsTabBar: {
+    flexDirection: 'row-reverse',
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 5,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  statTabItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 2,
+  },
+  statTabDivider: {
+    width: 1,
+    height: 22,
+    backgroundColor: colors.border,
+  },
+  statTabVal: {
+    fontFamily: typography.extraBold,
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  statTabLbl: {
+    fontFamily: typography.bold,
+    fontSize: 10,
+    color: '#1e3a6e',
+    marginTop: 1,
+  },
+  financeCompactRow: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: spacing.xs,
+    paddingVertical: 2,
   },
-  financeLabel: {
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    gap: 4,
+  debtPill: {
+    backgroundColor: '#fee2e2',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#fecaca',
   },
-  financeLabelText: {
-    fontFamily: typography.medium,
-    fontSize: 13,
-    color: colors.textSecondary,
-  },
-  debtBadge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-    borderRadius: borderRadius.full,
-  },
-  debtText: {
+  debtPillText: {
     fontFamily: typography.bold,
     fontSize: 12,
+    color: '#dc2626',
+  },
+  paidPill: {
+    backgroundColor: '#dcfce7',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+  },
+  paidPillText: {
+    fontFamily: typography.bold,
+    fontSize: 12,
+    color: '#16a34a',
   },
   // Grades
   gradeWrap: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingVertical: 2,
   },
   gradeLeft: {
     flex: 1,
@@ -541,13 +645,13 @@ const styles = StyleSheet.create({
   gradeExamTitle: {
     fontFamily: typography.bold,
     fontSize: 14,
-    color: colors.text,
+    color: '#0b2344',
     textAlign: 'right',
   },
   gradeSubject: {
     fontFamily: typography.regular,
     fontSize: 12,
-    color: colors.textSecondary,
+    color: '#64748b',
     marginTop: 2,
   },
   gradeRight: {
@@ -556,39 +660,52 @@ const styles = StyleSheet.create({
   },
   gradeScore: {
     fontFamily: typography.extraBold,
-    fontSize: 22,
+    fontSize: 20,
   },
   gradePerf: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    marginTop: 2,
+    marginTop: 1,
   },
   gradePct: {
     fontFamily: typography.bold,
-    fontSize: 12,
-    color: colors.textSecondary,
+    fontSize: 11,
+    color: '#64748b',
+  },
+  emptyText: {
+    fontFamily: typography.regular,
+    fontSize: 13,
+    color: '#94a3b8',
+    textAlign: 'right',
+    paddingVertical: spacing.xs,
   },
   // Next Lesson
   nextLesson: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
     backgroundColor: colors.card,
-    borderRadius: borderRadius.xl,
+    borderRadius: 16,
     padding: spacing.md,
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm + 2,
     gap: spacing.md,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.2)',
-    ...shadows.sm,
+    borderColor: colors.border,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
   },
   nextLessonLeft: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: 'rgba(56,189,248,0.1)',
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   nextLessonInfo: {
     flex: 1,
@@ -597,22 +714,20 @@ const styles = StyleSheet.create({
   nextLessonLabel: {
     fontFamily: typography.bold,
     fontSize: 11,
-    color: colors.skyBlue,
+    color: '#0f4c81',
     textAlign: 'right',
-    letterSpacing: 0.3,
-    textTransform: 'uppercase',
   },
   nextLessonSubject: {
     fontFamily: typography.bold,
-    fontSize: 15,
-    color: colors.text,
+    fontSize: 14,
+    color: '#0b2344',
     textAlign: 'right',
     marginTop: 2,
   },
   nextLessonTime: {
     fontFamily: typography.regular,
     fontSize: 12,
-    color: colors.textSecondary,
+    color: '#64748b',
     textAlign: 'right',
     marginTop: 2,
   },
@@ -625,7 +740,7 @@ const styles = StyleSheet.create({
   loadingText: {
     fontFamily: typography.medium,
     fontSize: 13,
-    color: colors.textSecondary,
+    color: '#93c5fd',
   },
   // Empty
   emptyWrap: {
@@ -638,37 +753,36 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: colors.surface,
+    backgroundColor: 'rgba(255,255,255,0.1)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   emptyTitle: {
     fontFamily: typography.bold,
     fontSize: 17,
-    color: colors.text,
+    color: '#ffffff',
     textAlign: 'center',
   },
   emptyDesc: {
     fontFamily: typography.regular,
     fontSize: 13,
-    color: colors.textSecondary,
+    color: '#93c5fd',
     textAlign: 'center',
     lineHeight: 20,
   },
-  emptyText: {
-    fontFamily: typography.regular,
-    fontSize: 13,
-    color: colors.textMuted,
-    textAlign: 'right',
-  },
   // Package Teachers Card
   packageCardWrap: {
-    backgroundColor: '#ffffff',
-    borderRadius: borderRadius.xl,
+    backgroundColor: colors.card,
+    borderRadius: 16,
     padding: spacing.md,
-    ...shadows.sm,
+    marginBottom: spacing.sm + 2,
     borderWidth: 1,
-    borderColor: 'rgba(0, 51, 102, 0.08)',
+    borderColor: colors.border,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
   },
   packageCardHeader: {
     flexDirection: 'row-reverse',
@@ -677,7 +791,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     paddingBottom: spacing.xs,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 0, 0, 0.04)',
+    borderBottomColor: colors.border,
   },
   packageCardHeaderLeft: {
     flexDirection: 'row-reverse',
@@ -687,16 +801,18 @@ const styles = StyleSheet.create({
   packageCardTitle: {
     fontFamily: typography.bold,
     fontSize: 13,
-    color: colors.navy,
+    color: '#0b2344',
   },
   packageCardSubtitle: {
-    fontFamily: typography.regular,
+    fontFamily: typography.bold,
     fontSize: 11,
-    color: colors.primary,
-    backgroundColor: 'rgba(0, 51, 102, 0.06)',
+    color: '#0f4c81',
+    backgroundColor: colors.surface,
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
     borderRadius: borderRadius.full,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   packageTeachersScroll: {
     flexDirection: 'row-reverse',
@@ -707,11 +823,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row-reverse',
     alignItems: 'center',
     gap: spacing.xs,
-    backgroundColor: 'rgba(0, 51, 102, 0.03)',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: 'rgba(0, 51, 102, 0.08)',
+    borderColor: colors.border,
     borderRadius: borderRadius.lg,
-    paddingVertical: spacing.xs,
+    paddingVertical: spacing.xs + 2,
     paddingHorizontal: spacing.sm,
     minWidth: 130,
   },
@@ -719,14 +835,16 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   packageTeacherAvatarText: {
     fontFamily: typography.bold,
     fontSize: 12,
-    color: '#ffffff',
+    color: '#0f4c81',
   },
   packageTeacherInfo: {
     flex: 1,
@@ -734,13 +852,13 @@ const styles = StyleSheet.create({
   },
   packageTeacherName: {
     fontFamily: typography.bold,
-    fontSize: 11,
-    color: colors.text,
+    fontSize: 12,
+    color: '#0b2344',
   },
   packageTeacherSubject: {
     fontFamily: typography.regular,
     fontSize: 10,
-    color: colors.textSecondary,
+    color: '#64748b',
     marginTop: 1,
   },
   // Teacher Tabs

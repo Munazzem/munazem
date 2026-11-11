@@ -150,35 +150,37 @@ export function PriceSettingsModal() {
                                     لا يوجد سناتر مضافة. يمكنك إضافة سناتر لتطبيق خصومات سريعة.
                                 </p>
                             ) : (
-                                <div className="space-y-2">
+                                <div className="space-y-2.5 sm:space-y-2">
                                     {centerDiscounts.map((center, index) => (
-                                        <div key={index} className="flex gap-2 items-center">
+                                        <div key={index} className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center bg-gray-50/50 p-2 sm:p-0 rounded-xl sm:bg-transparent border sm:border-0 border-gray-100">
                                             <Input 
                                                 placeholder="اسم السنتر" 
                                                 value={center.centerName}
                                                 onChange={(e) => updateCenter(index, 'centerName', e.target.value)}
-                                                className="flex-1 text-sm h-9"
+                                                className="flex-1 text-sm h-9 bg-white"
                                             />
-                                            <div className="relative w-28 shrink-0">
-                                                <Input
-                                                    type="number"
-                                                    min="0"
-                                                    placeholder="قيمة الخصم"
-                                                    value={center.discountAmount || ''}
-                                                    onChange={(e) => updateCenter(index, 'discountAmount', parseFloat(e.target.value) || 0)}
-                                                    className="pl-8 text-left text-sm h-9"
-                                                    dir="ltr"
-                                                />
-                                                <span className="absolute left-2.5 top-2 text-xs text-gray-400">ج</span>
+                                            <div className="flex items-center gap-2">
+                                                <div className="relative flex-1 sm:w-28 shrink-0">
+                                                    <Input
+                                                        type="number"
+                                                        min="0"
+                                                        placeholder="قيمة الخصم"
+                                                        value={center.discountAmount || ''}
+                                                        onChange={(e) => updateCenter(index, 'discountAmount', parseFloat(e.target.value) || 0)}
+                                                        className="pl-8 text-left text-sm h-9 bg-white"
+                                                        dir="ltr"
+                                                    />
+                                                    <span className="absolute left-2.5 top-2 text-xs text-gray-400">ج</span>
+                                                </div>
+                                                <Button 
+                                                    variant="ghost" 
+                                                    size="icon" 
+                                                    className="h-9 w-9 text-red-500 hover:text-red-600 hover:bg-red-50 shrink-0"
+                                                    onClick={() => removeCenter(index)}
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
                                             </div>
-                                            <Button 
-                                                variant="ghost" 
-                                                size="icon" 
-                                                className="h-9 w-9 text-red-500 hover:text-red-600 hover:bg-red-50 shrink-0"
-                                                onClick={() => removeCenter(index)}
-                                            >
-                                                <Trash2 className="h-4 w-4" />
-                                            </Button>
                                         </div>
                                     ))}
                                 </div>
@@ -187,11 +189,11 @@ export function PriceSettingsModal() {
                     </div>
                 )}
 
-                <div className="flex justify-end gap-2 pt-4 border-t border-gray-100 mt-2">
-                    <Button variant="outline" onClick={() => setOpen(false)} disabled={mutation.isPending}>
+                <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-4 border-t border-gray-100 mt-2">
+                    <Button variant="outline" onClick={() => setOpen(false)} disabled={mutation.isPending} className="w-full sm:w-auto h-10 rounded-xl text-xs font-semibold">
                         إلغاء
                     </Button>
-                    <Button onClick={handleSave} disabled={mutation.isPending || isLoading} className="gap-2">
+                    <Button onClick={handleSave} disabled={mutation.isPending || isLoading} className="gap-2 w-full sm:w-auto h-10 rounded-xl text-xs font-bold">
                         {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                         حفظ الإعدادات
                     </Button>

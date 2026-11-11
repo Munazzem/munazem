@@ -33,6 +33,26 @@ const safeLocalStorage = {
 };
 
 /**
+ * Wipes ALL IndexedDB offline data and React Query persister cache.
+ * Runs asynchronously — fire-and-forget on logout.
+ */
+async function purgeOfflineCache(): Promise<void> {
+    try {
+        // Dynamically import to avoid circular deps at module load time
+        const { clearAllOfflineData } = await import('@/lib/offline/db');
+        await clearAllOfflineData(false); // false = also wipe outbox on logout
+
+        // Also clear the React Query IDB persister key
+        const { deleteKeyVal } = await import('@/lib/offline/db');
+        await deleteKeyVal('REACT_QUERY_OFFLINE_CACHE').catch(() => {});
+
+        console.log('[AuthStore] ✅ Offline IndexedDB cache purged on logout.');
+    } catch (err) {
+        console.warn('[AuthStore] Failed to purge offline cache:', err);
+    }
+}
+
+/**
  * Zustand Store for Global Authentication State.
  * Utilizes persist middleware to retain user data across page reloads.
  */
@@ -73,6 +93,10 @@ export const useAuthStore = create<AuthState>()(
                         localStorage.removeItem('REACT_QUERY_OFFLINE_CACHE');
                     } catch {}
                 }
+
+                // 🔑 Key fix: wipe ALL IndexedDB offline data to prevent cross-tenant leaks
+                purgeOfflineCache();
+
                 set({ user: null, token: null, isAuthenticated: false });
             },
         }),
@@ -84,3 +108,4 @@ export const useAuthStore = create<AuthState>()(
         }
     )
 );
+

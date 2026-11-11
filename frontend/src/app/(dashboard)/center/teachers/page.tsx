@@ -22,6 +22,7 @@ import {
     deleteCenterTeacher,
 } from '@/lib/api/centers';
 import { ICenterTeacher } from '@/types/center.types';
+import { OfflineStorageService } from '@/lib/offline/storage.service';
 import { BranchSwitcher } from '@/components/center/BranchSwitcher';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -76,8 +77,8 @@ export default function CenterTeachersPage() {
 
     const deleteMutation = useMutation({
         mutationFn: deleteCenterTeacher,
-        onSuccess: () => {
-            toast.success('تم تعطيل المدرس بنجاح');
+        onSuccess: (res: any) => {
+            toast.success(res?.message || 'تم حذف المدرس بنجاح');
             queryClient.invalidateQueries({ queryKey: ['center', 'teachers'] });
         },
         onError: (err: any) => {
@@ -184,27 +185,36 @@ export default function CenterTeachersPage() {
                         >
                             <div>
                                 <div className="flex items-start justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className="h-12 w-12 rounded-xl bg-primary/10 text-primary font-black text-lg flex items-center justify-center">
-                                            {teacher.name.charAt(0)}
-                                        </div>
-                                        <div>
-                                            <h3 className="text-base font-bold text-gray-900 group-hover:text-primary transition-colors">
-                                                {teacher.name}
-                                            </h3>
-                                            <div className="flex items-center gap-2 mt-0.5">
-                                                <Badge variant="outline" className="text-xs bg-gray-50 text-gray-600 font-semibold border-gray-200">
-                                                    {teacher.subject}
-                                                </Badge>
+                                        <div className="flex items-center gap-3">
+                                            <div className="h-12 w-12 rounded-xl bg-primary/10 text-primary font-black text-lg flex items-center justify-center">
+                                                {teacher.name.charAt(0)}
+                                            </div>
+                                            <div>
+                                                <h3 className="text-base font-bold text-gray-900 group-hover:text-primary transition-colors">
+                                                    {teacher.name}
+                                                </h3>
+                                                <div className="flex items-center gap-2 mt-0.5">
+                                                    <Badge variant="outline" className="text-xs bg-gray-50 text-gray-600 font-semibold border-gray-200">
+                                                        {teacher.subject}
+                                                    </Badge>
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                    <Badge
-                                        variant="outline"
-                                        className={teacher.isActive ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-red-50 text-red-600 border-red-200'}
-                                    >
-                                        {teacher.isActive ? 'نشط' : 'معطل'}
-                                    </Badge>
+                                    {(teacher as any).isPendingDelete ? (
+                                        <Badge
+                                            variant="outline"
+                                            className="bg-rose-50 text-rose-700 border-rose-300 font-bold"
+                                        >
+                                            معلق للحذف (أوفلاين)
+                                        </Badge>
+                                    ) : (
+                                        <Badge
+                                            variant="outline"
+                                            className={teacher.isActive ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-red-50 text-red-600 border-red-200'}
+                                        >
+                                            {teacher.isActive ? 'نشط' : 'معطل'}
+                                        </Badge>
+                                    )}
                                 </div>
 
                                 <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
@@ -225,19 +235,34 @@ export default function CenterTeachersPage() {
                                     <Edit2 className="h-3.5 w-3.5 ml-1" />
                                     تعديل
                                 </Button>
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => {
-                                        if (confirm(`هل أنت متأكد من حذف المدرس ${teacher.name}؟`)) {
-                                            deleteMutation.mutate(teacher._id);
-                                        }
-                                    }}
-                                    className="h-8 px-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-lg"
-                                >
-                                    <Trash2 className="h-3.5 w-3.5 ml-1" />
-                                    حذف
-                                </Button>
+                                {(teacher as any).isPendingDelete ? (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={async () => {
+                                            await OfflineStorageService.undoCenterTeacherPendingDelete(teacher._id);
+                                            queryClient.invalidateQueries({ queryKey: ['center', 'teachers'] });
+                                            toast.success('تم التراجع عن حذف المدرس واستعادته');
+                                        }}
+                                        className="h-8 px-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-lg"
+                                    >
+                                        تراجع عن الحذف
+                                    </Button>
+                                ) : (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => {
+                                            if (confirm(`هل أنت متأكد من حذف المدرس ${teacher.name}؟`)) {
+                                                deleteMutation.mutate(teacher._id);
+                                            }
+                                        }}
+                                        className="h-8 px-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-lg"
+                                    >
+                                        <Trash2 className="h-3.5 w-3.5 ml-1" />
+                                        حذف
+                                    </Button>
+                                )}
                             </div>
                         </div>
                     ))}

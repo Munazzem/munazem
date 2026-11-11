@@ -16,9 +16,7 @@ import { useActiveChild } from '../../hooks/useActiveChild';
 import { Award, TrendingUp, TrendingDown, Minus, FileText } from 'lucide-react-native';
 
 const FILTERS = [
-  { key: 'all', label: 'الكل' },
   { key: 'exam', label: 'اختبارات' },
-  { key: 'quiz', label: 'كويزات' },
   { key: 'homework', label: 'واجبات' },
 ] as const;
 
@@ -34,7 +32,7 @@ export const GradesScreen: React.FC = () => {
     setSelectedSubjectId,
   } = useActiveChild();
 
-  const [filter, setFilter] = useState<FilterKey>('all');
+  const [filter, setFilter] = useState<FilterKey>('exam');
 
   const { data: records = [], isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['exams', activeStudentId],
@@ -42,11 +40,20 @@ export const GradesScreen: React.FC = () => {
     enabled: !!activeStudentId,
   });
 
-  const avgPct = records.length > 0
-    ? Math.round(records.reduce((sum, r) => sum + r.percentage, 0) / records.length)
-    : 0;
+  const isHomework = (title: string) => {
+    if (!title) return false;
+    return /واجب|تسميع|شيت|تدريب|homework|assignment|sheet/i.test(title);
+  };
 
-  const displayed = records; // Could filter by type when backend supports it
+  const examsList = records.filter((r) => !isHomework(r.title));
+  const homeworkList = records.filter((r) => isHomework(r.title));
+
+  const displayed = filter === 'exam' ? examsList : homeworkList;
+
+  const currentList = displayed;
+  const avgPct = currentList.length > 0
+    ? Math.round(currentList.reduce((sum, r) => sum + r.percentage, 0) / currentList.length)
+    : 0;
 
   return (
     <View style={styles.root}>
@@ -85,58 +92,92 @@ export const GradesScreen: React.FC = () => {
             <View style={styles.avgLeft}>
               <Text style={[
                 styles.avgValue,
-                { color: avgPct >= 75 ? colors.present : avgPct >= 50 ? colors.warning : colors.absent },
+                {
+                  color: currentList.length === 0
+                    ? '#93c5fd'
+                    : avgPct >= 75 ? colors.present : avgPct >= 50 ? colors.warning : colors.absent,
+                },
               ]}>
-                {avgPct}%
+                {currentList.length > 0 ? `${avgPct}%` : '—'}
               </Text>
-              <Text style={styles.avgLabel}>المتوسط العام</Text>
+              <Text style={styles.avgLabel}>
+                {filter === 'exam' ? 'متوسط الاختبارات' : 'متوسط الواجبات'}
+              </Text>
             </View>
             <View style={styles.avgRight}>
               <View style={[
                 styles.perfBadge,
-                { backgroundColor: avgPct >= 75 ? colors.presentLight : avgPct >= 50 ? colors.warningLight : colors.absentLight },
+                {
+                  backgroundColor: currentList.length === 0
+                    ? 'rgba(147, 197, 253, 0.15)'
+                    : avgPct >= 75 ? colors.presentLight : avgPct >= 50 ? colors.warningLight : colors.absentLight,
+                },
               ]}>
-                {avgPct >= 75 ? <TrendingUp size={16} color={colors.present} /> :
-                 avgPct >= 50 ? <Minus size={16} color={colors.warning} /> :
-                 <TrendingDown size={16} color={colors.absent} />}
+                {currentList.length === 0 ? (
+                  <Minus size={16} color="#93c5fd" />
+                ) : avgPct >= 75 ? (
+                  <TrendingUp size={16} color={colors.present} />
+                ) : avgPct >= 50 ? (
+                  <Minus size={16} color={colors.warning} />
+                ) : (
+                  <TrendingDown size={16} color={colors.absent} />
+                )}
                 <Text style={[
                   styles.perfLabel,
-                  { color: avgPct >= 75 ? colors.present : avgPct >= 50 ? colors.warning : colors.absent },
+                  {
+                    color: currentList.length === 0
+                      ? '#93c5fd'
+                      : avgPct >= 75 ? colors.present : avgPct >= 50 ? colors.warning : colors.absent,
+                  },
                 ]}>
-                  {avgPct >= 75 ? 'ممتاز' : avgPct >= 60 ? 'جيد' : avgPct >= 50 ? 'مقبول' : 'يحتاج جهد'}
+                  {currentList.length === 0
+                    ? 'لا توجد بيانات'
+                    : avgPct >= 75 ? 'ممتاز' : avgPct >= 60 ? 'جيد' : avgPct >= 50 ? 'مقبول' : 'يحتاج جهد'}
                 </Text>
               </View>
-              <Text style={styles.totalCount}>{records.length} اختبار</Text>
+              <Text style={styles.totalCount}>
+                {filter === 'exam' ? `${examsList.length} اختبار` : `${homeworkList.length} واجب`}
+              </Text>
             </View>
           </View>
 
           {/* Filter Pills */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
+          <View style={styles.filters}>
             {FILTERS.map((f) => (
               <TouchableOpacity
                 key={f.key}
                 style={[styles.pill, filter === f.key && styles.pillActive]}
                 onPress={() => setFilter(f.key)}
+                activeOpacity={0.8}
               >
                 <Text style={[styles.pillText, filter === f.key && styles.pillTextActive]}>
                   {f.label}
                 </Text>
               </TouchableOpacity>
             ))}
-          </ScrollView>
+          </View>
 
-          {/* Exam List */}
+          {/* Exam / Homework List */}
           {isLoading ? (
-            <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>
+            <View style={styles.center}><ActivityIndicator size="large" color="#ffffff" /></View>
           ) : displayed.length === 0 ? (
             <View style={styles.emptyWrap}>
-              <FileText size={40} color={colors.textMuted} />
-              <Text style={styles.emptyText}>لا توجد درجات مسجلة بعد</Text>
+              <FileText size={40} color="#93c5fd" />
+              <Text style={styles.emptyText}>
+                {filter === 'exam' ? 'لا توجد اختبارات مسجلة بعد' : 'لا توجد واجبات مسجلة بعد'}
+              </Text>
+              <Text style={styles.emptySubText}>
+                {filter === 'exam'
+                  ? 'لم يتم رصد أي درجات اختبارات لهذا الطالب بعد'
+                  : 'لم يتم رصد أي درجات واجبات لهذا الطالب بعد'}
+              </Text>
             </View>
           ) : (
-            displayed.map((exam, i) => (
-              <ExamRow key={exam.id} exam={exam} isLast={i === displayed.length - 1} />
-            ))
+            <View style={styles.examCard}>
+              {displayed.map((exam, i) => (
+                <ExamRow key={exam.id} exam={exam} isLast={i === displayed.length - 1} />
+              ))}
+            </View>
           )}
         </ScrollView>
       </SafeAreaView>
@@ -180,17 +221,17 @@ const ExamRow: React.FC<{ exam: ExamRecord; isLast: boolean }> = ({ exam, isLast
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
-  safe: { flex: 1, backgroundColor: colors.navy },
+  safe: { flex: 1, backgroundColor: colors.background },
   scroll: { paddingBottom: 110, backgroundColor: colors.background },
   header: {
-    backgroundColor: colors.navy,
+    backgroundColor: colors.background,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
     paddingBottom: spacing.xxl,
     alignItems: 'flex-end',
   },
-  headerTitle: { fontFamily: typography.extraBold, fontSize: 26, color: colors.textInverse },
-  headerSub: { fontFamily: typography.regular, fontSize: 13, color: '#94a3b8', marginTop: 2 },
+  headerTitle: { fontFamily: typography.extraBold, fontSize: 26, color: '#ffffff' },
+  headerSub: { fontFamily: typography.medium, fontSize: 13, color: '#93c5fd', marginTop: 2 },
   tabsWrap: {
     alignSelf: 'stretch',
     width: '100%',
@@ -205,14 +246,18 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     borderRadius: borderRadius.xl,
     padding: spacing.lg,
-    ...shadows.md,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
     borderWidth: 1,
-    borderColor: colors.borderLight,
+    borderColor: colors.border,
     marginBottom: spacing.md,
   },
   avgLeft: { alignItems: 'flex-end' },
   avgValue: { fontFamily: typography.extraBold, fontSize: 40 },
-  avgLabel: { fontFamily: typography.medium, fontSize: 14, color: colors.textSecondary, marginTop: 2 },
+  avgLabel: { fontFamily: typography.bold, fontSize: 14, color: '#1e3a6e', marginTop: 2 },
   avgRight: { alignItems: 'center', gap: spacing.sm },
   perfBadge: {
     flexDirection: 'row',
@@ -225,25 +270,50 @@ const styles = StyleSheet.create({
   perfLabel: { fontFamily: typography.bold, fontSize: 12 },
   totalCount: { fontFamily: typography.regular, fontSize: 12, color: colors.textMuted },
   filters: {
+    flexDirection: 'row-reverse',
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.sm,
     gap: spacing.sm,
-    flexDirection: 'row',
   },
   pill: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+    flex: 1,
+    paddingVertical: 10,
     borderRadius: borderRadius.full,
-    backgroundColor: colors.surface,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pillActive: {
+    backgroundColor: '#ffffff',
+    borderColor: '#ffffff',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  pillText: { fontFamily: typography.medium, fontSize: 14, color: '#ffffff' },
+  pillTextActive: { color: '#0b2344', fontFamily: typography.bold },
+  examCard: {
+    marginHorizontal: spacing.lg,
+    backgroundColor: colors.card,
+    borderRadius: borderRadius.xl,
     borderWidth: 1,
     borderColor: colors.border,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+    overflow: 'hidden',
+    marginBottom: spacing.xl,
   },
-  pillActive: { backgroundColor: colors.primaryLight, borderColor: colors.primary },
-  pillText: { fontFamily: typography.medium, fontSize: 13, color: colors.textSecondary },
-  pillTextActive: { color: colors.primary },
   center: { paddingVertical: 60, alignItems: 'center' },
-  emptyWrap: { paddingVertical: 60, alignItems: 'center', gap: spacing.md },
-  emptyText: { fontFamily: typography.medium, fontSize: 14, color: colors.textMuted },
+  emptyWrap: { paddingVertical: 60, alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.xl },
+  emptyText: { fontFamily: typography.bold, fontSize: 16, color: '#ffffff', textAlign: 'center' },
+  emptySubText: { fontFamily: typography.regular, fontSize: 12, color: '#93c5fd', textAlign: 'center', marginTop: 4 },
 });
 
 const rowStyles = StyleSheet.create({
@@ -255,12 +325,13 @@ const rowStyles = StyleSheet.create({
     gap: spacing.sm,
     backgroundColor: colors.card,
   },
-  border: { borderBottomWidth: 1, borderBottomColor: colors.borderLight },
+  border: { borderBottomWidth: 1, borderBottomColor: colors.border },
   circle: {
     width: 52,
     height: 52,
     borderRadius: 26,
-    borderWidth: 2,
+    borderWidth: 1.5,
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surface,
@@ -268,11 +339,11 @@ const rowStyles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   circleScore: { fontFamily: typography.extraBold, fontSize: 16 },
-  circleTotal: { fontFamily: typography.regular, fontSize: 10, color: colors.textMuted },
+  circleTotal: { fontFamily: typography.regular, fontSize: 10, color: '#64748b' },
   info: { flex: 1, alignItems: 'flex-end' },
-  title: { fontFamily: typography.bold, fontSize: 14, color: colors.text },
-  meta: { fontFamily: typography.regular, fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  title: { fontFamily: typography.bold, fontSize: 14, color: '#0b2344' },
+  meta: { fontFamily: typography.regular, fontSize: 12, color: '#64748b', marginTop: 2 },
   right: { alignItems: 'center', minWidth: 44 },
   pct: { fontFamily: typography.bold, fontSize: 15 },
-  date: { fontFamily: typography.regular, fontSize: 11, color: colors.textMuted, marginTop: 2 },
+  date: { fontFamily: typography.medium, fontSize: 11, color: '#64748b', marginTop: 2 },
 });

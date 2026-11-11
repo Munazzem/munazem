@@ -1,14 +1,16 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { useParams } from 'next/navigation';
 import { getStudentByCardToken } from '@/lib/api/cards';
 import { Loader2, CreditCard, AlertCircle, Calendar, Wallet, CheckCircle2, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 
-export default function CardPortalPage({ params }: { params: { token: string } }) {
-    const { token } = params;
+export default function CardPortalPage() {
+    const params = useParams<{ token: string }>();
+    const token = params?.token || '';
 
     const { data: student, isLoading, isError, error } = useQuery({
         queryKey: ['card-token-summary', token],

@@ -136,21 +136,21 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
         <>
         <div className="flex flex-col sm:flex-row h-full">
             {/* QR Panel */}
-            <div className="w-full sm:w-[240px] shrink-0 bg-[#f0f6ff] flex flex-col items-center justify-center gap-4 p-6 border-b sm:border-b-0 sm:border-l border-blue-100">
+            <div className="w-full sm:w-[240px] shrink-0 bg-[#f0f6ff] flex flex-col items-center justify-center gap-3 sm:gap-4 p-4 sm:p-6 border-b sm:border-b-0 sm:border-l border-blue-100">
                 <div className="flex items-center gap-1.5 text-[#1e3a6e]">
                     <QrCode className="h-4 w-4" />
                     <span className="text-xs font-bold uppercase tracking-wide">كود الحضور</span>
                 </div>
                 <div className="rounded-2xl overflow-hidden shadow-lg border-4 border-white bg-white">
                     {qrDataUrl ? (
-                        <img src={qrDataUrl} alt="QR Code" className="w-[160px] h-[160px]" />
+                        <img src={qrDataUrl} alt="QR Code" className="w-[130px] h-[130px] sm:w-[160px] sm:h-[160px]" />
                     ) : (
-                        <div className="w-[160px] h-[160px] bg-white/60 flex items-center justify-center">
+                        <div className="w-[130px] h-[130px] sm:w-[160px] sm:h-[160px] bg-white/60 flex items-center justify-center">
                             <QrCode className="h-8 w-8 text-[#1e3a6e]/30" />
                         </div>
                     )}
                 </div>
-                <div className="text-center w-full px-2">
+                <div className="text-center w-full px-2 max-w-[200px]">
                     <p className="text-[10px] text-gray-400 mb-1">امسح للتسجيل</p>
                     <p className="font-mono text-[11px] font-bold text-[#1e3a6e] bg-white px-2 py-1.5 rounded-lg border border-blue-100 truncate w-full" dir="ltr">
                         {qrValue}
@@ -257,12 +257,12 @@ export function StudentProfileTab({ studentId, student, report, canWrite, qrData
                                 <div className="flex flex-wrap items-center gap-1.5 justify-end">
                                     <input
                                         type="number"
-                                        className="w-12 h-7 text-xs border rounded px-1 text-center bg-white"
+                                        className="w-14 h-8 text-xs font-bold border rounded-lg px-1.5 text-center bg-white"
                                         value={tempQuota}
                                         onChange={(e) => setTempQuota(parseInt(e.target.value) || 0)}
                                     />
-                                    <Button size="sm" className="h-7 text-xs" onClick={() => updateQuotaMutation.mutate(tempQuota)}>حفظ</Button>
-                                    <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditingQuota(false)}>إلغاء</Button>
+                                    <Button size="sm" className="h-8 px-3 text-xs" onClick={() => updateQuotaMutation.mutate(tempQuota)}>حفظ</Button>
+                                    <Button size="sm" variant="ghost" className="h-8 px-3 text-xs" onClick={() => setEditingQuota(false)}>إلغاء</Button>
                                 </div>
                             ) : (
                                 canWrite && (

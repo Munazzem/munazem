@@ -20,9 +20,19 @@ examsRouter.use(authenticate);
 // Multer — memory storage (no disk write)
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB
 
+const ALLOWED_EXAM_ROLES = [
+    UserRole.teacher,
+    UserRole.assistant,
+    UserRole.centerOwner,
+    UserRole.centerSupervisor,
+];
+
 const resolveTeacherId = (user?: IJwtPayload): string => {
     if (!user) return '';
-    return user.role === UserRole.assistant ? (user.teacherId || '') : user.userId;
+    if (user.role === UserRole.assistant || user.role === UserRole.centerSupervisor) {
+        return user.teacherId || '';
+    }
+    return user.userId;
 };
 
 // ════════ EXAM CRUD ════════════════════════════════════════════════
@@ -30,7 +40,7 @@ const resolveTeacherId = (user?: IJwtPayload): string => {
 // POST /exams — Create exam manually (Teacher + Assistant)
 examsRouter.post(
     '/',
-    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    authorizeRoles(...ALLOWED_EXAM_ROLES),
     validate(createExamSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
@@ -44,7 +54,7 @@ examsRouter.post(
 // GET /exams?status=DRAFT&gradeLevel=... — List exams (Teacher + Assistant)
 examsRouter.get(
     '/',
-    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    authorizeRoles(...ALLOWED_EXAM_ROLES),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const teacherId = resolveTeacherId(req.user);
@@ -57,7 +67,7 @@ examsRouter.get(
 // GET /exams/:id — Get single exam
 examsRouter.get(
     '/:id',
-    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    authorizeRoles(...ALLOWED_EXAM_ROLES),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const teacherId = resolveTeacherId(req.user);
@@ -70,7 +80,7 @@ examsRouter.get(
 // GET /exams/:id/print — Get HTML template for printing
 examsRouter.get(
     '/:id/print',
-    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    authorizeRoles(...ALLOWED_EXAM_ROLES),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const teacherId = resolveTeacherId(req.user);
@@ -84,7 +94,7 @@ examsRouter.get(
 // PUT /exams/:id — Update exam (Teacher + Assistant, DRAFT / PUBLISHED / COMPLETED)
 examsRouter.put(
     '/:id',
-    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    authorizeRoles(...ALLOWED_EXAM_ROLES),
     validate(updateExamSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
@@ -98,7 +108,7 @@ examsRouter.put(
 // PATCH /exams/:id/publish — Publish exam (Teacher + Assistant)
 examsRouter.patch(
     '/:id/publish',
-    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    authorizeRoles(...ALLOWED_EXAM_ROLES),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const teacherId = resolveTeacherId(req.user);
@@ -111,7 +121,7 @@ examsRouter.patch(
 // DELETE /exams/:id — Delete exam (Teacher + Assistant, Draft or Published with cascade)
 examsRouter.delete(
     '/:id',
-    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    authorizeRoles(...ALLOWED_EXAM_ROLES),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const teacherId = resolveTeacherId(req.user);
@@ -129,7 +139,7 @@ examsRouter.delete(
 // POST /exams/:id/results — Record single student result (Teacher + Assistant)
 examsRouter.post(
     '/:id/results',
-    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    authorizeRoles(...ALLOWED_EXAM_ROLES),
     validate(recordResultSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
@@ -149,7 +159,7 @@ examsRouter.post(
 // POST /exams/:id/results/batch — Batch record results (Teacher + Assistant)
 examsRouter.post(
     '/:id/results/batch',
-    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    authorizeRoles(...ALLOWED_EXAM_ROLES),
     validate(batchResultsSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
@@ -168,7 +178,7 @@ examsRouter.post(
 // GET /exams/:id/results — Get all results for an exam
 examsRouter.get(
     '/:id/results',
-    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    authorizeRoles(...ALLOWED_EXAM_ROLES),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const teacherId = resolveTeacherId(req.user);
@@ -181,7 +191,7 @@ examsRouter.get(
 // PUT /exams/:id/results/:resultId — Update single student result (Teacher + Assistant)
 examsRouter.put(
     '/:id/results/:resultId',
-    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    authorizeRoles(...ALLOWED_EXAM_ROLES),
     validate(updateResultSchema),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
@@ -203,7 +213,7 @@ examsRouter.put(
 // DELETE /exams/:id/results/:resultId — Delete single student result (Teacher + Assistant)
 examsRouter.delete(
     '/:id/results/:resultId',
-    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    authorizeRoles(...ALLOWED_EXAM_ROLES),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const teacherId = resolveTeacherId(req.user);
@@ -220,7 +230,7 @@ examsRouter.delete(
 // POST /exams/:id/results/send — Send results via WhatsApp
 examsRouter.post(
     '/:id/results/send',
-    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    authorizeRoles(...ALLOWED_EXAM_ROLES),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const teacherId = resolveTeacherId(req.user);
@@ -230,12 +240,28 @@ examsRouter.post(
     }
 );
 
+// GET /exams/student/:studentId — Get all exams and grades for a specific student
+examsRouter.get(
+    '/student/:studentId',
+    authorizeRoles(...ALLOWED_EXAM_ROLES),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const teacherId = resolveTeacherId(req.user);
+            const results = await ExamsService.getStudentExamHistory(
+                req.params['studentId'] as string,
+                teacherId
+            );
+            return SuccessResponse({ res, data: results, message: 'تم جلب درجات الطالب بنجاح' });
+        } catch (error) { next(error); }
+    }
+);
+
 // ════════ AI EXAM GENERATION ═══════════════════════════════════════
 
 // POST /exams/ai/generate — Upload PDF + generate exam (Teacher + Assistant)
 examsRouter.post(
     '/ai/generate',
-    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    authorizeRoles(...ALLOWED_EXAM_ROLES),
     upload.single('pdf'),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
@@ -288,7 +314,7 @@ aiProxyRouter.use(authenticate);
 
 aiProxyRouter.post(
     '/',
-    authorizeRoles(UserRole.teacher, UserRole.assistant),
+    authorizeRoles(...ALLOWED_EXAM_ROLES),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const apiKey = envVars.groqApiKey;

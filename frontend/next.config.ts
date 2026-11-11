@@ -8,8 +8,31 @@ const withPWA = withPWAInit({
   aggressiveFrontEndNavCaching: true,
   reloadOnOnline: true,
   disable: process.env.NODE_ENV === 'development',
+  extendDefaultRuntimeCaching: true,
   workboxOptions: {
     disableDevLogs: true,
+    runtimeCaching: [
+      {
+        urlPattern: ({ url }: { url: URL }) => {
+          return (
+            url.pathname.startsWith('/api/') ||
+            url.pathname.startsWith('/students') ||
+            url.pathname.startsWith('/groups') ||
+            url.pathname.startsWith('/sessions') ||
+            url.pathname.startsWith('/attendance')
+          );
+        },
+        handler: 'NetworkFirst',
+        options: {
+          cacheName: 'munazem-api-cache',
+          networkTimeoutSeconds: 3,
+          expiration: {
+            maxEntries: 120,
+            maxAgeSeconds: 86400 * 7, // 7 days
+          },
+        },
+      },
+    ],
   },
   fallbacks: {
     document: "/~offline",

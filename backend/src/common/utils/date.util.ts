@@ -174,3 +174,18 @@ export function formatDateEgypt(date: Date | string | number, options?: Intl.Dat
         ...options,
     });
 }
+
+export const ARABIC_MONTH_NAMES = [
+    'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+    'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'
+];
+
+/**
+ * Returns the Arabic month name for a date (e.g. 'سبتمبر').
+ */
+export function getArabicMonthName(date: Date | string | number): string {
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return '';
+    return ARABIC_MONTH_NAMES[d.getMonth()] || '';
+}
+

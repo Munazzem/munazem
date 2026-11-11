@@ -154,11 +154,11 @@ export function AttendanceAdjustmentModal({
     return (
         <>
             <Dialog open={open} onOpenChange={onOpenChange}>
-                <DialogContent className="max-w-md p-6 rounded-2xl">
-                    <DialogHeader className="text-right">
-                        <DialogTitle className="text-lg font-bold text-gray-900 flex items-center justify-between">
+                <DialogContent dir="rtl" className="max-w-md p-0 rounded-2xl flex flex-col max-h-[calc(100dvh-2rem)] overflow-hidden">
+                    <DialogHeader className="text-right p-5 pb-3 sm:p-6 sm:pb-3 border-b border-gray-100 shrink-0">
+                        <DialogTitle className="text-base sm:text-lg font-bold text-gray-900 flex items-center justify-between">
                             <span>تعديل حالة الحصة</span>
-                            <span className="text-xs font-normal text-gray-500 flex items-center gap-1">
+                            <span className="text-[11px] sm:text-xs font-normal text-gray-500 flex items-center gap-1">
                                 <Calendar className="h-3.5 w-3.5 text-primary" /> {formattedDate}
                             </span>
                         </DialogTitle>
@@ -168,11 +168,11 @@ export function AttendanceAdjustmentModal({
                     </DialogHeader>
 
                     {!sessionId ? (
-                        <div className="py-6 text-center text-sm text-gray-400">
+                        <div className="py-8 text-center text-sm text-gray-400">
                             لا يمكن تعديل هذه الحصة لعدم توفر معرّف الجلسة.
                         </div>
                     ) : (
-                        <div className="space-y-4 py-2">
+                        <div className="space-y-4 p-5 sm:p-6 py-4 flex-1 overflow-y-auto">
                             {/* Status Selector Grid */}
                             <div>
                                 <label className="block text-xs font-semibold text-gray-700 mb-2">
@@ -189,7 +189,7 @@ export function AttendanceAdjustmentModal({
                                                 disabled={!canWrite || isPending}
                                                 onClick={() => setStatus(opt.value)}
                                                 className={cn(
-                                                    'flex items-center justify-center gap-2 p-3 rounded-xl border-2 font-bold text-xs transition-all cursor-pointer select-none',
+                                                    'flex items-center justify-center gap-2 p-2.5 sm:p-3 rounded-xl border-2 font-bold text-xs transition-all cursor-pointer select-none',
                                                     isSelected ? opt.activeColor : opt.inactiveColor,
                                                     (!canWrite || isPending) && 'opacity-50 cursor-not-allowed'
                                                 )}
@@ -245,15 +245,28 @@ export function AttendanceAdjustmentModal({
                         </div>
                     )}
 
-                    <DialogFooter className="flex flex-row-reverse items-center justify-between gap-2 pt-2 border-t border-gray-100">
-                        <div className="flex items-center gap-2">
+                    <DialogFooter className="p-4 sm:p-5 border-t border-gray-100 bg-gray-50/50 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-2.5 shrink-0">
+                        {canWrite && sessionId && (
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setShowDeleteConfirm(true)}
+                                disabled={isPending}
+                                className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-xl text-xs gap-1 h-9 w-full sm:w-auto"
+                            >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                حذف الحصة
+                            </Button>
+                        )}
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
                             <Button
                                 type="button"
                                 variant="outline"
                                 size="sm"
                                 onClick={() => onOpenChange(false)}
                                 disabled={isPending}
-                                className="rounded-xl text-xs"
+                                className="rounded-xl text-xs flex-1 sm:flex-initial h-9"
                             >
                                 إلغاء
                             </Button>
@@ -263,7 +276,7 @@ export function AttendanceAdjustmentModal({
                                     size="sm"
                                     onClick={() => adjustMutation.mutate()}
                                     disabled={isPending}
-                                    className="bg-primary hover:bg-primary/90 rounded-xl text-xs font-bold"
+                                    className="bg-primary hover:bg-primary/90 rounded-xl text-xs font-bold flex-1 sm:flex-initial h-9"
                                 >
                                     {adjustMutation.isPending ? (
                                         <>
@@ -276,20 +289,6 @@ export function AttendanceAdjustmentModal({
                                 </Button>
                             )}
                         </div>
-
-                        {canWrite && sessionId && (
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setShowDeleteConfirm(true)}
-                                disabled={isPending}
-                                className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-xl text-xs gap-1"
-                            >
-                                <Trash2 className="h-3.5 w-3.5" />
-                                حذف الحصة
-                            </Button>
-                        )}
                     </DialogFooter>
                 </DialogContent>
             </Dialog>

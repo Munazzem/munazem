@@ -5,6 +5,7 @@ import { UserRole } from '../../common/enums/enum.service.js';
 import { UnauthorizedException, BadRequestException, ErrorResponse, NotFoundException } from '../../common/utils/response/error.responce.js';
 import { PaymentsService } from '../payments/payments.service.js';
 import { TransactionCategory } from '../../common/enums/enum.service.js';
+import { cache } from '../../infrastructure/cache/cache.service.js';
 
 export class UserService {
     static async createUser(creatorRole: string, creatorId: string, data: any) {
@@ -126,6 +127,11 @@ export class UserService {
         const updatedUser = await UserModel.findByIdAndUpdate(targetUserId, data, { new: true })
             .select('-password')
             .lean();
+
+        // Invalidate cached permissions for assistant
+        if (targetUser.role === UserRole.assistant) {
+            await cache.del(`assistant:perms:${targetUserId}`);
+        }
 
         return updatedUser;
     }

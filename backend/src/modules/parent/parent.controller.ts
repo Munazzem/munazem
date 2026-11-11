@@ -7,6 +7,7 @@ import { CardsService } from '../cards/cards.service.js';
 import { SuccessResponse } from '../../common/utils/response/success.responce.js';
 import { authenticateParent } from '../../middlewares/parent-auth.middleware.js';
 import type { AuthenticatedParentRequest } from '../../middlewares/parent-auth.middleware.js';
+import { parentLoginRateLimiters } from '../../middlewares/rate-limit.middleware.js';
 
 const parentRouter = Router();
 
@@ -15,6 +16,7 @@ const parentRouter = Router();
 // POST /parent/lookup — no authentication required (Web Parent Portal)
 parentRouter.post(
   '/lookup',
+  ...parentLoginRateLimiters,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { parentPhone } = req.body;
@@ -53,6 +55,7 @@ parentRouter.get(
 // POST /parent/auth/verify-barcode
 parentRouter.post(
   '/auth/verify-barcode',
+  ...parentLoginRateLimiters,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { parentPhone, barcode, deviceId, platform } = req.body;
@@ -78,6 +81,7 @@ parentRouter.post(
 // POST /parent/auth/login-phone — Direct login by phone number
 parentRouter.post(
   '/auth/login-phone',
+  ...parentLoginRateLimiters,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { parentPhone, deviceId, platform } = req.body;
@@ -172,15 +176,41 @@ parentRouter.post(
     try {
       const parentReq = req as AuthenticatedParentRequest;
       const { fcmToken, platform } = req.body;
+      const deviceId = req.body?.deviceId || parentReq.parent.deviceId;
       await ParentAuthService.registerPushToken(
         parentReq.parent.parentId,
-        parentReq.parent.deviceId,
+        deviceId,
         fcmToken,
         platform
       );
       return SuccessResponse({
         res,
         message: 'تم تسجيل رمز الإشعارات للجهاز بنجاح',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// DELETE /parent/device/token — Unregister Push Token
+parentRouter.delete(
+  '/device/token',
+  authenticateParent,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const parentReq = req as AuthenticatedParentRequest;
+      const deviceId =
+        req.body?.deviceId ||
+        (req.query?.deviceId as string) ||
+        parentReq.parent.deviceId;
+      await ParentAuthService.unregisterPushToken(
+        parentReq.parent.parentId,
+        deviceId
+      );
+      return SuccessResponse({
+        res,
+        message: 'تم إيقاف إشعارات الجهاز بنجاح',
       });
     } catch (error) {
       next(error);

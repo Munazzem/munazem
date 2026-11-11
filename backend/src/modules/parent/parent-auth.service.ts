@@ -676,7 +676,12 @@ export class ParentAuthService {
   /**
    * Register or update FCM Push Token
    */
-  static async registerPushToken(parentId: string, deviceId: string, fcmToken: string, platform?: 'ios' | 'android') {
+  static async registerPushToken(
+    parentId: string,
+    deviceId: string,
+    fcmToken: string,
+    platform?: 'ios' | 'android' | 'web'
+  ) {
     await ParentDeviceModel.updateOne(
       { parentId: new mongoose.Types.ObjectId(parentId), deviceId },
       {
@@ -687,6 +692,21 @@ export class ParentAuthService {
         },
       },
       { upsert: true }
+    );
+  }
+
+  /**
+   * Unregister FCM Push Token (disable notifications without logging out)
+   */
+  static async unregisterPushToken(parentId: string, deviceId: string) {
+    await ParentDeviceModel.updateOne(
+      { parentId: new mongoose.Types.ObjectId(parentId), deviceId },
+      {
+        $set: {
+          fcmToken: null,
+          lastSeenAt: new Date(),
+        },
+      }
     );
   }
 }

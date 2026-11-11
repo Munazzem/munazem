@@ -104,107 +104,119 @@ export function CenterDeductionModal({ onSuccess, trigger }: CenterDeductionModa
                     </Button>
                 )}
             </DialogTrigger>
-            <DialogContent onInteractOutside={(e) => e.preventDefault()} dir="rtl" className="sm:max-w-md">
-                <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2 text-orange-700">
-                        <div className="p-2 bg-orange-100 rounded-lg">
+            <DialogContent onInteractOutside={(e) => e.preventDefault()} dir="rtl" className="sm:max-w-md p-0 overflow-hidden flex flex-col max-h-[calc(100dvh-2rem)]">
+                <DialogHeader className="px-5 sm:px-6 pt-4 sm:pt-5 pb-3 border-b border-gray-100 shrink-0 text-right">
+                    <DialogTitle className="flex items-center gap-2 text-orange-700 text-base sm:text-lg font-bold">
+                        <div className="p-2 bg-orange-100 rounded-xl">
                             <Building2 className="h-5 w-5" />
                         </div>
                         تسجيل خصم السنتر
                     </DialogTitle>
                 </DialogHeader>
 
-                <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-                    {/* Center Selection */}
-                    <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-gray-700">السنتر</label>
-                        {centerDiscounts.length > 0 ? (
-                            <Select value={centerName} onValueChange={handleCenterSelect}>
-                                <SelectTrigger className="w-full">
-                                    <SelectValue placeholder="اختر السنتر..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {centerDiscounts.map(c => (
-                                        <SelectItem key={c.centerName} value={c.centerName}>
-                                            <span className="flex items-center justify-between w-full gap-4">
-                                                <span>{c.centerName}</span>
-                                                <span className="text-xs text-gray-400">{c.discountAmount.toLocaleString()} ج</span>
-                                            </span>
-                                        </SelectItem>
-                                    ))}
-                                    <SelectItem value="__custom__">+ سنتر آخر (يدوي)</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        ) : (
-                            <Input
-                                value={customName}
-                                onChange={e => setCustomName(e.target.value)}
-                                placeholder="اسم السنتر..."
-                                required
-                            />
-                        )}
-                        {centerName === '__custom__' && (
-                            <Input
-                                value={customName}
-                                onChange={e => setCustomName(e.target.value)}
-                                placeholder="اكتب اسم السنتر..."
-                                className="mt-2"
-                                required
-                            />
-                        )}
-                    </div>
+                <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+                    <div className="px-5 sm:px-6 py-4 space-y-4 overflow-y-auto flex-1">
+                        {/* Center Selection */}
+                        <div className="space-y-1.5">
+                            <label className="text-xs sm:text-sm font-medium text-gray-700">السنتر</label>
+                            {centerDiscounts.length > 0 ? (
+                                <Select value={centerName} onValueChange={handleCenterSelect}>
+                                    <SelectTrigger className="w-full">
+                                        <SelectValue placeholder="اختر السنتر..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {centerDiscounts.map(c => (
+                                            <SelectItem key={c.centerName} value={c.centerName}>
+                                                <span className="flex items-center justify-between w-full gap-4">
+                                                    <span>{c.centerName}</span>
+                                                    <span className="text-xs text-gray-400">{c.discountAmount.toLocaleString()} ج</span>
+                                                </span>
+                                            </SelectItem>
+                                        ))}
+                                        <SelectItem value="__custom__">+ سنتر آخر (يدوي)</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            ) : (
+                                <Input
+                                    value={customName}
+                                    onChange={e => setCustomName(e.target.value)}
+                                    placeholder="اسم السنتر..."
+                                    required
+                                />
+                            )}
+                            {centerName === '__custom__' && (
+                                <Input
+                                    value={customName}
+                                    onChange={e => setCustomName(e.target.value)}
+                                    placeholder="اكتب اسم السنتر..."
+                                    className="mt-2"
+                                    required
+                                />
+                            )}
+                        </div>
 
-                    {/* Amount */}
-                    <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-gray-700">المبلغ المخصوم (جنيه)</label>
-                        <div className="relative">
-                            <Minus className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-orange-400 pointer-events-none" />
+                        {/* Amount */}
+                        <div className="space-y-1.5">
+                            <label className="text-xs sm:text-sm font-medium text-gray-700">المبلغ المخصوم (جنيه)</label>
+                            <div className="relative">
+                                <Minus className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-orange-400 pointer-events-none" />
+                                <Input
+                                    type="number"
+                                    min={1}
+                                    value={amount}
+                                    onChange={e => setAmount(e.target.value)}
+                                    placeholder="0"
+                                    className="pr-9 text-orange-700 font-semibold"
+                                    required
+                                />
+                            </div>
+                            <p className="text-xs text-gray-400">سيتم خصم هذا المبلغ من أرباحك وتسجيله كمصروف.</p>
+                        </div>
+
+                        {/* Date */}
+                        <div className="space-y-1.5">
+                            <label className="text-xs sm:text-sm font-medium text-gray-700">التاريخ</label>
                             <Input
-                                type="number"
-                                min={1}
-                                value={amount}
-                                onChange={e => setAmount(e.target.value)}
-                                placeholder="0"
-                                className="pr-9 text-orange-700 font-semibold"
-                                required
+                                type="date"
+                                value={date}
+                                onChange={e => setDate(e.target.value)}
                             />
                         </div>
-                        <p className="text-xs text-gray-400">سيتم خصم هذا المبلغ من أرباحك وتسجيله كمصروف.</p>
+
+                        {/* Description (optional) */}
+                        <div className="space-y-1.5">
+                            <label className="text-xs sm:text-sm font-medium text-gray-700">ملاحظة (اختياري)</label>
+                            <Input
+                                value={description}
+                                onChange={e => setDescription(e.target.value)}
+                                placeholder="مثال: خصم شهر يوليو 2026..."
+                            />
+                        </div>
                     </div>
 
-                    {/* Date */}
-                    <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-gray-700">التاريخ</label>
-                        <Input
-                            type="date"
-                            value={date}
-                            onChange={e => setDate(e.target.value)}
-                        />
+                    {/* Actions */}
+                    <div className="px-5 sm:px-6 py-3.5 border-t border-gray-100 flex flex-col-reverse sm:flex-row gap-2 shrink-0">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setOpen(false)}
+                            className="w-full sm:w-auto h-10"
+                        >
+                            إلغاء
+                        </Button>
+                        <Button
+                            type="submit"
+                            disabled={!isValid || mutation.isPending}
+                            className="w-full sm:flex-1 bg-orange-600 hover:bg-orange-700 text-white gap-2 h-10 font-bold"
+                        >
+                            {mutation.isPending ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <Building2 className="h-4 w-4" />
+                            )}
+                            تسجيل الخصم
+                        </Button>
                     </div>
-
-                    {/* Description (optional) */}
-                    <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-gray-700">ملاحظة (اختياري)</label>
-                        <Input
-                            value={description}
-                            onChange={e => setDescription(e.target.value)}
-                            placeholder="مثال: خصم شهر يوليو 2026..."
-                        />
-                    </div>
-
-                    {/* Submit */}
-                    <Button
-                        type="submit"
-                        disabled={!isValid || mutation.isPending}
-                        className="w-full bg-orange-600 hover:bg-orange-700 text-white gap-2"
-                    >
-                        {mutation.isPending ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                            <Building2 className="h-4 w-4" />
-                        )}
-                        تسجيل الخصم
-                    </Button>
                 </form>
             </DialogContent>
         </Dialog>

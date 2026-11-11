@@ -36,7 +36,7 @@ export interface IParentDeviceDocument extends Document {
   parentId: mongoose.Types.ObjectId;
   deviceId: string;
   fcmToken?: string;
-  platform: 'ios' | 'android';
+  platform: 'ios' | 'android' | 'web';
   refreshTokenHash: string;
   appVersion?: string;
   deviceModel?: string;
@@ -57,6 +57,7 @@ export enum ParentNotificationType {
   EXAM_RESULT = 'EXAM_RESULT',
   PAYMENT_RECORDED = 'PAYMENT_RECORDED',
   CYCLE_STARTED = 'CYCLE_STARTED',
+  TEACHER_MESSAGE = 'TEACHER_MESSAGE',
 }
 
 export interface IParentNotificationDocument extends Document {

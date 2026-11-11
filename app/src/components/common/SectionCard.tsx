@@ -1,8 +1,8 @@
-﻿import React from 'react';
+import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ViewStyle } from 'react-native';
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
-import { spacing, borderRadius, shadows } from '../../theme/spacing';
+import { spacing, borderRadius } from '../../theme/spacing';
 import { ChevronLeft } from 'lucide-react-native';
 
 interface SectionCardProps {
@@ -13,7 +13,6 @@ interface SectionCardProps {
   children: React.ReactNode;
   style?: ViewStyle;
   headerBg?: string;
-  /** If true, removes the bottom CTA divider */
   noCta?: boolean;
 }
 
@@ -25,82 +24,97 @@ export const SectionCard: React.FC<SectionCardProps> = ({
   children,
   style,
   noCta = false,
-}) => (
-  <View style={[styles.card, style]}>
-    {/* Header */}
-    <View style={styles.header}>
-      <View style={styles.titleRow}>
-        {icon && <View style={styles.iconWrap}>{icon}</View>}
-        <Text style={styles.title}>{title}</Text>
+}) => {
+  const Container = onCta ? TouchableOpacity : View;
+
+  return (
+    <Container
+      style={[styles.card, style]}
+      onPress={onCta}
+      activeOpacity={onCta ? 0.85 : 1}
+    >
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.titleRow}>
+          {icon && <View style={styles.iconWrap}>{icon}</View>}
+          <Text style={styles.title}>{title}</Text>
+        </View>
+
+        {!noCta && ctaLabel && onCta && (
+          <View style={styles.headerCta}>
+            <ChevronLeft size={13} color="#0f4c81" />
+            <Text style={styles.headerCtaText}>{ctaLabel}</Text>
+          </View>
+        )}
       </View>
-    </View>
 
-    {/* Content */}
-    <View style={styles.content}>{children}</View>
-
-    {/* CTA Footer */}
-    {!noCta && ctaLabel && onCta && (
-      <TouchableOpacity style={styles.cta} onPress={onCta} activeOpacity={0.7}>
-        <ChevronLeft size={16} color={colors.primary} />
-        <Text style={styles.ctaText}>{ctaLabel}</Text>
-      </TouchableOpacity>
-    )}
-  </View>
-);
+      {/* Content */}
+      <View style={styles.content}>{children}</View>
+    </Container>
+  );
+};
 
 const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.card,
-    borderRadius: borderRadius.xl,
-    marginBottom: spacing.md,
+    borderRadius: 16,
+    marginBottom: spacing.sm + 2,
     borderWidth: 1,
-    borderColor: colors.borderLight,
+    borderColor: colors.border,
     overflow: 'hidden',
-    ...shadows.md,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
   },
   header: {
     flexDirection: 'row-reverse',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm + 2,
+    paddingBottom: 2,
   },
   titleRow: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.xs + 2,
   },
   iconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: colors.primaryLight,
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   title: {
     fontFamily: typography.bold,
-    fontSize: 16,
-    color: colors.text,
+    fontSize: 15,
+    color: '#081a33',
   },
-  content: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
-  },
-  cta: {
+  headerCta: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    borderTopWidth: 1,
-    borderTopColor: colors.borderLight,
-    paddingVertical: spacing.sm,
+    gap: 3,
     backgroundColor: colors.surface,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  ctaText: {
+  headerCtaText: {
     fontFamily: typography.bold,
-    fontSize: 13,
-    color: colors.primary,
+    fontSize: 11,
+    color: '#0a355c',
+  },
+  content: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm + 2,
+    paddingTop: 2,
   },
 });

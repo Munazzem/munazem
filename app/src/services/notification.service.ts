@@ -1,6 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+import { StorageService } from './storage.service';
 
 // ── Safely configure notification appearance ──────────────────────────────────
 try {
@@ -17,11 +18,38 @@ try {
 
 export const NotificationService = {
   /**
+   * Checks if notification permissions are already granted without prompting.
+   */
+  async hasPermission(): Promise<boolean> {
+    try {
+      if (Platform.OS === 'web') {
+        return (
+          typeof window !== 'undefined' &&
+          'Notification' in window &&
+          window.Notification.permission === 'granted'
+        );
+      }
+      const settings = await Notifications.getPermissionsAsync();
+      return settings.granted;
+    } catch {
+      return false;
+    }
+  },
+
+  /**
    * Requests device notification permissions and sets Android channel.
    * Returns true if granted.
    */
   async requestPermission(): Promise<boolean> {
     try {
+      if (Platform.OS === 'web') {
+        if (typeof window !== 'undefined' && 'Notification' in window) {
+          const perm = await window.Notification.requestPermission();
+          return perm === 'granted';
+        }
+        return false;
+      }
+
       const settings = await Notifications.getPermissionsAsync();
       let isGranted = settings.granted;
 
@@ -58,11 +86,15 @@ export const NotificationService = {
 
   /**
    * Returns the Expo Push Token suitable for sending via the Expo Push API.
-   * Gracefully returns null in Expo Go or unsupported environments without crashing.
+   * Gracefully returns local identifier in Web/Expo Go or unsupported environments without crashing.
    */
   async getPushToken(): Promise<string | null> {
     try {
-      if (Platform.OS === 'web') return null;
+      if (Platform.OS === 'web') {
+        const hasPerm = await this.requestPermission();
+        if (!hasPerm) return null;
+        return `web-push-${await StorageService.getOrCreateDeviceId()}`;
+      }
 
       // In Expo Go SDK 53+, remote push notifications are not supported directly in Expo Go
       const isExpoGo =
@@ -70,8 +102,9 @@ export const NotificationService = {
         Constants.executionEnvironment === 'storeClient';
 
       if (isExpoGo) {
-        // Return null gracefully in Expo Go (works in custom dev build / production build)
-        return null;
+        const hasPerm = await this.requestPermission();
+        if (!hasPerm) return null;
+        return `expo-go-${await StorageService.getOrCreateDeviceId()}`;
       }
 
       const hasPermission = await this.requestPermission();

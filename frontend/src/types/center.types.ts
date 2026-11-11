@@ -43,6 +43,8 @@ export interface ICenterTeacher {
 export interface ICenterPackageTeacher {
     teacherId: string | ICenterTeacher;
     subject?: string;
+    schedule?: ICenterGroupSchedule[];
+    groupId?: string | ICenterGroup | null;
 }
 
 export interface ICenterPackage {
@@ -250,7 +252,12 @@ export interface CreateTeacherDTO {
 export interface CreatePackageDTO {
     name: string;
     gradeLevel: string;
-    teachers: Array<{ teacherId: string; subject?: string }>;
+    teachers: Array<{
+        teacherId: string;
+        subject?: string;
+        schedule?: ICenterGroupSchedule[];
+        groupId?: string | null;
+    }>;
     monthlyPrice: number;
 }
 
@@ -319,6 +326,7 @@ export interface ICenterStudent {
     studentPhone?: string | null;
     parentPhone?: string | null;
     gradeLevel: string;
+    studentType?: 'PACKAGE' | 'PRIVATE' | 'BOTH';
     studentCode: string;
     barcode?: string | null;
     notes?: string | null;
@@ -333,6 +341,17 @@ export interface CreateCenterStudentDTO {
     studentPhone?: string | null;
     parentPhone?: string | null;
     gradeLevel: string;
+    studentType?: 'PACKAGE' | 'PRIVATE' | 'BOTH';
+    packageId?: string | null;
+    groupId?: string | null;
+    groupIds?: string[];
+    privateTeachers?: Array<{
+        centerTeacherId?: string;
+        groupId: string;
+        subject?: string | null;
+        monthlyPrice?: number;
+        sessionsPerWeek?: number;
+    }>;
     barcode?: string | null;
     notes?: string | null;
 }
@@ -413,5 +432,212 @@ export interface DailyCheckInsResult {
         totalGeneralOnly: number;
     };
 }
+
+export interface ICenterSessionSnapshotStudent {
+    studentId: string;
+    studentName: string;
+    studentCode: string;
+    studentPhone?: string | null;
+    parentPhone?: string | null;
+    status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED';
+    scannedAt?: string | null;
+}
+
+export interface ICenterSession {
+    _id: string;
+    centerId: string;
+    groupId: ICenterGroup | string;
+    centerTeacherId: ICenterTeacher | string;
+    gradeLevel: string;
+    subject?: string;
+    sessionDate: string;
+    scheduledDay?: string;
+    scheduledTime?: string;
+    status: 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+    totalEnrolled: number;
+    presentCount: number;
+    absentCount: number;
+    presentStudents?: ICenterSessionSnapshotStudent[];
+    absentStudents?: ICenterSessionSnapshotStudent[];
+    completedAt?: string | null;
+    notificationsSentAt?: string | null;
+}
+
+export interface TodayCenterSessionsResponse {
+    date: string;
+    arabicDay: string;
+    sessions: ICenterSession[];
+    classes?: Array<{
+        _id?: string;
+        group: ICenterGroup;
+        teacher?: ICenterTeacher | null;
+        session?: ICenterSession | null;
+        sessionStatus?: 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | string;
+        subject?: string;
+        scheduledTime?: string;
+        scheduledSlots?: ICenterGroupSchedule[];
+        isScheduledToday?: boolean;
+        enrolledCount: number;
+        totalEnrolled: number;
+        presentCount: number;
+        absentCount: number;
+        lateCount: number;
+        excusedCount?: number;
+    }>;
+    otherClasses?: ICenterGroup[];
+    totalSessions: number;
+}
+
+export interface CenterSessionStudentItem {
+    _id: string;
+    studentName: string;
+    studentCode: string;
+    studentPhone?: string | null;
+    parentPhone?: string | null;
+    gradeLevel: string;
+    barcode?: string | null;
+    studentType: 'PACKAGE' | 'PRIVATE' | 'BOTH';
+    enrollmentType?: 'PACKAGE' | 'PRIVATE' | 'BOTH' | string | null;
+    packageName?: string | null;
+    attendanceStatus: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED' | 'PENDING';
+    status?: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED' | 'PENDING' | null;
+    scannedAt?: string | null;
+    source?: string | null;
+    notes?: string;
+    financialStatus: {
+        expectedAmount: number;
+        totalExpected?: number;
+        totalOriginal: number;
+        totalPaid: number;
+        totalRemaining: number;
+        totalRemainingDebt: number;
+        hasDebt: boolean;
+        hasActiveEnrollment: boolean;
+        enrollmentType?: string | null;
+    };
+}
+
+export interface CenterSessionDetailResponse {
+    session: ICenterSession;
+    group: ICenterGroup;
+    teacher?: ICenterTeacher | null;
+    students: CenterSessionStudentItem[];
+    stats: {
+        totalEnrolled: number;
+        presentCount: number;
+        absentCount: number;
+        lateCount: number;
+        pendingCount: number;
+        debtCount: number;
+    };
+}
+
+export interface CenterSessionAttendanceResponse {
+    attendance: any;
+    student: ICenterStudent;
+    financialStatus: {
+        expectedAmount: number;
+        totalExpected?: number;
+        totalPaid: number;
+        totalRemaining: number;
+        totalRemainingDebt: number;
+        hasDebt: boolean;
+        hasActiveEnrollment: boolean;
+        enrollmentType?: string | null;
+    };
+    sessionStatus: string;
+    isCorrection: boolean;
+    isPostCompletionEdit?: boolean;
+}
+
+export interface CenterStudentFullProfileResponse {
+    student: ICenterStudent;
+    enrollment: ICenterEnrollment | null;
+    enrolledClasses: Array<{
+        _id: string;
+        name: string;
+        gradeLevel: string;
+        groupType: string;
+        enrollmentSource: 'PACKAGE' | 'PRIVATE';
+        teacherName: string;
+        subject: string;
+        schedule: ICenterGroupSchedule[];
+        monthlyPrice?: number;
+    }>;
+    classAttendance: ICenterAttendanceRecord[];
+    checkIns: ICenterCheckIn[];
+    quickCheckIns?: ICenterCheckIn[];
+    attendanceStats: {
+        totalClassSessions: number;
+        presentCount: number;
+        absentCount: number;
+        lateCount: number;
+        excusedCount: number;
+        attendanceRate: number;
+        totalCheckIns: number;
+    };
+    financials: {
+        expectedAmount: number;
+        totalExpected?: number;
+        totalOriginal: number;
+        totalPaid: number;
+        totalRemaining: number;
+        totalRemainingDebt: number;
+        hasDebt: boolean;
+        hasActiveEnrollment: boolean;
+        enrollmentType?: string | null;
+        transactions: ICenterTransaction[];
+        transactionCount: number;
+    };
+    financialSummary?: {
+        expectedAmount: number;
+        totalExpected?: number;
+        totalOriginal: number;
+        totalPaid: number;
+        totalRemaining: number;
+        totalRemainingDebt: number;
+        hasDebt: boolean;
+        hasActiveEnrollment: boolean;
+        enrollmentType?: string | null;
+        transactions?: ICenterTransaction[];
+        transactionCount?: number;
+    };
+}
+
+export interface WeeklyAttendanceReportResponse {
+    centerName: string;
+    mode: 'CLASSES' | 'QUICK_CHECKIN';
+    weekStart: string;
+    weekEnd: string;
+    weekDays: Array<{ date: string; dayName: string }>;
+    groups: ICenterGroup[];
+    rows: Array<{
+        student: {
+            _id: string;
+            studentName: string;
+            studentCode: string;
+            studentPhone?: string | null;
+            parentPhone?: string | null;
+            gradeLevel: string;
+            studentType: string;
+        };
+        days: Array<{
+            date: string;
+            dayName: string;
+            status: 'PRESENT' | 'ABSENT' | 'MIXED' | 'NONE';
+            time?: string | null;
+            classes?: Array<{
+                groupId: string;
+                groupName: string;
+                status: string;
+            }>;
+        }>;
+        presentCount: number;
+        absentCount: number;
+        totalRemainingDebt: number;
+        hasDebt: boolean;
+    }>;
+}
+
 
 

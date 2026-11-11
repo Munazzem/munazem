@@ -10,6 +10,8 @@ import { Input } from '@/components/ui/input';
 import { batchRecordResults, getExamResults } from '@/lib/api/exams';
 import { fetchStudents } from '@/lib/api/students';
 import { fetchGroups } from '@/lib/api/groups';
+import { fetchCenterGroups, fetchCenterStudents } from '@/lib/api/centers';
+import { useAuthStore } from '@/lib/store/auth.store';
 import type { IExam } from '@/lib/api/exams';
 
 interface Props {
@@ -27,17 +29,22 @@ interface StudentRow {
 }
 
 export function BatchResultsModal({ exam, open, onOpenChange, onSuccess }: Props) {
+    const user = useAuthStore((s) => s.user);
+    const isCenter = user?.role === 'centerOwner' || user?.role === 'centerSupervisor';
+
     const [selectedGroupId, setSelectedGroupId] = useState<string | undefined>(undefined);
     const [searchQuery, setSearchQuery] = useState('');
 
     // Fetch all groups to get names for filtering
-    const { data: groupsData } = useQuery({
-        queryKey: ['groups'],
-        queryFn: () => fetchGroups({ limit: 100 }),
+    const { data: groupsData } = useQuery<any>({
+        queryKey: isCenter ? ['center', 'groups'] : ['groups'],
+        queryFn: () => isCenter ? fetchCenterGroups() : fetchGroups({ limit: 100 }),
         enabled: open,
     });
 
-    const examGroups = (groupsData?.data ?? []).filter((g: any) => 
+    const groupsList = Array.isArray(groupsData) ? groupsData : (groupsData as any)?.data ?? [];
+
+    const examGroups = groupsList.filter((g: any) => 
         exam.groupIds?.map(String).includes(String(g._id))
     );
 
@@ -48,9 +55,13 @@ export function BatchResultsModal({ exam, open, onOpenChange, onSuccess }: Props
     }, [open, exam.groupIds, selectedGroupId]);
 
     // Fetch students — filter by selected group
-    const { data: studentsData, isLoading: studentsLoading } = useQuery({
-        queryKey: ['students-for-exam', exam._id, selectedGroupId],
-        queryFn:  () => fetchStudents({ limit: 1000, ...(selectedGroupId ? { groupId: selectedGroupId } : {}) }),
+    const { data: studentsData, isLoading: studentsLoading } = useQuery<any>({
+        queryKey: isCenter
+            ? ['center', 'students-for-exam', exam._id, selectedGroupId]
+            : ['students-for-exam', exam._id, selectedGroupId],
+        queryFn:  () => isCenter
+            ? fetchCenterStudents({ limit: 1000, ...(selectedGroupId ? { groupId: selectedGroupId } : {}) })
+            : fetchStudents({ limit: 1000, ...(selectedGroupId ? { groupId: selectedGroupId } : {}) }),
         enabled:  open,
     });
 

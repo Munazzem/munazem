@@ -18,6 +18,7 @@ import {
     CheckCircle2,
     Clock,
     AlertCircle,
+    ClipboardList,
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { BranchSwitcher } from '@/components/center/BranchSwitcher';
@@ -193,13 +194,13 @@ export default function CenterDashboardPage() {
                     </div>
                 </Link>
 
-                <Link href="/center/enrollments" className="bg-white hover:bg-emerald-50/50 p-4 rounded-xl border border-gray-200/80 transition-all flex items-center gap-3 group">
-                    <div className="h-9 w-9 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:scale-105 transition-transform">
-                        <Users className="h-5 w-5" />
+                <Link href="/exams" className="bg-white hover:bg-purple-50/50 p-4 rounded-xl border border-gray-200/80 transition-all flex items-center gap-3 group">
+                    <div className="h-9 w-9 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center group-hover:scale-105 transition-transform">
+                        <ClipboardList className="h-5 w-5" />
                     </div>
                     <div>
-                        <h4 className="text-xs sm:text-sm font-bold text-gray-800">اشتراك طالب</h4>
-                        <p className="text-[10px] text-gray-400">باقة أو برايفت</p>
+                        <h4 className="text-xs sm:text-sm font-bold text-gray-800">الامتحانات والدرجات</h4>
+                        <p className="text-[10px] text-gray-400">إدارة ورصد الدرجات</p>
                     </div>
                 </Link>
 

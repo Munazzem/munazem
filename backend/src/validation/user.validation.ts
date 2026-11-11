@@ -1,28 +1,47 @@
 import { z } from 'zod';
 
+const assistantPermissionsSchema = z.object({
+  canTakeAttendance:    z.boolean().optional(),
+  canEditAttendance:    z.boolean().optional(),
+  canViewAttendance:    z.boolean().optional(),
+  canManageSessions:    z.boolean().optional(),
+  canRecordPayments:    z.boolean().optional(),
+  canViewFinancials:    z.boolean().optional(),
+  canManageStudents:    z.boolean().optional(),
+  canManageGroups:      z.boolean().optional(),
+  canCreateExams:       z.boolean().optional(),
+  canGradeExams:        z.boolean().optional(),
+  canManageNotebooks:   z.boolean().optional(),
+  canSendNotifications: z.boolean().optional(),
+}).optional().nullable();
+
 // Base User validations
 export const userCreationSchema = z.object({
   body: z.object({
-    name:     z.string().min(3, "الاسم يجب أن يكون 3 أحرف على الأقل"),
-    phone:    z.string().min(10, "رقم الهاتف غير صحيح"),
-    email:    z.string().email("البريد الإلكتروني غير صحيح").optional().or(z.literal('')),
-    password: z.string().min(6, "كلمة المرور يجب أن تكون 6 أحرف على الأقل"),
-    stages:   z.array(z.string()).optional(),
-    subject:  z.string().optional(),
-    salary:   z.number().min(0, "الراتب يجب أن يكون صفر أو أكثر").optional().nullable(),
+    name:                 z.string().min(3, "الاسم يجب أن يكون 3 أحرف على الأقل"),
+    phone:                z.string().min(10, "رقم الهاتف غير صحيح"),
+    email:                z.string().email("البريد الإلكتروني غير صحيح").optional().or(z.literal('')),
+    password:             z.string().min(6, "كلمة المرور يجب أن تكون 6 أحرف على الأقل"),
+    stages:               z.array(z.string()).optional(),
+    subject:              z.string().optional(),
+    salary:               z.number().min(0, "الراتب يجب أن يكون صفر أو أكثر").optional().nullable(),
+    assistantType:        z.string().optional().nullable(),
+    assistantPermissions: assistantPermissionsSchema,
   })
 });
 
 export const userUpdateSchema = z.object({
   body: z.object({
-    name:     z.string().min(3, "الاسم يجب أن يكون 3 أحرف على الأقل").optional(),
-    phone:    z.string().min(10, "رقم الهاتف غير صحيح").optional(),
-    email:    z.string().email("البريد الإلكتروني غير صحيح").optional().or(z.literal('')),
-    password: z.string().min(6, "كلمة المرور يجب أن تكون 6 أحرف على الأقل").optional(),
-    stages:   z.array(z.string()).optional(),
-    subject:  z.string().optional(),
-    salary:   z.number().min(0).optional().nullable(),
-    isActive: z.boolean().optional(),
+    name:                 z.string().min(3, "الاسم يجب أن يكون 3 أحرف على الأقل").optional(),
+    phone:                z.string().min(10, "رقم الهاتف غير صحيح").optional(),
+    email:                z.string().email("البريد الإلكتروني غير صحيح").optional().or(z.literal('')),
+    password:             z.string().min(6, "كلمة المرور يجب أن تكون 6 أحرف على الأقل").optional(),
+    stages:               z.array(z.string()).optional(),
+    subject:              z.string().optional(),
+    salary:               z.number().min(0).optional().nullable(),
+    isActive:             z.boolean().optional(),
+    assistantType:        z.string().optional().nullable(),
+    assistantPermissions: assistantPermissionsSchema,
   })
 });
 

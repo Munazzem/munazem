@@ -22,6 +22,7 @@ import {
 import { colors } from '../../theme/colors';
 import { typography, textStyles } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
+import { getArabicMonthName } from '../../utils/date.util';
 import { Card } from '../../components/common/Card';
 import { Badge } from '../../components/common/Badge';
 import { EmptyState } from '../../components/common/EmptyState';
@@ -38,6 +39,7 @@ import {
   Calendar,
   Receipt,
   Users,
+  Building2,
 } from 'lucide-react-native';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ChildDetails'>;
@@ -191,13 +193,15 @@ export const ChildDetailsScreen: React.FC<Props> = ({ route }) => {
                   ).length > 1;
 
                 const isPkg = (sub as any).isPackage;
+                const subTitle = sub.subject || 'مادة';
+                const subTeacher = sub.teacherName || 'المعلم';
                 const pillLabel = isPkg
-                  ? `🏛️ ${(sub as any).groupName || 'باقة السنتر'}`
+                  ? `${(sub as any).groupName || 'باقة السنتر'}`
                   : hasDuplicateSubjectTeacher
-                  ? `${sub.subject} (${sub.teacherName} - ${
-                      sub.studentCode ? `كود ${sub.studentCode}` : sub.groupName
+                  ? `${subTitle} (${subTeacher}${
+                      sub.studentCode ? ` - كود ${sub.studentCode}` : sub.groupName ? ` - ${sub.groupName}` : ''
                     })`
-                  : `${sub.subject} (${sub.teacherName})`;
+                  : `${subTitle} (${subTeacher})`;
 
                 return (
                   <TouchableOpacity
@@ -208,8 +212,15 @@ export const ChildDetailsScreen: React.FC<Props> = ({ route }) => {
                       styles.filterPill,
                       selectedSubjectId === sub.studentId &&
                         styles.filterPillActive,
+                      isPkg && { flexDirection: 'row-reverse', alignItems: 'center', gap: 4 },
                     ]}
                   >
+                    {isPkg && (
+                      <Building2
+                        size={12}
+                        color={selectedSubjectId === sub.studentId ? '#ffffff' : colors.primary}
+                      />
+                    )}
                     <Text
                       style={[
                         styles.filterPillText,
@@ -489,10 +500,23 @@ export const ChildDetailsScreen: React.FC<Props> = ({ route }) => {
                   <Card key={idx} variant="elevated" style={styles.recordCard}>
                     <View style={styles.cardTopRow}>
                       <View style={styles.subjectWrapper}>
-                        <Text style={styles.cardSubject}>
-                          الدورة رقم {fin.cycleNumber} ({fin.subject})
-                        </Text>
-                        <Text style={styles.cardTeacher}>المعلم: {fin.teacherName}</Text>
+                        {(() => {
+                          const monthLabel = fin.cycleMonth
+                            ? (fin.cycleMonth.includes('شهر') ? fin.cycleMonth : `شهر ${fin.cycleMonth}`)
+                            : (fin.payments && fin.payments.length > 0 && fin.payments[0].date
+                                ? `شهر ${getArabicMonthName(fin.payments[0].date)}`
+                                : '');
+                          return (
+                            <>
+                              <Text style={styles.cardSubject}>
+                                الدورة رقم {fin.cycleNumber} ({monthLabel || fin.subject})
+                              </Text>
+                              <Text style={styles.cardTeacher}>
+                                المعلم: {fin.teacherName}{fin.subject && monthLabel ? ` • ${fin.subject}` : ''}
+                              </Text>
+                            </>
+                          );
+                        })()}
                       </View>
 
                       <Badge

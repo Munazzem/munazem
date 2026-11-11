@@ -19,6 +19,11 @@ export const fetchDailySummaryHtml = async (date?: string): Promise<string> => {
 
 // ── Student Reports ────────────────────────────────────────────────
 
+export const fetchOfflineReportsBundle = async (): Promise<{ reports: { studentId: string; report: any }[] }> => {
+    const res = await apiClient.get('/reports/offline-bundle');
+    return (res as any).data;
+};
+
 export const fetchStudentReport = async (studentId: string) => {
     const res = await apiClient.get(`/reports/student/${studentId}`);
     return (res as any).data;

@@ -21,7 +21,10 @@ import {
     CheckSquare,
     QrCode,
     BookMarked,
+    RotateCcw,
+    Clock,
 } from 'lucide-react';
+import { OfflineStorageService } from '@/lib/offline/storage.service';
 import { TableSkeleton } from '@/components/layout/skeletons/TableSkeleton';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -206,11 +209,20 @@ export default function NotebooksPage() {
 
     const deleteMutation = useMutation({
         mutationFn: deleteNotebook,
-        onSuccess: () => {
-            toast.success('تم حذف المذكرة بنجاح');
+        onSuccess: (res: any) => {
+            const isOffline = typeof window !== 'undefined' && !navigator.onLine;
+            if (isOffline) {
+                if (res?.isPendingDelete) {
+                    toast.warning(res?.message || 'تم تعليم المذكرة للحذف: سيتم الحذف نهائياً من السيرفر فور استعادة الاتصال');
+                } else {
+                    toast.success('تم مسح المذكرة المحلية نهائياً');
+                }
+            } else {
+                toast.success(res?.message || 'تم حذف المذكرة بنجاح');
+            }
             queryClient.invalidateQueries({ queryKey: ['notebooks'] });
+            setConfirmDeleteNb(null);
         },
-        
     });
 
     const handleDelete = (nb: INotebook) => {
@@ -300,51 +312,77 @@ export default function NotebooksPage() {
                         {/* Mobile List (Card View) */}
                         <div className="block sm:hidden divide-y divide-gray-50">
                             {notebooks?.map((nb) => (
-                                <div key={nb._id} className="p-4 space-y-3">
+                                <div key={nb._id} className={cn('p-4 space-y-3 transition-colors', (nb as any).isPendingDelete && 'bg-red-50/70 border-r-4 border-r-red-500 opacity-90')}>
                                     <div className="flex items-start justify-between">
                                         <div className="flex items-center gap-3">
                                             <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
                                                 <BookOpen className="h-5 w-5 text-primary" />
                                             </div>
                                             <div>
-                                                <h3 className="font-bold text-gray-900 leading-tight">{nb.name}</h3>
-                                                <Badge variant="outline" className="mt-1 text-[10px] text-gray-500 h-5">
-                                                    {nb.gradeLevel}
-                                                </Badge>
+                                                <h3 className="font-bold text-gray-900 leading-tight">
+                                                    {(nb as any).isPendingDelete ? <del className="text-red-500">{nb.name}</del> : nb.name}
+                                                </h3>
+                                                <div className="flex items-center gap-1.5 mt-1">
+                                                    <Badge variant="outline" className="text-[10px] text-gray-500 h-5">
+                                                        {nb.gradeLevel}
+                                                    </Badge>
+                                                    {(nb as any).isPendingDelete && (
+                                                        <Badge variant="outline" className="bg-red-100 text-red-800 border-red-300 text-[10px] h-5 gap-1">
+                                                            <Clock className="w-2.5 h-2.5 text-red-600 animate-pulse" />
+                                                            معلق للحذف
+                                                        </Badge>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
                                         
-                                        <DropdownMenu dir="rtl">
-                                            <DropdownMenuTrigger asChild>
-                                                <Button variant="ghost" className="h-8 w-8 p-0 text-gray-400">
-                                                    <MoreVertical className="h-4 w-4" />
-                                                </Button>
-                                            </DropdownMenuTrigger>
-                                            <DropdownMenuContent align="end">
-                                                <DropdownMenuLabel className="text-xs text-gray-400">الإجراءات</DropdownMenuLabel>
-                                                <DropdownMenuSeparator />
-                                                {canManage && (
-                                                    <>
-                                                        <DropdownMenuItem onClick={() => setRestockNb(nb)}>
-                                                            <PackagePlus className="ml-2 h-4 w-4" /> إضافة مخزون
-                                                        </DropdownMenuItem>
-                                                        <DropdownMenuItem onClick={() => setEditNb(nb)}>
-                                                            <Pencil className="ml-2 h-4 w-4" /> تعديل
-                                                        </DropdownMenuItem>
-                                                        <DropdownMenuSeparator />
-                                                        <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(nb)}>
-                                                            <Trash2 className="ml-2 h-4 w-4" /> حذف
-                                                        </DropdownMenuItem>
-                                                    </>
-                                                )}
-                                            </DropdownMenuContent>
-                                        </DropdownMenu>
+                                        {(nb as any).isPendingDelete ? (
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="h-7 px-2 text-xs border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800 gap-1 rounded-lg shrink-0"
+                                                onClick={async () => {
+                                                    await OfflineStorageService.undoNotebookPendingDelete(nb._id);
+                                                    queryClient.invalidateQueries({ queryKey: ['notebooks'] });
+                                                    toast.success(`تم التراجع عن حذف المذكرة`);
+                                                }}
+                                            >
+                                                <RotateCcw className="h-3 w-3" />
+                                                تراجع
+                                            </Button>
+                                        ) : (
+                                            <DropdownMenu dir="rtl">
+                                                <DropdownMenuTrigger asChild>
+                                                    <Button variant="ghost" className="h-8 w-8 p-0 text-gray-400">
+                                                        <MoreVertical className="h-4 w-4" />
+                                                    </Button>
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end">
+                                                    <DropdownMenuLabel className="text-xs text-gray-400">الإجراءات</DropdownMenuLabel>
+                                                    <DropdownMenuSeparator />
+                                                    {canManage && (
+                                                        <>
+                                                            <DropdownMenuItem onClick={() => setRestockNb(nb)}>
+                                                                <PackagePlus className="ml-2 h-4 w-4" /> إضافة مخزون
+                                                            </DropdownMenuItem>
+                                                            <DropdownMenuItem onClick={() => setEditNb(nb)}>
+                                                                <Pencil className="ml-2 h-4 w-4" /> تعديل
+                                                            </DropdownMenuItem>
+                                                            <DropdownMenuSeparator />
+                                                            <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(nb)}>
+                                                                <Trash2 className="ml-2 h-4 w-4" /> حذف
+                                                            </DropdownMenuItem>
+                                                        </>
+                                                    )}
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
+                                        )}
                                     </div>
 
                                     <div className="flex items-center justify-between pt-1">
                                         <div className="flex flex-col gap-1">
                                             <span className="text-xs text-gray-400">السعر</span>
-                                            <span className="font-bold text-primary">{nb.price.toLocaleString('ar-EG')} ج</span>
+                                            <span className="font-bold text-primary">{nb.price.toLocaleString('en-US')} ج</span>
                                         </div>
                                         <div className="flex flex-col items-end gap-1">
                                             <span className="text-xs text-gray-400">المحجوز</span>
@@ -385,20 +423,30 @@ export default function NotebooksPage() {
                                 </thead>
                                 <tbody className="divide-y divide-gray-50">
                                     {notebooks?.map((nb) => (
-                                        <tr key={nb._id} className="hover:bg-gray-50/50 transition-colors">
+                                        <tr key={nb._id} className={cn('hover:bg-gray-50/50 transition-colors', (nb as any).isPendingDelete && 'bg-red-50/70 border-r-4 border-r-red-500 opacity-90')}>
                                             <td className="px-6 py-3">
                                                 <div className="flex items-center gap-3">
                                                     <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                                                         <BookOpen className="h-4 w-4 text-primary" />
                                                     </div>
-                                                    <span className="font-semibold text-gray-900">{nb.name}</span>
+                                                    <div className="flex flex-col">
+                                                        <span className="font-semibold text-gray-900">
+                                                            {(nb as any).isPendingDelete ? <del className="text-red-500">{nb.name}</del> : nb.name}
+                                                        </span>
+                                                        {(nb as any).isPendingDelete && (
+                                                            <span className="text-[11px] font-semibold text-red-700 flex items-center gap-1 mt-0.5">
+                                                                <Clock className="w-3 h-3 text-red-600 animate-pulse" />
+                                                                معلق للحذف من السيرفر
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3">
                                                 <Badge variant="outline" className="text-xs text-gray-500">{nb.gradeLevel}</Badge>
                                             </td>
                                             <td className="px-4 py-3 font-medium text-gray-900">
-                                                {nb.price.toLocaleString('ar-EG')} ج
+                                                {nb.price.toLocaleString('en-US')} ج
                                             </td>
                                             <td className="px-4 py-3">
                                                 <span className="flex items-center gap-1 text-sm font-bold w-fit px-2 py-0.5 rounded-lg bg-purple-100 text-purple-700">
@@ -420,40 +468,56 @@ export default function NotebooksPage() {
                                                 </span>
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <DropdownMenu dir="rtl">
-                                                    <DropdownMenuTrigger asChild>
-                                                        <Button variant="ghost" className="h-8 w-8 p-0 text-gray-400 hover:text-primary">
-                                                            <MoreVertical className="h-4 w-4" />
-                                                        </Button>
-                                                    </DropdownMenuTrigger>
-                                                    <DropdownMenuContent align="end">
-                                                        <DropdownMenuLabel className="text-xs text-gray-400">الإجراءات</DropdownMenuLabel>
-                                                        <DropdownMenuSeparator />
-                                                        {canManage && (
-                                                            <>
-                                                                <DropdownMenuItem
-                                                                    className="cursor-pointer focus:text-primary"
-                                                                    onClick={() => setRestockNb(nb)}
-                                                                >
-                                                                    <PackagePlus className="mr-2 h-4 w-4 ml-2" /> إضافة مخزون
-                                                                </DropdownMenuItem>
-                                                                <DropdownMenuItem
-                                                                    className="cursor-pointer focus:text-primary"
-                                                                    onClick={() => { setEditNb(nb); }}
-                                                                >
-                                                                    <Pencil className="mr-2 h-4 w-4 ml-2" /> تعديل
-                                                                </DropdownMenuItem>
-                                                                <DropdownMenuSeparator />
-                                                                <DropdownMenuItem
-                                                                    className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50"
-                                                                    onClick={() => handleDelete(nb)}
-                                                                >
-                                                                    <Trash2 className="mr-2 h-4 w-4 ml-2" /> حذف
-                                                                </DropdownMenuItem>
-                                                            </>
-                                                        )}
-                                                    </DropdownMenuContent>
-                                                </DropdownMenu>
+                                                {(nb as any).isPendingDelete ? (
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="h-7 px-2 text-xs border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800 gap-1 rounded-lg"
+                                                        onClick={async () => {
+                                                            await OfflineStorageService.undoNotebookPendingDelete(nb._id);
+                                                            queryClient.invalidateQueries({ queryKey: ['notebooks'] });
+                                                            toast.success(`تم التراجع عن حذف المذكرة`);
+                                                        }}
+                                                    >
+                                                        <RotateCcw className="h-3.5 w-3.5" />
+                                                        تراجع عن الحذف
+                                                    </Button>
+                                                ) : (
+                                                    <DropdownMenu dir="rtl">
+                                                        <DropdownMenuTrigger asChild>
+                                                            <Button variant="ghost" className="h-8 w-8 p-0 text-gray-400 hover:text-primary">
+                                                                <MoreVertical className="h-4 w-4" />
+                                                            </Button>
+                                                        </DropdownMenuTrigger>
+                                                        <DropdownMenuContent align="end">
+                                                            <DropdownMenuLabel className="text-xs text-gray-400">الإجراءات</DropdownMenuLabel>
+                                                            <DropdownMenuSeparator />
+                                                            {canManage && (
+                                                                <>
+                                                                    <DropdownMenuItem
+                                                                        className="cursor-pointer focus:text-primary"
+                                                                        onClick={() => setRestockNb(nb)}
+                                                                    >
+                                                                        <PackagePlus className="mr-2 h-4 w-4 ml-2" /> إضافة مخزون
+                                                                    </DropdownMenuItem>
+                                                                    <DropdownMenuItem
+                                                                        className="cursor-pointer focus:text-primary"
+                                                                        onClick={() => { setEditNb(nb); }}
+                                                                    >
+                                                                        <Pencil className="mr-2 h-4 w-4 ml-2" /> تعديل
+                                                                    </DropdownMenuItem>
+                                                                    <DropdownMenuSeparator />
+                                                                    <DropdownMenuItem
+                                                                        className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50"
+                                                                        onClick={() => handleDelete(nb)}
+                                                                    >
+                                                                        <Trash2 className="mr-2 h-4 w-4 ml-2" /> حذف
+                                                                    </DropdownMenuItem>
+                                                                </>
+                                                            )}
+                                                        </DropdownMenuContent>
+                                                    </DropdownMenu>
+                                                )}
                                             </td>
                                         </tr>
                                     ))}

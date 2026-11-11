@@ -13,8 +13,10 @@
   --color-dark: #121212;          /* Premium Black/Dark Gray */
   --color-light: #f9f9fb;         /* Soft White Background */
 
-  /* Fonts */
-  --font-sans: var(--font-cairo), ui-sans-serif, system-ui, sans-serif;
+  /* Fonts: English font first so all numbers (0-9) and Latin letters use Plus Jakarta Sans,
+     while Arabic letters automatically use Cairo */
+  --font-sans: var(--font-jakarta), var(--font-cairo), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jakarta), monospace;
 }
 
 /* Base resets & theme application */
@@ -22,6 +24,9 @@
   :root {
     --background: #ffffff;
     --foreground: #111111;
+    font-family: var(--font-sans);
+    font-variant-numeric: tabular-nums lining-nums;
+    font-feature-settings: 'tnum' 1;
   }
 
   /* Optional native dark mode support */
@@ -35,7 +40,7 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans;
   }
 }
 
@@ -44,6 +49,15 @@ body {
   font-family: var(--font-sans);
   direction: rtl; /* For Arabic Language */
   overflow-x: hidden; /* Fix horizontal scroll on mobile view */
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: 'tnum' 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Ensure clean English numerals throughout metrics, tables, badges and inputs */
+input, select, textarea, table, [data-slot="badge"], .font-mono {
+  font-variant-numeric: tabular-nums lining-nums;
 }
 
 @theme inline {

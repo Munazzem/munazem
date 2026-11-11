@@ -54,14 +54,21 @@ export function EditGradeModal({
 
     const updateMutation = useMutation({
         mutationFn: () => updateResult(examId, resultId, { score: numericScore }),
-        onSuccess: () => {
-            toast.success(`تم تعديل درجة ${studentName} بنجاح`);
+        onSuccess: (res: any) => {
+            const isOffline = typeof window !== 'undefined' && !navigator.onLine;
+            if (isOffline) {
+                toast.success(`تم حفظ تعديل درجة ${studentName} محلياً (سيتم رفعها للسيرفر فور الاتصال)`);
+            } else {
+                toast.success(res?.message || `تم تعديل درجة ${studentName} بنجاح`);
+            }
             queryClient.invalidateQueries({ queryKey: ['exam-results', examId] });
             queryClient.invalidateQueries({ queryKey: ['exam', examId] });
             if (studentId) {
                 queryClient.invalidateQueries({ queryKey: ['student-report', studentId] });
+                queryClient.invalidateQueries({ queryKey: ['student-exams', studentId] });
             } else {
                 queryClient.invalidateQueries({ queryKey: ['student-report'] });
+                queryClient.invalidateQueries({ queryKey: ['student-exams'] });
             }
             onSuccess?.();
             onOpenChange(false);
@@ -73,14 +80,25 @@ export function EditGradeModal({
 
     const deleteMutation = useMutation({
         mutationFn: () => deleteResult(examId, resultId),
-        onSuccess: () => {
-            toast.success(`تم حذف درجة ${studentName}`);
+        onSuccess: (res: any) => {
+            const isOffline = typeof window !== 'undefined' && !navigator.onLine;
+            if (isOffline) {
+                if (res?.isPendingDelete) {
+                    toast.warning(`تم تعليم درجة ${studentName} للحذف: سيتم الحذف نهائياً من السيرفر فور استعادة الاتصال`);
+                } else {
+                    toast.success(`تم مسح درجة ${studentName} محلياً نهائياً`);
+                }
+            } else {
+                toast.success(res?.message || `تم حذف درجة ${studentName}`);
+            }
             queryClient.invalidateQueries({ queryKey: ['exam-results', examId] });
             queryClient.invalidateQueries({ queryKey: ['exam', examId] });
             if (studentId) {
                 queryClient.invalidateQueries({ queryKey: ['student-report', studentId] });
+                queryClient.invalidateQueries({ queryKey: ['student-exams', studentId] });
             } else {
                 queryClient.invalidateQueries({ queryKey: ['student-report'] });
+                queryClient.invalidateQueries({ queryKey: ['student-exams'] });
             }
             onSuccess?.();
             onOpenChange(false);

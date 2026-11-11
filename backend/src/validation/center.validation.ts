@@ -77,6 +77,11 @@ export const createCenterPackageSchema = z.object({
         teachers: z.array(z.object({
             teacherId: z.string().min(1, 'معرف المدرس مطلوب'),
             subject: z.string().optional(),
+            schedule: z.array(z.object({
+                day: z.string().min(1, 'اليوم مطلوب'),
+                time: z.string().min(1, 'الوقت مطلوب'),
+            })).optional(),
+            groupId: z.string().optional().nullable(),
         })).min(1, 'يجب إضافة مدرس واحد على الأقل في الباكيدج'),
         monthlyPrice: z.number().positive('سعر الباكيدج الشهري يجب أن يكون أكبر من صفر'),
     }),
@@ -92,6 +97,11 @@ export const updateCenterPackageSchema = z.object({
         teachers: z.array(z.object({
             teacherId: z.string().min(1),
             subject: z.string().optional(),
+            schedule: z.array(z.object({
+                day: z.string().min(1),
+                time: z.string().min(1),
+            })).optional(),
+            groupId: z.string().optional().nullable(),
         })).optional(),
         monthlyPrice: z.number().positive().optional(),
         isActive: z.boolean().optional(),
@@ -286,6 +296,17 @@ export const createCenterStudentSchema = z.object({
         studentPhone: z.string().optional().nullable(),
         parentPhone: z.string().optional().nullable(),
         gradeLevel: z.nativeEnum(GradeLevel, { message: 'المرحلة الدراسية غير صحيحة' }),
+        studentType: z.enum(['PACKAGE', 'PRIVATE', 'BOTH']).optional(),
+        packageId: z.string().optional().nullable(),
+        groupId: z.string().optional().nullable(),
+        groupIds: z.array(z.string()).optional(),
+        privateTeachers: z.array(z.object({
+            centerTeacherId: z.string().optional(),
+            groupId: z.string().min(1),
+            subject: z.string().optional().nullable(),
+            monthlyPrice: z.number().min(0).optional(),
+            sessionsPerWeek: z.number().min(1).optional(),
+        })).optional(),
         barcode: z.string().optional().nullable(),
         notes: z.string().optional().nullable(),
     }),
@@ -312,8 +333,66 @@ export const updateCenterStudentSchema = z.object({
         studentPhone: z.string().optional().nullable(),
         parentPhone: z.string().optional().nullable(),
         gradeLevel: z.nativeEnum(GradeLevel, { message: 'المرحلة الدراسية غير صحيحة' }).optional(),
+        studentType: z.enum(['PACKAGE', 'PRIVATE', 'BOTH']).optional(),
         barcode: z.string().optional().nullable(),
         notes: z.string().optional().nullable(),
         isActive: z.boolean().optional(),
+    }),
+});
+
+// ── Center Sessions (Scheduled Classes) Validation ───────────────────────────
+export const recordCenterSessionAttendanceSchema = z.object({
+    params: z.object({
+        sessionId: z.string().min(1, 'معرف الحصة مطلوب'),
+    }),
+    body: z.object({
+        studentIdOrCode: z.string().min(1, 'معرف أو كود أو باركود الطالب مطلوب'),
+        status: z.nativeEnum(AttendanceStatus).optional().default(AttendanceStatus.PRESENT),
+        source: z.enum(['MANUAL', 'QR_SCAN', 'GATE_CHECKIN']).optional().default('MANUAL'),
+        notes: z.string().optional().nullable(),
+    }),
+});
+
+export const notifyCheckInAbsenteesSchema = z.object({
+    body: z.object({
+        date: z.string().optional(),
+        stage: z.string().optional(),
+        gradeLevel: z.string().optional(),
+        studentIds: z.array(z.string()).optional(),
+    }),
+});
+
+// ── Center Financials Edit / Delete Validation ───────────────────────────────
+export const updateCenterTransactionSchema = z.object({
+    params: z.object({
+        id: z.string().min(1, 'معرف المعاملة مطلوب'),
+    }),
+    body: z.object({
+        category: z.string().optional(),
+        centerTeacherId: z.string().optional().nullable(),
+        originalAmount: z.number().min(0).optional(),
+        discountAmount: z.number().min(0).optional(),
+        paidAmount: z.number().min(0).optional(),
+        remainingAmount: z.number().min(0).optional(),
+        description: z.string().optional().nullable(),
+        date: z.string().optional(),
+    }),
+});
+
+export const batchDeleteCenterTransactionsSchema = z.object({
+    body: z.object({
+        transactionIds: z.array(z.string().min(1)).min(1, 'يجب تحديد معاملة واحدة على الأقل للحذف'),
+    }),
+});
+
+// ── Center Custom Broadcast Messages Validation ──────────────────────────────
+export const createCenterMessageSchema = z.object({
+    body: z.object({
+        targetType: z.enum(['GROUP', 'GRADE'], { message: 'نوع الاستهداف غير صحيح' }),
+        groupId: z.string().optional().nullable(),
+        gradeLevel: z.nativeEnum(GradeLevel).optional().nullable(),
+        title: z.string().max(120, 'عنوان الرسالة لا يتجاوز 120 حرف').optional().nullable(),
+        body: z.string().min(3, 'محتوى الرسالة يجب أن يكون 3 أحرف على الأقل').max(1000, 'محتوى الرسالة لا يتجاوز 1000 حرف'),
+        clientRequestId: z.string().min(1, 'معرف الطلب مطلوب'),
     }),
 });

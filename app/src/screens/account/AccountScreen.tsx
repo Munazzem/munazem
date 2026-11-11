@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../../theme/colors';
 import { typography, textStyles } from '../../theme/typography';
@@ -7,7 +7,7 @@ import { spacing } from '../../theme/spacing';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { useAuthStore } from '../../store/auth.store';
-import { AuthApi } from '../../api/auth.api';
+import { confirmAction } from '../../utils/alert.util';
 import { User, Phone, Smartphone, LogOut, Shield } from 'lucide-react-native';
 
 export const AccountScreen: React.FC = () => {
@@ -15,17 +15,16 @@ export const AccountScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
 
   const handleLogout = () => {
-    Alert.alert('تسجيل الخروج', 'هل أنت متأكد من رغبتك في تسجيل الخروج من هذا الجهاز؟', [
-      { text: 'إلغاء', style: 'cancel' },
-      {
-        text: 'تسجيل الخروج',
-        style: 'destructive',
-        onPress: async () => {
-          await AuthApi.logout();
-          await logout();
-        },
+    confirmAction({
+      title: 'تسجيل الخروج',
+      message: 'هل أنت متأكد من رغبتك في تسجيل الخروج من هذا الجهاز؟',
+      confirmText: 'تسجيل الخروج',
+      cancelText: 'إلغاء',
+      isDestructive: true,
+      onConfirm: async () => {
+        await logout();
       },
-    ]);
+    });
   };
 
   return (

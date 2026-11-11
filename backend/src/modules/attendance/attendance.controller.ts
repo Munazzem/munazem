@@ -216,10 +216,10 @@ attendanceRouter.delete(
     }
 );
 
-// ─── PATCH /attendance/:id/exemption — Resolve absence exemption (teacher only)
+// ─── PATCH /attendance/:id/exemption — Resolve absence exemption (Teacher + Assistant)
 attendanceRouter.patch(
     '/:id/exemption',
-    authorizeRoles(UserRole.teacher),
+    authorizeRoles(UserRole.teacher, UserRole.assistant),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const user = (req as any).user;

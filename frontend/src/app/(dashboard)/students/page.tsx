@@ -46,6 +46,7 @@ import { fetchStudentReportHtml, fetchGroupAttendanceSheetHtml } from '@/lib/api
 import { printHtmlContent } from '@/lib/utils/print';
 import { generateIdCardsHtml } from '@/lib/utils/printIdCard';
 import { QK } from '@/lib/query-keys';
+import { OfflineStorageService } from '@/lib/offline/storage.service';
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 function StudentsPageContent() {
@@ -67,6 +68,12 @@ function StudentsPageContent() {
         queryFn: () => fetchGroups({ limit: 100 }),
     });
     const allGroups = groupsData?.data ?? [];
+
+    useEffect(() => {
+        if (groupsData?.data && groupsData.data.length > 0) {
+            OfflineStorageService.saveOfflineGroups(groupsData.data);
+        }
+    }, [groupsData?.data]);
 
     useEffect(() => {
         if (urlGroupId && allGroups.length > 0) {
@@ -206,15 +213,29 @@ function StudentsPageContent() {
         enabled: showStudents === true, // Only fetch when needed
     });
 
+    useEffect(() => {
+        if (data?.pages) {
+            const allFetchedStudents = data.pages.flatMap((page) => page.data || []);
+            if (allFetchedStudents.length > 0) {
+                OfflineStorageService.saveOfflineStudents(allFetchedStudents);
+            }
+        }
+    }, [data?.pages]);
+
     const deleteMutation = useMutation({
         mutationFn: deleteStudent,
-        onSuccess: () => {
-            toast.success('تم حذف الطالب بنجاح');
+        onSuccess: (res: any) => {
+            const isOffline = typeof window !== 'undefined' && !navigator.onLine;
+            if (isOffline) {
+                toast.warning('تم جدولة حذف الطالب: سيتم الحذف نهائياً من السيرفر فور استعادة الاتصال');
+            } else {
+                toast.success(res?.message || 'تم حذف الطالب بنجاح');
+            }
             queryClient.invalidateQueries({ queryKey: QK.students.all });
         },
         onError: (error: { response?: { data?: { message?: string } } } | Error) => {
             const err = error as { response?: { data?: { message?: string } } };
-            
+            toast.error(err?.response?.data?.message || 'حدث خطأ أثناء حذف الطالب');
         }
     });
 

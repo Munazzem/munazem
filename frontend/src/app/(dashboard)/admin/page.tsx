@@ -5,12 +5,14 @@ import { useRouter } from 'next/navigation';
 import {
     Users, BookOpen, TrendingUp, AlertTriangle,
     UserCheck, UserX, BarChart2, RefreshCw,
-    ArrowUpRight, Server, Cpu, Clock, Zap, Play
+    ArrowUpRight, Server, Cpu, Clock, Zap, Play,
+    Activity, ChevronRight,
 } from 'lucide-react';
 import { fetchAdminStats, fetchGrowthData, fetchAdminErrors, fetchAdminHealth } from '@/lib/api/admin';
 import { useAuthStore } from '@/lib/store/auth.store';
+import { LiveActiveUsersWidget } from '@/components/admin/LiveActiveUsersWidget';
 
-// ── Stat Card ─────────────────────────────────────────────────────
+// ── Modern KPI Stat Card ──────────────────────────────────────────
 function StatCard({
     icon: Icon, label, value, sub, color = 'blue', href,
 }: {
@@ -19,44 +21,48 @@ function StatCard({
     href?: string;
 }) {
     const colors = {
-        blue:   'bg-blue-50   text-blue-600   border-blue-100',
-        green:  'bg-green-50  text-green-600  border-green-100',
-        red:    'bg-red-50    text-red-600    border-red-100',
-        orange: 'bg-orange-50 text-orange-600 border-orange-100',
-        purple: 'bg-purple-50 text-purple-600 border-purple-100',
-        gray:   'bg-gray-50   text-gray-600   border-gray-100',
+        blue:   'bg-blue-50/80   text-blue-600   border-blue-100',
+        green:  'bg-emerald-50/80  text-emerald-600  border-emerald-100',
+        red:    'bg-rose-50/80    text-rose-600    border-rose-100',
+        orange: 'bg-amber-50/80 text-amber-600 border-amber-100',
+        purple: 'bg-indigo-50/80 text-indigo-600 border-indigo-100',
+        gray:   'bg-slate-50/80   text-slate-600   border-slate-100',
     };
     const router = useRouter();
     return (
         <div
             onClick={() => href && router.push(href)}
-            className={`bg-white rounded-2xl border border-gray-100 p-5 shadow-sm flex items-start gap-4 ${href ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
+            className={`bg-white rounded-3xl border border-slate-100 p-4 sm:p-5 shadow-2xs flex flex-col justify-between gap-3 transition-all ${
+                href ? 'cursor-pointer hover:shadow-md hover:border-slate-200 group' : ''
+            }`}
         >
-            <div className={`p-3 rounded-xl border ${colors[color]}`}>
-                <Icon className="h-5 w-5" />
+            <div className="flex items-center justify-between">
+                <div className={`p-2.5 rounded-2xl border ${colors[color]} shrink-0`}>
+                    <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
+                </div>
+                {href && <ArrowUpRight className="h-4 w-4 text-slate-300 group-hover:text-primary transition-colors" />}
             </div>
-            <div className="flex-1 min-w-0">
-                <p className="text-sm text-gray-500 font-medium">{label}</p>
-                <p className="text-2xl font-bold text-gray-900 mt-0.5">{value.toLocaleString()}</p>
-                {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
+            <div>
+                <p className="text-xs sm:text-sm text-slate-500 font-bold truncate">{label}</p>
+                <p className="text-xl sm:text-2xl font-black text-slate-900 mt-1 font-mono tracking-tight">
+                    {typeof value === 'number' ? value.toLocaleString('en-US') : value}
+                </p>
+                {sub && <p className="text-[11px] text-slate-400 mt-1 font-medium">{sub}</p>}
             </div>
-            {href && <ArrowUpRight className="h-4 w-4 text-gray-300 shrink-0 mt-1" />}
         </div>
     );
 }
 
-// ── Skeleton ──────────────────────────────────────────────────────
+// ── Skeleton Loader ──────────────────────────────────────────────
 function StatsSkeleton() {
     return (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             {[...Array(8)].map((_, i) => (
-                <div key={i} className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm h-28 animate-pulse">
-                    <div className="flex gap-4">
-                        <div className="w-12 h-12 bg-gray-100 rounded-xl" />
-                        <div className="flex-1 space-y-2 pt-1">
-                            <div className="h-3 bg-gray-100 rounded w-2/3" />
-                            <div className="h-6 bg-gray-100 rounded w-1/2" />
-                        </div>
+                <div key={i} className="bg-white rounded-3xl border border-slate-100 p-4 sm:p-5 shadow-2xs h-28 animate-pulse flex flex-col justify-between">
+                    <div className="w-8 h-8 bg-slate-100 rounded-xl" />
+                    <div className="space-y-1.5">
+                        <div className="h-3 bg-slate-100 rounded w-2/3" />
+                        <div className="h-6 bg-slate-100 rounded w-1/2" />
                     </div>
                 </div>
             ))}
@@ -67,18 +73,18 @@ function StatsSkeleton() {
 // ── Level Badge ───────────────────────────────────────────────────
 function LevelBadge({ level }: { level: string }) {
     const map: Record<string, string> = {
-        critical: 'bg-red-100 text-red-700 border border-red-200',
-        error:    'bg-orange-100 text-orange-700 border border-orange-200',
-        warn:     'bg-yellow-100 text-yellow-700 border border-yellow-200',
+        critical: 'bg-rose-100 text-rose-700 border border-rose-200',
+        error:    'bg-rose-50 text-rose-600 border border-rose-100',
+        warn:     'bg-amber-100 text-amber-700 border border-amber-200',
     };
     return (
-        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${map[level] ?? 'bg-gray-100 text-gray-600'}`}>
+        <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold ${map[level] ?? 'bg-slate-100 text-slate-600'}`}>
             {level}
         </span>
     );
 }
 
-// ── Main Page ─────────────────────────────────────────────────────
+// ── Main Overview Page ────────────────────────────────────────────
 export default function AdminOverviewPage() {
     const user   = useAuthStore(s => s.user);
     const router = useRouter();
@@ -120,36 +126,39 @@ export default function AdminOverviewPage() {
     const errors = errorsData?.data ?? [];
 
     return (
-        <div className="space-y-6 p-4 sm:p-6 max-w-7xl mx-auto" dir="rtl">
-            {/* Header */}
-            <div className="flex items-center justify-between">
+        <div className="space-y-6 max-w-7xl mx-auto" dir="rtl">
+            {/* Page Header */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">لوحة تحكم الإدارة</h1>
-                    <p className="text-sm text-gray-500 mt-1">نظرة عامة على المنصة</p>
+                    <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">لوحة الإدارة والتحكم الشامل</h1>
+                    <p className="text-xs sm:text-sm text-slate-500 mt-1">نظرة لحظية على أداء ونشاط منصة مُنظّم</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
                     <button
                         onClick={() => router.push('/admin/monitoring')}
-                        className="flex items-center gap-2 text-sm text-primary hover:text-white hover:bg-primary transition-colors bg-primary/10 border border-primary/20 rounded-xl px-4 py-2 font-medium"
+                        className="flex-1 sm:flex-none flex items-center justify-center gap-2 text-xs font-bold text-primary hover:text-white hover:bg-primary transition-all bg-primary/10 border border-primary/20 rounded-2xl px-4 py-2.5 shadow-2xs"
                     >
-                        <Play className="h-4 w-4" />
-                        مراقبة الرسائل والأتمتة
+                        <Play className="h-3.5 w-3.5" />
+                        مراقبة الواتساب
                     </button>
                     <button
                         onClick={() => refetchStats()}
-                        className="flex items-center gap-2 text-sm text-gray-500 hover:text-primary transition-colors bg-white border border-gray-200 rounded-xl px-4 py-2"
+                        className="flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-primary transition-colors bg-white border border-slate-200 rounded-2xl px-3.5 py-2.5 shadow-2xs"
                     >
-                        <RefreshCw className="h-4 w-4" />
+                        <RefreshCw className="h-3.5 w-3.5" />
                         تحديث
                     </button>
                 </div>
             </div>
 
-            {/* KPI Cards */}
+            {/* Live Presence Active Users Widget */}
+            <LiveActiveUsersWidget />
+
+            {/* KPI Cards Grid */}
             {statsLoading ? (
                 <StatsSkeleton />
             ) : stats ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                     <StatCard
                         icon={Users} label="إجمالي المعلمين" color="blue"
                         value={stats.totalTeachers}
@@ -160,15 +169,17 @@ export default function AdminOverviewPage() {
                         icon={UserCheck} label="معلمون نشطون" color="green"
                         value={stats.activeTeachers}
                         sub={`${stats.inactiveTeachers} موقوف`}
+                        href="/admin/tenants?status=active"
                     />
                     <StatCard
                         icon={BookOpen} label="إجمالي الطلاب" color="purple"
                         value={stats.totalStudents}
+                        sub="في كل المجموعات"
                     />
                     <StatCard
                         icon={TrendingUp} label="الدخل الشهري (MRR)" color="green"
-                        value={`${stats.mrr?.toLocaleString() ?? 0} ج`}
-                        sub={`إيرادات الشهر: ${stats.monthlyRevenue?.toLocaleString() ?? 0} ج`}
+                        value={`${stats.mrr?.toLocaleString('en-US') ?? 0} ج.م`}
+                        sub={`إيرادات الشهر: ${stats.monthlyRevenue?.toLocaleString('en-US') ?? 0} ج.م`}
                     />
                     <StatCard
                         icon={UserX} label="معدل الإلغاء (Churn)" color="orange"
@@ -178,11 +189,12 @@ export default function AdminOverviewPage() {
                     <StatCard
                         icon={UserCheck} label="اشتراكات نشطة" color="blue"
                         value={stats.activeSubscriptions}
+                        sub="سارية المفعول"
                     />
                     <StatCard
                         icon={AlertTriangle} label="أخطاء هذا الشهر" color="red"
                         value={stats.recentErrorsThisMonth}
-                        href="/admin/errors"
+                        href="/admin/logs"
                     />
                     <StatCard
                         icon={BarChart2} label="نمو المعلمين" color="gray"
@@ -193,112 +205,112 @@ export default function AdminOverviewPage() {
             ) : null}
 
             {/* Server Health Widget */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            <div className="bg-white rounded-3xl border border-slate-100 shadow-xs p-5 sm:p-6">
                 <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2.5">
-                        <div className="p-2 bg-green-50 rounded-xl border border-green-100">
-                            <Server className="h-4 w-4 text-green-600" />
+                    <div className="flex items-center gap-3">
+                        <div className="p-2.5 bg-emerald-50 rounded-2xl border border-emerald-100">
+                            <Server className="h-5 w-5 text-emerald-600" />
                         </div>
-                        <h2 className="text-base font-bold text-gray-800">صحة الخادم</h2>
-                        {healthFetching && (
-                            <span className="text-xs text-gray-400 animate-pulse">جارٍ التحديث...</span>
-                        )}
+                        <div>
+                            <h2 className="text-base font-bold text-slate-800">صحة واستقرار الخادم (Server Health)</h2>
+                            <p className="text-xs text-slate-400">استهلاك الذاكرة وأداء المعالجة</p>
+                        </div>
                     </div>
-                    <span className="text-xs text-gray-400">يتحدث كل 30 ثانية</span>
+                    {healthFetching && (
+                        <span className="text-xs text-slate-400 animate-pulse">جارٍ التحديث...</span>
+                    )}
                 </div>
 
                 {health ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        {/* Memory Bar */}
-                        <div className="sm:col-span-1 space-y-2">
-                            <div className="flex items-center justify-between text-xs text-gray-500">
-                                <span className="flex items-center gap-1"><Cpu className="h-3.5 w-3.5" /> ذاكرة Heap</span>
-                                <span className="font-semibold text-gray-700">{health.memory.heapUsedMB} / {health.memory.heapTotalMB} MB</span>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* Memory Heap */}
+                        <div className="space-y-2 p-4 rounded-2xl bg-slate-50/70 border border-slate-100">
+                            <div className="flex items-center justify-between text-xs text-slate-500">
+                                <span className="flex items-center gap-1 font-bold"><Cpu className="h-3.5 w-3.5 text-slate-400" /> ذاكرة Heap</span>
+                                <span className="font-mono font-bold text-slate-800">{health.memory.heapUsedMB} / {health.memory.heapTotalMB} MB</span>
                             </div>
-                            <div className="w-full h-3 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="w-full h-2.5 bg-slate-200/60 rounded-full overflow-hidden">
                                 <div
                                     className={`h-full rounded-full transition-all duration-700 ${
-                                        health.memory.heapPct > 85 ? 'bg-red-500' :
-                                        health.memory.heapPct > 65 ? 'bg-orange-400' :
-                                        'bg-green-500'
+                                        health.memory.heapPct > 85 ? 'bg-rose-500' :
+                                        health.memory.heapPct > 65 ? 'bg-amber-400' :
+                                        'bg-emerald-500'
                                     }`}
                                     style={{ width: `${health.memory.heapPct}%` }}
                                 />
                             </div>
-                            <p className="text-xs text-gray-400 text-left">{health.memory.heapPct}% مستخدم</p>
+                            <p className="text-[11px] text-slate-400 font-mono text-left">{health.memory.heapPct}% مستخدم</p>
                         </div>
 
-                        {/* RSS Memory */}
-                        <div className="space-y-2">
-                            <div className="flex items-center justify-between text-xs text-gray-500">
-                                <span className="flex items-center gap-1"><Zap className="h-3.5 w-3.5" /> الذاكرة الكلية (RSS)</span>
-                                <span className="font-semibold text-gray-700">{health.memory.rssMB} MB</span>
+                        {/* Errors summary */}
+                        <div className="flex gap-2.5">
+                            <div className="flex-1 bg-slate-50/70 rounded-2xl p-4 text-center border border-slate-100 flex flex-col justify-center">
+                                <p className="text-xs text-slate-400 font-medium">أخطاء آخر ساعة</p>
+                                <p className={`text-2xl font-black mt-1 font-mono ${
+                                    health.errors.lastHour > 5 ? 'text-rose-600' :
+                                    health.errors.lastHour > 0 ? 'text-amber-500' :
+                                    'text-emerald-600'
+                                }`}>{health.errors.lastHour}</p>
                             </div>
-                            <div className="flex gap-3 mt-3">
-                                <div className="flex-1 bg-gray-50 rounded-xl p-3 text-center border border-gray-100">
-                                    <p className="text-xs text-gray-400">أخطاء آخر ساعة</p>
-                                    <p className={`text-xl font-bold mt-1 ${
-                                        health.errors.lastHour > 5 ? 'text-red-600' :
-                                        health.errors.lastHour > 0 ? 'text-orange-500' :
-                                        'text-green-600'
-                                    }`}>{health.errors.lastHour}</p>
-                                </div>
-                                <div className="flex-1 bg-gray-50 rounded-xl p-3 text-center border border-gray-100">
-                                    <p className="text-xs text-gray-400">أخطاء آخر 24 ساعة</p>
-                                    <p className={`text-xl font-bold mt-1 ${
-                                        health.errors.last24h > 20 ? 'text-red-600' :
-                                        health.errors.last24h > 5  ? 'text-orange-500' :
-                                        'text-green-600'
-                                    }`}>{health.errors.last24h}</p>
-                                </div>
+                            <div className="flex-1 bg-slate-50/70 rounded-2xl p-4 text-center border border-slate-100 flex flex-col justify-center">
+                                <p className="text-xs text-slate-400 font-medium">أخطاء آخر 24 ساعة</p>
+                                <p className={`text-2xl font-black mt-1 font-mono ${
+                                    health.errors.last24h > 20 ? 'text-rose-600' :
+                                    health.errors.last24h > 5  ? 'text-amber-500' :
+                                    'text-emerald-600'
+                                }`}>{health.errors.last24h}</p>
                             </div>
                         </div>
 
-                        {/* Uptime */}
-                        <div className="bg-gradient-to-br from-primary/5 to-primary/10 rounded-xl p-4 border border-primary/10 flex flex-col justify-center items-center gap-1">
+                        {/* Uptime Box */}
+                        <div className="bg-primary/5 rounded-2xl p-4 border border-primary/10 flex flex-col justify-center items-center gap-1 text-center">
                             <Clock className="h-5 w-5 text-primary/70" />
-                            <p className="text-xs text-gray-500 mt-1">وقت التشغيل</p>
-                            <p className="text-lg font-bold text-primary text-center">{health.uptimeHuman}</p>
+                            <p className="text-xs text-slate-500 font-medium mt-1">مدة تشغيل النظام المستمر</p>
+                            <p className="text-base font-extrabold text-primary">{health.uptimeHuman}</p>
                             <div className="flex items-center gap-1.5 mt-1">
-                                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                                <span className="text-xs text-green-600 font-medium">الخادم يعمل</span>
+                                <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                                <span className="text-[11px] text-emerald-700 font-bold">الخادم متصل ومستقر</span>
                             </div>
                         </div>
                     </div>
                 ) : (
-                    <div className="h-24 bg-gray-50 rounded-xl animate-pulse" />
+                    <div className="h-24 bg-slate-50 rounded-2xl animate-pulse" />
                 )}
             </div>
 
             {/* Top Teachers & Expiring Subscriptions Grid */}
             {stats && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                     {/* Top Teachers */}
-                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                        <div className="flex items-center gap-2 mb-4">
-                            <div className="p-2 bg-purple-50 rounded-xl border border-purple-100">
-                                <Users className="h-4 w-4 text-purple-600" />
+                    <div className="bg-white rounded-3xl border border-slate-100 shadow-xs p-5 sm:p-6">
+                        <div className="flex items-center gap-2.5 mb-4">
+                            <div className="p-2.5 bg-indigo-50 rounded-2xl border border-indigo-100">
+                                <Users className="h-4 w-4 text-indigo-600" />
                             </div>
-                            <h2 className="text-base font-bold text-gray-800">أكثر المعلمين نشاطاً (بالطلاب)</h2>
+                            <h2 className="text-base font-bold text-slate-800">أكثر المعلمين نشاطاً (بالطلاب)</h2>
                         </div>
-                        <div className="space-y-3">
+                        <div className="space-y-2.5">
                             {stats.topTeachers?.length === 0 ? (
-                                <p className="text-sm text-gray-400 text-center py-4">لا توجد بيانات</p>
+                                <p className="text-sm text-slate-400 text-center py-4">لا توجد بيانات كافية</p>
                             ) : (
                                 stats.topTeachers?.map((teacher, idx) => (
-                                    <div key={teacher._id} className="flex items-center justify-between p-3 rounded-xl border border-gray-50 bg-gray-50/50 hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => router.push(`/admin/tenants/${teacher._id}`)}>
+                                    <div
+                                        key={teacher._id}
+                                        className="flex items-center justify-between p-3 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors cursor-pointer"
+                                        onClick={() => router.push(`/admin/tenants/${teacher._id}`)}
+                                    >
                                         <div className="flex items-center gap-3">
-                                            <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs shrink-0">
+                                            <div className="h-8 w-8 rounded-xl bg-primary/10 flex items-center justify-center text-primary font-black text-xs shrink-0">
                                                 {idx + 1}
                                             </div>
                                             <div>
-                                                <p className="text-sm font-semibold text-gray-900">{teacher.name}</p>
-                                                <p className="text-xs text-gray-500 font-mono mt-0.5">{teacher.phone}</p>
+                                                <p className="text-sm font-bold text-slate-900">{teacher.name}</p>
+                                                <p className="text-xs text-slate-400 font-mono mt-0.5">{teacher.phone}</p>
                                             </div>
                                         </div>
                                         <div className="text-left">
-                                            <p className="text-sm font-bold text-gray-900">{teacher.studentCount}</p>
-                                            <p className="text-[10px] text-gray-400">طالب</p>
+                                            <p className="text-sm font-black text-slate-900">{teacher.studentCount}</p>
+                                            <p className="text-[10px] text-slate-400 font-medium">طالب</p>
                                         </div>
                                     </div>
                                 ))
@@ -307,31 +319,35 @@ export default function AdminOverviewPage() {
                     </div>
 
                     {/* Expiring Soon */}
-                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                    <div className="bg-white rounded-3xl border border-slate-100 shadow-xs p-5 sm:p-6">
                         <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center gap-2">
-                                <div className="p-2 bg-orange-50 rounded-xl border border-orange-100">
-                                    <Clock className="h-4 w-4 text-orange-600" />
+                            <div className="flex items-center gap-2.5">
+                                <div className="p-2.5 bg-amber-50 rounded-2xl border border-amber-100">
+                                    <Clock className="h-4 w-4 text-amber-600" />
                                 </div>
-                                <h2 className="text-base font-bold text-gray-800">اشتراكات تقترب من الانتهاء</h2>
+                                <h2 className="text-base font-bold text-slate-800">اشتراكات تقترب من الانتهاء</h2>
                             </div>
-                            <span className="text-xs text-gray-400">خلال 15 يوم</span>
+                            <span className="text-xs text-slate-400 font-medium">خلال 15 يوم</span>
                         </div>
-                        <div className="space-y-3">
+                        <div className="space-y-2.5">
                             {stats.expiringSoon?.length === 0 ? (
-                                <p className="text-sm text-gray-400 text-center py-4">لا توجد اشتراكات تقترب من الانتهاء 🎉</p>
+                                <p className="text-sm text-slate-400 text-center py-6">لا توجد اشتراكات تنتهي قريباً 🎉</p>
                             ) : (
                                 stats.expiringSoon?.map((sub) => {
                                     const daysLeft = Math.ceil((new Date(sub.endDate).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
                                     return (
-                                        <div key={sub._id} className="flex items-center justify-between p-3 rounded-xl border border-gray-50 bg-gray-50/50 hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => router.push(`/admin/tenants/${sub.teacher?._id}`)}>
+                                        <div
+                                            key={sub._id}
+                                            className="flex items-center justify-between p-3 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors cursor-pointer"
+                                            onClick={() => router.push(`/admin/tenants/${sub.teacher?._id}`)}
+                                        >
                                             <div className="flex flex-col">
-                                                <p className="text-sm font-semibold text-gray-900 truncate max-w-[150px] sm:max-w-[200px]">{sub.teacher?.name || 'غير معروف'}</p>
-                                                <p className="text-xs text-gray-500 font-mono mt-0.5">{sub.teacher?.phone || '-'}</p>
+                                                <p className="text-sm font-bold text-slate-900 truncate max-w-[150px] sm:max-w-[200px]">{sub.teacher?.name || 'غير معروف'}</p>
+                                                <p className="text-xs text-slate-400 font-mono mt-0.5">{sub.teacher?.phone || '-'}</p>
                                             </div>
-                                            <div className="text-left flex items-center gap-3">
-                                                <span className="text-[10px] font-bold px-2 py-1 rounded bg-gray-100 text-gray-600">{sub.planTier}</span>
-                                                <div className={`text-xs font-bold px-2.5 py-1 rounded-full ${daysLeft <= 3 ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>
+                                            <div className="text-left flex items-center gap-2">
+                                                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">{sub.planTier}</span>
+                                                <div className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${daysLeft <= 3 ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>
                                                     باقي {daysLeft} أيام
                                                 </div>
                                             </div>
@@ -343,60 +359,6 @@ export default function AdminOverviewPage() {
                     </div>
                 </div>
             )}
-
-            {/* Growth Chart */}
-            {growth && growth.length > 0 && (
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                    <h2 className="text-base font-bold text-gray-800 mb-4">نمو المعلمين الجدد (آخر 6 أشهر)</h2>
-                    <div className="flex items-end gap-3 h-32">
-                        {growth.map((g) => {
-                            const maxVal = Math.max(...growth.map(x => x.count), 1);
-                            const pct    = Math.round((g.count / maxVal) * 100);
-                            return (
-                                <div key={g.label} className="flex-1 flex flex-col items-center gap-1">
-                                    <span className="text-xs font-bold text-gray-700">{g.count}</span>
-                                    <div
-                                        className="w-full bg-primary/80 rounded-t-lg transition-all"
-                                        style={{ height: `${Math.max(pct, 4)}%` }}
-                                    />
-                                    <span className="text-[10px] text-gray-400">{g.label.slice(5)}</span>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            )}
-
-            {/* Recent Errors */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-base font-bold text-gray-800">آخر الأخطاء</h2>
-                    <button
-                        onClick={() => router.push('/admin/errors')}
-                        className="text-xs text-primary hover:underline"
-                    >
-                        عرض الكل
-                    </button>
-                </div>
-                {errors.length === 0 ? (
-                    <p className="text-gray-400 text-sm py-4 text-center">لا توجد أخطاء حديثة 🎉</p>
-                ) : (
-                    <div className="space-y-2">
-                        {errors.map((e) => (
-                            <div key={e._id} className="flex items-start gap-3 p-3 rounded-xl bg-gray-50/50 border border-gray-100">
-                                <LevelBadge level={e.level} />
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium text-gray-800 truncate">{e.message}</p>
-                                    <p className="text-xs text-gray-400 mt-0.5">{e.method} {e.path}</p>
-                                </div>
-                                <span className="text-xs text-gray-400 shrink-0">
-                                    {new Date(e.createdAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
-                                </span>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
         </div>
     );
 }

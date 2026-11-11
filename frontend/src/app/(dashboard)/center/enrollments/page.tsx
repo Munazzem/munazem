@@ -243,8 +243,12 @@ export default function CenterEnrollmentsPage() {
     const pkgTeacherIds = (selectedPkg?.teachers || []).map((t) =>
         typeof t.teacherId === 'object' ? (t.teacherId as any)._id : t.teacherId
     );
+    const pkgGroupIds = (selectedPkg?.teachers || [])
+        .map((t) => (typeof t.groupId === 'object' ? (t.groupId as any)?._id : t.groupId))
+        .filter(Boolean);
     const packageMatchingGroups = selectedPkg
         ? groups.filter((g) => {
+              if (pkgGroupIds.includes(g._id)) return true;
               const teacherId = typeof g.centerTeacherId === 'object' ? (g.centerTeacherId as any)._id : g.centerTeacherId;
               const matchesTeacher = pkgTeacherIds.includes(teacherId);
               const matchesGrade = g.gradeLevel === selectedPkg.gradeLevel;
@@ -254,9 +258,8 @@ export default function CenterEnrollmentsPage() {
         : [];
 
     const availablePrivateGroups = groups.filter((g) => {
-        const isPrivateOrMixed = g.groupType === 'PRIVATE' || g.groupType === 'MIXED';
-        if (!currentGradeLevel) return isPrivateOrMixed;
-        return isPrivateOrMixed && g.gradeLevel === currentGradeLevel;
+        if (!currentGradeLevel) return true;
+        return g.gradeLevel === currentGradeLevel;
     });
 
     // ── Live Pricing Calculation for Enrollment Modal ────────────────────
@@ -792,21 +795,21 @@ export default function CenterEnrollmentsPage() {
                                     </select>
                                 </div>
 
-                                {/* Package Groups - Auto Selected by Default */}
+                                {/* Package Classes - Auto Selected by Default */}
                                 {selectedPkg && (
                                     <div className="space-y-2 pt-1">
                                         <div className="flex items-center justify-between">
                                             <label className="text-xs font-bold text-blue-950 flex items-center gap-1.5">
-                                                <span>مجموعات الباقة المشمولة (محددة بالكامل تلقائياً):</span>
+                                                <span>حصص الباكيدج المشمولة (محددة بالكامل تلقائياً):</span>
                                                 <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-200 text-[10px]">
-                                                    {selectedPackageGroupIds.length} من {packageMatchingGroups.length} محدد
+                                                    {selectedPackageGroupIds.length} من {packageMatchingGroups.length} حصة
                                                 </Badge>
                                             </label>
                                         </div>
 
                                         {packageMatchingGroups.length === 0 ? (
                                             <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800">
-                                                ⚠️ لم يتم العثور على مجموعات مسجلة لهذه الباقة في مرحلة ({selectedPkg.gradeLevel}). يمكنك إنشاء مجموعات للباقة من شاشة المجموعات.
+                                                ⚠️ يتم توليد حصص مواد الباكيدج تلقائياً عند حفظ الباكيدج أو الاشتراك.
                                             </div>
                                         ) : (
                                             <div className="space-y-1.5 max-h-48 overflow-y-auto pr-0.5">
@@ -854,7 +857,7 @@ export default function CenterEnrollmentsPage() {
                                                                 </div>
                                                             </div>
                                                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isChecked ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
-                                                                {isChecked ? 'مشترك ✓' : 'مستبعد'}
+                                                                {isChecked ? 'حصة مشمولة ✓' : 'مستبعد'}
                                                             </span>
                                                         </div>
                                                     );
@@ -892,26 +895,26 @@ export default function CenterEnrollmentsPage() {
                             </div>
                         )}
 
-                        {/* Private Groups Selection - Filtered by Student Grade Level */}
+                        {/* Private Classes Selection - Filtered by Student Grade Level */}
                         {(enrollmentType === 'PRIVATE' || enrollmentType === 'BOTH') && (
                             <div className="p-3.5 bg-purple-50/50 border border-purple-100 rounded-xl space-y-3">
                                 <div>
                                     <div className="flex items-center justify-between">
                                         <label className="text-xs font-bold text-purple-900 block">
-                                            اختيار مجموعات البرايفت بالسنتر {currentGradeLevel ? `(${currentGradeLevel})` : ''} *
+                                            اختيار الحصص الفردية (البرايفت) {currentGradeLevel ? `(${currentGradeLevel})` : ''} *
                                         </label>
                                         <Badge variant="outline" className="bg-purple-100 text-purple-800 border-purple-200 text-[10px]">
-                                            {selectedPrivateTeachers.length} مجموعة محددة
+                                            {selectedPrivateTeachers.length} حصة محددة فقط
                                         </Badge>
                                     </div>
                                     <p className="text-[11px] text-purple-600 mt-0.5">
-                                        اختر المجموعات البرايفت التي ينضم إليها الطالب في مرحلته (يتم تحديد السعر الشهري لكل مجموعة):
+                                        طالب البرايفت يُسجَّل فقط في الحصص التي تختارها له هنا (وليس كل حصص الصف):
                                     </p>
                                 </div>
 
                                 {availablePrivateGroups.length === 0 ? (
                                     <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
-                                        ⚠️ لا توجد مجموعات برايفت مسجلة في السنتر لهذه المرحلة {currentGradeLevel ? `(${currentGradeLevel})` : ''}. يمكنك إضافة مجموعات برايفت من قسم المجموعات أولاً.
+                                        ⚠️ لا توجد حصص مسجلة في السنتر لهذا الصف {currentGradeLevel ? `(${currentGradeLevel})` : ''}. يمكنك إضافة حصص من قسم الحصص الدراسية أولاً.
                                     </div>
                                 ) : (
                                     <div className="space-y-2 max-h-52 overflow-y-auto pr-0.5">
@@ -1066,7 +1069,7 @@ export default function CenterEnrollmentsPage() {
                                     <div className="flex items-center justify-between text-gray-300">
                                         <span className="flex items-center gap-1.5">
                                             <GraduationCap className="h-3.5 w-3.5 text-purple-400" />
-                                            مجموع مجموعات البرايفت ({selectedPrivateTeachers.length} مجموعة):
+                                            مجموع حصص البرايفت ({selectedPrivateTeachers.length} حصة):
                                         </span>
                                         <span className="font-bold font-mono text-white">{privateBasePrice} ج.م</span>
                                     </div>

@@ -29,6 +29,46 @@ export const SECONDARY_GRADES = [
 
 export const ALL_GRADES = [...PRIMARY_GRADES, ...PREPARATORY_GRADES, ...SECONDARY_GRADES] as const;
 
+export type StageKey = 'SECONDARY' | 'PREPARATORY' | 'PRIMARY';
+
+export const STAGE_HIERARCHY = [
+    {
+        id: 'SECONDARY' as const,
+        label: 'المرحلة الثانوية',
+        shortLabel: 'ثانوي',
+        shortTitle: 'ثانوي',
+        grades: SECONDARY_GRADES,
+    },
+    {
+        id: 'PREPARATORY' as const,
+        label: 'المرحلة الإعدادية',
+        shortLabel: 'إعدادي',
+        shortTitle: 'إعدادي',
+        grades: PREPARATORY_GRADES,
+    },
+    {
+        id: 'PRIMARY' as const,
+        label: 'المرحلة الابتدائية',
+        shortLabel: 'ابتدائي',
+        shortTitle: 'ابتدائي',
+        grades: PRIMARY_GRADES,
+    },
+] as const;
+
+export const STAGE_HIERARCHY_MAP = {
+    SECONDARY: STAGE_HIERARCHY[0],
+    PREPARATORY: STAGE_HIERARCHY[1],
+    PRIMARY: STAGE_HIERARCHY[2],
+} as const;
+
+export function getStageForGrade(gradeLevel?: string | null): 'SECONDARY' | 'PREPARATORY' | 'PRIMARY' | 'OTHER' {
+    if (!gradeLevel) return 'OTHER';
+    if ((SECONDARY_GRADES as readonly string[]).includes(gradeLevel) || gradeLevel.includes('ثانوي')) return 'SECONDARY';
+    if ((PREPARATORY_GRADES as readonly string[]).includes(gradeLevel) || gradeLevel.includes('إعدادي')) return 'PREPARATORY';
+    if ((PRIMARY_GRADES as readonly string[]).includes(gradeLevel) || gradeLevel.includes('ابتدائي')) return 'PRIMARY';
+    return 'OTHER';
+}
+
 /** Union type derived from the constant — the single GradeLevel type. */
 export type GradeLevel = typeof ALL_GRADES[number];
 

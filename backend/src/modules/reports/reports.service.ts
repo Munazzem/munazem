@@ -295,7 +295,9 @@ export class ReportsService {
 
         const totalPaid     = paymentTotals.reduce((sum: number, p: any) => sum + p.total, 0);
         const totalDiscount = paymentTotals.reduce((sum: number, p: any) => sum + p.totalDiscount, 0);
-        const subscriptionsCount = paymentTotals.find((p: any) => p._id === TransactionCategory.SUBSCRIPTION)?.count ?? 0;
+        const subscriptionsCount = paymentTotals
+            .filter((p: any) => p._id === TransactionCategory.SUBSCRIPTION || p._id === TransactionCategory.DEBT_PAYMENT)
+            .reduce((sum: number, p: any) => sum + p.count, 0);
         const notebookSalesCount = paymentTotals.find((p: any) => p._id === TransactionCategory.NOTEBOOK_SALE)?.count ?? 0;
 
         // Active subscription and cycle enrollments
@@ -343,8 +345,11 @@ export class ReportsService {
         const sortedDeduplicatedEnrollments = Array.from(deduplicatedEnrollmentsMap.values())
             .sort((a, b) => b.cycleNumber - a.cycleNumber);
 
-        // Pre-group subscription payments by cycleNumber
-        const subTxs = payments.filter((p: any) => p.category === TransactionCategory.SUBSCRIPTION);
+        // Pre-group subscription payments by cycleNumber (including cycle debt payments)
+        const subTxs = payments.filter((p: any) => 
+            p.category === TransactionCategory.SUBSCRIPTION || 
+            p.category === TransactionCategory.DEBT_PAYMENT
+        );
         const subTxsByCycle = new Map<number, any[]>();
         const unassignedSubs: any[] = [];
         for (const p of subTxs) {
@@ -370,6 +375,7 @@ export class ReportsService {
             });
         }
 
+        const syntheticPaidTxs: any[] = [];
         const cycleEnrollments = sortedDeduplicatedEnrollments.map(e => {
             const isCurrentCycle = e.cycleNumber === currentCycleNumber && e.groupId?.toString() === student.groupId?.toString();
             const isPastCycle = !isCurrentCycle && (e.groupId?.toString() !== student.groupId?.toString() || e.cycleNumber < currentCycleNumber);
@@ -412,6 +418,58 @@ export class ReportsService {
                 CycleEnrollmentModel.updateOne(
                     { _id: e._id },
                     { $set: { remainingAmount, status, totalPaid: 0 } }
+                ).exec().catch(() => {});
+            }
+
+            // Auto-heal missing transaction record so payment log always shows when and how cycle was paid
+            if ((status === CycleEnrollmentStatus.PAID || totalPaid > 0 || (e as any).isWaived) && cycleTxs.length === 0) {
+                const paymentDate = (e as any).updatedAt || (e as any).createdAt || (student as any).createdAt || new Date();
+                const recordedPaid = totalPaid > 0 ? totalPaid : e.cycleCharge;
+                const autoTx = {
+                    _id: `rec_${e._id || e.cycleNumber}`,
+                    teacherId: (student as any).teacherId,
+                    studentId: student._id,
+                    studentName: student.studentName,
+                    gradeLevel: student.gradeLevel,
+                    type: TransactionType.INCOME,
+                    category: TransactionCategory.SUBSCRIPTION,
+                    originalAmount: e.cycleCharge,
+                    discountAmount: totalDiscount,
+                    paidAmount: recordedPaid,
+                    remainingAmount: 0,
+                    date: paymentDate,
+                    cycleNumber: e.cycleNumber,
+                    description: (e as any).isWaived 
+                        ? `إعفاء وتسوية الدورة ${e.cycleNumber}` 
+                        : `سداد معتمد للدورة ${e.cycleNumber} (تسجيل النظام)`,
+                    isSystemRecorded: true,
+                };
+                cycleTxs.push(autoTx);
+                subTxsByCycle.set(e.cycleNumber, cycleTxs);
+                syntheticPaidTxs.push(autoTx);
+
+                // Auto-heal DB record asynchronously
+                TransactionModel.updateOne(
+                    { studentId: student._id, cycleNumber: e.cycleNumber, category: TransactionCategory.SUBSCRIPTION },
+                    {
+                        $setOnInsert: {
+                            teacherId: (student as any).teacherId,
+                            createdBy: (student as any).teacherId,
+                            type: TransactionType.INCOME,
+                            category: TransactionCategory.SUBSCRIPTION,
+                            studentId: student._id,
+                            studentName: student.studentName,
+                            gradeLevel: student.gradeLevel,
+                            originalAmount: e.cycleCharge,
+                            discountAmount: totalDiscount,
+                            paidAmount: recordedPaid,
+                            remainingAmount: 0,
+                            date: paymentDate,
+                            cycleNumber: e.cycleNumber,
+                            description: `سداد معتمد للدورة ${e.cycleNumber} (تسجيل النظام)`,
+                        }
+                    },
+                    { upsert: true }
                 ).exec().catch(() => {});
             }
 
@@ -795,12 +853,18 @@ export class ReportsService {
                 cycles: attendanceCycles,
             },
             payments: {
-                totalPaid,
-                totalDiscount,
-                subscriptionsCount,
+                totalPaid: totalPaid + syntheticPaidTxs.reduce((sum: number, t: any) => sum + (t.paidAmount || 0), 0),
+                totalDiscount: totalDiscount + syntheticPaidTxs.reduce((sum: number, t: any) => sum + (t.discountAmount || 0), 0),
+                subscriptionsCount: subscriptionsCount + syntheticPaidTxs.length,
                 notebookSalesCount,
-                history: payments,
-                subscriptions: payments.filter((p: any) => p.category === TransactionCategory.SUBSCRIPTION),
+                history: [...payments, ...syntheticPaidTxs].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+                subscriptions: [
+                    ...payments.filter((p: any) => 
+                        p.category === TransactionCategory.SUBSCRIPTION || 
+                        p.category === TransactionCategory.DEBT_PAYMENT
+                    ),
+                    ...syntheticPaidTxs
+                ].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()),
                 cycleEnrollments,
                 allCycleEnrollments: cycleEnrollments,
                 pastUnpaidCycles,
@@ -1091,8 +1155,8 @@ export class ReportsService {
     // 4. Dashboard Summary — quick stats for the teacher's home page
     // ══════════════════════════════════════════════════════════════
     static async getDashboardSummary(teacherId: string, role: UserRole) {
-        // Check cache first
-        const cacheKey = CacheKeys.dashboard(teacherId);
+        // Check cache first (role-isolated so assistant doesn't overwrite teacher or vice versa)
+        const cacheKey = CacheKeys.dashboard(teacherId, role);
         const cached = await cache.get(cacheKey);
         if (cached) return cached;
 
@@ -1461,5 +1525,183 @@ export class ReportsService {
         ).populate('groupId', 'name').sort({ studentName: 1 }).limit(100).lean();
 
         return { ...base, students: unpaidStudents };
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // 8. Offline Bundle — Batch compile full reports for all students
+    // ══════════════════════════════════════════════════════════════
+    static async getTeacherOfflineReportsBundle(teacherId: string) {
+        const teacherObjectId = new mongoose.Types.ObjectId(teacherId);
+
+        const [students, examResults, exams, enrollments, transactions, snapshots, groups] = await Promise.all([
+            StudentModel.find({ teacherId }, {
+                studentName: 1, studentCode: 1, studentPhone: 1, parentPhone: 1, parentName: 1,
+                gradeLevel: 1, groupId: 1, isActive: 1, totalDebt: 1, remainingSessions: 1,
+                monthlySessionsQuota: 1, barcode: 1, hasActiveSubscription: 1,
+            }).lean(),
+            ExamResultModel.find({ teacherId }, {
+                studentId: 1, examId: 1, score: 1, totalMarks: 1, passingMarks: 1, percentage: 1, grade: 1, passed: 1, date: 1,
+            }).lean(),
+            ExamModel.find({ teacherId }, {
+                title: 1,
+            }).lean(),
+            CycleEnrollmentModel.find({ teacherId, isWaived: { $ne: true } }).lean(),
+            TransactionModel.find({ teacherId, type: TransactionType.INCOME }, {
+                studentId: 1, category: 1, paidAmount: 1, discountAmount: 1, date: 1, cycleNumber: 1, description: 1,
+            }).lean(),
+            AttendanceSnapshotModel.find({ teacherId }, {
+                date: 1, sessionId: 1, groupId: 1, presentStudents: 1, absentStudents: 1, guestStudents: 1, compensatedStudents: 1,
+            }).lean(),
+            GroupModel.find({ teacherId }, {
+                name: 1, cycle: 1,
+            }).lean(),
+        ]);
+
+        const examMap = new Map(exams.map(e => [e._id.toString(), e.title]));
+        const groupMap = new Map(groups.map(g => [g._id.toString(), g]));
+
+        // Group exams by studentId
+        const examsByStudent = new Map<string, any[]>();
+        for (const r of examResults) {
+            const sid = (r as any).studentId?.toString();
+            if (!sid) continue;
+            let list = examsByStudent.get(sid);
+            if (!list) {
+                list = [];
+                examsByStudent.set(sid, list);
+            }
+            list.push({
+                _id: r._id,
+                examId: r.examId,
+                examTitle: examMap.get((r as any).examId?.toString()) || 'امتحان',
+                score: r.score,
+                totalMarks: r.totalMarks,
+                passingMarks: r.passingMarks,
+                percentage: r.percentage,
+                grade: r.grade,
+                passed: r.passed,
+                date: (r as any).date,
+            });
+        }
+
+        // Group transactions by studentId
+        const txsByStudent = new Map<string, any[]>();
+        for (const t of transactions) {
+            const sid = (t as any).studentId?.toString();
+            if (!sid) continue;
+            let list = txsByStudent.get(sid);
+            if (!list) {
+                list = [];
+                txsByStudent.set(sid, list);
+            }
+            list.push(t);
+        }
+
+        // Group cycle enrollments by studentId
+        const enrollmentsByStudent = new Map<string, any[]>();
+        for (const e of enrollments) {
+            const sid = (e as any).studentId?.toString();
+            if (!sid) continue;
+            let list = enrollmentsByStudent.get(sid);
+            if (!list) {
+                list = [];
+                enrollmentsByStudent.set(sid, list);
+            }
+            list.push(e);
+        }
+
+        // Attendance by studentId from snapshots
+        const attendanceByStudent = new Map<string, any[]>();
+        for (const snap of snapshots) {
+            const date = snap.date;
+            const sessionId = snap.sessionId;
+
+            const processEntry = (st: any, status: string) => {
+                const sid = st.studentId?.toString();
+                if (!sid) return;
+                let list = attendanceByStudent.get(sid);
+                if (!list) {
+                    list = [];
+                    attendanceByStudent.set(sid, list);
+                }
+                list.push({
+                    sessionId,
+                    date,
+                    status,
+                    homeworkDone: typeof st.homeworkDone === 'boolean' ? st.homeworkDone : null,
+                });
+            };
+
+            if (snap.presentStudents) snap.presentStudents.forEach((s: any) => processEntry(s, s.status || AttendanceStatus.PRESENT));
+            if (snap.absentStudents) snap.absentStudents.forEach((s: any) => processEntry(s, AttendanceStatus.ABSENT));
+            if (snap.guestStudents) snap.guestStudents.forEach((s: any) => processEntry(s, 'GUEST'));
+            if (snap.compensatedStudents) snap.compensatedStudents.forEach((s: any) => processEntry(s, AttendanceStatus.EXCUSED));
+        }
+
+        // Assemble reports for each student
+        const reports: { studentId: string; report: any }[] = [];
+        for (const st of students) {
+            const sid = st._id.toString();
+            const grp = st.groupId ? groupMap.get(st.groupId.toString()) : null;
+            const stExams = (examsByStudent.get(sid) || []).sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+            const stTxs = (txsByStudent.get(sid) || []).sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+            const stEnrollments = (enrollmentsByStudent.get(sid) || []).sort((a, b) => (b.cycleNumber || 0) - (a.cycleNumber || 0));
+            const stAttendance = (attendanceByStudent.get(sid) || []).sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+
+            const presentCount = stAttendance.filter(a => [AttendanceStatus.PRESENT, AttendanceStatus.LATE, 'GUEST', AttendanceStatus.EXCUSED].includes(a.status)).length;
+            const absentCount = stAttendance.filter(a => a.status === AttendanceStatus.ABSENT).length;
+            const totalSessions = presentCount + absentCount;
+            const attendanceRate = totalSessions > 0 ? `${Math.round((presentCount / totalSessions) * 100)}%` : '100%';
+
+            const totalPaid = stTxs.reduce((sum, t) => sum + (t.paidAmount || 0), 0);
+            const totalDiscount = stTxs.reduce((sum, t) => sum + (t.discountAmount || 0), 0);
+
+            const currentCycleNumber = (grp as any)?.cycle?.currentCycleNumber || 1;
+            const currentEnrollment = stEnrollments.find(e => e.cycleNumber === currentCycleNumber);
+            const hasActiveSubscription = currentEnrollment
+                ? currentEnrollment.status === CycleEnrollmentStatus.PAID
+                : Boolean((st as any).hasActiveSubscription);
+            const pastUnpaid = stEnrollments.filter(e => e.cycleNumber < currentCycleNumber && e.status !== CycleEnrollmentStatus.PAID);
+            const pastCyclesDebt = pastUnpaid.reduce((sum, e) => sum + (e.remainingAmount || 0), 0);
+
+            reports.push({
+                studentId: sid,
+                report: {
+                    student: {
+                        ...st,
+                        groupName: grp?.name || '—',
+                        monthlySessionsQuota: (grp as any)?.cycle?.capacity || (st as any).monthlySessionsQuota || 8,
+                        remainingSessions: (st as any).remainingSessions || 0,
+                        hasActiveSubscription,
+                    },
+                    attendance: {
+                        totalSessions,
+                        presentCount,
+                        absentCount,
+                        attendanceRate,
+                        history: stAttendance.slice(0, 50),
+                        cycles: [],
+                    },
+                    payments: {
+                        totalPaid,
+                        totalDiscount,
+                        subscriptionsCount: stEnrollments.filter((e: any) => e.status === CycleEnrollmentStatus.PAID).length,
+                        notebookSalesCount: stTxs.filter((t: any) => t.category === TransactionCategory.NOTEBOOK_SALE).length,
+                        history: stTxs.slice(0, 50),
+                        subscriptions: stEnrollments,
+                        cycleEnrollments: stEnrollments,
+                        pastUnpaidCycles: pastUnpaid,
+                        pastCyclesDebt: Math.max((st as any).totalDebt || 0, pastCyclesDebt),
+                        currentCycleNumber,
+                    },
+                    grades: {
+                        total: stExams.length,
+                        history: stExams,
+                    },
+                },
+            });
+        }
+
+        return { reports };
     }
 }

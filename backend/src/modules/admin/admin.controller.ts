@@ -118,6 +118,48 @@ adminRouter.post('/tenants/:id/subscription', async (req: Request, res: Response
     } catch (error) { next(error); }
 });
 
+// ── GET /admin/tenants/:id/activity ──────────────────────────────────
+adminRouter.get('/tenants/:id/activity', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { page, limit, event } = req.query as Record<string, string>;
+        const data = await AdminService.getTenantActivity(req.params['id'] as string, {
+            page:  page  ? parseInt(page)  : 1,
+            limit: limit ? parseInt(limit) : 25,
+            ...(event ? { event } : {}),
+        });
+        return SuccessResponse({ res, data, message: 'Teacher activity logs fetched successfully' });
+    } catch (error) { next(error); }
+});
+
+// ── GET /admin/tenants/:id/deletion-impact ───────────────────────────
+adminRouter.get('/tenants/:id/deletion-impact', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const data = await AdminService.getTenantDeletionImpact(req.params['id'] as string);
+        return SuccessResponse({ res, data, message: 'Tenant deletion impact analysis fetched' });
+    } catch (error) { next(error); }
+});
+
+// ── DELETE /admin/tenants/:id ────────────────────────────────────────
+adminRouter.delete('/tenants/:id', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const superAdmin = (req as any).user;
+        const permanent = req.query['permanent'] === 'true' || req.body?.permanent === true;
+        const data = await AdminService.deleteTenant(req.params['id'] as string, {
+            permanent,
+            superAdminId: superAdmin?.userId || superAdmin?.id,
+        });
+        return SuccessResponse({ res, data, message: data.message });
+    } catch (error) { next(error); }
+});
+
+// ── GET /admin/presence/active-users ─────────────────────────────────
+adminRouter.get('/presence/active-users', async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+        const data = await AdminService.getActiveUsers();
+        return SuccessResponse({ res, data, message: 'Active users fetched successfully' });
+    } catch (error) { next(error); }
+});
+
 // ── GET /admin/errors ────────────────────────────────────────────────
 adminRouter.get('/errors', async (req: Request, res: Response, next: NextFunction) => {
     try {

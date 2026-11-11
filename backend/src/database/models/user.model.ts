@@ -73,13 +73,25 @@ const userSchema = new Schema<IUserDocument>(
             showCardNumber: { type: Boolean, default: true },
         },
 
-        // Assistant permissions configuration for the teacher
+        // Assistant permissions configuration for the teacher (defaults to FULL - مساعد شامل)
         assistantPermissions: {
-            canTakeAttendance: { type: Boolean, default: true },
-            canEditAttendance: { type: Boolean, default: false },
-            canViewAttendance: { type: Boolean, default: true },
-            canRecordPayments: { type: Boolean, default: true },
-            canViewReports:    { type: Boolean, default: true },
+            canTakeAttendance:    { type: Boolean, default: true },
+            canEditAttendance:    { type: Boolean, default: true },
+            canViewAttendance:    { type: Boolean, default: true },
+            canManageSessions:    { type: Boolean, default: true },
+            canRecordPayments:    { type: Boolean, default: true },
+            canViewFinancials:    { type: Boolean, default: true },
+            canManageStudents:    { type: Boolean, default: true },
+            canManageGroups:      { type: Boolean, default: true },
+            canCreateExams:       { type: Boolean, default: true },
+            canGradeExams:        { type: Boolean, default: true },
+            canManageNotebooks:   { type: Boolean, default: true },
+            canSendNotifications: { type: Boolean, default: true },
+        },
+        assistantType: {
+            type: String,
+            enum: ['ATTENDANCE', 'FINANCIAL', 'ACADEMIC', 'FULL', 'CUSTOM', null],
+            default: 'FULL',
         },
         assistantsAccessEnabled: {
             type: Boolean,

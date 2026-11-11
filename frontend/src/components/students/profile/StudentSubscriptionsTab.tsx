@@ -186,7 +186,7 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                                     مديونيات واشتراكات دورات سابقة مستحقة ({pastUnpaidCycles.length})
                                 </h3>
                                 <p className="text-xs text-amber-700 mt-0.5">
-                                    إجمالي المستحق من الدورات السابقة: <span className="font-extrabold text-amber-900 text-sm">{pastCyclesDebt.toLocaleString('ar-EG')} ج.م</span>
+                                    إجمالي المستحق من الدورات السابقة: <span className="font-extrabold text-amber-900 text-sm">{pastCyclesDebt.toLocaleString('en-US')} ج.م</span>
                                 </p>
                             </div>
                         </div>
@@ -239,7 +239,7 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
 
                                 <div className={cn(
                                     "grid gap-1.5 text-center bg-gray-50/80 rounded-lg p-2 text-xs",
-                                    (cycle.totalDiscount || 0) > 0 ? "grid-cols-4" : "grid-cols-3"
+                                    (cycle.totalDiscount || 0) > 0 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3"
                                 )}>
                                     <div>
                                         <p className="text-[10px] text-gray-400 font-medium">سعر الدورة</p>
@@ -395,11 +395,16 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                                 <div>
                                     <div className="flex items-center gap-2">
                                         <p className="text-xs font-bold text-gray-800">
-                                            {new Date(sub.date).toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' })}
+                                            {new Date(sub.date).toLocaleDateString('ar-EG-u-nu-latn', { year: 'numeric', month: 'long', day: 'numeric' })}
                                         </p>
                                         {sub.cycleNumber && (
                                             <Badge variant="outline" className="text-[10px] text-gray-600 bg-gray-50 py-0">
                                                 دورة {sub.cycleNumber}
+                                            </Badge>
+                                        )}
+                                        {sub.category === 'DEBT_PAYMENT' && (
+                                            <Badge variant="outline" className="text-[10px] text-amber-700 bg-amber-50 border-amber-200 py-0 font-bold">
+                                                سداد مديونية
                                             </Badge>
                                         )}
                                     </div>
@@ -410,9 +415,9 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                                     )}
                                 </div>
                                 <div className="text-left bg-green-50/60 px-3 py-1.5 rounded-xl border border-green-100">
-                                    <p className="text-xs font-bold text-green-700">{sub.paidAmount.toLocaleString('ar-EG')} ج.م</p>
-                                    {sub.discountAmount > 0 && (
-                                        <p className="text-[10px] text-green-600/80 font-medium">خصم {sub.discountAmount.toLocaleString('ar-EG')}</p>
+                                    <p className="text-xs font-bold text-green-700">{(sub.paidAmount ?? 0).toLocaleString('en-US')} ج.م</p>
+                                    {(sub.discountAmount || 0) > 0 && (
+                                        <p className="text-[10px] text-green-600/80 font-medium">خصم {(sub.discountAmount ?? 0).toLocaleString('en-US')}</p>
                                     )}
                                 </div>
                             </div>
@@ -499,18 +504,19 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                         </div>
                     )}
 
-                    <DialogFooter className="gap-2 sm:gap-0">
+                    <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 pt-3 border-t border-gray-100">
                         <Button
                             variant="outline"
                             onClick={() => setSelectedCycle(null)}
                             disabled={payCycleMutation.isPending}
+                            className="w-full sm:w-auto h-10"
                         >
                             إلغاء
                         </Button>
                         <Button
                             onClick={handleConfirmPayCycle}
                             disabled={payCycleMutation.isPending || !cyclePaidAmount}
-                            className="bg-amber-600 hover:bg-amber-700 text-white font-bold"
+                            className="w-full sm:flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold h-10"
                         >
                             {payCycleMutation.isPending ? (
                                 <><Loader2 className="h-4 w-4 animate-spin ml-2" /> جاري السداد...</>
@@ -541,7 +547,7 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                             </p>
                             <div className="flex justify-between pt-1 border-t border-amber-200 text-amber-950 font-bold">
                                 <span>إجمالي المتبقي من الدورات السابقة:</span>
-                                <span className="text-red-600 font-extrabold text-sm">{pastCyclesDebt.toLocaleString('ar-EG')} ج.م</span>
+                                <span className="text-red-600 font-extrabold text-sm">{pastCyclesDebt.toLocaleString('en-US')} ج.م</span>
                             </div>
                         </div>
 
@@ -576,18 +582,19 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                         </div>
                     </div>
 
-                    <DialogFooter className="gap-2 sm:gap-0">
+                    <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 pt-3 border-t border-gray-100">
                         <Button
                             variant="outline"
                             onClick={() => setPayAllOpen(false)}
                             disabled={payAllMutation.isPending}
+                            className="w-full sm:w-auto h-10"
                         >
                             إلغاء
                         </Button>
                         <Button
                             onClick={handleConfirmPayAll}
                             disabled={payAllMutation.isPending || !allPaidAmount}
-                            className="bg-amber-600 hover:bg-amber-700 text-white font-bold"
+                            className="w-full sm:flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold h-10"
                         >
                             {payAllMutation.isPending ? (
                                 <><Loader2 className="h-4 w-4 animate-spin ml-2" /> جاري السداد...</>
@@ -650,13 +657,13 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                         </div>
                     </div>
 
-                    <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-gray-100">
+                    <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 pt-3 border-t border-gray-100">
                         <Button
                             type="button"
                             variant="outline"
                             onClick={() => setWaiveCycle(null)}
                             disabled={waiveCycleMutation.isPending}
-                            className="text-xs font-semibold"
+                            className="w-full sm:w-auto h-10 text-xs font-semibold"
                         >
                             إلغاء
                         </Button>
@@ -664,7 +671,7 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                             type="button"
                             onClick={() => waiveCycleMutation.mutate()}
                             disabled={waiveCycleMutation.isPending}
-                            className="text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white gap-1.5"
+                            className="w-full sm:flex-1 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white gap-1.5 h-10"
                         >
                             {waiveCycleMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                             تأكيد إسقاط مديونية الدورة
@@ -696,7 +703,7 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                             </div>
                             <div className="flex justify-between items-center text-rose-800 font-extrabold text-sm pt-1 border-t border-rose-200">
                                 <span>إجمالي المبلغ المطلوب إسقاطه:</span>
-                                <span>{pastCyclesDebt.toLocaleString('ar-EG')} ج.م</span>
+                                <span>{pastCyclesDebt.toLocaleString('en-US')} ج.م</span>
                             </div>
                         </div>
 
@@ -720,13 +727,13 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                         </div>
                     </div>
 
-                    <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-gray-100">
+                    <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 pt-3 border-t border-gray-100">
                         <Button
                             type="button"
                             variant="outline"
                             onClick={() => setWaiveAllPastOpen(false)}
                             disabled={waiveAllPastMutation.isPending}
-                            className="text-xs font-semibold"
+                            className="w-full sm:w-auto h-10 text-xs font-semibold"
                         >
                             إلغاء
                         </Button>
@@ -734,7 +741,7 @@ export function StudentSubscriptionsTab({ reportLoading, report, studentId, canW
                             type="button"
                             onClick={() => waiveAllPastMutation.mutate()}
                             disabled={waiveAllPastMutation.isPending}
-                            className="text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white gap-1.5"
+                            className="w-full sm:flex-1 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white gap-1.5 h-10"
                         >
                             {waiveAllPastMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                             تأكيد إسقاط كافة المديونيات

@@ -45,11 +45,21 @@ import {
     fetchStudentEnrollment,
     fetchStudentAttendanceHistory,
     fetchStudentFinancialReport,
+    fetchCenterStudentFullProfile,
+    updateCenterTransaction,
+    deleteCenterTransaction,
     recordCenterPayment,
     fetchMyCenters,
 } from '@/lib/api/centers';
+import { fetchStudentExamResults } from '@/lib/api/exams';
+import { StudentGradesTab } from '@/components/students/profile/StudentGradesTab';
 import { ALL_GRADES } from '@/lib/constants/grade.constants';
-import { ICenterStudent, ICenterEnrollment, ICenterAttendanceRecord } from '@/types/center.types';
+import {
+    ICenterStudent,
+    ICenterEnrollment,
+    ICenterAttendanceRecord,
+    CenterStudentFullProfileResponse,
+} from '@/types/center.types';
 import { printHtmlContent } from '@/lib/utils/print';
 import { generateIdCardsHtml } from '@/lib/utils/printIdCard';
 import { Button } from '@/components/ui/button';
@@ -129,12 +139,58 @@ export default function CenterStudentProfilePage() {
         enabled: !!studentId,
     });
 
+    // 4b. Fetch Unified Full Profile (Classes + Session Attendance + Quick Check-Ins + True Debt)
+    const { data: fullProfile } = useQuery<CenterStudentFullProfileResponse>({
+        queryKey: ['center', 'student-full-profile', studentId],
+        queryFn: () => fetchCenterStudentFullProfile(studentId),
+        enabled: !!studentId,
+    });
+
+    // Edit Transaction State inside Student Profile
+    const [editingTx, setEditingTx] = useState<any | null>(null);
+    const [editTxPaidAmount, setEditTxPaidAmount] = useState('');
+    const [editTxOriginalAmount, setEditTxOriginalAmount] = useState('');
+    const [editTxDiscountAmount, setEditTxDiscountAmount] = useState('0');
+    const [editTxDescription, setEditTxDescription] = useState('');
+
+    const updateTxMutation = useMutation({
+        mutationFn: ({ id, payload }: { id: string; payload: any }) => updateCenterTransaction(id, payload),
+        onSuccess: () => {
+            toast.success('تم تعديل المعاملة المالية بنجاح');
+            setEditingTx(null);
+            queryClient.invalidateQueries({ queryKey: ['center', 'financials', 'student', studentId] });
+            queryClient.invalidateQueries({ queryKey: ['center', 'student-full-profile', studentId] });
+        },
+        onError: (err: any) => {
+            toast.error(err.response?.data?.message || 'حدث خطأ أثناء تعديل المعاملة');
+        },
+    });
+
+    const deleteTxMutation = useMutation({
+        mutationFn: (id: string) => deleteCenterTransaction(id),
+        onSuccess: () => {
+            toast.success('تم حذف المعاملة المالية بنجاح');
+            queryClient.invalidateQueries({ queryKey: ['center', 'financials', 'student', studentId] });
+            queryClient.invalidateQueries({ queryKey: ['center', 'student-full-profile', studentId] });
+        },
+        onError: (err: any) => {
+            toast.error(err.response?.data?.message || 'حدث خطأ أثناء حذف المعاملة');
+        },
+    });
+
     // 5. Fetch Centers for branding print
     const { data: centers = [] } = useQuery({
         queryKey: ['center', 'my-centers'],
         queryFn: fetchMyCenters,
     });
     const currentCenter = centers.find(c => c._id === student?.centerId) || centers[0];
+
+    // 6. Fetch Student Exam Results
+    const { data: examResults = [], isLoading: examsLoading } = useQuery<any[]>({
+        queryKey: ['student-exams', studentId],
+        queryFn: () => fetchStudentExamResults(studentId),
+        enabled: !!studentId,
+    });
 
     // Generate QR code for student
     useEffect(() => {
@@ -224,6 +280,7 @@ export default function CenterStudentProfilePage() {
         onSuccess: () => {
             toast.success('تم تسجيل الدفعة بنجاح');
             queryClient.invalidateQueries({ queryKey: ['center', 'financials', 'student', studentId] });
+            queryClient.invalidateQueries({ queryKey: ['center', 'student-full-profile', studentId] });
             queryClient.invalidateQueries({ queryKey: ['center', 'financials-summary'] });
             setIsPaymentOpen(false);
             setPayOriginalAmount('');
@@ -529,13 +586,7 @@ export default function CenterStudentProfilePage() {
 
                     {/* Quick Action Badges / CTA */}
                     <div className="flex flex-wrap items-center gap-2 self-stretch md:self-auto justify-end">
-                        <Link
-                            href={`/center/enrollments?studentId=${student._id}`}
-                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-white font-bold text-xs hover:bg-primary/90 transition-all shadow-sm shadow-primary/20"
-                        >
-                            <Layers className="h-4 w-4" />
-                            <span>{enrollment ? 'تعديل الاشتراك' : 'تسجيل اشتراك الطالب'}</span>
-                        </Link>
+
 
                         <Button
                             onClick={() => setIsPaymentOpen(true)}
@@ -648,9 +699,11 @@ export default function CenterStudentProfilePage() {
                     <div>
                         <p className="text-xs text-gray-400 font-medium">إجمالي المدفوع بالسنتر</p>
                         <p className="text-xl sm:text-2xl font-black text-emerald-600 mt-0.5">
-                            {financialReport?.totalPaid || 0} <span className="text-xs font-normal text-gray-500">ج.م</span>
+                            {fullProfile?.financialSummary?.totalPaid ?? financialReport?.totalPaid ?? 0} <span className="text-xs font-normal text-gray-500">ج.م</span>
                         </p>
-                        <p className="text-[11px] text-gray-400 mt-0.5">{financialReport?.transactionCount || 0} معاملة مسجلة</p>
+                        <p className="text-[11px] text-gray-400 mt-0.5">
+                            من أصل {fullProfile?.financialSummary?.totalExpected ?? 0} ج.م مطلوب
+                        </p>
                     </div>
                     <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
                         <CreditCard className="h-5 w-5" />
@@ -659,12 +712,12 @@ export default function CenterStudentProfilePage() {
 
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center justify-between">
                     <div>
-                        <p className="text-xs text-gray-400 font-medium">المتبقي / الديون</p>
-                        <p className={`text-xl sm:text-2xl font-black mt-0.5 ${financialReport?.totalRemaining ? 'text-red-600' : 'text-gray-900'}`}>
-                            {financialReport?.totalRemaining || 0} <span className="text-xs font-normal text-gray-500">ج.م</span>
+                        <p className="text-xs text-gray-400 font-medium">المتبقي الفعلي / الديون</p>
+                        <p className={`text-xl sm:text-2xl font-black mt-0.5 ${(fullProfile?.financialSummary?.totalRemainingDebt ?? financialReport?.totalRemaining ?? 0) > 0 ? 'text-red-600' : 'text-gray-900'}`}>
+                            {fullProfile?.financialSummary?.totalRemainingDebt ?? financialReport?.totalRemaining ?? 0} <span className="text-xs font-normal text-gray-500">ج.م</span>
                         </p>
                         <p className="text-[11px] text-gray-400 mt-0.5">
-                            {financialReport?.totalRemaining ? 'مستحقات غير مسددة' : 'لا توجد ديون'}
+                            {(fullProfile?.financialSummary?.totalRemainingDebt ?? financialReport?.totalRemaining ?? 0) > 0 ? 'مستحقات غير مسددة' : 'لا توجد ديون'}
                         </p>
                     </div>
                     <div className="w-10 h-10 rounded-xl bg-red-50 text-red-500 flex items-center justify-center font-bold">
@@ -674,7 +727,7 @@ export default function CenterStudentProfilePage() {
             </div>
 
             {/* Profile Tabs */}
-            <Tabs defaultValue="overview" className="w-full">
+            <Tabs defaultValue="overview" dir="rtl" className="w-full">
                 <TabsList className="bg-gray-100/80 p-1 rounded-2xl border border-gray-200/50 mb-6 flex flex-wrap gap-1 h-auto">
                     <TabsTrigger
                         value="overview"
@@ -708,6 +761,18 @@ export default function CenterStudentProfilePage() {
                     >
                         <QrCode className="h-4 w-4 ml-1.5" />
                         الكارنيه والباركود
+                    </TabsTrigger>
+                    <TabsTrigger
+                        value="grades"
+                        className="rounded-xl px-4 py-2 font-bold text-xs sm:text-sm data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm transition-all"
+                    >
+                        <GraduationCap className="h-4 w-4 ml-1.5" />
+                        الامتحانات والدرجات
+                        {examResults && examResults.length > 0 && (
+                            <span className="mr-1.5 bg-gray-200/80 text-gray-700 px-1.5 py-0.2 rounded-full text-[10px]">
+                                {examResults.length}
+                            </span>
+                        )}
                     </TabsTrigger>
                 </TabsList>
 
@@ -881,13 +946,6 @@ export default function CenterStudentProfilePage() {
                                     قم بتسجيل الطالب في باقة مركز كاملة أو مع مدرسين ومجموعات محددة لبدء إدارة حضوره ومالياته.
                                 </p>
                             </div>
-                            <Link
-                                href={`/center/enrollments?studentId=${student._id}`}
-                                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-primary text-white font-bold text-xs hover:bg-primary/90 transition-all shadow-sm"
-                            >
-                                <Plus className="h-4 w-4" />
-                                <span>تسجيل اشتراك جديد الآن</span>
-                            </Link>
                         </div>
                     )}
                 </TabsContent>
@@ -1032,6 +1090,62 @@ export default function CenterStudentProfilePage() {
                             </div>
                         )}
                     </div>
+
+                    {/* Quick Check-In History Table */}
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                        <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+                            <div>
+                                <h3 className="font-bold text-gray-900 text-sm">
+                                    سجل الدخول بالتحضير السريع (بوابة السنتر)
+                                </h3>
+                                <p className="text-xs text-gray-400">
+                                    إجمالي مرات الدخول المسجلة بالتحضير السريع: {fullProfile?.quickCheckIns?.length || 0} يوم
+                                </p>
+                            </div>
+                        </div>
+
+                        {!fullProfile?.quickCheckIns || fullProfile.quickCheckIns.length === 0 ? (
+                            <div className="p-8 text-center text-gray-400 text-xs">
+                                لا توجد تسجيلات دخول سريعة على بوابة السنتر لهذا الطالب حتى الآن.
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-right text-xs">
+                                    <thead className="bg-gray-50/75 border-b border-gray-100 text-gray-500 font-bold">
+                                        <tr>
+                                            <th className="py-3 px-4">التاريخ</th>
+                                            <th className="py-3 px-4">وقت الدخول</th>
+                                            <th className="py-3 px-4">الوسيلة</th>
+                                            <th className="py-3 px-4">الحالة</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {fullProfile.quickCheckIns.map((ci: any) => (
+                                            <tr key={ci._id} className="hover:bg-gray-50/50">
+                                                <td className="py-3 px-4 font-bold text-gray-800">{ci.date}</td>
+                                                <td className="py-3 px-4 font-mono text-gray-600">
+                                                    {ci.checkInTime
+                                                        ? new Date(ci.checkInTime).toLocaleTimeString('ar-EG', {
+                                                              hour: '2-digit',
+                                                              minute: '2-digit',
+                                                          })
+                                                        : '—'}
+                                                </td>
+                                                <td className="py-3 px-4 text-gray-500">
+                                                    {ci.source === 'QR_SCAN' ? 'مسح QR' : ci.source === 'BARCODE' ? 'باركود' : 'يدوي'}
+                                                </td>
+                                                <td className="py-3 px-4">
+                                                    <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                        حاضر بالسنتر
+                                                    </Badge>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
                 </TabsContent>
 
                 {/* TAB 3: FINANCIALS & TRANSACTIONS */}
@@ -1039,7 +1153,9 @@ export default function CenterStudentProfilePage() {
                     <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
                         <div>
                             <h3 className="font-bold text-gray-900 text-sm">سجل المدفوعات والاشتراكات المالية</h3>
-                            <p className="text-xs text-gray-400">جميع الدفعات والمبالغ المحصلة من الطالب بالسنتر</p>
+                            <p className="text-xs text-gray-400">
+                                المطلوب شهرياً: <strong>{fullProfile?.financialSummary?.totalExpected ?? 0} ج.م</strong> | المدفوع: <strong className="text-emerald-600">{fullProfile?.financialSummary?.totalPaid ?? financialReport?.totalPaid ?? 0} ج.م</strong> | المتبقي الفعلي: <strong className="text-red-600">{fullProfile?.financialSummary?.totalRemainingDebt ?? financialReport?.totalRemaining ?? 0} ج.م</strong>
+                            </p>
                         </div>
                         <Button
                             onClick={handleOpenPaymentModal}
@@ -1072,6 +1188,7 @@ export default function CenterStudentProfilePage() {
                                             <th className="py-3 px-4">المدفوع</th>
                                             <th className="py-3 px-4">المتبقي</th>
                                             <th className="py-3 px-4">الوصف</th>
+                                            <th className="py-3 px-4 text-center">إجراءات</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">
@@ -1098,6 +1215,40 @@ export default function CenterStudentProfilePage() {
                                                 </td>
                                                 <td className="py-3 px-4 text-gray-500">
                                                     {tx.description || '—'}
+                                                </td>
+                                                <td className="py-3 px-4 text-center">
+                                                    <div className="flex items-center justify-center gap-1">
+                                                        <Button
+                                                            type="button"
+                                                            size="icon"
+                                                            variant="ghost"
+                                                            onClick={() => {
+                                                                setEditingTx(tx);
+                                                                setEditTxOriginalAmount(String(tx.originalAmount || 0));
+                                                                setEditTxDiscountAmount(String(tx.discountAmount || 0));
+                                                                setEditTxPaidAmount(String(tx.paidAmount || 0));
+                                                                setEditTxDescription(tx.description || '');
+                                                            }}
+                                                            className="h-7 w-7 text-gray-500 hover:text-primary"
+                                                            title="تعديل المعاملة"
+                                                        >
+                                                            <Edit2 className="h-3.5 w-3.5" />
+                                                        </Button>
+                                                        <Button
+                                                            type="button"
+                                                            size="icon"
+                                                            variant="ghost"
+                                                            onClick={() => {
+                                                                if (window.confirm('هل أنت متأكد من حذف هذه المعاملة المالية؟')) {
+                                                                    deleteTxMutation.mutate(tx._id);
+                                                                }
+                                                            }}
+                                                            className="h-7 w-7 text-red-500 hover:text-red-700"
+                                                            title="حذف المعاملة"
+                                                        >
+                                                            <Trash2 className="h-3.5 w-3.5" />
+                                                        </Button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))}
@@ -1184,6 +1335,36 @@ export default function CenterStudentProfilePage() {
                                 </div>
                             </div>
                         </div>
+                    </div>
+                </TabsContent>
+
+                {/* TAB 5: EXAMS & GRADES */}
+                <TabsContent value="grades" className="space-y-6">
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sm:p-6">
+                        <div className="flex items-center justify-between mb-4 border-b pb-3">
+                            <div className="flex items-center gap-2">
+                                <div className="p-2 rounded-xl bg-primary/10 text-primary">
+                                    <GraduationCap className="h-5 w-5" />
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-gray-900 text-base">سجل الامتحانات والتقييمات</h3>
+                                    <p className="text-xs text-gray-400">الدرجات ونسب النجاح في اختبارات السنتر</p>
+                                </div>
+                            </div>
+                            <Link href="/exams">
+                                <Button variant="outline" size="sm" className="rounded-xl text-xs gap-1.5">
+                                    <span>إدارة الامتحانات</span>
+                                    <ExternalLink className="h-3.5 w-3.5" />
+                                </Button>
+                            </Link>
+                        </div>
+
+                        <StudentGradesTab
+                            reportLoading={examsLoading}
+                            grades={examResults || []}
+                            studentName={student?.studentName}
+                            studentId={studentId}
+                        />
                     </div>
                 </TabsContent>
             </Tabs>
@@ -1492,6 +1673,99 @@ export default function CenterStudentProfilePage() {
                             </Button>
                         </DialogFooter>
                     </form>
+                </DialogContent>
+            </Dialog>
+
+            {/* Edit Transaction Modal inside Student Profile */}
+            <Dialog open={!!editingTx} onOpenChange={(open) => !open && setEditingTx(null)}>
+                <DialogContent className="max-w-md rounded-2xl font-cairo" dir="rtl">
+                    <DialogHeader>
+                        <DialogTitle className="text-base font-bold text-gray-900 flex items-center gap-2">
+                            <Edit2 className="h-4 w-4 text-primary" />
+                            تعديل المعاملة المالية
+                        </DialogTitle>
+                    </DialogHeader>
+
+                    {editingTx && (
+                        <form
+                            onSubmit={(e) => {
+                                e.preventDefault();
+                                updateTxMutation.mutate({
+                                    id: editingTx._id,
+                                    payload: {
+                                        originalAmount: Number(editTxOriginalAmount) || 0,
+                                        discountAmount: Number(editTxDiscountAmount) || 0,
+                                        paidAmount: Number(editTxPaidAmount) || 0,
+                                        description: editTxDescription.trim() || undefined,
+                                    },
+                                });
+                            }}
+                            className="space-y-4 py-2"
+                        >
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-xs font-semibold text-gray-700 block mb-1">المبلغ الأصلي (ج.م)</label>
+                                    <Input
+                                        type="number"
+                                        min="0"
+                                        value={editTxOriginalAmount}
+                                        onChange={(e) => setEditTxOriginalAmount(e.target.value)}
+                                        className="rounded-xl text-xs font-mono"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-semibold text-gray-700 block mb-1">الخصم (ج.م)</label>
+                                    <Input
+                                        type="number"
+                                        min="0"
+                                        value={editTxDiscountAmount}
+                                        onChange={(e) => setEditTxDiscountAmount(e.target.value)}
+                                        className="rounded-xl text-xs font-mono"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-semibold text-gray-700 block mb-1">المبلغ المدفوع (ج.م) *</label>
+                                <Input
+                                    type="number"
+                                    min="0"
+                                    value={editTxPaidAmount}
+                                    onChange={(e) => setEditTxPaidAmount(e.target.value)}
+                                    className="rounded-xl text-xs font-mono font-bold text-emerald-700"
+                                    required
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-semibold text-gray-700 block mb-1">الوصف / البيان</label>
+                                <Input
+                                    value={editTxDescription}
+                                    onChange={(e) => setEditTxDescription(e.target.value)}
+                                    className="rounded-xl text-xs"
+                                />
+                            </div>
+
+                            <DialogFooter className="gap-2 pt-2">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => setEditingTx(null)}
+                                    className="rounded-xl text-xs"
+                                >
+                                    إلغاء
+                                </Button>
+                                <Button
+                                    type="submit"
+                                    disabled={updateTxMutation.isPending}
+                                    className="rounded-xl text-xs font-bold"
+                                >
+                                    {updateTxMutation.isPending && <Loader2 className="h-4 w-4 animate-spin ml-1" />}
+                                    حفظ التعديلات
+                                </Button>
+                            </DialogFooter>
+                        </form>
+                    )}
                 </DialogContent>
             </Dialog>
         </div>

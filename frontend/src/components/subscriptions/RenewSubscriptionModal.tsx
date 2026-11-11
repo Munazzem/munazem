@@ -168,7 +168,7 @@ export function RenewSubscriptionModal({ open, onOpenChange, subscription }: Pro
                                                         {PLAN_LABELS[plan]}
                                                     </p>
                                                     <p className={cn('text-xl font-extrabold mt-0.5', isSelected ? configStyle.color : 'text-gray-900')}>
-                                                        {PLAN_PRICES[plan].toLocaleString('ar-EG')}
+                                                        {PLAN_PRICES[plan].toLocaleString('en-US')}
                                                     </p>
                                                     <p className="text-xs text-gray-400">ج / شهر</p>
                                                 </button>
@@ -246,12 +246,12 @@ export function RenewSubscriptionModal({ open, onOpenChange, subscription }: Pro
                             <div>
                                 <p className="text-xs text-gray-500">الإجمالي</p>
                                 <p className="text-xs text-gray-400">
-                                    {monthlyAmount.toLocaleString('ar-EG')} ج × {selectedDuration} شهر
+                                    {monthlyAmount.toLocaleString('en-US')} ج × {selectedDuration} شهر
                                 </p>
                             </div>
                             <div className="flex items-center gap-4">
                                 <p className="text-2xl font-extrabold text-primary">
-                                    {total.toLocaleString('ar-EG')} <span className="text-sm font-normal text-gray-500">ج</span>
+                                    {total.toLocaleString('en-US')} <span className="text-sm font-normal text-gray-500">ج</span>
                                 </p>
                                 <div className="flex gap-2">
                                     <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>
