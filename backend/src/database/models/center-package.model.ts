@@ -23,7 +23,7 @@ const centerPackageSchema = new Schema<ICenterPackageDocument>({
         enum: Object.values(GradeLevel),
         required: [true, 'المرحلة الدراسية مطلوبة'],
     },
-    // Teachers participating in this package (denormalized subject for fast reads)
+    // Teachers participating in this package (with weekly class schedule & linked class/group)
     teachers: [{
         teacherId: {
             type: Schema.Types.ObjectId,
@@ -31,6 +31,16 @@ const centerPackageSchema = new Schema<ICenterPackageDocument>({
             required: true,
         },
         subject: { type: String },
+        schedule: [{
+            day: { type: String, required: true },
+            time: { type: String, required: true },
+            _id: false,
+        }],
+        groupId: {
+            type: Schema.Types.ObjectId,
+            ref: 'CenterGroup',
+            default: null,
+        },
         _id: false,
     }],
     // Fixed monthly price for the entire package

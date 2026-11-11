@@ -19,7 +19,16 @@ const parentNotificationSchema = new Schema<IParentNotificationDocument>(
     teacherId: {
       type: Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
+
+            required: false,
+      default: null,
+    },
+    centerId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Center',
+      required: false,
+      default: null,
+      index: true,
     },
     type: {
       type: String,

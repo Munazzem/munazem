@@ -900,6 +900,421 @@ export class ParentPushService {
     );
   }
 
+  /**
+   * Notify parents of absent students in Center Quick Check-In (manual trigger by center).
+   */
+  static async sendCenterCheckInAbsentees(params: {
+    centerId: string;
+    centerName: string;
+    date: Date;
+    students: { studentId: string; studentName: string; gradeLevel?: string }[];
+  }): Promise<{ notifiedStudentsCount: number; reachedParentsCount: number; pushCount: number }> {
+    if (!params.students || params.students.length === 0) {
+      return { notifiedStudentsCount: 0, reachedParentsCount: 0, pushCount: 0 };
+    }
+
+    const { centerId, centerName, date, students } = params;
+    const dateStr = formatDateEgypt(date, {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+    });
+    const datePart = new Date(date).toISOString().split('T')[0];
+
+    let notifiedStudentsCount = 0;
+    const reachedParentsSet = new Set<string>();
+    let pushCount = 0;
+
+    for (const st of students) {
+      const parentIds = await getParentsForStudent(st.studentId);
+      if (parentIds.length === 0) continue;
+
+      const title = `${st.studentName} — غائب عن السنتر اليوم ⚠️`;
+      const body = `نحيطكم علماً بعدم تسجيل حضور الطالب ${st.studentName} اليوم (${dateStr}) في سنتر ${centerName}. يرجى المتابعة.`;
+      const deepLink = buildDeepLink(st.studentId, 'attendance');
+      const eventId = `center_checkin_absent:${st.studentId}:${centerId}:${datePart}`;
+      const pushData = {
+        deepLink,
+        studentId: st.studentId,
+        tab: 'attendance',
+        type: 'ATTENDANCE_ABSENT',
+        kind: 'ABSENT',
+        status: 'ABSENT',
+        sessionDate: new Date(date).toISOString(),
+        teacherName: centerName,
+        subject: 'حضور السنتر',
+      };
+
+      let studentNotified = false;
+      for (const parentId of parentIds) {
+        const inserted = await saveInAppNotificationSafe({
+          parentId,
+          studentId: st.studentId,
+          centerId,
+          type: ParentNotificationType.ATTENDANCE_ABSENT,
+          title,
+          body,
+          deepLink,
+          data: pushData,
+          eventId,
+        });
+
+        if (inserted) {
+          studentNotified = true;
+          reachedParentsSet.add(parentId);
+          await deliverToParent(parentId, { title, body, data: pushData });
+          pushCount++;
+        }
+      }
+      if (studentNotified) notifiedStudentsCount++;
+    }
+
+    return {
+      notifiedStudentsCount,
+      reachedParentsCount: reachedParentsSet.size,
+      pushCount,
+    };
+  }
+
+  /**
+   * Notify parents upon completing a Center scheduled class/session (batch).
+   */
+  static notifyCenterSessionAttendanceBatch(params: {
+    sessionId: string;
+    centerId: string;
+    centerName: string;
+    teacherName?: string;
+    subject?: string;
+    groupName?: string;
+    sessionDate: Date | string;
+    startTime?: string;
+    items: {
+      studentId: string;
+      studentName: string;
+      status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED';
+      scannedAt?: Date | string | null;
+    }[];
+  }): void {
+    setImmediate(() => {
+      ParentPushService._sendCenterSessionAttendanceBatch(params).catch((err) =>
+        logger.warn('parent_push_center_session_batch_error', { err, sessionId: params.sessionId })
+      );
+    });
+  }
+
+  static async _sendCenterSessionAttendanceBatch(params: {
+    sessionId: string;
+    centerId: string;
+    centerName: string;
+    teacherName?: string;
+    subject?: string;
+    groupName?: string;
+    sessionDate: Date | string;
+    startTime?: string;
+    items: {
+      studentId: string;
+      studentName: string;
+      status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED';
+      scannedAt?: Date | string | null;
+    }[];
+  }): Promise<{ insertedCount: number; pushCount: number }> {
+    if (!params.items || params.items.length === 0) {
+      return { insertedCount: 0, pushCount: 0 };
+    }
+
+    const { sessionId, centerId, centerName, teacherName, subject, groupName, sessionDate, startTime, items } = params;
+    const teacherSig = teacherName
+      ? (subject ? `أ/ ${teacherName} (${subject}) — ${centerName}` : `أ/ ${teacherName} — ${centerName}`)
+      : (subject ? `${subject} — ${centerName}` : centerName);
+
+    let insertedCount = 0;
+    let pushCount = 0;
+
+    for (const item of items) {
+      const parentIds = await getParentsForStudent(item.studentId);
+      if (parentIds.length === 0) continue;
+
+      const kind: AttendanceNotificationKind =
+        item.status === 'LATE'
+          ? 'LATE'
+          : item.status === 'ABSENT'
+          ? 'ABSENT'
+          : item.status === 'EXCUSED'
+          ? 'EXCUSED'
+          : 'PRESENT';
+
+      const { title, body, notificationType } = buildAttendanceContent({
+        kind,
+        studentName: item.studentName,
+        teacherSig,
+        groupName,
+        sessionDate,
+        scannedAt: item.scannedAt,
+        startTime,
+      });
+
+      const deepLink = buildDeepLink(item.studentId, 'attendance');
+      const eventId = `center_session:${sessionId}:${item.studentId}:r0`;
+      const pushData = {
+        deepLink,
+        studentId: item.studentId,
+        sessionId,
+        tab: 'attendance',
+        kind,
+        status: item.status,
+        scannedAt: item.scannedAt ? new Date(item.scannedAt).toISOString() : null,
+        sessionDate: new Date(sessionDate).toISOString(),
+        startTime: startTime || null,
+        teacherName: teacherName || centerName,
+        subject: subject || groupName || 'حصة دراسية',
+        groupName: groupName || null,
+        isCorrection: false,
+      };
+
+      for (const parentId of parentIds) {
+        const inserted = await saveInAppNotificationSafe({
+          parentId,
+          studentId: item.studentId,
+          centerId,
+          type: notificationType,
+          title,
+          body,
+          deepLink,
+          data: pushData,
+          eventId,
+        });
+
+        if (inserted) {
+          insertedCount++;
+          await deliverToParent(parentId, { title, body, data: pushData });
+          pushCount++;
+        }
+      }
+    }
+
+    return { insertedCount, pushCount };
+  }
+
+  /**
+   * Notify parents when a center edits a student's attendance status after session completion.
+   */
+  static notifyCenterAttendanceCorrection(params: {
+    sessionId: string;
+    studentId: string;
+    studentName: string;
+    centerId: string;
+    centerName: string;
+    teacherName?: string;
+    subject?: string;
+    groupName?: string;
+    sessionDate: Date | string;
+    oldStatus: string;
+    newStatus: string;
+    rev?: number;
+    actualScannedAt?: Date | string | null;
+  }): void {
+    setImmediate(() => {
+      ParentPushService._sendCenterAttendanceCorrection(params).catch((err) =>
+        logger.warn('parent_push_center_correction_error', { err, studentId: params.studentId })
+      );
+    });
+  }
+
+  static async _sendCenterAttendanceCorrection(params: {
+    sessionId: string;
+    studentId: string;
+    studentName: string;
+    centerId: string;
+    centerName: string;
+    teacherName?: string;
+    subject?: string;
+    groupName?: string;
+    sessionDate: Date | string;
+    oldStatus: string;
+    newStatus: string;
+    rev?: number;
+    actualScannedAt?: Date | string | null;
+  }): Promise<{ insertedCount: number; pushCount: number }> {
+    const parentIds = await getParentsForStudent(params.studentId);
+    if (parentIds.length === 0) return { insertedCount: 0, pushCount: 0 };
+
+    const teacherSig = params.teacherName
+      ? (params.subject ? `أ/ ${params.teacherName} (${params.subject}) — ${params.centerName}` : `أ/ ${params.teacherName} — ${params.centerName}`)
+      : (params.subject ? `${params.subject} — ${params.centerName}` : params.centerName);
+
+    const { title, body, notificationType } = buildAttendanceContent({
+      kind: 'CORRECTION',
+      studentName: params.studentName,
+      teacherSig,
+      groupName: params.groupName,
+      sessionDate: params.sessionDate,
+      scannedAt: params.actualScannedAt,
+      oldStatus: params.oldStatus,
+      newStatus: params.newStatus,
+    });
+
+    const revNum = params.rev ?? Date.now();
+    const deepLink = buildDeepLink(params.studentId, 'attendance');
+    const eventId = `center_session:${params.sessionId}:${params.studentId}:r${revNum}`;
+    const pushData = {
+      deepLink,
+      studentId: params.studentId,
+      sessionId: params.sessionId,
+      tab: 'attendance',
+      kind: 'CORRECTION',
+      status: params.newStatus,
+      oldStatus: params.oldStatus,
+      isCorrection: true,
+      rev: revNum,
+      teacherName: params.teacherName || params.centerName,
+      subject: params.subject || params.groupName || 'حصة دراسية',
+      groupName: params.groupName || null,
+      sessionDate: new Date(params.sessionDate).toISOString(),
+      scannedAt: params.actualScannedAt ? new Date(params.actualScannedAt).toISOString() : null,
+    };
+
+    let insertedCount = 0;
+    let pushCount = 0;
+
+    for (const parentId of parentIds) {
+      const inserted = await saveInAppNotificationSafe({
+        parentId,
+        studentId: params.studentId,
+        centerId: params.centerId,
+        type: notificationType,
+        title,
+        body,
+        deepLink,
+        data: pushData,
+        eventId,
+      });
+
+      if (inserted) {
+        insertedCount++;
+        await deliverToParent(parentId, { title, body, data: pushData });
+        pushCount++;
+      }
+    }
+
+    return { insertedCount, pushCount };
+  }
+
+  /**
+   * Broadcast a custom message from Center to parents.
+   */
+  static notifyCenterMessage(messageId: string, centerName: string, targetStudentIds: string[]): void {
+    setImmediate(() => {
+      ParentPushService._sendCenterMessage(messageId, centerName, targetStudentIds).catch((err) => {
+        logger.error('parent_push_center_message_error', { messageId, err });
+      });
+    });
+  }
+
+  static async _sendCenterMessage(
+    messageId: string,
+    centerName: string,
+    targetStudentIds: string[]
+  ): Promise<{ insertedCount: number; pushCount: number }> {
+    try {
+      const msg = await TeacherMessageModel.findById(messageId);
+      if (!msg || msg.status !== 'SENDING') {
+        return { insertedCount: 0, pushCount: 0 };
+      }
+
+      const students = await CenterStudentModel.find({
+        _id: { $in: targetStudentIds.map((id) => new mongoose.Types.ObjectId(id)) },
+        isActive: true,
+      })
+        .select('_id studentName')
+        .sort({ studentName: 1 })
+        .lean();
+
+      if (students.length === 0) {
+        msg.status = 'FAILED';
+        msg.targetStudentCount = 0;
+        msg.reachedParentCount = 0;
+        msg.pushSentCount = 0;
+        await msg.save();
+        return { insertedCount: 0, pushCount: 0 };
+      }
+
+      const parentToStudentsMap = new Map<string, { studentId: string; studentName: string }[]>();
+      for (const s of students) {
+        const sId = s._id.toString();
+        const pids = await getParentsForStudent(sId);
+        for (const pId of pids) {
+          const list = parentToStudentsMap.get(pId) || [];
+          if (!list.some((item) => item.studentId === sId)) {
+            list.push({ studentId: sId, studentName: s.studentName });
+            parentToStudentsMap.set(pId, list);
+          }
+        }
+      }
+
+      const uniqueParentIds = Array.from(parentToStudentsMap.keys());
+      if (uniqueParentIds.length === 0) {
+        msg.status = 'FAILED';
+        msg.targetStudentCount = students.length;
+        msg.reachedParentCount = 0;
+        msg.pushSentCount = 0;
+        await msg.save();
+        return { insertedCount: 0, pushCount: 0 };
+      }
+
+      const title = (msg.title || '').trim() || `رسالة من ${centerName}`;
+      const body = msg.body.trim();
+      const pushBody = body.length > 180 ? `${body.slice(0, 177)}...` : body;
+
+      let insertedCount = 0;
+      let pushCount = 0;
+
+      for (const [parentId, childList] of parentToStudentsMap.entries()) {
+        const firstChild = childList[0]!;
+        const eventId = `center_message:${msg._id.toString()}`;
+        const data = {
+          kind: 'TEACHER_MESSAGE',
+          messageId: msg._id.toString(),
+          teacherName: centerName,
+          subject: msg.groupName || 'إدارة السنتر',
+          groupName: msg.groupName || null,
+          gradeLevel: msg.gradeLevel,
+          studentIds: childList.map((c) => c.studentId),
+          studentNames: childList.map((c) => c.studentName),
+        };
+
+        const inserted = await saveInAppNotificationSafe({
+          parentId,
+          studentId: firstChild.studentId,
+          ...(msg.centerId ? { centerId: msg.centerId.toString() } : {}),
+          type: ParentNotificationType.TEACHER_MESSAGE,
+          title,
+          body,
+          deepLink: 'monazem://notifications',
+          data,
+          eventId,
+        });
+
+        if (inserted) {
+          insertedCount++;
+          await deliverToParent(parentId, { title, body: pushBody, data });
+          pushCount++;
+        }
+      }
+
+      msg.status = 'SENT';
+      msg.targetStudentCount = students.length;
+      msg.reachedParentCount = insertedCount;
+      msg.pushSentCount = pushCount;
+      await msg.save();
+
+      return { insertedCount, pushCount };
+    } catch (error) {
+      logger.error('center_message_send_failed', { messageId, error });
+      await TeacherMessageModel.findByIdAndUpdate(messageId, { $set: { status: 'FAILED' } }).catch(() => {});
+      return { insertedCount: 0, pushCount: 0 };
+    }
+  }
+
 
 
   /**
@@ -1129,7 +1544,7 @@ export class ParentPushService {
       }
 
       const { cleanName, cleanSubject, teacherSig } = await resolveTeacherSigInfo(
-        msg.teacherId.toString()
+        msg.teacherId ? msg.teacherId.toString() : ''
       );
 
       // Build target student query
