@@ -1,15 +1,20 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
     fetchCenterReportsOverview,
     fetchCenterTeachersReport,
     fetchCenterGroupsReport,
+    fetchCenterGroups,
+    fetchWeeklyAttendanceReport,
     type CenterReportsOverview,
     type CenterTeacherReportItem,
     type CenterGroupReportItem,
 } from '@/lib/api/centers';
+import { apiClient } from '@/lib/api/axios';
+import { printHtmlContent } from '@/lib/utils/print';
+import { STAGE_HIERARCHY } from '@/lib/constants/grade.constants';
 import {
     Wallet,
     Users,
@@ -30,6 +35,8 @@ import {
     ChevronDown,
     Building2,
     Sparkles,
+    ClipboardCheck,
+    Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,10 +45,25 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
-type ActiveTab = 'financials' | 'teachers' | 'groups';
+type ActiveTab = 'financials' | 'teachers' | 'groups' | 'weekly_attendance';
 
 export default function CenterReportsPage() {
-    const [activeTab, setActiveTab] = useState<ActiveTab>('financials');
+    const [activeTab, setActiveTab] = useState<ActiveTab>('weekly_attendance');
+
+    // Weekly Attendance Sheet Filters
+    const [weeklyMode, setWeeklyMode] = useState<'CLASSES' | 'QUICK_CHECKIN'>('CLASSES');
+    const [weeklyStageId, setWeeklyStageId] = useState<string>('SECONDARY');
+    const [weeklyGradeLevel, setWeeklyGradeLevel] = useState<string>('الصف الأول الثانوي');
+    const [weeklyGroupId, setWeeklyGroupId] = useState<string>('');
+    const [weeklyStartDate, setWeeklyStartDate] = useState<string>(() => {
+        const d = new Date();
+        // Start from Saturday of current week
+        const day = d.getDay(); // 0=Sun..6=Sat
+        const diff = day === 6 ? 0 : -(day + 1);
+        d.setDate(d.getDate() + diff);
+        return d.toISOString().split('T')[0];
+    });
+    const [isPrintingWeekly, setIsPrintingWeekly] = useState(false);
 
     // Date filters for Financials & Teachers
     const [dateRangePreset, setDateRangePreset] = useState<'today' | 'week' | 'month' | 'all' | 'custom'>('month');
@@ -112,8 +134,65 @@ export default function CenterReportsPage() {
         queryFn: () => fetchCenterGroupsReport(),
     });
 
+    const { data: centerGroups = [] } = useQuery({
+        queryKey: ['center', 'groups'],
+        queryFn: () => fetchCenterGroups(),
+    });
+
+    const {
+        data: weeklyReport,
+        isLoading: isWeeklyLoading,
+    } = useQuery({
+        queryKey: ['center-weekly-attendance', weeklyGradeLevel, weeklyMode, weeklyGroupId, weeklyStartDate],
+        queryFn: () =>
+            fetchWeeklyAttendanceReport({
+                gradeLevel: weeklyGradeLevel,
+                mode: weeklyMode,
+                groupId: weeklyMode === 'CLASSES' && weeklyGroupId ? weeklyGroupId : undefined,
+                weekStartDate: weeklyStartDate,
+            }),
+        enabled: Boolean(weeklyGradeLevel),
+    });
+
+    const weeklyStageGrades = useMemo(() => {
+        const st = STAGE_HIERARCHY.find((s) => s.id === weeklyStageId);
+        return st ? st.grades : [];
+    }, [weeklyStageId]);
+
+    const weeklyGradeClasses = useMemo(() => {
+        return centerGroups.filter((g) => g.gradeLevel === weeklyGradeLevel);
+    }, [centerGroups, weeklyGradeLevel]);
+
+    const handlePrintWeeklySheet = async () => {
+        if (!weeklyGradeLevel) {
+            toast.error('يرجى اختيار الصف الدراسي أولاً');
+            return;
+        }
+        setIsPrintingWeekly(true);
+        try {
+            const response = await apiClient.get('/centers/reports/weekly-attendance/print', {
+                params: {
+                    gradeLevel: weeklyGradeLevel,
+                    mode: weeklyMode,
+                    groupId: weeklyMode === 'CLASSES' && weeklyGroupId ? weeklyGroupId : undefined,
+                    weekStartDate: weeklyStartDate,
+                },
+                responseType: 'text',
+            });
+            printHtmlContent(response.data);
+        } catch (err: any) {
+            toast.error(err.response?.data?.message || 'تعذر تجهيز كشف الحضور والغياب للطباعة');
+        } finally {
+            setIsPrintingWeekly(false);
+        }
+    };
+
     // Print handler
     const handlePrint = () => {
+        if (activeTab === 'weekly_attendance') {
+            handlePrintWeeklySheet();
+            return;
+        }
         window.print();
     };
 
@@ -218,6 +297,19 @@ export default function CenterReportsPage() {
             {/* Navigation Tabs */}
             <div className="flex items-center gap-2 border-b border-gray-200 overflow-x-auto pb-px">
                 <button
+                    onClick={() => setActiveTab('weekly_attendance')}
+                    className={cn(
+                        'flex items-center gap-2.5 px-5 py-3 text-sm font-bold border-b-2 transition-all whitespace-nowrap',
+                        activeTab === 'weekly_attendance'
+                            ? 'border-primary text-primary bg-primary/5 rounded-t-xl'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    )}
+                >
+                    <ClipboardCheck className="w-4 h-4" />
+                    <span>كشف الحضور والغياب الأسبوعي (للطباعة)</span>
+                </button>
+
+                <button
                     onClick={() => setActiveTab('financials')}
                     className={cn(
                         'flex items-center gap-2.5 px-5 py-3 text-sm font-bold border-b-2 transition-all whitespace-nowrap',
@@ -261,12 +353,322 @@ export default function CenterReportsPage() {
                     )}
                 >
                     <Layers className="w-4 h-4" />
-                    <span>تقارير المجموعات والحضور</span>
+                    <span>تقارير الحصص والحضور</span>
                     <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-bold">
                         {groupsReport?.length || 0}
                     </span>
                 </button>
             </div>
+
+            {/* TAB 0: WEEKLY ATTENDANCE SHEET & PRINT */}
+            {activeTab === 'weekly_attendance' && (
+                <div className="space-y-6">
+                    <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-5">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+                            <div>
+                                <h2 className="text-lg font-black text-gray-900 flex items-center gap-2">
+                                    <ClipboardCheck className="h-5 w-5 text-primary" />
+                                    كشف الحضور والغياب الأسبوعي (للطباعة لكل صف أو حصة)
+                                </h2>
+                                <p className="text-xs text-gray-500 mt-1">
+                                    استخرج واطبع كشف الحضور والغياب الأسبوعي لأي صف دراسي سواء لحصص السنتر أو للتحضير السريع.
+                                </p>
+                            </div>
+
+                            <Button
+                                onClick={handlePrintWeeklySheet}
+                                disabled={isPrintingWeekly || !weeklyGradeLevel}
+                                className="bg-primary hover:bg-primary/95 text-white font-bold rounded-xl h-10 px-5 gap-2 shrink-0"
+                            >
+                                {isPrintingWeekly ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                    <Printer className="h-4 w-4" />
+                                )}
+                                <span>طباعة كشف الحضور والغياب الأسبوعي</span>
+                            </Button>
+                        </div>
+
+                        {/* Filter Controls */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                            {/* 1. Mode */}
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-gray-700 block">1. نوع كشف التحضير</label>
+                                <div className="grid grid-cols-2 gap-1.5 bg-gray-50 p-1 rounded-xl border border-gray-200">
+                                    <button
+                                        type="button"
+                                        onClick={() => setWeeklyMode('CLASSES')}
+                                        className={cn(
+                                            'py-2 px-2 rounded-lg text-xs font-bold transition-all',
+                                            weeklyMode === 'CLASSES'
+                                                ? 'bg-white text-primary shadow-xs font-black'
+                                                : 'text-gray-600 hover:text-gray-900'
+                                        )}
+                                    >
+                                        حضور الحصص
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setWeeklyMode('QUICK_CHECKIN');
+                                            setWeeklyGroupId('');
+                                        }}
+                                        className={cn(
+                                            'py-2 px-2 rounded-lg text-xs font-bold transition-all',
+                                            weeklyMode === 'QUICK_CHECKIN'
+                                                ? 'bg-white text-primary shadow-xs font-black'
+                                                : 'text-gray-600 hover:text-gray-900'
+                                        )}
+                                    >
+                                        التحضير السريع
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* 2. Stage & Grade */}
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-gray-700 block">2. المرحلة والصف الدراسي</label>
+                                <div className="flex gap-2">
+                                    <select
+                                        value={weeklyStageId}
+                                        onChange={(e) => {
+                                            const stId = e.target.value;
+                                            setWeeklyStageId(stId);
+                                            const st = STAGE_HIERARCHY.find((s) => s.id === stId);
+                                            setWeeklyGradeLevel(st?.grades[0] || '');
+                                            setWeeklyGroupId('');
+                                        }}
+                                        className="h-10 px-2.5 rounded-xl border border-gray-200 bg-white text-xs font-bold text-gray-800 w-28 shrink-0"
+                                    >
+                                        {STAGE_HIERARCHY.map((st) => (
+                                            <option key={st.id} value={st.id}>
+                                                {st.shortTitle}
+                                            </option>
+                                        ))}
+                                    </select>
+
+                                    <select
+                                        value={weeklyGradeLevel}
+                                        onChange={(e) => {
+                                            setWeeklyGradeLevel(e.target.value);
+                                            setWeeklyGroupId('');
+                                        }}
+                                        className="h-10 px-2.5 rounded-xl border border-gray-200 bg-white text-xs font-bold text-gray-800 flex-1 min-w-0"
+                                    >
+                                        {weeklyStageGrades.map((grade) => (
+                                            <option key={grade} value={grade}>
+                                                {grade}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* 3. Specific Class (when CLASSES mode) */}
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-gray-700 block">
+                                    3. الحصة الدراسية {weeklyMode === 'QUICK_CHECKIN' && '(غير مطلوب للتحضير السريع)'}
+                                </label>
+                                <select
+                                    value={weeklyGroupId}
+                                    onChange={(e) => setWeeklyGroupId(e.target.value)}
+                                    disabled={weeklyMode === 'QUICK_CHECKIN'}
+                                    className="w-full h-10 px-3 rounded-xl border border-gray-200 bg-white text-xs font-bold text-gray-800 disabled:bg-gray-100 disabled:text-gray-400"
+                                >
+                                    <option value="">كل حصص {weeklyGradeLevel}</option>
+                                    {weeklyGradeClasses.map((cls) => (
+                                        <option key={cls._id} value={cls._id}>
+                                            {cls.name} ({(cls.centerTeacherId as any)?.subject || 'عام'})
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* 4. Week Start Date */}
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-gray-700 block">4. بداية الأسبوع (7 أيام)</label>
+                                <Input
+                                    type="date"
+                                    value={weeklyStartDate}
+                                    onChange={(e) => setWeeklyStartDate(e.target.value)}
+                                    className="h-10 rounded-xl font-mono text-xs"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Weekly Matrix Preview */}
+                        {isWeeklyLoading ? (
+                            <div className="py-16 text-center text-gray-400">
+                                <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2 text-primary" />
+                                <p className="text-xs">جاري تجهيز كشف الحضور والغياب الأسبوعي...</p>
+                            </div>
+                        ) : !weeklyReport || weeklyReport.rows.length === 0 ? (
+                            <div className="py-14 text-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed border-gray-200">
+                                <Users className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+                                <p className="text-xs font-bold text-gray-600">
+                                    لا يوجد طلاب مقيدون في ({weeklyGradeLevel}) لهذه الفلترة حالياً
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                <div className="flex flex-wrap items-center justify-between gap-2 bg-gray-50/80 p-3 rounded-xl border border-gray-100 text-xs">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <Badge variant="outline" className="bg-white font-bold">
+                                            الصف: {weeklyGradeLevel}
+                                        </Badge>
+                                        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 font-bold">
+                                            {weeklyReport.mode === 'CLASSES'
+                                                ? weeklyGroupId
+                                                    ? `حصة: ${weeklyGradeClasses.find((g) => g._id === weeklyGroupId)?.name || 'حصة محددة'}`
+                                                    : 'جميع الحصص الدراسية للصف'
+                                                : 'التحضير السريع على البوابة'}
+                                        </Badge>
+                                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 font-bold">
+                                            إجمالي الطلاب: {weeklyReport.rows.length} طالب
+                                        </Badge>
+                                    </div>
+                                    <span className="text-[11px] text-gray-500 font-mono">
+                                        من {weeklyReport.weekStart} إلى {weeklyReport.weekEnd}
+                                    </span>
+                                </div>
+
+                                {/* Mobile Cards Preview */}
+                                <div className="sm:hidden space-y-2.5">
+                                    {weeklyReport.rows.map((row, idx) => (
+                                        <div key={row.student._id} className="p-3.5 rounded-xl border border-gray-100 bg-white space-y-2.5">
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <span className="text-xs font-mono text-gray-400 ml-1.5">#{idx + 1}</span>
+                                                    <span className="font-bold text-gray-900 text-sm">{row.student.studentName}</span>
+                                                </div>
+                                                <div className="flex items-center gap-1.5">
+                                                    <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]">
+                                                        حضور: {row.presentCount}
+                                                    </Badge>
+                                                    <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 text-[10px]">
+                                                        غياب: {row.absentCount}
+                                                    </Badge>
+                                                </div>
+                                            </div>
+                                            <div className="grid grid-cols-7 gap-1 text-center text-[10px]">
+                                                {row.days.map((d) => {
+                                                    const st = d.status || 'NONE';
+                                                    return (
+                                                        <div
+                                                            key={d.date}
+                                                            className={cn(
+                                                                'p-1.5 rounded-lg border font-bold',
+                                                                st === 'PRESENT'
+                                                                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                                                                    : st === 'ABSENT'
+                                                                        ? 'bg-rose-50 border-rose-200 text-rose-700'
+                                                                        : 'bg-gray-50 border-gray-100 text-gray-400'
+                                                            )}
+                                                        >
+                                                            <div className="truncate">{d.dayName.replace('ال', '')}</div>
+                                                            <div className="mt-0.5">
+                                                                {st === 'PRESENT' ? '✓' : st === 'ABSENT' ? '✗' : '—'}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* Desktop Weekly Table */}
+                                <div className="hidden sm:block overflow-x-auto rounded-xl border border-gray-100">
+                                    <table className="w-full text-right text-xs">
+                                        <thead className="bg-gray-50 text-gray-600 font-bold border-b border-gray-100">
+                                            <tr>
+                                                <th className="py-3 px-3 text-center w-10">#</th>
+                                                <th className="py-3 px-3">اسم الطالب</th>
+                                                <th className="py-3 px-3 text-center">الكود</th>
+                                                <th className="py-3 px-3 text-center">الاشتراك</th>
+                                                {weeklyReport.weekDays.map((d) => (
+                                                    <th key={d.date} className="py-2.5 px-2 text-center">
+                                                        <div>{d.dayName}</div>
+                                                        <div className="text-[10px] font-mono text-gray-400">{d.date.slice(5)}</div>
+                                                    </th>
+                                                ))}
+                                                <th className="py-3 px-3 text-center text-emerald-700">مرات الحضور</th>
+                                                <th className="py-3 px-3 text-center text-rose-600">مرات الغياب</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100">
+                                            {weeklyReport.rows.map((row, idx) => (
+                                                <tr key={row.student._id} className="hover:bg-gray-50/60">
+                                                    <td className="py-2.5 px-3 text-center font-mono text-gray-400 font-bold">
+                                                        {idx + 1}
+                                                    </td>
+                                                    <td className="py-2.5 px-3 font-bold text-gray-900">
+                                                        <div>{row.student.studentName}</div>
+                                                        <div className="text-[10px] text-gray-400 font-mono">
+                                                            ولي الأمر: {row.student.parentPhone || '—'}
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-center font-mono text-gray-600">
+                                                        {row.student.studentCode}
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-center">
+                                                        <Badge variant="outline" className="text-[10px]">
+                                                            {row.student.studentType === 'PACKAGE'
+                                                                ? 'باكيدج'
+                                                                : row.student.studentType === 'PRIVATE'
+                                                                    ? 'حصة برايفت'
+                                                                    : 'مجمع'}
+                                                        </Badge>
+                                                    </td>
+                                                    {row.days.map((d) => {
+                                                        const st = d.status || 'NONE';
+                                                        const details = (d.classes || []).map((c) => c.groupName);
+                                                        return (
+                                                            <td key={d.date} className="py-2.5 px-2 text-center">
+                                                                {st === 'PRESENT' ? (
+                                                                    <div className="inline-flex flex-col items-center">
+                                                                        <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[11px]">
+                                                                            حاضر ✓
+                                                                        </span>
+                                                                        {details.length > 0 && (
+                                                                            <span className="text-[9px] text-gray-400 mt-0.5 max-w-[90px] truncate">
+                                                                                {details.join('، ')}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                ) : st === 'ABSENT' ? (
+                                                                    <div className="inline-flex flex-col items-center">
+                                                                        <span className="px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 font-bold text-[11px]">
+                                                                            غائب ✗
+                                                                        </span>
+                                                                        {details.length > 0 && (
+                                                                            <span className="text-[9px] text-gray-400 mt-0.5 max-w-[90px] truncate">
+                                                                                {details.join('، ')}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                ) : (
+                                                                    <span className="text-gray-300">—</span>
+                                                                )}
+                                                            </td>
+                                                        );
+                                                    })}
+                                                    <td className="py-2.5 px-3 text-center font-mono font-black text-emerald-700 bg-emerald-50/30">
+                                                        {row.presentCount}
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-center font-mono font-black text-rose-600 bg-rose-50/30">
+                                                        {row.absentCount}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* TAB 1: FINANCIALS */}
             {activeTab === 'financials' && (
@@ -769,8 +1171,8 @@ export default function CenterReportsPage() {
                                                                     fillPct >= 90
                                                                         ? 'bg-red-500'
                                                                         : fillPct >= 60
-                                                                        ? 'bg-emerald-500'
-                                                                        : 'bg-blue-500'
+                                                                            ? 'bg-emerald-500'
+                                                                            : 'bg-blue-500'
                                                                 )}
                                                                 style={{ width: `${Math.min(fillPct, 100)}%` }}
                                                             />

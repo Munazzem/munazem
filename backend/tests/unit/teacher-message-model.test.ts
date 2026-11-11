@@ -53,6 +53,20 @@ describe('Phase 1 Unit: TeacherMessage Model & Types', () => {
     expect(validDoc.validateSync()).toBeUndefined();
   });
 
+  it('should allow center messages without teacherId when centerId is provided', () => {
+    const validCenterDoc = new TeacherMessageModel({
+      centerId: new mongoose.Types.ObjectId(),
+      teacherId: null,
+      sentBy: new mongoose.Types.ObjectId(),
+      targetType: 'GRADE',
+      gradeLevel: GradeLevel.SEC_1,
+      body: 'رسالة من السنتر',
+      clientRequestId: 'center-req-123',
+    });
+
+    expect(validCenterDoc.validateSync()).toBeUndefined();
+  });
+
   it('should confirm schema has the expected indexes configured', () => {
     const indexes = TeacherMessageModel.schema.indexes();
     

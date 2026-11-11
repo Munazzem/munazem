@@ -5,7 +5,8 @@ export type TeacherMessageTargetType = 'GROUP' | 'GRADE';
 export type TeacherMessageStatus = 'SENDING' | 'SENT' | 'FAILED';
 
 export interface ITeacherMessage {
-  teacherId: Types.ObjectId;
+  teacherId?: Types.ObjectId | null | undefined;
+  centerId?: Types.ObjectId | null | undefined;
   sentBy: Types.ObjectId;
   targetType: TeacherMessageTargetType;
   groupId?: Types.ObjectId | null | undefined;

@@ -210,8 +210,12 @@ export default function CenterStudentsPage() {
     const pkgTeacherIds = (selectedPkg?.teachers || []).map((t) =>
         typeof t.teacherId === 'object' ? (t.teacherId as any)._id : t.teacherId
     );
+    const pkgGroupIds = (selectedPkg?.teachers || [])
+        .map((t) => (typeof t.groupId === 'object' ? (t.groupId as any)?._id : t.groupId))
+        .filter(Boolean);
     const packageMatchingGroups = selectedPkg
         ? groups.filter((g) => {
+              if (pkgGroupIds.includes(g._id)) return true;
               const teacherId = typeof g.centerTeacherId === 'object' ? (g.centerTeacherId as any)._id : g.centerTeacherId;
               const matchesTeacher = pkgTeacherIds.includes(teacherId);
               const matchesGrade = g.gradeLevel === selectedPkg.gradeLevel;
@@ -221,8 +225,7 @@ export default function CenterStudentsPage() {
         : [];
 
     const availablePrivateGroups = groups.filter((g) => {
-        const isPrivateOrMixed = g.groupType === 'PRIVATE' || g.groupType === 'MIXED';
-        return isPrivateOrMixed && g.gradeLevel === gradeLevel;
+        return g.gradeLevel === gradeLevel;
     });
 
     const instantPkgPrice = (enrollmentType === 'PACKAGE' || enrollmentType === 'BOTH') && selectedPkg
@@ -258,6 +261,7 @@ export default function CenterStudentsPage() {
         preparatory: 0,
         primary: 0,
     };
+    const gradeCounts: Record<string, number> = summaryResponse?.gradeCounts || {};
 
     // Global Search State with 350ms debounce
     const [globalSearch, setGlobalSearch] = useState('');
@@ -775,8 +779,8 @@ export default function CenterStudentsPage() {
                     )}
                 </div>
             ) : (
-                /* ── STAGE CARDS DIRECTORY (Clickable Hub to Dedicated Pages) ── */
-                <div className="space-y-4">
+                /* ── STAGE CARDS WITH GRADES HIERARCHY UNDER EACH STAGE ── */
+                <div className="space-y-5">
                     {STAGE_SECTIONS.map((section) => {
                         const StageIcon = section.icon;
                         const theme = section.theme;
@@ -790,10 +794,13 @@ export default function CenterStudentsPage() {
                         return (
                             <div
                                 key={section.key}
-                                onClick={() => router.push(`/center/students/stage/${section.slug}`)}
-                                className={`rounded-2xl border transition-all duration-200 overflow-hidden cursor-pointer group hover:shadow-md hover:scale-[1.002] active:scale-[0.999] ${theme.headerBg} ${theme.headerBorder}`}
+                                className={`rounded-3xl border transition-all duration-200 overflow-hidden bg-white shadow-xs ${theme.headerBorder}`}
                             >
-                                <div className="p-4 sm:p-5 flex flex-wrap sm:flex-nowrap items-center justify-between gap-4 select-none">
+                                {/* Stage Header */}
+                                <div
+                                    onClick={() => router.push(`/center/students/stage/${section.slug}`)}
+                                    className={`p-4 sm:p-5 flex flex-wrap sm:flex-nowrap items-center justify-between gap-4 select-none cursor-pointer group ${theme.headerBg} border-b ${theme.headerBorder}`}
+                                >
                                     {/* Right: Stage Icon & Titles */}
                                     <div className="flex items-center gap-3.5 min-w-0">
                                         <div
@@ -809,10 +816,12 @@ export default function CenterStudentsPage() {
                                                 <span
                                                     className={`text-xs font-black px-2.5 py-0.5 rounded-full border shadow-2xs ${theme.badgeBg} ${theme.badgeText} ${theme.badgeBorder}`}
                                                 >
-                                                    {count} طالب
+                                                    {count} طالب بالمرحلة
                                                 </span>
                                             </div>
-                                            <p className="text-xs text-gray-500 font-medium mt-0.5 truncate">{section.subtitle}</p>
+                                            <p className="text-xs text-gray-500 font-medium mt-0.5 truncate">
+                                                مقسمة بالأسفل حسب الصفوف الدراسية التابعة لـ {section.title}
+                                            </p>
                                         </div>
                                     </div>
 
@@ -828,7 +837,7 @@ export default function CenterStudentsPage() {
                                             className="h-9 px-3 rounded-xl text-xs font-bold bg-white text-gray-800 hover:bg-gray-50 border border-gray-200 shadow-2xs gap-1.5 transition-all"
                                         >
                                             <Plus className="w-3.5 h-3.5 text-primary" />
-                                            <span>إضافة طالب للمرحلة</span>
+                                            <span>إضافة طالب</span>
                                         </Button>
 
                                         <Button
@@ -840,10 +849,63 @@ export default function CenterStudentsPage() {
                                             }}
                                             className={`h-9 px-3.5 rounded-xl text-xs font-bold transition-all shadow-2xs gap-1.5 ${theme.badgeBg} ${theme.badgeText} border ${theme.badgeBorder} hover:brightness-95 group-hover:bg-primary group-hover:text-white group-hover:border-primary`}
                                         >
-                                            <span>عرض طلاب المرحلة</span>
+                                            <span>كل صفوف المرحلة</span>
                                             <ChevronLeft className="w-4 h-4 ml-0.5 group-hover:-translate-x-0.5 transition-transform" />
                                         </Button>
                                     </div>
+                                </div>
+
+                                {/* Sub-Grades Grid Under This Stage */}
+                                <div className="p-4 sm:p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 bg-white">
+                                    {section.grades.map((grade) => {
+                                        const gCount = gradeCounts[grade] || 0;
+                                        return (
+                                            <div
+                                                key={grade}
+                                                onClick={() =>
+                                                    router.push(
+                                                        `/center/students/stage/${section.slug}?grade=${encodeURIComponent(grade)}`
+                                                    )
+                                                }
+                                                className="p-3.5 rounded-2xl border border-gray-100 hover:border-primary/40 bg-gray-50/40 hover:bg-primary/5 transition-all cursor-pointer flex items-center justify-between gap-3 group/grade"
+                                            >
+                                                <div className="space-y-1">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-black text-gray-900 text-xs sm:text-sm group-hover/grade:text-primary transition-colors">
+                                                            {grade}
+                                                        </span>
+                                                        <Badge
+                                                            variant="outline"
+                                                            className={`text-[10px] font-bold ${theme.badgeBg} ${theme.badgeText} ${theme.badgeBorder}`}
+                                                        >
+                                                            {gCount} طالب
+                                                        </Badge>
+                                                    </div>
+                                                    <span className="text-[11px] text-gray-400 block">
+                                                        اضغط لعرض طلاب {grade} فقط
+                                                    </span>
+                                                </div>
+
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleOpenAddForStage(grade);
+                                                        }}
+                                                        className="h-8 px-2.5 rounded-xl text-[11px] font-bold bg-white border-gray-200 hover:border-primary hover:text-primary gap-1"
+                                                        title={`إضافة طالب في ${grade}`}
+                                                    >
+                                                        <Plus className="w-3 h-3" />
+                                                        <span>طالب</span>
+                                                    </Button>
+                                                    <ChevronLeft className="w-4 h-4 text-gray-400 group-hover/grade:text-primary transition-colors" />
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         );

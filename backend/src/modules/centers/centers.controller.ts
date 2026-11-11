@@ -30,6 +30,11 @@ import {
     bulkCenterAttendanceSchema,
     centerCheckInSchema,
     updateCheckInGroupsSchema,
+    recordCenterSessionAttendanceSchema,
+    notifyCheckInAbsenteesSchema,
+    updateCenterTransactionSchema,
+    batchDeleteCenterTransactionsSchema,
+    createCenterMessageSchema,
 } from '../../validation/center.validation.js';
 
 class CenterController {
@@ -787,6 +792,212 @@ class CenterController {
             next(error);
         }
     }
+
+    // ── Student Full Profile ─────────────────────────────────────────────────
+
+    static async getStudentFullProfile(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const data = await CenterService.getStudentFullProfile(centerId, req.params.id as string);
+            return SuccessResponse({ res, message: 'تم جلب الملف الشامل للطالب بنجاح', data });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // ── Scheduled Class Sessions (حصص اليوم والسناب شوت) ────────────────────
+
+    static async getTodayCenterSessions(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const data = await CenterService.getTodayCenterSessions(centerId, req.query);
+            return SuccessResponse({ res, message: 'تم جلب حصص اليوم بنجاح', data });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async getCenterSessionById(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const data = await CenterService.getCenterSessionById(
+                centerId,
+                req.params.sessionId as string,
+                req.query.date as string | undefined
+            );
+            return SuccessResponse({ res, message: 'تم جلب بيانات الحصة بنجاح', data });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async recordCenterSessionAttendance(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const data = await CenterService.recordCenterSessionAttendance(
+                centerId,
+                req.params.sessionId as string,
+                user.userId,
+                req.body
+            );
+            return SuccessResponse({
+                res,
+                message: data.isCorrection ? 'تم تعديل حالة الحضور وإرسال تصحيح لولي الأمر' : 'تم تسجيل حالة الحضور بنجاح',
+                data,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async completeCenterSession(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const data = await CenterService.completeCenterSession(
+                centerId,
+                req.params.sessionId as string,
+                user.userId,
+                (req.body?.date || req.query?.date) as string | undefined
+            );
+            return SuccessResponse({
+                res,
+                message: 'تم إنهاء الحصة وحفظ السناب شوت وإرسال إشعارات أولياء الأمور بنجاح',
+                data,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // ── Quick Check-In Absentee Notifications ────────────────────────────────
+
+    static async notifyQuickCheckInAbsentees(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const data = await CenterService.notifyQuickCheckInAbsentees(centerId, req.body);
+            return SuccessResponse({
+                res,
+                message: `تم إرسال إشعارات الغياب لعدد ${data.notifiedStudentsCount} طالب من أصل ${data.absentCount} غائب`,
+                data,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // ── Financials Edit, Delete & Batch Delete ───────────────────────────────
+
+    static async updateTransaction(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const data = await CenterService.updateTransaction(centerId, req.params.id as string, req.body);
+            return SuccessResponse({ res, message: 'تم تعديل المعاملة المالية بنجاح', data });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async deleteTransaction(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const data = await CenterService.deleteTransaction(centerId, req.params.id as string);
+            return SuccessResponse({ res, message: 'تم حذف المعاملة المالية بنجاح', data });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async batchDeleteTransactions(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const data = await CenterService.batchDeleteTransactions(centerId, req.body.transactionIds);
+            return SuccessResponse({
+                res,
+                message: `تم حذف ${data.deletedCount} معاملة مالية بنجاح`,
+                data,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // ── Center Custom Broadcast Messages ─────────────────────────────────────
+
+    static async getCenterMessageAudience(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const data = await CenterService.getCenterMessageAudience(centerId, req.query as any);
+            return SuccessResponse({ res, message: 'تم حساب الجمهور المستهدف بنجاح', data });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async createCenterMessage(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const data = await CenterService.createCenterMessage(centerId, user.userId, req.body);
+            return SuccessResponse({
+                res,
+                message: 'تم إرسال الرسالة لأولياء الأمور بنجاح',
+                data,
+                status: 201,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async getCenterMessages(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const data = await CenterService.getCenterMessages(centerId, req.query as any);
+            return SuccessResponse({ res, message: 'تم جلب سجل الرسائل المرسلة بنجاح', data });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // ── Weekly Attendance Report & Printable Sheet ───────────────────────────
+
+    static async getWeeklyAttendanceReport(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const data = await CenterService.getWeeklyAttendanceReport(centerId, req.query as any);
+            return SuccessResponse({ res, message: 'تم جلب كشف الحضور والغياب الأسبوعي بنجاح', data });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async printWeeklyAttendanceReport(req: Request, res: Response, next: NextFunction) {
+        try {
+            const user = (req as any).user;
+            const centerId = await CenterService.resolveCenter(user, CenterController.extractBranchId(req));
+            const html = await CenterService.generateWeeklyAttendancePrintHtml(centerId, req.query);
+            res.setHeader(
+                'Content-Security-Policy',
+                "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:;"
+            );
+            res.setHeader('Content-Type', 'text/html; charset=utf-8');
+            return res.status(200).send(html);
+        } catch (error) {
+            next(error);
+        }
+    }
 }
 
 const router = Router();
@@ -813,7 +1024,7 @@ router.post('/packages', requireCenterPermission('canManagePackages'), validate(
 router.put('/packages/:id', requireCenterPermission('canManagePackages'), validate(updateCenterPackageSchema), CenterController.updatePackage);
 router.delete('/packages/:id', requireCenterPermission('canManagePackages'), CenterController.deletePackage);
 
-// ── Center Groups ────────────────────────────────────────────────────────────
+// ── Center Groups / Classes ──────────────────────────────────────────────────
 router.get('/groups', authorizeRoles(UserRole.centerOwner, UserRole.centerSupervisor), CenterController.getGroups);
 router.get('/groups/:id', authorizeRoles(UserRole.centerOwner, UserRole.centerSupervisor), CenterController.getGroupById);
 router.post('/groups', authorizeRoles(UserRole.centerOwner, UserRole.centerSupervisor), validate(createCenterGroupSchema), CenterController.createGroup);
@@ -828,6 +1039,7 @@ router.delete('/supervisors/:id', authorizeRoles(UserRole.centerOwner), CenterCo
 
 // ── Center Students ──────────────────────────────────────────────────────────
 router.get('/students', authorizeRoles(UserRole.centerOwner, UserRole.centerSupervisor), CenterController.getStudents);
+router.get('/students/:id/full-profile', authorizeRoles(UserRole.centerOwner, UserRole.centerSupervisor), CenterController.getStudentFullProfile);
 router.get('/students/:id', authorizeRoles(UserRole.centerOwner, UserRole.centerSupervisor), CenterController.getStudentById);
 router.post('/students', requireCenterPermission('canManageStudents'), validate(createCenterStudentSchema), CenterController.createStudent);
 router.post('/students/bulk', requireCenterPermission('canManageStudents'), validate(bulkCreateCenterStudentSchema), CenterController.bulkCreateStudents);
@@ -840,6 +1052,12 @@ router.get('/enrollments/student/:studentId', authorizeRoles(UserRole.centerOwne
 router.post('/enrollments', requireCenterPermission('canManageStudents'), validate(createCenterEnrollmentSchema), CenterController.enrollStudent);
 router.put('/enrollments/:id', requireCenterPermission('canManageStudents'), validate(updateCenterEnrollmentSchema), CenterController.updateEnrollment);
 
+// ── Scheduled Class Sessions (حصص اليوم والسناب شوت) ─────────────────────────
+router.get('/sessions/today', requireCenterPermission('canViewAttendance'), CenterController.getTodayCenterSessions);
+router.get('/sessions/:sessionId', requireCenterPermission('canViewAttendance'), CenterController.getCenterSessionById);
+router.post('/sessions/:sessionId/attendance', requireCenterPermission('canTakeAttendance'), validate(recordCenterSessionAttendanceSchema), CenterController.recordCenterSessionAttendance);
+router.post('/sessions/:sessionId/complete', requireCenterPermission('canTakeAttendance'), CenterController.completeCenterSession);
+
 // ── Quick Attendance ─────────────────────────────────────────────────────────
 router.post('/attendance', requireCenterPermission('canTakeAttendance'), validate(recordCenterAttendanceSchema), CenterController.recordAttendance);
 router.post('/attendance/bulk', requireCenterPermission('canTakeAttendance'), validate(bulkCenterAttendanceSchema), CenterController.bulkRecordAttendance);
@@ -848,6 +1066,7 @@ router.get('/attendance/student/:studentId', requireCenterPermission('canViewAtt
 
 // ── Gate Check-In Routes ────────────────────────────────────────────────────
 router.post('/attendance/check-in', requireCenterPermission('canTakeAttendance'), validate(centerCheckInSchema), CenterController.checkInStudent);
+router.post('/attendance/check-in/notify-absentees', requireCenterPermission('canTakeAttendance'), validate(notifyCheckInAbsenteesSchema), CenterController.notifyQuickCheckInAbsentees);
 router.put('/attendance/check-in/groups', requireCenterPermission('canTakeAttendance'), validate(updateCheckInGroupsSchema), CenterController.updateCheckInGroups);
 router.get('/attendance/check-ins', requireCenterPermission('canViewAttendance'), CenterController.getDailyCheckIns);
 
@@ -857,13 +1076,23 @@ router.get('/financials/summary', requireCenterPermission('canViewFinancials'), 
 router.get('/financials/daily-tally', requireCenterPermission('canViewFinancials'), CenterController.getDailyTally);
 router.get('/financials/monthly-tally', requireCenterPermission('canViewFinancials'), CenterController.getMonthlyTally);
 router.get('/financials/transactions', requireCenterPermission('canViewFinancials'), CenterController.getTransactions);
+router.patch('/financials/transactions/:id', requireCenterPermission('canRecordPayments'), validate(updateCenterTransactionSchema), CenterController.updateTransaction);
+router.delete('/financials/transactions/:id', requireCenterPermission('canRecordPayments'), CenterController.deleteTransaction);
+router.post('/financials/transactions/batch-delete', requireCenterPermission('canRecordPayments'), validate(batchDeleteCenterTransactionsSchema), CenterController.batchDeleteTransactions);
 router.get('/financials/teacher/:teacherId', requireCenterPermission('canViewFinancials'), CenterController.getTeacherFinancialReport);
 router.get('/financials/student/:studentId', requireCenterPermission('canViewFinancials'), CenterController.getStudentFinancialReport);
+
+// ── Custom Broadcast Messages for Center ─────────────────────────────────────
+router.get('/messages/audience', authorizeRoles(UserRole.centerOwner, UserRole.centerSupervisor), CenterController.getCenterMessageAudience);
+router.post('/messages', authorizeRoles(UserRole.centerOwner, UserRole.centerSupervisor), validate(createCenterMessageSchema), CenterController.createCenterMessage);
+router.get('/messages', authorizeRoles(UserRole.centerOwner, UserRole.centerSupervisor), CenterController.getCenterMessages);
 
 // ── Comprehensive Reports ───────────────────────────────────────────────────
 router.get('/reports/overview', requireCenterPermission('canViewFinancials'), CenterController.getReportsOverview);
 router.get('/reports/teachers', requireCenterPermission('canViewFinancials'), CenterController.getTeachersReport);
 router.get('/reports/groups', requireCenterPermission('canViewAttendance'), CenterController.getGroupsReport);
+router.get('/reports/weekly-attendance', requireCenterPermission('canViewAttendance'), CenterController.getWeeklyAttendanceReport);
+router.get('/reports/weekly-attendance/print', requireCenterPermission('canViewAttendance'), CenterController.printWeeklyAttendanceReport);
 
 // ── Smart Cards ─────────────────────────────────────────────────────────────
 router.post('/cards/generate', requireCenterPermission('canManageStudents'), CenterController.generateCards);

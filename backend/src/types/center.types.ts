@@ -72,9 +72,16 @@ export interface ICenterStudentDocument extends ICenterStudent, Document {}
 
 
 // ── Center Package ──────────────────────────────────────────────────
+export interface ICenterGroupSchedule {
+    day:  string;
+    time: string;
+}
+
 export interface ICenterPackageTeacher {
     teacherId: Types.ObjectId;  // ref: CenterTeacher
     subject?:  string;
+    schedule?: ICenterGroupSchedule[]; // 1 or 2 weekly slots for this package subject class
+    groupId?:  Types.ObjectId | null;  // auto-synced CenterGroup representing this subject's class
 }
 
 export interface ICenterPackage {
@@ -89,12 +96,7 @@ export interface ICenterPackage {
 }
 export interface ICenterPackageDocument extends ICenterPackage, Document {}
 
-// ── Center Group ────────────────────────────────────────────────────
-export interface ICenterGroupSchedule {
-    day:  string;
-    time: string;
-}
-
+// ── Center Group / Scheduled Class ──────────────────────────────────
 export interface ICenterGroup {
     centerId:              Types.ObjectId;
     centerTeacherId:       Types.ObjectId;
@@ -109,6 +111,49 @@ export interface ICenterGroup {
     updatedAt?:            Date;
 }
 export interface ICenterGroupDocument extends ICenterGroup, Document {}
+
+// ── Center Session (Daily Scheduled Class with Snapshot) ────────────
+export type CenterSessionStatus = 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+
+export interface ICenterSessionSnapshotStudent {
+    studentId:     Types.ObjectId;
+    studentName:   string;
+    studentCode:   string;
+    studentPhone?: string | null;
+    parentPhone?:  string | null;
+    status:        AttendanceStatus;
+    scannedAt?:    Date | null;
+    source?:       string;
+    notes?:        string;
+}
+
+export interface ICenterSession {
+    centerId:            Types.ObjectId;
+    groupId:             Types.ObjectId; // ref: CenterGroup (the class)
+    centerTeacherId:     Types.ObjectId; // ref: CenterTeacher
+    gradeLevel:          GradeLevel;
+    subject?:            string;
+    sessionDate:         Date;           // start of day UTC/Egypt
+    date?:               Date;
+    scheduledDay?:       string;         // e.g. "السبت"
+    scheduledTime?:      string;         // e.g. "04:00 م"
+    startTime?:          string;
+    status:              CenterSessionStatus;
+    presentCount:        number;
+    absentCount:         number;
+    lateCount?:          number;
+    excusedCount?:       number;
+    totalEnrolled:       number;
+    totalCount?:         number;
+    presentStudents:     ICenterSessionSnapshotStudent[];
+    absentStudents:      ICenterSessionSnapshotStudent[];
+    completedAt?:        Date | null;
+    completedBy?:        Types.ObjectId | null;
+    notificationsSentAt?: Date | null;
+    createdAt?:          Date;
+    updatedAt?:          Date;
+}
+export interface ICenterSessionDocument extends ICenterSession, Document {}
 
 // ── Center Attendance (Quick Attendance — no sessions) ──────────────
 export interface ICenterAttendance {

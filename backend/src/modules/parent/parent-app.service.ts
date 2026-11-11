@@ -854,6 +854,7 @@ export class ParentAppService {
         .lean();
 
       const combined: any[] = [];
+      const recordedGroupDates = new Set<string>();
 
       for (const checkIn of gateCheckIns) {
         const checkInDate = checkIn.checkInTime || checkIn.date;
@@ -865,7 +866,7 @@ export class ParentAppService {
           date: new Date(checkInDate).toISOString(),
           time: timeStr,
           status: 'PRESENT',
-          subject: 'دخول السنتر (البوابة)',
+          subject: 'دخول السنتر (التحضير السريع)',
           teacherName: centerName,
           groupName: `بوابة السنتر (${checkIn.source || 'QR_SCAN'})`,
           notes: timeStr ? `تم تسجيل الحضور في تمام ${timeStr}` : (checkIn.notes || 'تسجيل دخول السنتر'),
@@ -885,6 +886,10 @@ export class ParentAppService {
         else status = 'ABSENT';
 
         const attDate = att.scannedAt || att.date;
+        const dateKey = att.date ? new Date(att.date).toISOString().split('T')[0] : '';
+        if (grp._id && dateKey) {
+          recordedGroupDates.add(`${grp._id.toString()}_${dateKey}`);
+        }
         const timeStr = att.scannedAt ? formatTimeEgypt(att.scannedAt) : '';
         const mName = getArabicMonthName(attDate);
 
@@ -893,9 +898,9 @@ export class ParentAppService {
           date: new Date(attDate).toISOString(),
           time: timeStr,
           status,
-          subject: tch.subject || 'مادة دراسية',
-          teacherName: tch.name || 'مدرس المادة',
-          groupName: grp.name || 'مجموعة دراسية',
+          subject: tch.subject || grp.name || 'حصة دراسية',
+          teacherName: tch.name || centerName,
+          groupName: grp.name || 'حصة بالسنتر',
           notes: att.notes || (att.source === 'GATE_CHECKIN' ? 'تسجيل تلقائي عبر البوابة' : ''),
           cycleNumber: new Date(attDate).getMonth() + 1,
           cycleMonth: mName,
@@ -1476,6 +1481,7 @@ export class ParentAppService {
         .limit(limit)
         .populate('studentId', 'studentName')
         .populate('teacherId', 'name subject')
+        .populate('centerId', 'name')
         .lean(),
       ParentNotificationModel.countDocuments({
         parentId: new mongoose.Types.ObjectId(parentId),
@@ -1483,21 +1489,40 @@ export class ParentAppService {
       }),
     ]);
 
+    // Resolve any CenterStudent names if studentId was from CenterStudent collection
+    const missingStudentIds = notifications
+      .filter((n: any) => n.studentId && !n.studentId.studentName)
+      .map((n: any) => n.studentId._id || n.studentId);
+
+    const centerStudentNameMap = new Map<string, string>();
+    if (missingStudentIds.length > 0) {
+      const cStudents = await CenterStudentModel.find({ _id: { $in: missingStudentIds } })
+        .select('_id studentName')
+        .lean();
+      cStudents.forEach((cs) => centerStudentNameMap.set(cs._id.toString(), cs.studentName));
+    }
+
     return {
-      notifications: notifications.map((n: any) => ({
-        id: n._id.toString(),
-        studentId: n.studentId?._id?.toString() || (n.studentId ? n.studentId.toString() : ''),
-        studentName: n.studentId?.studentName,
-        teacherId: n.teacherId?._id?.toString() || (n.teacherId ? n.teacherId.toString() : ''),
-        teacherName: n.teacherId?.name,
-        type: n.type,
-        title: n.title,
-        body: n.body,
-        deepLink: n.deepLink,
-        data: n.data,
-        isRead: n.isRead,
-        createdAt: n.createdAt?.toISOString(),
-      })),
+      notifications: notifications.map((n: any) => {
+        const rawSid = n.studentId?._id?.toString() || (n.studentId ? n.studentId.toString() : '');
+        const resolvedStudentName = n.studentId?.studentName || centerStudentNameMap.get(rawSid) || undefined;
+        const resolvedTeacherName = n.teacherId?.name || (n.centerId?.name ? formatCenterName(n.centerId.name) : n.data?.teacherName);
+
+        return {
+          id: n._id.toString(),
+          studentId: rawSid,
+          studentName: resolvedStudentName,
+          teacherId: n.teacherId?._id?.toString() || n.centerId?._id?.toString() || '',
+          teacherName: resolvedTeacherName,
+          type: n.type,
+          title: n.title,
+          body: n.body,
+          deepLink: n.deepLink,
+          data: n.data,
+          isRead: n.isRead,
+          createdAt: n.createdAt?.toISOString(),
+        };
+      }),
       unreadCount,
     };
   }

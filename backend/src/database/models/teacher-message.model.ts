@@ -7,7 +7,17 @@ const teacherMessageSchema = new Schema<ITeacherMessageDocument>(
     teacherId: {
       type: Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
+      required: function (this: ITeacherMessageDocument) {
+        return !this.centerId;
+      },
+      default: null,
+      index: true,
+    },
+    centerId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Center',
+      required: false,
+      default: null,
       index: true,
     },
     sentBy: {
@@ -77,11 +87,12 @@ const teacherMessageSchema = new Schema<ITeacherMessageDocument>(
   }
 );
 
-// Index 1: Fast retrieval of teacher's message history sorted by date
+// Index 1: Fast retrieval of teacher's or center's message history sorted by date
 teacherMessageSchema.index({ teacherId: 1, createdAt: -1 });
+teacherMessageSchema.index({ centerId: 1, createdAt: -1 });
 
-// Index 2: Idempotency guarantee per teacher
-teacherMessageSchema.index({ teacherId: 1, clientRequestId: 1 }, { unique: true });
+// Index 2: Idempotency guarantee per teacher / center
+teacherMessageSchema.index({ teacherId: 1, centerId: 1, clientRequestId: 1 }, { unique: true });
 
 export const TeacherMessageModel: Model<ITeacherMessageDocument> =
   mongoose.model<ITeacherMessageDocument>('TeacherMessage', teacherMessageSchema);

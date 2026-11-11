@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -72,15 +72,21 @@ interface BulkRow {
 export default function StageStudentsPage() {
     const params = useParams();
     const router = useRouter();
+    const searchParams = useSearchParams();
     const queryClient = useQueryClient();
 
     const stageId = (params?.stageId as string) || '';
     const stageConfig = getStageConfig(stageId);
+    const initialGradeParam = searchParams.get('grade');
 
     // State
     const [localSearch, setLocalSearch] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
-    const [selectedGrade, setSelectedGrade] = useState('ALL');
+    const [selectedGrade, setSelectedGrade] = useState(
+        initialGradeParam && stageConfig?.grades.includes(initialGradeParam as any)
+            ? initialGradeParam
+            : 'ALL'
+    );
     const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(20);
@@ -175,6 +181,7 @@ export default function StageStudentsPage() {
     const students = response?.data || [];
     const totalResults = response?.total ?? 0;
     const totalPages = response?.totalPages || 1;
+    const gradeCounts: Record<string, number> = response?.gradeCounts || {};
 
     // Packages, Teachers, Groups queries (lazy-loaded only when modal is open)
     const { data: packages = [] } = useQuery<ICenterPackage[]>({
@@ -272,8 +279,7 @@ export default function StageStudentsPage() {
         : [];
 
     const availablePrivateGroups = groups.filter((g) => {
-        const isPrivateOrMixed = g.groupType === 'PRIVATE' || g.groupType === 'MIXED';
-        return isPrivateOrMixed && g.gradeLevel === gradeLevel;
+        return g.gradeLevel === gradeLevel;
     });
 
     const instantPkgPrice = (enrollmentType === 'PACKAGE' || enrollmentType === 'BOTH') && selectedPkg
@@ -718,23 +724,31 @@ export default function StageStudentsPage() {
                             جميع الصفوف
                         </button>
 
-                        {stageConfig.grades.map((grade) => (
-                            <button
-                                key={grade}
-                                type="button"
-                                onClick={() => {
-                                    setSelectedGrade(grade);
-                                    setPage(1);
-                                }}
-                                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                                    selectedGrade === grade
-                                        ? `${theme.pillActive} shadow-xs font-black`
-                                        : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'
-                                }`}
-                            >
-                                {grade}
-                            </button>
-                        ))}
+                        {stageConfig.grades.map((grade) => {
+                            const gCount = gradeCounts[grade];
+                            return (
+                                <button
+                                    key={grade}
+                                    type="button"
+                                    onClick={() => {
+                                        setSelectedGrade(grade);
+                                        setPage(1);
+                                    }}
+                                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                                        selectedGrade === grade
+                                            ? `${theme.pillActive} shadow-xs font-black`
+                                            : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'
+                                    }`}
+                                >
+                                    <span>{grade}</span>
+                                    {typeof gCount === 'number' && (
+                                        <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-black/10">
+                                            {gCount}
+                                        </span>
+                                    )}
+                                </button>
+                            );
+                        })}
                     </div>
 
                     <div className="text-[11px] font-bold text-gray-400 mr-auto sm:mr-0 flex items-center gap-2">
@@ -799,24 +813,57 @@ export default function StageStudentsPage() {
                         </div>
                     </div>
                 ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-right text-xs">
-                            <thead className="bg-gray-50/80 border-b border-gray-100 text-gray-500 font-bold">
-                                <tr>
-                                    <th className="py-3.5 px-4">الطالب</th>
-                                    <th className="py-3.5 px-4">كود الطالب</th>
-                                    <th className="py-3.5 px-4">الصف الدراسي</th>
-                                    <th className="py-3.5 px-4">ولي الأمر والهواتف</th>
-                                    <th className="py-3.5 px-4">الباركود</th>
-                                    <th className="py-3.5 px-4">الحالة</th>
-                                    <th className="py-3.5 px-4 text-center">إجراءات</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
-                                {students.map((st) => {
-                                    const isPending = !!(st as any).isPendingDelete;
-                                    return (
-                                    <tr key={st._id} className={isPending ? 'bg-rose-50/40 opacity-80 transition-colors' : 'hover:bg-gray-50/60 transition-colors'}>
+                    <div className="divide-y divide-gray-200">
+                        {(selectedGrade === 'ALL' ? stageConfig.grades : [selectedGrade]).map((gradeSection) => {
+                            const gradeStudents =
+                                selectedGrade === 'ALL'
+                                    ? students.filter((s) => s.gradeLevel === gradeSection)
+                                    : students;
+                            if (selectedGrade === 'ALL' && gradeStudents.length === 0) return null;
+
+                            return (
+                                <div key={gradeSection} className="space-y-0">
+                                    {/* Grade Section Header under the Stage */}
+                                    <div className={`px-4 py-3 flex items-center justify-between border-b ${theme.headerBg} ${theme.headerBorder}`}>
+                                        <div className="flex items-center gap-2">
+                                            <GraduationCap className={`w-4 h-4 ${theme.iconColor}`} />
+                                            <span className="text-xs sm:text-sm font-black text-gray-900">
+                                                {gradeSection}
+                                            </span>
+                                            <Badge variant="outline" className={`text-[10px] font-bold ${theme.badgeBg} ${theme.badgeText} ${theme.badgeBorder}`}>
+                                                {gradeCounts[gradeSection] ?? gradeStudents.length} طالب
+                                            </Badge>
+                                        </div>
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => handleOpenAdd(gradeSection)}
+                                            className="h-7 px-2.5 rounded-lg text-[11px] font-bold bg-white gap-1"
+                                        >
+                                            <Plus className="w-3 h-3 text-primary" />
+                                            <span>إضافة طالب لـ {gradeSection}</span>
+                                        </Button>
+                                    </div>
+
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-right text-xs">
+                                            <thead className="bg-gray-50/80 border-b border-gray-100 text-gray-500 font-bold">
+                                                <tr>
+                                                    <th className="py-3.5 px-4">الطالب</th>
+                                                    <th className="py-3.5 px-4">كود الطالب</th>
+                                                    <th className="py-3.5 px-4">الصف الدراسي</th>
+                                                    <th className="py-3.5 px-4">ولي الأمر والهواتف</th>
+                                                    <th className="py-3.5 px-4">الباركود</th>
+                                                    <th className="py-3.5 px-4">الحالة</th>
+                                                    <th className="py-3.5 px-4 text-center">إجراءات</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-100">
+                                                {gradeStudents.map((st) => {
+                                                    const isPending = !!(st as any).isPendingDelete;
+                                                    return (
+                                                    <tr key={st._id} className={isPending ? 'bg-rose-50/40 opacity-80 transition-colors' : 'hover:bg-gray-50/60 transition-colors'}>
                                         {/* Student Name & Avatar */}
                                         <td className="py-3.5 px-4 font-bold text-gray-900">
                                             <Link
@@ -997,6 +1044,10 @@ export default function StageStudentsPage() {
                                 })}
                             </tbody>
                         </table>
+                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
                 )}
 
@@ -1203,7 +1254,7 @@ export default function StageStudentsPage() {
                                                         : 'bg-white border text-gray-700'
                                                 }`}
                                             >
-                                                باكيدج كامل
+                                                باكيدج كامل (كل الحصص)
                                             </button>
                                             <button
                                                 type="button"
@@ -1214,7 +1265,7 @@ export default function StageStudentsPage() {
                                                         : 'bg-white border text-gray-700'
                                                 }`}
                                             >
-                                                مجموعات فردية
+                                                حصص فردية (برايفت)
                                             </button>
                                         </div>
 
@@ -1235,6 +1286,60 @@ export default function StageStudentsPage() {
                                                             </option>
                                                         ))}
                                                 </select>
+                                            </div>
+                                        )}
+
+                                        {(enrollmentType === 'PRIVATE' || enrollmentType === 'BOTH') && (
+                                            <div className="space-y-2">
+                                                <label className="text-[11px] font-bold text-purple-900 block">
+                                                    اختر الحصص الفردية التي يحضرها طالب البرايفت فقط ({selectedPrivateTeachers.length} حصة محددة):
+                                                </label>
+                                                {availablePrivateGroups.length === 0 ? (
+                                                    <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800">
+                                                        لا توجد حصص مسجلة لهذا الصف حالياً.
+                                                    </div>
+                                                ) : (
+                                                    <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                                                        {availablePrivateGroups.map((group) => {
+                                                            const isSelected = selectedPrivateTeachers.some((p) => p.groupId === group._id);
+                                                            const teacherId =
+                                                                typeof group.centerTeacherId === 'object'
+                                                                    ? (group.centerTeacherId as any)._id
+                                                                    : group.centerTeacherId;
+                                                            const teacherObj =
+                                                                typeof group.centerTeacherId === 'object'
+                                                                    ? (group.centerTeacherId as any)
+                                                                    : teachers.find((t) => t._id === teacherId);
+
+                                                            return (
+                                                                <div
+                                                                    key={group._id}
+                                                                    onClick={() => togglePrivateGroup(group)}
+                                                                    className={`p-2 rounded-xl border text-xs cursor-pointer flex items-center justify-between ${
+                                                                        isSelected
+                                                                            ? 'border-purple-400 bg-purple-50/60 font-bold'
+                                                                            : 'border-gray-200 bg-white'
+                                                                    }`}
+                                                                >
+                                                                    <div className="flex items-center gap-2">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={isSelected}
+                                                                            onChange={() => {}}
+                                                                            className="h-3.5 w-3.5 rounded text-purple-600"
+                                                                        />
+                                                                        <span>
+                                                                            {group.name} — {teacherObj?.name || 'مدرس'}
+                                                                        </span>
+                                                                    </div>
+                                                                    <span className="text-[11px] text-purple-700 font-bold">
+                                                                        {group.privateMonthlyPrice ? `${group.privateMonthlyPrice} ج.م` : ''}
+                                                                    </span>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                     </div>
