@@ -496,7 +496,7 @@ export default function CenterGroupsPage() {
                                                                 </div>
 
                                                                 <div className="bg-gray-50/70 px-4 py-2.5 border-t border-gray-100 flex items-center justify-between">
-                                                                    <Link href={`/center/attendance?groupId=${group._id}`}>
+                                                                    <Link href={`/center/attendance/${group._id}`}>
                                                                         <Button
                                                                             size="sm"
                                                                             className="h-8 gap-1.5 rounded-lg text-xs font-bold bg-primary hover:bg-primary/95 text-white"

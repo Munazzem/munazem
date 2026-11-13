@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import {
     CalendarCheck,
@@ -31,7 +31,6 @@ import {
     Send,
     BellRing,
     Lock,
-    History,
     CheckCheck,
     Loader2,
     Sparkles,
@@ -42,9 +41,6 @@ import {
     fetchDailyCheckIns,
     fetchCenterStudents,
     fetchTodayCenterSessions,
-    fetchCenterSessionById,
-    recordCenterSessionAttendance,
-    completeCenterSession,
     notifyQuickCheckInAbsentees,
     recordCenterPayment,
 } from '@/lib/api/centers';
@@ -53,14 +49,13 @@ import {
     CenterCheckInResponse,
     DailyCheckInsResult,
     TodayCenterSessionsResponse,
-    CenterSessionDetailResponse,
-    CenterSessionAttendanceResponse,
 } from '@/types/center.types';
 import {
     STAGE_HIERARCHY,
     STAGE_HIERARCHY_MAP,
     StageKey,
     getStageForGrade,
+    ALL_GRADES,
 } from '@/lib/constants/grade.constants';
 import { BranchSwitcher } from '@/components/center/BranchSwitcher';
 import { soundEffects } from '@/lib/utils/sound';
@@ -84,18 +79,25 @@ const QrScanner = dynamic(
 const EMPTY_GROUPS: ICenterGroup[] = [];
 
 export default function CenterAttendancePage() {
+    const router = useRouter();
     const queryClient = useQueryClient();
     const searchParams = useSearchParams();
     const paramGroupId = searchParams.get('groupId');
+    const paramDate = searchParams.get('date');
+
+    // If groupId is in URL params (e.g. from groups list or calendar), redirect to dedicated class page
+    useEffect(() => {
+        if (paramGroupId) {
+            router.replace(`/center/attendance/${paramGroupId}?date=${paramDate || selectedDate}`);
+        }
+    }, [paramGroupId, paramDate, router]);
 
     // ── Mode Switcher: CLASSES (حصص اليوم والغياب) vs GATE_CHECKIN (التحضير السريع) ──
-    const [activeTab, setActiveTab] = useState<'CLASSES' | 'GATE_CHECKIN'>(
-        paramGroupId ? 'CLASSES' : 'CLASSES'
-    );
+    const [activeTab, setActiveTab] = useState<'CLASSES' | 'GATE_CHECKIN'>('CLASSES');
 
     // ── Global Date ───────────────────────────────────────────────────────────
     const [selectedDate, setSelectedDate] = useState<string>(
-        new Date().toISOString().split('T')[0]
+        paramDate || new Date().toISOString().split('T')[0]
     );
 
     // ── Shared Sound & Camera State ───────────────────────────────────────────
@@ -104,16 +106,7 @@ export default function CenterAttendancePage() {
     // ── Mode 1: Today's Scheduled Classes (حصص اليوم والغياب) State ────────────
     const [classStageFilter, setClassStageFilter] = useState<'ALL' | StageKey>('ALL');
     const [classGradeFilter, setClassGradeFilter] = useState<string>('ALL');
-    const [includeAllClasses, setIncludeAllClasses] = useState<boolean>(Boolean(paramGroupId));
-    const [selectedGroupId, setSelectedGroupId] = useState<string>(paramGroupId || '');
-    const [classBarcodeInput, setClassBarcodeInput] = useState('');
-    const classBarcodeInputRef = useRef<HTMLInputElement>(null);
-    const [showClassCamera, setShowClassCamera] = useState(false);
-    const [lastClassScan, setLastClassScan] = useState<CenterSessionAttendanceResponse | null>(null);
-    const [classStudentSearch, setClassStudentSearch] = useState('');
-    const [classStatusFilter, setClassStatusFilter] = useState<'ALL' | 'PRESENT' | 'ABSENT' | 'HAS_DEBT'>('ALL');
-    const [isCompleteDialogOpen, setIsCompleteDialogOpen] = useState(false);
-    const [sendNotificationsOnComplete, setSendNotificationsOnComplete] = useState(true);
+    const [includeAllClasses, setIncludeAllClasses] = useState<boolean>(false);
 
     // ── Mode 2: Gate Quick Check-In (التحضير السريع) State ─────────────────────
     const [barcodeInput, setBarcodeInput] = useState('');
@@ -178,21 +171,7 @@ export default function CenterAttendancePage() {
                 });
             }
 
-            if (lastClassScan && paymentModalStudent && lastClassScan.student._id === paymentModalStudent.studentId) {
-                const newRem = Math.max(0, (lastClassScan.financialStatus.totalRemainingDebt || 0) - paidAmount);
-                setLastClassScan({
-                    ...lastClassScan,
-                    financialStatus: {
-                        ...lastClassScan.financialStatus,
-                        totalPaid: (lastClassScan.financialStatus.totalPaid || 0) + paidAmount,
-                        totalRemainingDebt: newRem,
-                        hasDebt: newRem > 0,
-                    },
-                });
-            }
-
             setPaymentModalStudent(null);
-            queryClient.invalidateQueries({ queryKey: ['center', 'session-detail'] });
             queryClient.invalidateQueries({ queryKey: ['center', 'today-sessions'] });
             queryClient.invalidateQueries({ queryKey: ['center', 'daily-checkins'] });
             queryClient.invalidateQueries({ queryKey: ['center', 'financials'] });
@@ -234,131 +213,68 @@ export default function CenterAttendancePage() {
 
     const rawTodayClasses = todaySessionsData?.classes || [];
 
-    // Filter today's classes by Stage -> Grade hierarchy
-    const filteredTodayClasses = rawTodayClasses.filter((cls) => {
-        const gStage = getStageForGrade(cls.group.gradeLevel);
-        if (classStageFilter !== 'ALL' && gStage !== classStageFilter) return false;
-        if (classGradeFilter !== 'ALL' && cls.group.gradeLevel !== classGradeFilter) return false;
-        return true;
-    });
-
-    // Auto-select first class when available
-    useEffect(() => {
-        if (paramGroupId && !selectedGroupId) {
-            setSelectedGroupId(paramGroupId);
-            return;
-        }
-        if (filteredTodayClasses.length > 0) {
-            const exists = filteredTodayClasses.some((c) => c.group._id === selectedGroupId);
-            if (!exists) {
-                setSelectedGroupId(filteredTodayClasses[0].group._id);
-            }
-        } else if (rawTodayClasses.length === 0 && !includeAllClasses) {
-            // If no scheduled classes today, keep selectedGroupId empty until user toggles or selects
-        }
-    }, [filteredTodayClasses, paramGroupId, selectedGroupId, rawTodayClasses.length, includeAllClasses]);
-
-    // Selected Class Session Detail Query
-    const { data: sessionDetail, isLoading: loadingSessionDetail } = useQuery<CenterSessionDetailResponse>({
-        queryKey: ['center', 'session-detail', selectedGroupId, selectedDate],
-        queryFn: () => fetchCenterSessionById(selectedGroupId, selectedDate),
-        enabled: !!selectedGroupId && !!selectedDate,
-    });
-
-    // ── Mutations: Mode 1 (Class Session Attendance & Completion) ─────────────
-    const recordSessionAttMutation = useMutation({
-        mutationFn: (payload: {
-            studentId?: string;
-            studentIdOrCode?: string;
-            status?: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED';
-            source?: 'MANUAL' | 'QR_SCAN' | 'BARCODE';
-        }) =>
-            recordCenterSessionAttendance(selectedGroupId, {
-                ...payload,
-                date: selectedDate,
-            }),
-        onSuccess: (data, variables) => {
-            if (variables.source === 'QR_SCAN' || variables.source === 'BARCODE') {
-                setLastClassScan(data);
-                if (data.financialStatus?.hasDebt) {
-                    soundEffects.playWarning();
-                } else {
-                    soundEffects.playSuccess();
+    // Filter today's classes by Stage -> Grade hierarchy & sort by Educational Grade Level
+    const filteredTodayClasses = useMemo(() => {
+        return rawTodayClasses
+            .filter((cls) => {
+                const gStage = getStageForGrade(cls.group.gradeLevel);
+                if (classStageFilter !== 'ALL' && gStage !== classStageFilter) return false;
+                if (classGradeFilter !== 'ALL' && cls.group.gradeLevel !== classGradeFilter) return false;
+                if (!includeAllClasses && !cls.isScheduledToday) {
+                    return false;
                 }
-                toast.success(
-                    data.isPostCompletionEdit
-                        ? `✅ تم تحديث حضور الطالب (${data.student.studentName}) وإرسال تصحيح لولي الأمر`
-                        : `✅ تم تحضير الطالب: ${data.student.studentName}`
-                );
-                setClassBarcodeInput('');
-                if (classBarcodeInputRef.current) classBarcodeInputRef.current.focus();
-            } else {
-                if (data.isPostCompletionEdit) {
-                    toast.success(`تم تعديل حالة الطالب ${data.student.studentName} وتحديث السناب شوت وإشعار ولي الأمر`);
-                }
-            }
-            queryClient.invalidateQueries({
-                queryKey: ['center', 'session-detail', selectedGroupId, selectedDate],
+                return true;
+            })
+            .sort((a, b) => {
+                const idxA = (ALL_GRADES as readonly string[]).indexOf(a.group.gradeLevel);
+                const idxB = (ALL_GRADES as readonly string[]).indexOf(b.group.gradeLevel);
+                const ordA = idxA !== -1 ? idxA : 999;
+                const ordB = idxB !== -1 ? idxB : 999;
+                if (ordA !== ordB) return ordA - ordB;
+                return (a.scheduledTime || '').localeCompare(b.scheduledTime || '');
             });
-            queryClient.invalidateQueries({
-                queryKey: ['center', 'today-sessions', selectedDate],
-            });
-        },
-        onError: (err: any) => {
-            soundEffects.playWarning();
-            toast.error(err.response?.data?.message || 'حدث خطأ أثناء تسجيل حضور الحصة');
-        },
-    });
+    }, [rawTodayClasses, classStageFilter, classGradeFilter, includeAllClasses]);
 
-    const completeSessionMutation = useMutation({
-        mutationFn: () =>
-            completeCenterSession(selectedGroupId, {
-                date: selectedDate,
-                sendParentNotifications: sendNotificationsOnComplete,
-            }),
-        onSuccess: (res) => {
-            soundEffects.playSuccess();
-            toast.success(
-                `✅ تم إنهاء الحصة وحفظ السناب شوت (${res.stats.presentCount} حاضر / ${res.stats.absentCount} غائب)` +
-                (sendNotificationsOnComplete
-                    ? ` — تم إرسال ${res.notifications.sent} إشعار لأولياء الأمور`
-                    : '')
-            );
-            setIsCompleteDialogOpen(false);
-            queryClient.invalidateQueries({
-                queryKey: ['center', 'session-detail', selectedGroupId, selectedDate],
-            });
-            queryClient.invalidateQueries({
-                queryKey: ['center', 'today-sessions', selectedDate],
-            });
-        },
-        onError: (err: any) => {
-            toast.error(err.response?.data?.message || 'حدث خطأ أثناء إنهاء الحصة');
-        },
-    });
+    // Group today's sorted classes by Stage for visual separation
+    const groupedStages = useMemo(() => {
+        const stageDefs: Array<{
+            id: StageKey | 'OTHER';
+            label: string;
+            badgeColor: string;
+        }> = [
+            {
+                id: 'PRIMARY',
+                label: 'المرحلة الابتدائية',
+                badgeColor: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+            },
+            {
+                id: 'PREPARATORY',
+                label: 'المرحلة الإعدادية',
+                badgeColor: 'bg-blue-50 text-blue-800 border-blue-200',
+            },
+            {
+                id: 'SECONDARY',
+                label: 'المرحلة الثانوية',
+                badgeColor: 'bg-purple-50 text-purple-800 border-purple-200',
+            },
+            {
+                id: 'OTHER',
+                label: 'مراحل أخرى',
+                badgeColor: 'bg-gray-50 text-gray-800 border-gray-200',
+            },
+        ];
 
-    const handleClassBarcodeSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        const code = classBarcodeInput.trim();
-        if (!code || !selectedGroupId) return;
-        recordSessionAttMutation.mutate({
-            studentIdOrCode: code,
-            status: 'PRESENT',
-            source: 'BARCODE',
-        });
-    };
+        return stageDefs
+            .map((def) => ({
+                ...def,
+                classes: filteredTodayClasses.filter(
+                    (cls) => getStageForGrade(cls.group.gradeLevel) === def.id
+                ),
+            }))
+            .filter((st) => st.classes.length > 0);
+    }, [filteredTodayClasses]);
 
-    const handleSetClassStudentStatus = (
-        studentId: string,
-        status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED'
-    ) => {
-        if (!selectedGroupId) return;
-        recordSessionAttMutation.mutate({
-            studentId,
-            status,
-            source: 'MANUAL',
-        });
-    };
+
 
     // ── Queries & Mutations: Mode 2 (Quick Check-In) ──────────────────────────
     const { data: groupsData } = useQuery<ICenterGroup[]>({
@@ -643,30 +559,7 @@ export default function CenterAttendancePage() {
         printHtmlContent(html, `كشف_حضور_السنتر_${selectedDate}`);
     };
 
-    // ── Filtered Class Students in Mode 1 ─────────────────────────────────────
-    const sessionStudents = sessionDetail?.students || [];
-    const filteredSessionStudents = sessionStudents.filter((st) => {
-        if (classStatusFilter === 'PRESENT' && st.status !== 'PRESENT' && st.status !== 'LATE') {
-            return false;
-        }
-        if (classStatusFilter === 'ABSENT' && st.status !== 'ABSENT') {
-            return false;
-        }
-        if (classStatusFilter === 'HAS_DEBT' && !st.financialStatus.hasDebt) {
-            return false;
-        }
-        if (classStudentSearch.trim()) {
-            const q = classStudentSearch.trim().toLowerCase();
-            return (
-                (st.studentName || '').toLowerCase().includes(q) ||
-                (st.studentCode || '').toLowerCase().includes(q) ||
-                (st.studentPhone || '').includes(q)
-            );
-        }
-        return true;
-    });
 
-    const isSessionCompleted = sessionDetail?.session?.status === 'COMPLETED';
 
     // ── Stage Sections for Mode 2 (Quick Check-In) ────────────────────────────
     const stageSections = [
@@ -870,40 +763,40 @@ export default function CenterAttendancePage() {
                         </label>
                     </div>
 
-                    {/* ── TODAY'S CLASSES HORIZONTAL CARDS (حصص اليوم) ───────────── */}
-                    <div className="bg-white p-5 rounded-3xl border border-gray-200/80 shadow-xs space-y-4">
-                        <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-                            <div className="flex items-center gap-2.5">
-                                <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-black shadow-xs">
-                                    <CalendarCheck className="w-5 h-5" />
+                    {/* ── TODAY'S CLASSES HORIZONTAL CARDS (حصص اليوم مرتبة وموفرة للمساحة) ───────────── */}
+                    <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-gray-200/80 shadow-xs space-y-2.5">
+                        <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                            <div className="flex items-center gap-2">
+                                <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-black shadow-xs shrink-0">
+                                    <CalendarCheck className="w-4 h-4" />
                                 </div>
-                                <div>
-                                    <h2 className="text-base sm:text-lg font-black text-gray-900 flex items-center gap-2">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <h2 className="text-sm sm:text-base font-black text-gray-900 flex items-center gap-2">
                                         <span>حصص اليوم ({todaySessionsData?.arabicDay || ''})</span>
                                         <Badge className="bg-indigo-100 text-indigo-800 border-indigo-200 text-xs font-black">
                                             {filteredTodayClasses.length} حصة
                                         </Badge>
                                     </h2>
-                                    <p className="text-xs text-gray-500">
-                                        اضغط على الحصة لفتح كشف الحضور والغياب الخاص بها، مسح الكروت، أو إنهاء الحصة وحفظ السناب شوت.
-                                    </p>
+                                    <span className="text-[11px] text-gray-400 hidden md:inline">
+                                        (مرتبة بحسب الصف الدراسي — اضغط على الحصة لفتح الكشف)
+                                    </span>
                                 </div>
                             </div>
                         </div>
 
                         {loadingTodaySessions ? (
-                            <div className="py-10 text-center text-xs text-gray-400 flex items-center justify-center gap-2">
+                            <div className="py-6 text-center text-xs text-gray-400 flex items-center justify-center gap-2">
                                 <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
                                 <span>جاري تحميل حصص اليوم...</span>
                             </div>
                         ) : filteredTodayClasses.length === 0 ? (
-                            <div className="py-10 text-center space-y-3 bg-gray-50/60 rounded-2xl border border-dashed border-gray-200 p-6">
-                                <CalendarCheck className="w-10 h-10 text-gray-300 mx-auto" />
+                            <div className="py-8 text-center space-y-2.5 bg-gray-50/60 rounded-xl border border-dashed border-gray-200 p-5">
+                                <CalendarCheck className="w-8 h-8 text-gray-300 mx-auto" />
                                 <div className="space-y-1">
-                                    <p className="text-sm font-bold text-gray-700">
+                                    <p className="text-xs sm:text-sm font-bold text-gray-700">
                                         لا توجد حصص مجدولة ليوم ({todaySessionsData?.arabicDay || selectedDate}) في هذا القسم
                                     </p>
-                                    <p className="text-xs text-gray-400">
+                                    <p className="text-[11px] text-gray-400">
                                         يمكنك إظهار جميع حصص السنتر حتى غير المجدولة اليوم بالضغط على الزر بالأسفل.
                                     </p>
                                 </div>
@@ -913,627 +806,98 @@ export default function CenterAttendancePage() {
                                         variant="outline"
                                         size="sm"
                                         onClick={() => setIncludeAllClasses(true)}
-                                        className="rounded-xl text-xs font-bold border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                                        className="rounded-xl text-xs font-bold border-indigo-200 text-indigo-700 hover:bg-indigo-50 h-8"
                                     >
                                         عرض كل الحصص المسجلة بالسنتر
                                     </Button>
                                 )}
                             </div>
                         ) : (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 pt-1">
-                                {filteredTodayClasses.map((cls) => {
-                                    const isSelected = selectedGroupId === cls.group._id;
-                                    const isCompleted = cls.sessionStatus === 'COMPLETED';
-                                    const isInProgress = cls.sessionStatus === 'IN_PROGRESS';
-
-                                    return (
-                                        <div
-                                            key={cls.group._id}
-                                            onClick={() => {
-                                                setSelectedGroupId(cls.group._id);
-                                                setLastClassScan(null);
-                                            }}
-                                            className={`p-4 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between gap-3 relative overflow-hidden ${isSelected
-                                                    ? 'border-indigo-600 bg-indigo-50/40 shadow-md ring-2 ring-indigo-500/20'
-                                                    : isCompleted
-                                                        ? 'border-emerald-200 bg-emerald-50/20 hover:border-emerald-300'
-                                                        : 'border-gray-200 bg-white hover:border-indigo-300 hover:shadow-xs'
-                                                }`}
-                                        >
-                                            <div className="space-y-2">
-                                                <div className="flex items-start justify-between gap-2">
-                                                    <Badge
-                                                        variant="outline"
-                                                        className="bg-white text-gray-700 border-gray-200 text-[10px] font-bold"
-                                                    >
-                                                        {cls.group.gradeLevel}
-                                                    </Badge>
-                                                    {isCompleted ? (
-                                                        <Badge className="bg-emerald-600 text-white text-[10px] font-bold gap-1">
-                                                            <CheckCheck className="w-3 h-3" />
-                                                            منتهية (سناب شوت)
-                                                        </Badge>
-                                                    ) : isInProgress ? (
-                                                        <Badge className="bg-amber-500 text-white text-[10px] font-bold">
-                                                            جارية الآن
-                                                        </Badge>
-                                                    ) : (
-                                                        <Badge
-                                                            variant="outline"
-                                                            className="bg-blue-50 text-blue-700 border-blue-200 text-[10px] font-bold"
-                                                        >
-                                                            {cls.isScheduledToday ? 'حصة اليوم' : 'حصة إضافية'}
-                                                        </Badge>
-                                                    )}
-                                                </div>
-
-                                                <div>
-                                                    <h3 className="font-black text-gray-900 text-sm sm:text-base line-clamp-1">
-                                                        {cls.group.name}
-                                                    </h3>
-                                                    <p className="text-xs text-gray-600 font-bold mt-0.5">
-                                                        {cls.teacher?.name || 'مدرس بالسنتر'}
-                                                        {cls.subject ? ` — ${cls.subject}` : ''}
-                                                    </p>
-                                                </div>
-                                            </div>
-
-                                            <div className="pt-2.5 border-t border-gray-100 flex items-center justify-between text-xs">
-                                                <span className="flex items-center gap-1 font-bold text-indigo-700">
-                                                    <Clock className="w-3.5 h-3.5" />
-                                                    {cls.scheduledTime || 'بدون موعد محدد'}
-                                                </span>
-                                                <span className="font-black text-gray-800 bg-gray-100 px-2 py-0.5 rounded-lg text-[11px]">
-                                                    {cls.presentCount + cls.lateCount} / {cls.totalEnrolled} حاضر
-                                                </span>
-                                            </div>
+                            <div className="space-y-3 pt-0.5">
+                                {groupedStages.map((stage) => (
+                                    <div key={stage.id} className="space-y-2">
+                                        <div className="flex items-center gap-2 pt-1 first:pt-0">
+                                            <span className={`text-[11px] sm:text-xs font-black px-2.5 py-0.5 rounded-lg border flex items-center gap-1.5 shadow-2xs ${stage.badgeColor}`}>
+                                                <Layers className="w-3.5 h-3.5 shrink-0" />
+                                                <span>{stage.label}</span>
+                                                <span className="opacity-75 text-[10px] font-bold">({stage.classes.length} حصة)</span>
+                                            </span>
+                                            <div className="flex-1 h-px bg-gray-100" />
                                         </div>
-                                    );
-                                })}
+
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2">
+                                            {stage.classes.map((cls) => {
+                                                const isCompleted = cls.sessionStatus === 'COMPLETED';
+                                                const isInProgress = cls.sessionStatus === 'IN_PROGRESS';
+
+                                                return (
+                                                    <div
+                                                        key={cls.group._id}
+                                                        onClick={() => {
+                                                            router.push(`/center/attendance/${cls.group._id}?date=${selectedDate}`);
+                                                        }}
+                                                        role="button"
+                                                        tabIndex={0}
+                                                        className={`p-3 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between gap-2 relative overflow-hidden group hover:scale-[1.01] hover:shadow-md active:scale-[0.99] ${
+                                                            isCompleted
+                                                                ? 'border-emerald-200 bg-emerald-50/20 hover:border-emerald-400'
+                                                                : isInProgress
+                                                                    ? 'border-amber-300 bg-amber-50/25 hover:border-amber-400'
+                                                                    : 'border-gray-200/90 bg-white hover:border-indigo-400'
+                                                        }`}
+                                                    >
+                                                        <div>
+                                                            <div className="flex items-center justify-between gap-1 mb-1.5">
+                                                                <span className="text-[10px] sm:text-[11px] font-black text-indigo-950 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100 leading-tight">
+                                                                    {cls.group.gradeLevel}
+                                                                </span>
+                                                                {isCompleted ? (
+                                                                    <span className="inline-flex items-center gap-0.5 bg-emerald-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0">
+                                                                        <CheckCheck className="w-2.5 h-2.5" />
+                                                                        منتهية
+                                                                    </span>
+                                                                ) : isInProgress ? (
+                                                                    <span className="inline-flex items-center bg-amber-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0">
+                                                                        جارية
+                                                                    </span>
+                                                                ) : null}
+                                                            </div>
+
+                                                            <h3 className="font-black text-gray-900 text-xs sm:text-sm truncate group-hover:text-indigo-600 transition-colors">
+                                                                {cls.group.name}
+                                                            </h3>
+                                                            <p className="text-[10px] sm:text-[11px] text-gray-500 font-semibold truncate mt-0.5">
+                                                                {cls.teacher?.name || 'مدرس بالسنتر'}
+                                                                {cls.subject && cls.subject !== cls.group.name ? ` — ${cls.subject}` : ''}
+                                                            </p>
+                                                        </div>
+
+                                                        <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-[10px]">
+                                                            <span className="flex items-center gap-1 font-bold text-gray-600">
+                                                                <Clock className="w-3 h-3 text-indigo-600 shrink-0" />
+                                                                {cls.scheduledTime || '—'}
+                                                            </span>
+                                                            <span className={`font-black px-1.5 py-0.5 rounded text-[10px] ${
+                                                                isCompleted
+                                                                    ? 'bg-emerald-100 text-emerald-800'
+                                                                    : (cls.presentCount + cls.lateCount) > 0
+                                                                        ? 'bg-indigo-100 text-indigo-800'
+                                                                        : 'bg-gray-100 text-gray-600'
+                                                            }`}>
+                                                                {cls.presentCount + cls.lateCount} / {cls.totalEnrolled} حاضر
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         )}
                     </div>
 
-                    {/* ── SELECTED CLASS ATTENDANCE WORKSPACE ─────────────────────── */}
-                    {selectedGroupId && sessionDetail && (
-                        <div className="space-y-5">
-                            {/* Snapshot Banner if Session is Completed */}
-                            {isSessionCompleted && (
-                                <div className="bg-emerald-50 border-2 border-emerald-200 p-4 sm:p-5 rounded-3xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                    <div className="flex items-start gap-3">
-                                        <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                                            <History className="w-5 h-5" />
-                                        </div>
-                                        <div>
-                                            <div className="flex flex-wrap items-center gap-2">
-                                                <h3 className="text-sm sm:text-base font-black text-emerald-950">
-                                                    تم إنهاء هذه الحصة وحفظ السناب شوت (Snapshot)
-                                                </h3>
-                                                {sessionDetail.session.completedAt && (
-                                                    <Badge variant="outline" className="bg-white text-emerald-800 border-emerald-300 text-[10px] font-bold">
-                                                        وقت الإنهاء:{' '}
-                                                        {new Date(sessionDetail.session.completedAt).toLocaleTimeString('ar-EG', {
-                                                            hour: '2-digit',
-                                                            minute: '2-digit',
-                                                        })}
-                                                    </Badge>
-                                                )}
-                                            </div>
-                                            <p className="text-xs text-emerald-800 mt-1">
-                                                يمكنك تعديل حالة الغياب أو الحضور لأي طالب بالأسفل في أي وقت — سيتم تحديث السناب شوت تلقائياً وإرسال إشعار <strong>[تصحيح]</strong> لولي الأمر على الأبليكيشن.
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-2 shrink-0">
-                                        <Badge className="bg-emerald-700 text-white text-xs px-3 py-1 font-bold">
-                                            حضر: {sessionDetail.stats.presentCount + sessionDetail.stats.lateCount}
-                                        </Badge>
-                                        <Badge className="bg-rose-600 text-white text-xs px-3 py-1 font-bold">
-                                            غاب: {sessionDetail.stats.absentCount}
-                                        </Badge>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Class Scanner + Complete Session Bar */}
-                            <div className="bg-gradient-to-br from-indigo-50/70 via-white to-indigo-50/30 border-2 border-indigo-200/80 p-5 sm:p-6 rounded-3xl shadow-xs space-y-4">
-                                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-indigo-100 pb-4">
-                                    <div>
-                                        <div className="flex flex-wrap items-center gap-2">
-                                            <Badge className="bg-indigo-600 text-white font-bold text-xs">
-                                                {sessionDetail.group.gradeLevel}
-                                            </Badge>
-                                            <h3 className="text-lg sm:text-xl font-black text-gray-900">
-                                                {sessionDetail.group.name}
-                                            </h3>
-                                            {sessionDetail.teacher && (
-                                                <span className="text-xs sm:text-sm font-bold text-indigo-700">
-                                                    — أ/ {sessionDetail.teacher.name} ({sessionDetail.teacher.subject})
-                                                </span>
-                                            )}
-                                        </div>
-                                        <p className="text-xs text-gray-500 mt-1">
-                                            امسح QR كارت الطالب لتحضيره في هذه الحصة فوراً وإظهار موقفه المالي، أو حضّر الطلاب يدوياً من الكشف بالأسفل.
-                                        </p>
-                                    </div>
-
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        <Button
-                                            type="button"
-                                            variant={showClassCamera ? 'destructive' : 'outline'}
-                                            size="sm"
-                                            onClick={() => setShowClassCamera(!showClassCamera)}
-                                            className="rounded-xl h-10 px-3.5 gap-1.5 text-xs font-bold"
-                                        >
-                                            <Camera className="w-4 h-4" />
-                                            <span>{showClassCamera ? 'إغلاق الكاميرا' : 'مسح بالكاميرا للحصة'}</span>
-                                        </Button>
-
-                                        <Button
-                                            type="button"
-                                            onClick={() => setIsCompleteDialogOpen(true)}
-                                            className={`rounded-xl h-10 px-4 gap-2 text-xs font-black shadow-sm ${isSessionCompleted
-                                                    ? 'bg-emerald-700 hover:bg-emerald-800 text-white'
-                                                    : 'bg-indigo-600 hover:bg-indigo-700 text-white'
-                                                }`}
-                                        >
-                                            <CheckCheck className="w-4 h-4" />
-                                            <span>
-                                                {isSessionCompleted
-                                                    ? 'تحديث السناب شوت وإعادة إرسال الإشعارات'
-                                                    : 'إنهاء الحصة وحفظ السناب شوت'}
-                                            </span>
-                                        </Button>
-                                    </div>
-                                </div>
-
-                                {/* Class Camera QR Scanner */}
-                                {showClassCamera && (
-                                    <div className="relative rounded-2xl overflow-hidden border-2 border-indigo-300 bg-black/5 p-2 max-w-xl mx-auto">
-                                        <div className="flex items-center justify-between pb-2 px-2 text-xs font-bold text-gray-700">
-                                            <span>وجّه الكاميرا نحو QR كارت الطالب لتحضيره في ({sessionDetail.group.name})</span>
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowClassCamera(false)}
-                                                className="text-gray-400 hover:text-gray-700 p-1"
-                                            >
-                                                <X className="w-4 h-4" />
-                                            </button>
-                                        </div>
-                                        <QrScanner
-                                            mode="attendance"
-                                            keepOpen={true}
-                                            autoStart={true}
-                                            onScanned={(code) => {
-                                                recordSessionAttMutation.mutate({
-                                                    studentIdOrCode: code,
-                                                    status: 'PRESENT',
-                                                    source: 'QR_SCAN',
-                                                });
-                                            }}
-                                        />
-                                    </div>
-                                )}
-
-                                {/* Class Barcode Input Form */}
-                                <form onSubmit={handleClassBarcodeSubmit} className="flex flex-col sm:flex-row items-center gap-3">
-                                    <div className="relative flex-1 w-full">
-                                        <QrCode className="absolute right-4 top-1/2 -translate-y-1/2 h-5 w-5 text-indigo-600" />
-                                        <Input
-                                            ref={classBarcodeInputRef}
-                                            value={classBarcodeInput}
-                                            onChange={(e) => setClassBarcodeInput(e.target.value)}
-                                            placeholder="امسح باركود الطالب أو اكتب كوده لتحضيره في هذه الحصة..."
-                                            className="pr-12 h-12 text-sm font-bold bg-white rounded-2xl border-indigo-200 focus:border-indigo-600"
-                                            disabled={recordSessionAttMutation.isPending}
-                                        />
-                                    </div>
-                                    <Button
-                                        type="submit"
-                                        disabled={recordSessionAttMutation.isPending || !classBarcodeInput.trim()}
-                                        className="h-12 px-6 rounded-2xl font-black text-xs sm:text-sm w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white"
-                                    >
-                                        {recordSessionAttMutation.isPending ? 'جاري التحضير...' : 'تحضير في الحصة'}
-                                    </Button>
-                                </form>
-
-                                {/* Scanned Student Result Banner inside Class Mode (with Debt Alert + Collect Payment Button) */}
-                                {lastClassScan && (
-                                    <div
-                                        className={`p-4 rounded-2xl border-2 flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${lastClassScan.financialStatus?.hasDebt
-                                                ? 'bg-amber-50 border-amber-300'
-                                                : 'bg-emerald-50 border-emerald-300'
-                                            }`}
-                                    >
-                                        <div className="space-y-1">
-                                            <div className="flex flex-wrap items-center gap-2">
-                                                <span className="text-base font-black text-gray-900">
-                                                    {lastClassScan.student.studentName}
-                                                </span>
-                                                <Badge variant="outline" className="font-mono text-xs bg-white">
-                                                    {lastClassScan.student.studentCode}
-                                                </Badge>
-                                                <Badge className="bg-emerald-600 text-white text-xs font-bold">
-                                                    تم تحضيره بالحصة ✓
-                                                </Badge>
-                                            </div>
-                                            {lastClassScan.financialStatus?.hasDebt ? (
-                                                <div className="flex items-center gap-2 text-amber-900 text-xs font-black pt-1">
-                                                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                                                    <span>
-                                                        تنبيه مالي: الطالب عليه مصاريف متبقية بقيمة{' '}
-                                                        <span className="text-rose-700 underline">
-                                                            {lastClassScan.financialStatus.totalRemainingDebt} ج.م
-                                                        </span>
-                                                    </span>
-                                                </div>
-                                            ) : (
-                                                <div className="text-xs font-bold text-emerald-700">
-                                                    ✅ الطالب خالص المصاريف
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        <div className="flex items-center gap-2 shrink-0">
-                                            <Button
-                                                type="button"
-                                                size="sm"
-                                                onClick={() =>
-                                                    handleOpenPaymentModal({
-                                                        studentId: lastClassScan.student._id,
-                                                        studentName: lastClassScan.student.studentName,
-                                                        studentCode: lastClassScan.student.studentCode,
-                                                        gradeLevel: lastClassScan.student.gradeLevel,
-                                                        totalRemainingDebt:
-                                                            lastClassScan.financialStatus?.totalRemainingDebt || 0,
-                                                    })
-                                                }
-                                                className="rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs gap-1.5 h-9 px-3.5 shadow-xs"
-                                            >
-                                                <DollarSign className="w-4 h-4" />
-                                                <span>تحصيل المصاريف</span>
-                                            </Button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setLastClassScan(null)}
-                                                className="text-gray-400 hover:text-gray-700 p-1"
-                                            >
-                                                <X className="w-4 h-4" />
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Class Students Sheet */}
-                            <div className="bg-white rounded-3xl border border-gray-100 shadow-xs overflow-hidden">
-                                {/* Sheet Header & Filters */}
-                                <div className="p-4 sm:p-6 border-b border-gray-100 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                                    <div className="flex flex-wrap items-center gap-3">
-                                        <div>
-                                            <h4 className="text-base font-black text-gray-900">
-                                                كشف طلاب الحصة ({sessionDetail.stats.totalEnrolled} طالب مسجل)
-                                            </h4>
-                                            <p className="text-xs text-gray-500 mt-0.5">
-                                                يشمل طلاب الباكيدج لهذا الصف + طلاب البرايفت المسجلين في هذه الحصة فقط.
-                                            </p>
-                                        </div>
-                                    </div>
-
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        {/* Quick Status Counters / Filters */}
-                                        <button
-                                            type="button"
-                                            onClick={() => setClassStatusFilter('ALL')}
-                                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${classStatusFilter === 'ALL'
-                                                    ? 'bg-gray-900 text-white'
-                                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                                }`}
-                                        >
-                                            الكل ({sessionDetail.stats.totalEnrolled})
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setClassStatusFilter('PRESENT')}
-                                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${classStatusFilter === 'PRESENT'
-                                                    ? 'bg-emerald-600 text-white'
-                                                    : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                                                }`}
-                                        >
-                                            حاضر ({sessionDetail.stats.presentCount + sessionDetail.stats.lateCount})
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setClassStatusFilter('ABSENT')}
-                                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${classStatusFilter === 'ABSENT'
-                                                    ? 'bg-rose-600 text-white'
-                                                    : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
-                                                }`}
-                                        >
-                                            غائب ({sessionDetail.stats.absentCount})
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setClassStatusFilter('HAS_DEBT')}
-                                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${classStatusFilter === 'HAS_DEBT'
-                                                    ? 'bg-amber-600 text-white'
-                                                    : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
-                                                }`}
-                                        >
-                                            عليه مصاريف ({sessionStudents.filter((s) => s.financialStatus.hasDebt).length})
-                                        </button>
-
-                                        {/* Search Input */}
-                                        <div className="relative w-full sm:w-56">
-                                            <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                                            <Input
-                                                value={classStudentSearch}
-                                                onChange={(e) => setClassStudentSearch(e.target.value)}
-                                                placeholder="بحث بالاسم أو الكود..."
-                                                className="pr-8 h-9 text-xs rounded-xl bg-gray-50 border-gray-200"
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {loadingSessionDetail ? (
-                                    <div className="py-16 text-center text-xs text-gray-400">
-                                        جاري تحميل كشف طلاب الحصة...
-                                    </div>
-                                ) : filteredSessionStudents.length === 0 ? (
-                                    <div className="py-16 text-center text-xs text-gray-400">
-                                        لا يوجد طلاب مطابقين للبحث في هذه الحصة.
-                                    </div>
-                                ) : (
-                                    <>
-                                        {/* Desktop Table */}
-                                        <div className="hidden md:block overflow-x-auto">
-                                            <table className="w-full text-sm">
-                                                <thead>
-                                                    <tr className="border-b border-gray-100 text-right text-gray-500 text-xs bg-gray-50/50">
-                                                        <th className="px-4 py-3 font-semibold">#</th>
-                                                        <th className="px-4 py-3 font-semibold">الطالب</th>
-                                                        <th className="px-4 py-3 font-semibold">الكود</th>
-                                                        <th className="px-4 py-3 font-semibold">نوع الاشتراك</th>
-                                                        <th className="px-4 py-3 font-semibold text-center">الموقف المالي</th>
-                                                        <th className="px-4 py-3 font-semibold text-center">حالة الحضور بالحصة</th>
-                                                        <th className="px-4 py-3 font-semibold text-center">تحصيل مصاريف</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-gray-50">
-                                                    {filteredSessionStudents.map((st, idx) => (
-                                                        <tr key={st._id} className="hover:bg-gray-50/60 transition-colors">
-                                                            <td className="px-4 py-3 text-xs text-gray-400 font-mono">
-                                                                {idx + 1}
-                                                            </td>
-                                                            <td className="px-4 py-3">
-                                                                <Link
-                                                                    href={`/center/students/${st._id}`}
-                                                                    className="font-bold text-gray-900 hover:text-primary transition-colors block"
-                                                                >
-                                                                    {st.studentName}
-                                                                </Link>
-                                                                {st.studentPhone && (
-                                                                    <span className="text-[11px] text-gray-400 dir-ltr block text-right">
-                                                                        {st.studentPhone}
-                                                                    </span>
-                                                                )}
-                                                            </td>
-                                                            <td className="px-4 py-3 font-mono text-xs font-bold text-gray-600">
-                                                                {st.studentCode}
-                                                            </td>
-                                                            <td className="px-4 py-3">
-                                                                <Badge
-                                                                    variant="outline"
-                                                                    className={`text-[10px] font-bold ${st.enrollmentType === 'PACKAGE'
-                                                                            ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                                                            : st.enrollmentType === 'PRIVATE'
-                                                                                ? 'bg-purple-50 text-purple-700 border-purple-200'
-                                                                                : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                                                        }`}
-                                                                >
-                                                                    {st.enrollmentType === 'PACKAGE'
-                                                                        ? `باكيدج ${st.packageName || ''}`
-                                                                        : st.enrollmentType === 'PRIVATE'
-                                                                            ? 'حصة برايفت'
-                                                                            : 'باكيدج + برايفت'}
-                                                                </Badge>
-                                                            </td>
-                                                            <td className="px-4 py-3 text-center">
-                                                                {st.financialStatus.hasDebt ? (
-                                                                    <Badge
-                                                                        variant="outline"
-                                                                        className="bg-amber-50 text-amber-900 border-amber-300 text-[11px] font-black"
-                                                                    >
-                                                                        متبقي {st.financialStatus.totalRemainingDebt} ج.م
-                                                                    </Badge>
-                                                                ) : (
-                                                                    <Badge
-                                                                        variant="outline"
-                                                                        className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[11px] font-bold"
-                                                                    >
-                                                                        خالص
-                                                                    </Badge>
-                                                                )}
-                                                            </td>
-                                                            <td className="px-4 py-3">
-                                                                <div className="flex items-center justify-center gap-1.5">
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleSetClassStudentStatus(st._id, 'PRESENT')}
-                                                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${st.status === 'PRESENT'
-                                                                                ? 'bg-emerald-600 text-white shadow-xs'
-                                                                                : 'bg-gray-100 text-gray-600 hover:bg-emerald-50 hover:text-emerald-700'
-                                                                            }`}
-                                                                    >
-                                                                        حاضر
-                                                                    </button>
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleSetClassStudentStatus(st._id, 'ABSENT')}
-                                                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${st.status === 'ABSENT'
-                                                                                ? 'bg-rose-600 text-white shadow-xs'
-                                                                                : 'bg-gray-100 text-gray-600 hover:bg-rose-50 hover:text-rose-700'
-                                                                            }`}
-                                                                    >
-                                                                        غائب
-                                                                    </button>
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleSetClassStudentStatus(st._id, 'LATE')}
-                                                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${st.status === 'LATE'
-                                                                                ? 'bg-amber-500 text-white shadow-xs'
-                                                                                : 'bg-gray-100 text-gray-600 hover:bg-amber-50 hover:text-amber-700'
-                                                                            }`}
-                                                                    >
-                                                                        متأخر
-                                                                    </button>
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleSetClassStudentStatus(st._id, 'EXCUSED')}
-                                                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${st.status === 'EXCUSED'
-                                                                                ? 'bg-blue-600 text-white shadow-xs'
-                                                                                : 'bg-gray-100 text-gray-600 hover:bg-blue-50 hover:text-blue-700'
-                                                                            }`}
-                                                                    >
-                                                                        معذور
-                                                                    </button>
-                                                                </div>
-                                                            </td>
-                                                            <td className="px-4 py-3 text-center">
-                                                                <Button
-                                                                    type="button"
-                                                                    size="sm"
-                                                                    variant={st.financialStatus.hasDebt ? 'default' : 'outline'}
-                                                                    onClick={() =>
-                                                                        handleOpenPaymentModal({
-                                                                            studentId: st._id,
-                                                                            studentName: st.studentName,
-                                                                            studentCode: st.studentCode,
-                                                                            gradeLevel: st.gradeLevel,
-                                                                            totalRemainingDebt:
-                                                                                st.financialStatus.totalRemainingDebt,
-                                                                        })
-                                                                    }
-                                                                    className={`h-8 px-3 rounded-xl text-xs font-bold gap-1 ${st.financialStatus.hasDebt
-                                                                            ? 'bg-amber-600 hover:bg-amber-700 text-white'
-                                                                            : 'border-gray-200 text-gray-600'
-                                                                        }`}
-                                                                >
-                                                                    <DollarSign className="w-3.5 h-3.5" />
-                                                                    <span>تحصيل</span>
-                                                                </Button>
-                                                            </td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-
-                                        {/* Mobile Touch-Friendly Cards */}
-                                        <div className="md:hidden divide-y divide-gray-100">
-                                            {filteredSessionStudents.map((st) => (
-                                                <div key={st._id} className="p-4 space-y-3">
-                                                    <div className="flex items-start justify-between gap-2">
-                                                        <div>
-                                                            <Link
-                                                                href={`/center/students/${st._id}`}
-                                                                className="font-black text-gray-900 text-sm hover:text-primary"
-                                                            >
-                                                                {st.studentName}
-                                                            </Link>
-                                                            <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                                                                <span className="text-[11px] font-mono bg-gray-100 px-2 py-0.5 rounded text-gray-600 font-bold">
-                                                                    {st.studentCode}
-                                                                </span>
-                                                                <Badge variant="outline" className="text-[10px] font-bold">
-                                                                    {st.enrollmentType === 'PACKAGE' ? 'باكيدج' : 'برايفت'}
-                                                                </Badge>
-                                                                {st.financialStatus.hasDebt ? (
-                                                                    <Badge className="bg-amber-100 text-amber-900 border-amber-300 text-[10px] font-black">
-                                                                        عليه {st.financialStatus.totalRemainingDebt} ج.م
-                                                                    </Badge>
-                                                                ) : (
-                                                                    <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] font-bold">
-                                                                        خالص
-                                                                    </Badge>
-                                                                )}
-                                                            </div>
-                                                        </div>
-
-                                                        <Button
-                                                            type="button"
-                                                            size="sm"
-                                                            onClick={() =>
-                                                                handleOpenPaymentModal({
-                                                                    studentId: st._id,
-                                                                    studentName: st.studentName,
-                                                                    studentCode: st.studentCode,
-                                                                    gradeLevel: st.gradeLevel,
-                                                                    totalRemainingDebt: st.financialStatus.totalRemainingDebt,
-                                                                })
-                                                            }
-                                                            className={`h-8 px-2.5 rounded-xl text-[11px] font-bold gap-1 shrink-0 ${st.financialStatus.hasDebt
-                                                                    ? 'bg-amber-600 hover:bg-amber-700 text-white'
-                                                                    : 'bg-gray-100 text-gray-700'
-                                                                }`}
-                                                        >
-                                                            <DollarSign className="w-3.5 h-3.5" />
-                                                            <span>تحصيل</span>
-                                                        </Button>
-                                                    </div>
-
-                                                    <div className="grid grid-cols-4 gap-1.5">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleSetClassStudentStatus(st._id, 'PRESENT')}
-                                                            className={`py-2 rounded-xl text-xs font-bold transition-all ${st.status === 'PRESENT'
-                                                                    ? 'bg-emerald-600 text-white shadow-xs'
-                                                                    : 'bg-gray-100 text-gray-600'
-                                                                }`}
-                                                        >
-                                                            حاضر
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleSetClassStudentStatus(st._id, 'ABSENT')}
-                                                            className={`py-2 rounded-xl text-xs font-bold transition-all ${st.status === 'ABSENT'
-                                                                    ? 'bg-rose-600 text-white shadow-xs'
-                                                                    : 'bg-gray-100 text-gray-600'
-                                                                }`}
-                                                        >
-                                                            غائب
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleSetClassStudentStatus(st._id, 'LATE')}
-                                                            className={`py-2 rounded-xl text-xs font-bold transition-all ${st.status === 'LATE'
-                                                                    ? 'bg-amber-500 text-white shadow-xs'
-                                                                    : 'bg-gray-100 text-gray-600'
-                                                                }`}
-                                                        >
-                                                            متأخر
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleSetClassStudentStatus(st._id, 'EXCUSED')}
-                                                            className={`py-2 rounded-xl text-xs font-bold transition-all ${st.status === 'EXCUSED'
-                                                                    ? 'bg-blue-600 text-white shadow-xs'
-                                                                    : 'bg-gray-100 text-gray-600'
-                                                                }`}
-                                                        >
-                                                            معذور
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </>
-                                )}
-                            </div>
-                        </div>
-                    )}
-                </div>
+                    </div>
             )}
 
             {/* ════════════════════════════════════════════════════════════════════ */}
@@ -1998,60 +1362,6 @@ export default function CenterAttendancePage() {
                     </div>
                 </div>
             )}
-
-            {/* ── Complete Class Session & Save Snapshot Confirmation Dialog ──── */}
-            <Dialog open={isCompleteDialogOpen} onOpenChange={setIsCompleteDialogOpen}>
-                <DialogContent className="sm:max-w-md text-right font-sans" dir="rtl">
-                    <DialogHeader>
-                        <DialogTitle className="text-lg font-black text-gray-900 flex items-center gap-2">
-                            <CheckCheck className="w-5 h-5 text-indigo-600" />
-                            <span>إنهاء الحصة وحفظ السناب شوت</span>
-                        </DialogTitle>
-                    </DialogHeader>
-
-                    <div className="space-y-4 py-2 text-xs text-gray-600">
-                        <p className="leading-relaxed">
-                            عند إنهاء الحصة <strong>({sessionDetail?.group?.name})</strong> ليوم{' '}
-                            <strong>{selectedDate}</strong>:
-                        </p>
-                        <ul className="list-disc pr-5 space-y-1.5 text-gray-700 font-medium">
-                            <li>يتم تسجيل الطلاب غير المحضرين كـ <strong>غائبين (ABSENT)</strong> تلقائياً.</li>
-                            <li>يتم حفظ <strong>سناب شوت (Snapshot)</strong> كامل للحصة بأسماء وحالات كل الطلاب.</li>
-                            <li>يمكنك تعديل الغياب والحضور بعد الإنهاء في أي وقت.</li>
-                        </ul>
-
-                        <label className="flex items-center gap-2.5 p-3 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-950 font-bold cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={sendNotificationsOnComplete}
-                                onChange={(e) => setSendNotificationsOnComplete(e.target.checked)}
-                                className="h-4 w-4 rounded border-indigo-300 text-indigo-600"
-                            />
-                            <span>إرسال إشعارات الحضور والغياب لأولياء الأمور على الأبليكيشن الآن</span>
-                        </label>
-                    </div>
-
-                    <DialogFooter className="gap-2 sm:justify-start">
-                        <Button
-                            type="button"
-                            onClick={() => completeSessionMutation.mutate()}
-                            disabled={completeSessionMutation.isPending}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl gap-2"
-                        >
-                            {completeSessionMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                            <span>تأكيد إنهاء الحصة وحفظ السناب شوت</span>
-                        </Button>
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => setIsCompleteDialogOpen(false)}
-                            className="rounded-xl"
-                        >
-                            إلغاء
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
 
             {/* ── Shared Quick Fee Collection Modal (نافذة تحصيل المصاريف) ─────── */}
             <Dialog open={!!paymentModalStudent} onOpenChange={(open) => !open && setPaymentModalStudent(null)}>

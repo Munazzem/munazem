@@ -409,10 +409,10 @@ export function CenterDashboardCalendar({
                                             isSelected
                                                 ? 'bg-emerald-600 text-white border-emerald-600 shadow-md scale-102 z-10'
                                                 : isTod
-                                                ? 'bg-emerald-50/80 border-emerald-300 text-emerald-950 font-black ring-2 ring-emerald-200'
-                                                : isCurrent
-                                                ? 'bg-white hover:bg-gray-50 border-gray-100 text-gray-800'
-                                                : 'bg-gray-50/40 border-transparent text-gray-300 hover:bg-gray-100/50'
+                                                    ? 'bg-emerald-50/80 border-emerald-300 text-emerald-950 font-black ring-2 ring-emerald-200'
+                                                    : isCurrent
+                                                        ? 'bg-white hover:bg-gray-50 border-gray-100 text-gray-800'
+                                                        : 'bg-gray-50/40 border-transparent text-gray-300 hover:bg-gray-100/50'
                                         )}
                                     >
                                         <div className="flex items-center justify-between w-full px-0.5">
@@ -550,15 +550,15 @@ export function CenterDashboardCalendar({
                                                         group.groupType === 'PACKAGE'
                                                             ? 'bg-blue-50 text-blue-700 border-blue-200'
                                                             : group.groupType === 'PRIVATE'
-                                                            ? 'bg-purple-50 text-purple-700 border-purple-200'
-                                                            : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                                ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                                                : 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                                     )}
                                                 >
                                                     {group.groupType === 'PACKAGE'
                                                         ? 'باقة'
                                                         : group.groupType === 'PRIVATE'
-                                                        ? 'برايفت'
-                                                        : 'مختلط'}
+                                                            ? 'برايفت'
+                                                            : 'مختلط'}
                                                 </Badge>
                                             </div>
 
@@ -572,7 +572,7 @@ export function CenterDashboardCalendar({
                                                 </div>
 
                                                 <div className="flex items-center gap-2">
-                                                    <Link href={`/center/attendance?groupId=${group._id}`}>
+                                                    <Link href={`/center/attendance/${group._id}`}>
                                                         <Button
                                                             size="sm"
                                                             className="h-7 text-[11px] font-bold px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
