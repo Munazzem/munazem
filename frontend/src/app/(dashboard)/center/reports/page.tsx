@@ -175,11 +175,17 @@ export default function CenterReportsPage() {
                     gradeLevel: weeklyGradeLevel,
                     mode: weeklyMode,
                     groupId: weeklyMode === 'CLASSES' && weeklyGroupId ? weeklyGroupId : undefined,
+                    weekStart: weeklyStartDate,
                     weekStartDate: weeklyStartDate,
                 },
                 responseType: 'text',
             });
-            printHtmlContent(response.data);
+            const htmlContent = typeof response === 'string' ? response : (response as any)?.data;
+            if (!htmlContent || typeof htmlContent !== 'string') {
+                toast.error('لم يتم استلام محتوى الكشف من الخادم');
+                return;
+            }
+            printHtmlContent(htmlContent, `كشف الحضور الأسبوعي - ${weeklyGradeLevel}`);
         } catch (err: any) {
             toast.error(err.response?.data?.message || 'تعذر تجهيز كشف الحضور والغياب للطباعة');
         } finally {
@@ -640,6 +646,17 @@ export default function CenterReportsPage() {
                                                                     <div className="inline-flex flex-col items-center">
                                                                         <span className="px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 font-bold text-[11px]">
                                                                             غائب ✗
+                                                                        </span>
+                                                                        {details.length > 0 && (
+                                                                            <span className="text-[9px] text-gray-400 mt-0.5 max-w-[90px] truncate">
+                                                                                {details.join('، ')}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                ) : st === 'PENDING' || details.length > 0 ? (
+                                                                    <div className="inline-flex flex-col items-center">
+                                                                        <span className="px-2 py-0.5 rounded-md bg-slate-50 text-slate-600 border border-slate-200 font-bold text-[11px]">
+                                                                            مجدول ○
                                                                         </span>
                                                                         {details.length > 0 && (
                                                                             <span className="text-[9px] text-gray-400 mt-0.5 max-w-[90px] truncate">

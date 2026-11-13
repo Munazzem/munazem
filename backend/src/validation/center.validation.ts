@@ -298,6 +298,7 @@ export const createCenterStudentSchema = z.object({
         gradeLevel: z.nativeEnum(GradeLevel, { message: 'المرحلة الدراسية غير صحيحة' }),
         studentType: z.enum(['PACKAGE', 'PRIVATE', 'BOTH']).optional(),
         packageId: z.string().optional().nullable(),
+        packageGroups: z.array(z.string()).optional(),
         groupId: z.string().optional().nullable(),
         groupIds: z.array(z.string()).optional(),
         privateTeachers: z.array(z.object({
@@ -334,6 +335,23 @@ export const updateCenterStudentSchema = z.object({
         parentPhone: z.string().optional().nullable(),
         gradeLevel: z.nativeEnum(GradeLevel, { message: 'المرحلة الدراسية غير صحيحة' }).optional(),
         studentType: z.enum(['PACKAGE', 'PRIVATE', 'BOTH']).optional(),
+        packageId: z.string().optional().nullable(),
+        packageGroups: z.array(z.string()).optional(),
+        privateTeachers: z.array(z.object({
+            centerTeacherId: z.string().optional(),
+            groupId: z.string().min(1),
+            subject: z.string().optional().nullable(),
+            monthlyPrice: z.number().min(0).optional(),
+            sessionsPerWeek: z.number().min(1).optional(),
+        })).optional(),
+        packageDiscount: z.object({
+            type: z.enum(['FIXED', 'PERCENTAGE']).nullable().optional(),
+            value: z.number().min(0).optional(),
+        }).optional().nullable(),
+        privateDiscount: z.object({
+            type: z.enum(['FIXED', 'PERCENTAGE']).nullable().optional(),
+            value: z.number().min(0).optional(),
+        }).optional().nullable(),
         barcode: z.string().optional().nullable(),
         notes: z.string().optional().nullable(),
         isActive: z.boolean().optional(),

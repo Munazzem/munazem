@@ -14,6 +14,7 @@ import {
     fetchCenterTeachers,
     fetchCenterGroups,
     enrollStudent,
+    fetchStudentEnrollment,
 } from '@/lib/api/centers';
 import type {
     ICenterStudent,
@@ -359,8 +360,13 @@ export default function CenterStudentsPage() {
         mutationFn: ({ id, data }: { id: string; data: Partial<CreateCenterStudentDTO & { isActive: boolean }> }) =>
             updateCenterStudent(id, data),
         onSuccess: () => {
-            toast.success('تم تحديث بيانات الطالب بنجاح');
+            toast.success('تم تحديث بيانات واشتراك الطالب بنجاح');
             queryClient.invalidateQueries({ queryKey: ['center', 'students'] });
+            queryClient.invalidateQueries({ queryKey: ['center', 'enrollments'] });
+            queryClient.invalidateQueries({ queryKey: ['center', 'today-sessions'] });
+            queryClient.invalidateQueries({ queryKey: ['center', 'session-detail'] });
+            queryClient.invalidateQueries({ queryKey: ['center', 'groups'] });
+            queryClient.invalidateQueries({ queryKey: ['center', 'reports'] });
             handleCloseSingleModal();
         },
         onError: (err: any) => {
@@ -418,7 +424,9 @@ export default function CenterStudentsPage() {
         setIsAddOpen(true);
     };
 
-    const handleOpenEdit = (student: ICenterStudent) => {
+    const [isLoadingEditEnrollment, setIsLoadingEditEnrollment] = useState(false);
+
+    const handleOpenEdit = async (student: ICenterStudent) => {
         setEditingStudent(student);
         setStudentName(student.studentName);
         setParentName(student.parentName);
@@ -428,8 +436,60 @@ export default function CenterStudentsPage() {
         setBarcode(student.barcode || '');
         setNotes(student.notes || '');
         setEditIsActive(student.isActive);
-        setEnrollImmediately(false);
+        setEnrollmentType((student.studentType as CenterEnrollmentType) || 'PACKAGE');
+        const fallbackPkgId = typeof (student as any).packageId === 'object' ? (student as any).packageId?._id : (student as any).packageId;
+        setPackageId(fallbackPkgId || '');
+        setSelectedPackageGroupIds([]);
+        setSelectedPrivateTeachers([]);
+        setPackageDiscountType('');
+        setPackageDiscountVal('0');
+        setPrivateDiscountType('');
+        setPrivateDiscountVal('0');
+        setEnrollImmediately(true);
         setIsAddOpen(true);
+
+        setIsLoadingEditEnrollment(true);
+        try {
+            const enrollment = await fetchStudentEnrollment(student._id);
+            if (enrollment) {
+                setEnrollmentType((enrollment.type as CenterEnrollmentType) || student.studentType || 'PACKAGE');
+                const pkgIdVal = typeof enrollment.packageId === 'object'
+                    ? (enrollment.packageId as any)?._id
+                    : enrollment.packageId;
+                setPackageId(pkgIdVal || '');
+                const grpIds = (enrollment.packageGroups || [])
+                    .map((g: any) => (typeof g === 'object' ? g?._id : g))
+                    .filter(Boolean);
+                setSelectedPackageGroupIds(grpIds);
+                const privList = (enrollment.privateTeachers || [])
+                    .map((pt: any) => {
+                        const tId = typeof pt.centerTeacherId === 'object'
+                            ? pt.centerTeacherId?._id
+                            : (pt.centerTeacherId || (typeof pt.teacherId === 'object' ? pt.teacherId?._id : pt.teacherId));
+                        const gId = typeof pt.groupId === 'object' ? pt.groupId?._id : pt.groupId;
+                        return {
+                            centerTeacherId: tId || '',
+                            groupId: gId || '',
+                            subject: pt.subject || '',
+                            monthlyPrice: pt.monthlyPrice || 0,
+                        };
+                    })
+                    .filter((pt: any) => pt.groupId);
+                setSelectedPrivateTeachers(privList);
+                if (enrollment.packageDiscount) {
+                    setPackageDiscountType(enrollment.packageDiscount.type || '');
+                    setPackageDiscountVal(String(enrollment.packageDiscount.value ?? 0));
+                }
+                if (enrollment.privateDiscount) {
+                    setPrivateDiscountType(enrollment.privateDiscount.type || '');
+                    setPrivateDiscountVal(String(enrollment.privateDiscount.value ?? 0));
+                }
+            }
+        } catch {
+            // Student has no active enrollment yet; user can configure one in the modal
+        } finally {
+            setIsLoadingEditEnrollment(false);
+        }
     };
 
     const handleCloseSingleModal = () => {
@@ -460,9 +520,47 @@ export default function CenterStudentsPage() {
         };
 
         if (editingStudent) {
+            const updatePayload: Partial<CreateCenterStudentDTO & { isActive: boolean }> = {
+                ...payload,
+                isActive: editIsActive,
+            };
+            if (enrollImmediately) {
+                if ((enrollmentType === 'PACKAGE' || enrollmentType === 'BOTH') && !packageId) {
+                    toast.error('يرجى اختيار الباقة التعليمية');
+                    return;
+                }
+                if ((enrollmentType === 'PRIVATE' || enrollmentType === 'BOTH') && selectedPrivateTeachers.length === 0) {
+                    toast.error('يرجى اختيار مجموعة برايفت واحدة على الأقل');
+                    return;
+                }
+                updatePayload.studentType = enrollmentType;
+                updatePayload.packageId = (enrollmentType === 'PACKAGE' || enrollmentType === 'BOTH') ? packageId : null;
+                updatePayload.packageGroups = (enrollmentType === 'PACKAGE' || enrollmentType === 'BOTH') ? selectedPackageGroupIds : [];
+                updatePayload.privateTeachers = (enrollmentType === 'PRIVATE' || enrollmentType === 'BOTH')
+                    ? selectedPrivateTeachers
+                          .filter((p) => Boolean(p.groupId))
+                          .map((p) => ({
+                              centerTeacherId: p.centerTeacherId,
+                              groupId: p.groupId as string,
+                              subject: p.subject,
+                          }))
+                    : [];
+                if (packageDiscountType) {
+                    updatePayload.packageDiscount = {
+                        type: packageDiscountType,
+                        value: Number(packageDiscountVal) || 0,
+                    };
+                }
+                if (privateDiscountType) {
+                    updatePayload.privateDiscount = {
+                        type: privateDiscountType,
+                        value: Number(privateDiscountVal) || 0,
+                    };
+                }
+            }
             updateMutation.mutate({
                 id: editingStudent._id,
-                data: { ...payload, isActive: editIsActive },
+                data: updatePayload,
             });
         } else {
             if (enrollImmediately) {
@@ -1019,13 +1117,12 @@ export default function CenterStudentsPage() {
                             </div>
                         )}
 
-                        {!editingStudent && (
-                            <div className="pt-2 border-t border-gray-100 space-y-3">
+                        <div className="pt-2 border-t border-gray-100 space-y-3">
                                 <div
                                     onClick={() => {
                                         const next = !enrollImmediately;
                                         setEnrollImmediately(next);
-                                        if (next && gradeLevel && packages.length > 0) {
+                                        if (next && gradeLevel && packages.length > 0 && !packageId) {
                                             const matchingPkg = packages.find((p) => p.gradeLevel === gradeLevel);
                                             if (matchingPkg) {
                                                 handleSelectPackage(matchingPkg._id);
@@ -1050,15 +1147,19 @@ export default function CenterStudentsPage() {
                                         />
                                         <div>
                                             <span className="font-bold text-gray-900 text-xs block">
-                                                تسجيل باقة / مجموعات للطالب فوراً مع الإضافة
+                                                {editingStudent
+                                                    ? 'تعديل نوع الاشتراك والباقة ومواد الطالب'
+                                                    : 'تسجيل باقة / مجموعات للطالب فوراً مع الإضافة'}
                                             </span>
                                             <span className="text-[11px] text-gray-500">
-                                                تحديد باقة ومجموعات الطالب مباشرة دون الحاجة للذهاب لقسم الاشتراكات
+                                                {editingStudent
+                                                    ? 'يمكنك التحويل بين باكيدج أو برايفت أو اختيار المواد التي يحضرها الطالب'
+                                                    : 'تحديد باقة ومجموعات الطالب مباشرة دون الحاجة للذهاب لقسم الاشتراكات'}
                                             </span>
                                         </div>
                                     </div>
                                     <Badge variant="outline" className={`text-[10px] font-bold ${enrollImmediately ? 'bg-primary text-white border-primary' : 'bg-gray-100 text-gray-600'}`}>
-                                        {enrollImmediately ? 'مفعل ✓' : 'اختياري'}
+                                        {isLoadingEditEnrollment ? 'جاري التحميل...' : enrollImmediately ? 'مفعل ✓' : 'اختياري'}
                                     </Badge>
                                 </div>
 
@@ -1134,11 +1235,28 @@ export default function CenterStudentsPage() {
                                                     <div className="space-y-1.5 pt-1">
                                                         <div className="flex items-center justify-between">
                                                             <label className="text-[11px] font-bold text-blue-950 flex items-center gap-1.5">
-                                                                <span>مجموعات الباقة المشمولة (محددة بالكامل تلقائياً):</span>
+                                                                <span>مجموعات الباقة المشمولة:</span>
                                                                 <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-200 text-[10px]">
-                                                                    {selectedPackageGroupIds.length} من {packageMatchingGroups.length} محدد
+                                                                    {packageMatchingGroups.filter((g) => selectedPackageGroupIds.includes(g._id)).length} من {packageMatchingGroups.length} محدد
                                                                 </Badge>
                                                             </label>
+                                                            <div className="flex items-center gap-1.5">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setSelectedPackageGroupIds(packageMatchingGroups.map((g) => g._id))}
+                                                                    className="text-[10px] font-bold text-blue-700 hover:underline"
+                                                                >
+                                                                    تحديد الكل
+                                                                </button>
+                                                                <span className="text-gray-300">|</span>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setSelectedPackageGroupIds([])}
+                                                                    className="text-[10px] font-bold text-gray-500 hover:underline"
+                                                                >
+                                                                    إلغاء الكل
+                                                                </button>
+                                                            </div>
                                                         </div>
 
                                                         {packageMatchingGroups.length === 0 ? (
@@ -1146,8 +1264,10 @@ export default function CenterStudentsPage() {
                                                                 ⚠️ لا توجد مجموعات مسجلة لهذه الباقة في مرحلة ({selectedPkg.gradeLevel}).
                                                             </div>
                                                         ) : (
-                                                            <div className="space-y-1.5 max-h-40 overflow-y-auto pr-0.5">
-                                                                {packageMatchingGroups.map((g) => {
+                                                            <div className="space-y-1.5 max-h-56 overflow-y-auto pr-0.5">
+                                                                {[...packageMatchingGroups]
+                                                                    .sort((a, b) => Number(selectedPackageGroupIds.includes(b._id)) - Number(selectedPackageGroupIds.includes(a._id)))
+                                                                    .map((g) => {
                                                                     const isChecked = selectedPackageGroupIds.includes(g._id);
                                                                     const teacherName = typeof g.centerTeacherId === 'object'
                                                                         ? (g.centerTeacherId as any)?.name
@@ -1313,8 +1433,7 @@ export default function CenterStudentsPage() {
                                         </div>
                                     </div>
                                 )}
-                            </div>
-                        )}
+                        </div>
 
                         <DialogFooter className="gap-2 pt-2">
                             <Button

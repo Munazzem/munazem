@@ -197,6 +197,7 @@ export interface FetchCenterStudentsParams {
     limit?: number;
     includeCounts?: boolean | 'true' | 'false';
     groupId?: string;
+    studentType?: 'PACKAGE' | 'PRIVATE' | 'BOTH';
 }
 
 export interface FetchCenterStudentsResponse {
@@ -239,7 +240,10 @@ export const bulkCreateCenterStudents = async (data: BulkCreateCenterStudentDTO)
     return (res as any).data;
 };
 
-export const updateCenterStudent = async (id: string, data: Partial<CreateCenterStudentDTO & { isActive: boolean }>): Promise<ICenterStudent> => {
+export const updateCenterStudent = async (
+    id: string,
+    data: Partial<CreateCenterStudentDTO & { isActive: boolean }>
+): Promise<ICenterStudent> => {
     const res = await apiClient.put(`/centers/students/${id}`, data);
     return (res as any).data;
 };

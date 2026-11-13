@@ -343,15 +343,19 @@ export interface CreateCenterStudentDTO {
     gradeLevel: string;
     studentType?: 'PACKAGE' | 'PRIVATE' | 'BOTH';
     packageId?: string | null;
+    packageGroups?: string[];
     groupId?: string | null;
     groupIds?: string[];
     privateTeachers?: Array<{
+        teacherId?: string;
         centerTeacherId?: string;
         groupId: string;
         subject?: string | null;
         monthlyPrice?: number;
         sessionsPerWeek?: number;
     }>;
+    packageDiscount?: { type: 'PERCENTAGE' | 'PERCENT' | 'FIXED'; value: number } | null;
+    privateDiscount?: { type: 'PERCENTAGE' | 'PERCENT' | 'FIXED'; value: number } | null;
     barcode?: string | null;
     notes?: string | null;
 }
@@ -624,7 +628,7 @@ export interface WeeklyAttendanceReportResponse {
         days: Array<{
             date: string;
             dayName: string;
-            status: 'PRESENT' | 'ABSENT' | 'MIXED' | 'NONE';
+            status: 'PRESENT' | 'ABSENT' | 'MIXED' | 'PENDING' | 'NONE';
             time?: string | null;
             classes?: Array<{
                 groupId: string;

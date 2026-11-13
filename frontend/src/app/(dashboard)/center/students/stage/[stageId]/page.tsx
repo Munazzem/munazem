@@ -14,6 +14,7 @@ import {
     fetchCenterTeachers,
     fetchCenterGroups,
     enrollStudent,
+    fetchStudentEnrollment,
 } from '@/lib/api/centers';
 import type {
     ICenterStudent,
@@ -88,6 +89,7 @@ export default function StageStudentsPage() {
             : 'ALL'
     );
     const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
+    const [studentTypeFilter, setStudentTypeFilter] = useState<'ALL' | 'PACKAGE' | 'PRIVATE' | 'BOTH'>('ALL');
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(20);
     const [copiedCode, setCopiedCode] = useState<string | null>(null);
@@ -161,6 +163,7 @@ export default function StageStudentsPage() {
             effectiveSearch,
             selectedGrade,
             isActiveParam,
+            studentTypeFilter,
             page,
             pageSize,
         ],
@@ -169,6 +172,7 @@ export default function StageStudentsPage() {
                 stage: stageConfig?.key,
                 gradeLevel: selectedGrade !== 'ALL' ? selectedGrade : undefined,
                 isActive: isActiveParam,
+                studentType: studentTypeFilter !== 'ALL' ? studentTypeFilter : undefined,
                 search: effectiveSearch,
                 page,
                 limit: pageSize,
@@ -256,27 +260,32 @@ export default function StageStudentsPage() {
     };
 
     useEffect(() => {
-        if (enrollImmediately && gradeLevel && packages.length > 0) {
+        if (!editingStudent && enrollImmediately && gradeLevel && packages.length > 0 && !packageId) {
             const matchingPkg = packages.find((p) => p.gradeLevel === gradeLevel);
-            if (matchingPkg && matchingPkg._id !== packageId) {
+            if (matchingPkg) {
                 handleSelectPackage(matchingPkg._id);
             }
         }
-    }, [gradeLevel, enrollImmediately, packages]);
+    }, [gradeLevel, enrollImmediately, packages, editingStudent]);
 
     const selectedPkg = packages.find((p) => p._id === packageId);
     const pkgTeacherIds = (selectedPkg?.teachers || []).map((t) =>
         typeof t.teacherId === 'object' ? (t.teacherId as any)._id : t.teacherId
     );
+    const pkgGroupIds = (selectedPkg?.teachers || [])
+        .map((t: any) => (typeof t.groupId === 'object' ? t.groupId?._id : t.groupId))
+        .filter(Boolean);
     const packageMatchingGroups = selectedPkg
         ? groups.filter((g) => {
-              const teacherId = typeof g.centerTeacherId === 'object' ? (g.centerTeacherId as any)._id : g.centerTeacherId;
-              const matchesTeacher = pkgTeacherIds.includes(teacherId);
-              const matchesGrade = g.gradeLevel === selectedPkg.gradeLevel;
-              const matchesType = g.groupType === 'PACKAGE' || g.groupType === 'MIXED';
-              return matchesTeacher && matchesGrade && matchesType;
-          })
+            if (pkgGroupIds.includes(g._id)) return true;
+            const teacherId = typeof g.centerTeacherId === 'object' ? (g.centerTeacherId as any)._id : g.centerTeacherId;
+            const matchesTeacher = pkgTeacherIds.includes(teacherId);
+            const matchesGrade = g.gradeLevel === selectedPkg.gradeLevel;
+            const matchesType = g.groupType === 'PACKAGE' || g.groupType === 'MIXED';
+            return matchesTeacher && matchesGrade && matchesType;
+        })
         : [];
+    const selectedPackageMatchingCount = packageMatchingGroups.filter((g) => selectedPackageGroupIds.includes(g._id)).length;
 
     const availablePrivateGroups = groups.filter((g) => {
         return g.gradeLevel === gradeLevel;
@@ -287,9 +296,9 @@ export default function StageStudentsPage() {
         : 0;
     const instantPrivatePrice = (enrollmentType === 'PRIVATE' || enrollmentType === 'BOTH')
         ? selectedPrivateTeachers.reduce((sum, p) => {
-              const grp = groups.find((g) => g._id === p.groupId);
-              return sum + (grp?.privateMonthlyPrice ?? p.monthlyPrice ?? 0);
-          }, 0)
+            const grp = groups.find((g) => g._id === p.groupId);
+            return sum + (grp?.privateMonthlyPrice ?? p.monthlyPrice ?? 0);
+        }, 0)
         : 0;
     const instantTotalPrice = instantPkgPrice + instantPrivatePrice;
 
@@ -321,8 +330,10 @@ export default function StageStudentsPage() {
         setIsAddOpen(true);
     };
 
+    const [isLoadingEditEnrollment, setIsLoadingEditEnrollment] = useState(false);
+
     // Open edit modal
-    const handleOpenEdit = (student: ICenterStudent) => {
+    const handleOpenEdit = async (student: ICenterStudent) => {
         setEditingStudent(student);
         setStudentName(student.studentName);
         setParentName(student.parentName || '');
@@ -332,15 +343,55 @@ export default function StageStudentsPage() {
         setBarcode(student.barcode || '');
         setNotes(student.notes || '');
         setEditIsActive(student.isActive);
-        setEnrollImmediately(false);
+        setEnrollmentType((student.studentType as CenterEnrollmentType) || 'PACKAGE');
+        const fallbackPkgId = typeof (student as any).packageId === 'object' ? (student as any).packageId?._id : (student as any).packageId;
+        setPackageId(fallbackPkgId || '');
+        setSelectedPackageGroupIds([]);
+        setSelectedPrivateTeachers([]);
+        setEnrollImmediately(true);
         setIsAddOpen(true);
+
+        setIsLoadingEditEnrollment(true);
+        try {
+            const enrollment = await fetchStudentEnrollment(student._id);
+            if (enrollment) {
+                setEnrollmentType((enrollment.type as CenterEnrollmentType) || student.studentType || 'PACKAGE');
+                const pkgIdVal = typeof enrollment.packageId === 'object'
+                    ? (enrollment.packageId as any)?._id
+                    : enrollment.packageId;
+                setPackageId(pkgIdVal || '');
+                const grpIds = (enrollment.packageGroups || [])
+                    .map((g: any) => (typeof g === 'object' ? g?._id : g))
+                    .filter(Boolean);
+                setSelectedPackageGroupIds(grpIds);
+                const privList = (enrollment.privateTeachers || [])
+                    .map((pt: any) => {
+                        const tId = typeof pt.centerTeacherId === 'object'
+                            ? pt.centerTeacherId?._id
+                            : (pt.centerTeacherId || (typeof pt.teacherId === 'object' ? pt.teacherId?._id : pt.teacherId));
+                        const gId = typeof pt.groupId === 'object' ? pt.groupId?._id : pt.groupId;
+                        return {
+                            centerTeacherId: tId || '',
+                            groupId: gId || '',
+                            subject: pt.subject || '',
+                            monthlyPrice: pt.monthlyPrice || 0,
+                        };
+                    })
+                    .filter((pt: any) => pt.groupId);
+                setSelectedPrivateTeachers(privList);
+            }
+        } catch {
+            // Student has no active enrollment yet
+        } finally {
+            setIsLoadingEditEnrollment(false);
+        }
     };
 
     // Single Add/Edit Mutation
     const singleMutation = useMutation({
         mutationFn: async () => {
             if (editingStudent) {
-                return await updateCenterStudent(editingStudent._id, {
+                const updatePayload: Partial<CreateCenterStudentDTO & { isActive: boolean }> = {
                     studentName,
                     parentName: parentName || undefined,
                     studentPhone: studentPhone || undefined,
@@ -349,7 +400,29 @@ export default function StageStudentsPage() {
                     barcode: barcode || undefined,
                     notes: notes || undefined,
                     isActive: editIsActive,
-                });
+                };
+                if (enrollImmediately) {
+                    if ((enrollmentType === 'PACKAGE' || enrollmentType === 'BOTH') && !packageId) {
+                        throw new Error('يرجى اختيار الباقة التعليمية');
+                    }
+                    if ((enrollmentType === 'PRIVATE' || enrollmentType === 'BOTH') && selectedPrivateTeachers.length === 0) {
+                        throw new Error('يرجى اختيار حصة برايفت واحدة على الأقل');
+                    }
+                    updatePayload.studentType = enrollmentType;
+                    updatePayload.packageId = (enrollmentType === 'PACKAGE' || enrollmentType === 'BOTH') ? packageId : null;
+                    updatePayload.packageGroups = (enrollmentType === 'PACKAGE' || enrollmentType === 'BOTH') ? selectedPackageGroupIds : [];
+                    updatePayload.privateTeachers = (enrollmentType === 'PRIVATE' || enrollmentType === 'BOTH')
+                        ? selectedPrivateTeachers
+                            .filter((t) => Boolean(t.groupId))
+                            .map((t) => ({
+                                centerTeacherId: t.centerTeacherId,
+                                groupId: t.groupId as string,
+                                monthlyPrice: t.monthlyPrice,
+                                subject: t.subject,
+                            }))
+                        : [];
+                }
+                return await updateCenterStudent(editingStudent._id, updatePayload);
             } else {
                 const created = await createCenterStudent({
                     studentName,
@@ -377,11 +450,11 @@ export default function StageStudentsPage() {
                             } : undefined,
                             privateTeachers: (enrollmentType === 'PRIVATE' || enrollmentType === 'BOTH') && selectedPrivateTeachers.length > 0
                                 ? selectedPrivateTeachers.map((t) => ({
-                                      centerTeacherId: t.centerTeacherId,
-                                      groupId: t.groupId,
-                                      monthlyPrice: t.monthlyPrice,
-                                      subject: t.subject,
-                                  }))
+                                    centerTeacherId: t.centerTeacherId,
+                                    groupId: t.groupId,
+                                    monthlyPrice: t.monthlyPrice,
+                                    subject: t.subject,
+                                }))
                                 : undefined,
                             privateDiscount: (enrollmentType === 'PRIVATE' || enrollmentType === 'BOTH') && privateDiscountType ? {
                                 type: privateDiscountType,
@@ -399,13 +472,18 @@ export default function StageStudentsPage() {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['center', 'students'] });
+            queryClient.invalidateQueries({ queryKey: ['center', 'enrollments'] });
+            queryClient.invalidateQueries({ queryKey: ['center', 'today-sessions'] });
+            queryClient.invalidateQueries({ queryKey: ['center', 'session-detail'] });
+            queryClient.invalidateQueries({ queryKey: ['center', 'groups'] });
+            queryClient.invalidateQueries({ queryKey: ['center', 'reports'] });
             setIsAddOpen(false);
             if (!enrollImmediately || editingStudent) {
-                toast.success(editingStudent ? 'تم تعديل بيانات الطالب بنجاح' : 'تم إضافة الطالب بنجاح');
+                toast.success(editingStudent ? 'تم تعديل بيانات واشتراك الطالب بنجاح' : 'تم إضافة الطالب بنجاح');
             }
         },
         onError: (err: any) => {
-            toast.error(err?.response?.data?.message || 'حدث خطأ أثناء حفظ البيانات');
+            toast.error(err?.response?.data?.message || err?.message || 'حدث خطأ أثناء حفظ البيانات');
         },
     });
 
@@ -662,11 +740,10 @@ export default function StageStudentsPage() {
                                 setStatusFilter('ALL');
                                 setPage(1);
                             }}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                statusFilter === 'ALL'
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${statusFilter === 'ALL'
                                     ? 'bg-white text-gray-900 shadow-xs'
                                     : 'text-gray-500 hover:text-gray-800'
-                            }`}
+                                }`}
                         >
                             الكل
                         </button>
@@ -676,11 +753,10 @@ export default function StageStudentsPage() {
                                 setStatusFilter('ACTIVE');
                                 setPage(1);
                             }}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                statusFilter === 'ACTIVE'
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${statusFilter === 'ACTIVE'
                                     ? 'bg-emerald-600 text-white shadow-xs'
                                     : 'text-gray-500 hover:text-emerald-700'
-                            }`}
+                                }`}
                         >
                             نشط
                         </button>
@@ -690,13 +766,68 @@ export default function StageStudentsPage() {
                                 setStatusFilter('INACTIVE');
                                 setPage(1);
                             }}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                statusFilter === 'INACTIVE'
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${statusFilter === 'INACTIVE'
                                     ? 'bg-red-600 text-white shadow-xs'
                                     : 'text-gray-500 hover:text-red-700'
-                            }`}
+                                }`}
                         >
                             معطل
+                        </button>
+                    </div>
+
+                    {/* Student Subscription Type Filter (باكيدج / برايفت) */}
+                    <div className="flex items-center gap-1 bg-gray-100/80 p-1 rounded-xl border border-gray-200/70">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setStudentTypeFilter('ALL');
+                                setPage(1);
+                            }}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${studentTypeFilter === 'ALL'
+                                    ? 'bg-white text-gray-900 shadow-xs'
+                                    : 'text-gray-500 hover:text-gray-800'
+                                }`}
+                        >
+                            كل الاشتراكات
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setStudentTypeFilter('PACKAGE');
+                                setPage(1);
+                            }}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${studentTypeFilter === 'PACKAGE'
+                                    ? 'bg-blue-600 text-white shadow-xs'
+                                    : 'text-gray-500 hover:text-blue-700'
+                                }`}
+                        >
+                            باكيدج
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setStudentTypeFilter('PRIVATE');
+                                setPage(1);
+                            }}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${studentTypeFilter === 'PRIVATE'
+                                    ? 'bg-purple-600 text-white shadow-xs'
+                                    : 'text-gray-500 hover:text-purple-700'
+                                }`}
+                        >
+                            برايفت
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setStudentTypeFilter('BOTH');
+                                setPage(1);
+                            }}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${studentTypeFilter === 'BOTH'
+                                    ? 'bg-indigo-600 text-white shadow-xs'
+                                    : 'text-gray-500 hover:text-indigo-700'
+                                }`}
+                        >
+                            مختلط
                         </button>
                     </div>
                 </div>
@@ -715,11 +846,10 @@ export default function StageStudentsPage() {
                                 setSelectedGrade('ALL');
                                 setPage(1);
                             }}
-                            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                                selectedGrade === 'ALL'
+                            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${selectedGrade === 'ALL'
                                     ? `${theme.pillActive} shadow-xs font-black`
                                     : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'
-                            }`}
+                                }`}
                         >
                             جميع الصفوف
                         </button>
@@ -734,11 +864,10 @@ export default function StageStudentsPage() {
                                         setSelectedGrade(grade);
                                         setPage(1);
                                     }}
-                                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                                        selectedGrade === grade
+                                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${selectedGrade === grade
                                             ? `${theme.pillActive} shadow-xs font-black`
                                             : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'
-                                    }`}
+                                        }`}
                                 >
                                     <span>{grade}</span>
                                     {typeof gCount === 'number' && (
@@ -774,18 +903,18 @@ export default function StageStudentsPage() {
                         </div>
                         <div className="space-y-1 max-w-md mx-auto">
                             <h3 className="text-base font-bold text-gray-900">
-                                {effectiveSearch || selectedGrade !== 'ALL' || statusFilter !== 'ALL'
+                                {effectiveSearch || selectedGrade !== 'ALL' || statusFilter !== 'ALL' || studentTypeFilter !== 'ALL'
                                     ? 'لا توجد نتائج مطابقة لخيارات البحث'
                                     : `لا يوجد طلاب مسجلين في ${stageConfig.title} حتى الآن`}
                             </h3>
                             <p className="text-xs text-gray-400">
-                                {effectiveSearch || selectedGrade !== 'ALL' || statusFilter !== 'ALL'
+                                {effectiveSearch || selectedGrade !== 'ALL' || statusFilter !== 'ALL' || studentTypeFilter !== 'ALL'
                                     ? 'جرّب إعادة ضبط الفلاتر أو البحث بكلمات أخرى.'
                                     : 'ابدأ بإضافة أول طالب لهذه المرحلة مباشرة لتوليد الأكواد وتفعيل الاشتراكات.'}
                             </p>
                         </div>
                         <div className="flex items-center justify-center gap-2 pt-2">
-                            {(effectiveSearch || selectedGrade !== 'ALL' || statusFilter !== 'ALL') && (
+                            {(effectiveSearch || selectedGrade !== 'ALL' || statusFilter !== 'ALL' || studentTypeFilter !== 'ALL') && (
                                 <Button
                                     type="button"
                                     variant="outline"
@@ -794,6 +923,7 @@ export default function StageStudentsPage() {
                                         setLocalSearch('');
                                         setSelectedGrade('ALL');
                                         setStatusFilter('ALL');
+                                        setStudentTypeFilter('ALL');
                                         setPage(1);
                                     }}
                                     className="h-9 text-xs rounded-xl font-bold"
@@ -853,7 +983,7 @@ export default function StageStudentsPage() {
                                                     <th className="py-3.5 px-4">الطالب</th>
                                                     <th className="py-3.5 px-4">كود الطالب</th>
                                                     <th className="py-3.5 px-4">الصف الدراسي</th>
-                                                    <th className="py-3.5 px-4">ولي الأمر والهواتف</th>
+                                                    <th className="py-3.5 px-4">الاشتراك والهواتف</th>
                                                     <th className="py-3.5 px-4">الباركود</th>
                                                     <th className="py-3.5 px-4">الحالة</th>
                                                     <th className="py-3.5 px-4 text-center">إجراءات</th>
@@ -863,188 +993,221 @@ export default function StageStudentsPage() {
                                                 {gradeStudents.map((st) => {
                                                     const isPending = !!(st as any).isPendingDelete;
                                                     return (
-                                                    <tr key={st._id} className={isPending ? 'bg-rose-50/40 opacity-80 transition-colors' : 'hover:bg-gray-50/60 transition-colors'}>
-                                        {/* Student Name & Avatar */}
-                                        <td className="py-3.5 px-4 font-bold text-gray-900">
-                                            <Link
-                                                href={`/center/students/${st._id}`}
-                                                className="flex items-center gap-2.5 group hover:text-primary transition-colors cursor-pointer"
-                                                title="عرض الملف التعريفي للطالب"
-                                            >
-                                                <div
-                                                    className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs ${theme.badgeBg} ${theme.badgeText} border ${theme.badgeBorder}`}
-                                                >
-                                                    {st.studentName.charAt(0)}
-                                                </div>
-                                                <div>
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-gray-900 font-bold group-hover:text-primary transition-colors underline-offset-4 group-hover:underline text-sm">
-                                                            {st.studentName}
-                                                        </span>
-                                                        {isPending && (
-                                                            <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-300 font-bold text-[10px]">
-                                                                معلق للحذف (أوفلاين)
-                                                            </Badge>
-                                                        )}
-                                                    </div>
-                                                    {st.notes && (
-                                                        <div className="text-[11px] text-gray-400 font-normal">
-                                                            ملاحظات: {st.notes}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </Link>
-                                        </td>
+                                                        <tr key={st._id} className={isPending ? 'bg-rose-50/40 opacity-80 transition-colors' : 'hover:bg-gray-50/60 transition-colors'}>
+                                                            {/* Student Name & Avatar */}
+                                                            <td className="py-3.5 px-4 font-bold text-gray-900">
+                                                                <Link
+                                                                    href={`/center/students/${st._id}`}
+                                                                    className="flex items-center gap-2.5 group hover:text-primary transition-colors cursor-pointer"
+                                                                    title="عرض الملف التعريفي للطالب"
+                                                                >
+                                                                    <div
+                                                                        className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs ${theme.badgeBg} ${theme.badgeText} border ${theme.badgeBorder}`}
+                                                                    >
+                                                                        {st.studentName.charAt(0)}
+                                                                    </div>
+                                                                    <div>
+                                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                                            <span className="text-gray-900 font-bold group-hover:text-primary transition-colors underline-offset-4 group-hover:underline text-sm">
+                                                                                {st.studentName}
+                                                                            </span>
+                                                                            <Badge
+                                                                                variant="outline"
+                                                                                className={`font-bold text-[10px] ${
+                                                                                    st.studentType === 'PRIVATE'
+                                                                                        ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                                                                        : st.studentType === 'BOTH'
+                                                                                            ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                                                                            : 'bg-blue-50 text-blue-700 border-blue-200'
+                                                                                }`}
+                                                                            >
+                                                                                {st.studentType === 'PRIVATE'
+                                                                                    ? 'برايفت'
+                                                                                    : st.studentType === 'BOTH'
+                                                                                        ? 'باكيدج + برايفت'
+                                                                                        : 'باكيدج'}
+                                                                            </Badge>
+                                                                            {isPending && (
+                                                                                <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-300 font-bold text-[10px]">
+                                                                                    معلق للحذف (أوفلاين)
+                                                                                </Badge>
+                                                                            )}
+                                                                        </div>
+                                                                        {st.notes && (
+                                                                            <div className="text-[11px] text-gray-400 font-normal">
+                                                                                ملاحظات: {st.notes}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                </Link>
+                                                            </td>
 
-                                        {/* Student Code */}
-                                        <td className="py-3.5 px-4">
-                                            <div className="inline-flex items-center gap-1.5 bg-blue-50 border border-blue-200 text-blue-700 px-2.5 py-0.5 rounded-lg font-mono font-bold text-xs shadow-2xs">
-                                                <span>{st.studentCode}</span>
-                                                <button
-                                                    type="button"
-                                                    onClick={(e) => handleCopy(st.studentCode, e)}
-                                                    title="نسخ كود الطالب"
-                                                    className="hover:text-blue-900 p-0.5 transition-colors cursor-pointer"
-                                                >
-                                                    {copiedCode === st.studentCode ? (
-                                                        <Check className="w-3 h-3 text-emerald-600" />
-                                                    ) : (
-                                                        <Copy className="w-3 h-3 text-blue-400 hover:text-blue-700" />
-                                                    )}
-                                                </button>
-                                            </div>
-                                        </td>
+                                                            {/* Student Code */}
+                                                            <td className="py-3.5 px-4">
+                                                                <div className="inline-flex items-center gap-1.5 bg-blue-50 border border-blue-200 text-blue-700 px-2.5 py-0.5 rounded-lg font-mono font-bold text-xs shadow-2xs">
+                                                                    <span>{st.studentCode}</span>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={(e) => handleCopy(st.studentCode, e)}
+                                                                        title="نسخ كود الطالب"
+                                                                        className="hover:text-blue-900 p-0.5 transition-colors cursor-pointer"
+                                                                    >
+                                                                        {copiedCode === st.studentCode ? (
+                                                                            <Check className="w-3 h-3 text-emerald-600" />
+                                                                        ) : (
+                                                                            <Copy className="w-3 h-3 text-blue-400 hover:text-blue-700" />
+                                                                        )}
+                                                                    </button>
+                                                                </div>
+                                                            </td>
 
-                                        {/* Grade Level */}
-                                        <td className="py-3.5 px-4">
-                                            <Badge
-                                                variant="outline"
-                                                className={`font-semibold ${theme.badgeBg} ${theme.badgeText} ${theme.badgeBorder}`}
-                                            >
-                                                {st.gradeLevel}
-                                            </Badge>
-                                        </td>
+                                                            {/* Grade Level */}
+                                                            <td className="py-3.5 px-4">
+                                                                <Badge
+                                                                    variant="outline"
+                                                                    className={`font-semibold ${theme.badgeBg} ${theme.badgeText} ${theme.badgeBorder}`}
+                                                                >
+                                                                    {st.gradeLevel}
+                                                                </Badge>
+                                                            </td>
 
-                                        {/* Parent & Phone Numbers */}
-                                        <td className="py-3.5 px-4">
-                                            <div className="space-y-0.5">
-                                                <div className="text-gray-700 font-medium">{st.parentName || '—'}</div>
-                                                <div className="flex items-center gap-2.5 text-[11px] text-gray-500 flex-wrap">
-                                                    {st.studentPhone && (
-                                                        <a
-                                                            href={`tel:${st.studentPhone}`}
-                                                            className="flex items-center gap-1 hover:text-primary transition-colors"
-                                                            title="اتصال بالطالب"
-                                                        >
-                                                            <Phone className="h-3 w-3 text-gray-400" />
-                                                            طالب: {st.studentPhone}
-                                                        </a>
-                                                    )}
-                                                    {st.parentPhone && (
-                                                        <a
-                                                            href={`tel:${st.parentPhone}`}
-                                                            className="flex items-center gap-1 hover:text-primary transition-colors"
-                                                            title="اتصال بولي الأمر"
-                                                        >
-                                                            <Phone className="h-3 w-3 text-gray-400" />
-                                                            ولي أمر: {st.parentPhone}
-                                                        </a>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </td>
+                                                            {/* Subscription Type & Phone Numbers */}
+                                                            <td className="py-3.5 px-4">
+                                                                <div className="space-y-1">
+                                                                    <div>
+                                                                        <Badge
+                                                                            variant="outline"
+                                                                            className={`font-bold text-[11px] ${
+                                                                                st.studentType === 'PRIVATE'
+                                                                                    ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                                                                    : st.studentType === 'BOTH'
+                                                                                        ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                                                                        : 'bg-blue-50 text-blue-700 border-blue-200'
+                                                                            }`}
+                                                                        >
+                                                                            {st.studentType === 'PRIVATE'
+                                                                                ? 'برايفت'
+                                                                                : st.studentType === 'BOTH'
+                                                                                    ? 'باكيدج + برايفت'
+                                                                                    : 'باكيدج'}
+                                                                        </Badge>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2.5 text-[11px] text-gray-500 flex-wrap">
+                                                                        {st.studentPhone && (
+                                                                            <a
+                                                                                href={`tel:${st.studentPhone}`}
+                                                                                className="flex items-center gap-1 hover:text-primary transition-colors"
+                                                                                title="اتصال بالطالب"
+                                                                            >
+                                                                                <Phone className="h-3 w-3 text-gray-400" />
+                                                                                طالب: {st.studentPhone}
+                                                                            </a>
+                                                                        )}
+                                                                        {st.parentPhone && (
+                                                                            <a
+                                                                                href={`tel:${st.parentPhone}`}
+                                                                                className="flex items-center gap-1 hover:text-primary transition-colors"
+                                                                                title="اتصال بولي الأمر"
+                                                                            >
+                                                                                <Phone className="h-3 w-3 text-gray-400" />
+                                                                                ولي أمر: {st.parentPhone}
+                                                                            </a>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </td>
 
-                                        {/* Barcode */}
-                                        <td className="py-3.5 px-4 font-mono text-[11px] text-gray-500">
-                                            {st.barcode ? (
-                                                <span className="inline-flex items-center gap-1 bg-gray-100 px-2 py-0.5 rounded text-gray-700 font-mono">
-                                                    <Barcode className="h-3 w-3" />
-                                                    {st.barcode}
-                                                </span>
-                                            ) : (
-                                                <span className="text-gray-400">—</span>
-                                            )}
-                                        </td>
+                                                            {/* Barcode */}
+                                                            <td className="py-3.5 px-4 font-mono text-[11px] text-gray-500">
+                                                                {st.barcode ? (
+                                                                    <span className="inline-flex items-center gap-1 bg-gray-100 px-2 py-0.5 rounded text-gray-700 font-mono">
+                                                                        <Barcode className="h-3 w-3" />
+                                                                        {st.barcode}
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="text-gray-400">—</span>
+                                                                )}
+                                                            </td>
 
-                                        {/* Active / Inactive Status Toggle */}
-                                        <td className="py-3.5 px-4">
-                                            <button
-                                                type="button"
-                                                onClick={() => toggleActiveMutation.mutate(st)}
-                                                title={`اضغط لـ ${st.isActive ? 'تعطيل' : 'تنشيط'} الطالب`}
-                                                className="cursor-pointer transition-transform hover:scale-105"
-                                            >
-                                                <Badge
-                                                    variant="outline"
-                                                    className={
-                                                        st.isActive
-                                                            ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100 font-bold'
-                                                            : 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100 font-bold'
-                                                    }
-                                                >
-                                                    {st.isActive ? 'نشط' : 'معطل'}
-                                                </Badge>
-                                            </button>
-                                        </td>
+                                                            {/* Active / Inactive Status Toggle */}
+                                                            <td className="py-3.5 px-4">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => toggleActiveMutation.mutate(st)}
+                                                                    title={`اضغط لـ ${st.isActive ? 'تعطيل' : 'تنشيط'} الطالب`}
+                                                                    className="cursor-pointer transition-transform hover:scale-105"
+                                                                >
+                                                                    <Badge
+                                                                        variant="outline"
+                                                                        className={
+                                                                            st.isActive
+                                                                                ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100 font-bold'
+                                                                                : 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100 font-bold'
+                                                                        }
+                                                                    >
+                                                                        {st.isActive ? 'نشط' : 'معطل'}
+                                                                    </Badge>
+                                                                </button>
+                                                            </td>
 
-                                        {/* Actions */}
-                                        <td className="py-3.5 px-4">
-                                            <div className="flex items-center justify-center gap-1.5">
-                                                <Link
-                                                    href={`/center/students/${st._id}`}
-                                                    title="عرض الملف التعريفي للطالب"
-                                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs transition-colors"
-                                                >
-                                                    <User className="h-3.5 w-3.5" />
-                                                    <span>بروفايل</span>
-                                                </Link>
+                                                            {/* Actions */}
+                                                            <td className="py-3.5 px-4">
+                                                                <div className="flex items-center justify-center gap-1.5">
+                                                                    <Link
+                                                                        href={`/center/students/${st._id}`}
+                                                                        title="عرض الملف التعريفي للطالب"
+                                                                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs transition-colors"
+                                                                    >
+                                                                        <User className="h-3.5 w-3.5" />
+                                                                        <span>بروفايل</span>
+                                                                    </Link>
 
-                                                {isPending ? (
-                                                    <Button
-                                                        size="sm"
-                                                        variant="outline"
-                                                        onClick={async () => {
-                                                            await OfflineStorageService.undoCenterStudentPendingDelete(st._id);
-                                                            queryClient.invalidateQueries({ queryKey: ['center', 'students'] });
-                                                            toast.success('تم التراجع عن حذف الطالب واستعادته محلياً');
-                                                        }}
-                                                        className="h-7 px-2 text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-300 rounded-lg cursor-pointer flex items-center gap-1 font-bold"
-                                                        title="تراجع عن حذف الطالب واستعادته"
-                                                    >
-                                                        <RotateCcw className="h-3.5 w-3.5" />
-                                                        <span>تراجع</span>
-                                                    </Button>
-                                                ) : (
-                                                    <>
-                                                        <Button
-                                                            size="icon"
-                                                            variant="ghost"
-                                                            onClick={() => handleOpenEdit(st)}
-                                                            className="h-7 w-7 text-gray-500 hover:text-gray-900 rounded-lg cursor-pointer"
-                                                            title="تعديل البيانات"
-                                                        >
-                                                            <Edit2 className="h-3.5 w-3.5" />
-                                                        </Button>
+                                                                    {isPending ? (
+                                                                        <Button
+                                                                            size="sm"
+                                                                            variant="outline"
+                                                                            onClick={async () => {
+                                                                                await OfflineStorageService.undoCenterStudentPendingDelete(st._id);
+                                                                                queryClient.invalidateQueries({ queryKey: ['center', 'students'] });
+                                                                                toast.success('تم التراجع عن حذف الطالب واستعادته محلياً');
+                                                                            }}
+                                                                            className="h-7 px-2 text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-300 rounded-lg cursor-pointer flex items-center gap-1 font-bold"
+                                                                            title="تراجع عن حذف الطالب واستعادته"
+                                                                        >
+                                                                            <RotateCcw className="h-3.5 w-3.5" />
+                                                                            <span>تراجع</span>
+                                                                        </Button>
+                                                                    ) : (
+                                                                        <>
+                                                                            <Button
+                                                                                size="icon"
+                                                                                variant="ghost"
+                                                                                onClick={() => handleOpenEdit(st)}
+                                                                                className="h-7 w-7 text-gray-500 hover:text-gray-900 rounded-lg cursor-pointer"
+                                                                                title="تعديل البيانات"
+                                                                            >
+                                                                                <Edit2 className="h-3.5 w-3.5" />
+                                                                            </Button>
 
-                                                        <Button
-                                                            size="icon"
-                                                            variant="ghost"
-                                                            onClick={() => setDeletingStudent(st)}
-                                                            className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg cursor-pointer"
-                                                            title="حذف الطالب نهائياً"
-                                                        >
-                                                            <Trash2 className="h-3.5 w-3.5" />
-                                                        </Button>
-                                                    </>
-                                                )}
-                                            </div>
-                                        </td>
-                                    </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
+                                                                            <Button
+                                                                                size="icon"
+                                                                                variant="ghost"
+                                                                                onClick={() => setDeletingStudent(st)}
+                                                                                className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg cursor-pointer"
+                                                                                title="حذف الطالب نهائياً"
+                                                                            >
+                                                                                <Trash2 className="h-3.5 w-3.5" />
+                                                                            </Button>
+                                                                        </>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </div>
                             );
                         })}
@@ -1201,151 +1364,228 @@ export default function StageStudentsPage() {
                             </div>
                         )}
 
-                        {/* Optional Instant Enrollment */}
-                        {!editingStudent && (
-                            <div className="pt-2 border-t border-gray-100 space-y-3">
-                                <div
-                                    onClick={() => {
-                                        const next = !enrollImmediately;
-                                        setEnrollImmediately(next);
-                                        if (next && gradeLevel && packages.length > 0) {
-                                            const matchingPkg = packages.find((p) => p.gradeLevel === gradeLevel);
-                                            if (matchingPkg) handleSelectPackage(matchingPkg._id);
-                                        }
-                                    }}
-                                    className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
-                                        enrollImmediately
-                                            ? 'bg-blue-50/70 border-blue-300 shadow-sm'
-                                            : 'bg-gray-50/70 border-gray-200 hover:bg-gray-50'
+                        {/* Optional Instant / Edit Enrollment */}
+                        <div className="pt-2 border-t border-gray-100 space-y-3">
+                            <div
+                                onClick={() => {
+                                    const next = !enrollImmediately;
+                                    setEnrollImmediately(next);
+                                    if (next && gradeLevel && packages.length > 0 && !packageId) {
+                                        const matchingPkg = packages.find((p) => p.gradeLevel === gradeLevel);
+                                        if (matchingPkg) handleSelectPackage(matchingPkg._id);
+                                    }
+                                }}
+                                className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${enrollImmediately
+                                        ? 'bg-blue-50/70 border-blue-300 shadow-sm'
+                                        : 'bg-gray-50/70 border-gray-200 hover:bg-gray-50'
                                     }`}
-                                >
-                                    <div className="flex items-center gap-2.5">
-                                        <input
-                                            type="checkbox"
-                                            checked={enrollImmediately}
-                                            onChange={() => {}}
-                                            className="rounded text-primary focus:ring-primary w-4 h-4 cursor-pointer"
-                                        />
-                                        <div>
-                                            <span className="text-xs font-bold text-gray-900 block">
-                                                تسجيل اشتراك للطالب فوراً
-                                            </span>
-                                            <span className="text-[10px] text-gray-500 font-medium">
-                                                إلحاق الطالب بباكيدج أو مجموعات وتوليد الاستحقاقات المالية مباشرة
-                                            </span>
-                                        </div>
+                            >
+                                <div className="flex items-center gap-2.5">
+                                    <input
+                                        type="checkbox"
+                                        checked={enrollImmediately}
+                                        onChange={() => { }}
+                                        className="rounded text-primary focus:ring-primary w-4 h-4 cursor-pointer"
+                                    />
+                                    <div>
+                                        <span className="text-xs font-bold text-gray-900 block">
+                                            {editingStudent
+                                                ? 'تعديل نوع الاشتراك والباقة ومواد الطالب'
+                                                : 'تسجيل اشتراك للطالب فوراً'}
+                                        </span>
+                                        <span className="text-[10px] text-gray-500 font-medium">
+                                            {editingStudent
+                                                ? 'التحويل بين باكيدج أو برايفت أو اختيار المواد التي يحضرها الطالب'
+                                                : 'إلحاق الطالب بباكيدج أو مجموعات وتوليد الاستحقاقات المالية مباشرة'}
+                                        </span>
                                     </div>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                    {isLoadingEditEnrollment && (
+                                        <span className="text-[10px] text-blue-600 font-bold">جاري التحميل...</span>
+                                    )}
                                     {enrollImmediately && instantTotalPrice > 0 && (
                                         <Badge className="bg-blue-600 text-white font-bold text-xs">
                                             {instantTotalPrice} ج.م/شهر
                                         </Badge>
                                     )}
                                 </div>
+                            </div>
 
-                                {enrollImmediately && (
-                                    <div className="p-3.5 rounded-2xl bg-gray-50/80 border border-gray-200 space-y-3">
-                                        <div className="flex gap-2">
-                                            <button
-                                                type="button"
-                                                onClick={() => setEnrollmentType('PACKAGE')}
-                                                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                                    enrollmentType === 'PACKAGE'
-                                                        ? 'bg-primary text-white shadow-xs'
-                                                        : 'bg-white border text-gray-700'
+                            {enrollImmediately && (
+                                <div className="p-3.5 rounded-2xl bg-gray-50/80 border border-gray-200 space-y-3">
+                                    <div className="grid grid-cols-3 gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setEnrollmentType('PACKAGE')}
+                                            className={`py-1.5 rounded-lg text-xs font-bold transition-all ${enrollmentType === 'PACKAGE'
+                                                    ? 'bg-primary text-white shadow-xs'
+                                                    : 'bg-white border text-gray-700'
                                                 }`}
-                                            >
-                                                باكيدج كامل (كل الحصص)
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setEnrollmentType('PRIVATE')}
-                                                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                                    enrollmentType === 'PRIVATE'
-                                                        ? 'bg-primary text-white shadow-xs'
-                                                        : 'bg-white border text-gray-700'
+                                        >
+                                            باكيدج
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setEnrollmentType('PRIVATE')}
+                                            className={`py-1.5 rounded-lg text-xs font-bold transition-all ${enrollmentType === 'PRIVATE'
+                                                    ? 'bg-primary text-white shadow-xs'
+                                                    : 'bg-white border text-gray-700'
                                                 }`}
+                                        >
+                                            برايفت
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setEnrollmentType('BOTH')}
+                                            className={`py-1.5 rounded-lg text-xs font-bold transition-all ${enrollmentType === 'BOTH'
+                                                    ? 'bg-primary text-white shadow-xs'
+                                                    : 'bg-white border text-gray-700'
+                                                }`}
+                                        >
+                                            باكيدج + برايفت
+                                        </button>
+                                    </div>
+
+                                    {(enrollmentType === 'PACKAGE' || enrollmentType === 'BOTH') && (
+                                        <div className="space-y-2">
+                                            <label className="text-[11px] font-bold text-gray-600 block mb-1">اختر الباكيدج</label>
+                                            <select
+                                                value={packageId}
+                                                onChange={(e) => handleSelectPackage(e.target.value)}
+                                                className="w-full text-xs font-bold border border-gray-200 rounded-xl px-3 py-2 bg-white"
                                             >
-                                                حصص فردية (برايفت)
-                                            </button>
-                                        </div>
+                                                <option value="">-- اختر الباكيدج المناسب --</option>
+                                                {packages
+                                                    .filter((p) => p.gradeLevel === gradeLevel)
+                                                    .map((p) => (
+                                                        <option key={p._id} value={p._id}>
+                                                            {p.name} ({p.monthlyPrice} ج.م)
+                                                        </option>
+                                                    ))}
+                                            </select>
 
-                                        {(enrollmentType === 'PACKAGE' || enrollmentType === 'BOTH') && (
-                                            <div>
-                                                <label className="text-[11px] font-bold text-gray-600 block mb-1">اختر الباكيدج</label>
-                                                <select
-                                                    value={packageId}
-                                                    onChange={(e) => handleSelectPackage(e.target.value)}
-                                                    className="w-full text-xs font-bold border border-gray-200 rounded-xl px-3 py-2 bg-white"
-                                                >
-                                                    <option value="">-- اختر الباكيدج المناسب --</option>
-                                                    {packages
-                                                        .filter((p) => p.gradeLevel === gradeLevel)
-                                                        .map((p) => (
-                                                            <option key={p._id} value={p._id}>
-                                                                {p.name} ({p.monthlyPrice} ج.م)
-                                                            </option>
-                                                        ))}
-                                                </select>
-                                            </div>
-                                        )}
-
-                                        {(enrollmentType === 'PRIVATE' || enrollmentType === 'BOTH') && (
-                                            <div className="space-y-2">
-                                                <label className="text-[11px] font-bold text-purple-900 block">
-                                                    اختر الحصص الفردية التي يحضرها طالب البرايفت فقط ({selectedPrivateTeachers.length} حصة محددة):
-                                                </label>
-                                                {availablePrivateGroups.length === 0 ? (
-                                                    <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800">
-                                                        لا توجد حصص مسجلة لهذا الصف حالياً.
+                                            {selectedPkg && packageMatchingGroups.length > 0 && (
+                                                <div className="space-y-1.5 pt-1">
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <label className="text-[11px] font-bold text-blue-900">
+                                                            المواد / الحصص المشمولة في الباكيدج ({selectedPackageMatchingCount} من {packageMatchingGroups.length}):
+                                                        </label>
+                                                        <div className="flex items-center gap-1.5">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setSelectedPackageGroupIds(packageMatchingGroups.map((g) => g._id))}
+                                                                className="text-[10px] font-bold text-blue-700 hover:underline"
+                                                            >
+                                                                تحديد الكل
+                                                            </button>
+                                                            <span className="text-gray-300">|</span>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setSelectedPackageGroupIds([])}
+                                                                className="text-[10px] font-bold text-gray-500 hover:underline"
+                                                            >
+                                                                إلغاء الكل
+                                                            </button>
+                                                        </div>
                                                     </div>
-                                                ) : (
-                                                    <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                                                        {availablePrivateGroups.map((group) => {
-                                                            const isSelected = selectedPrivateTeachers.some((p) => p.groupId === group._id);
-                                                            const teacherId =
-                                                                typeof group.centerTeacherId === 'object'
-                                                                    ? (group.centerTeacherId as any)._id
-                                                                    : group.centerTeacherId;
-                                                            const teacherObj =
-                                                                typeof group.centerTeacherId === 'object'
-                                                                    ? (group.centerTeacherId as any)
-                                                                    : teachers.find((t) => t._id === teacherId);
-
+                                                    <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                                                        {[...packageMatchingGroups]
+                                                            .sort((a, b) => Number(selectedPackageGroupIds.includes(b._id)) - Number(selectedPackageGroupIds.includes(a._id)))
+                                                            .map((g) => {
+                                                            const isChecked = selectedPackageGroupIds.includes(g._id);
+                                                            const tObj = typeof g.centerTeacherId === 'object'
+                                                                ? (g.centerTeacherId as any)
+                                                                : teachers.find((t) => t._id === g.centerTeacherId);
                                                             return (
                                                                 <div
-                                                                    key={group._id}
-                                                                    onClick={() => togglePrivateGroup(group)}
-                                                                    className={`p-2 rounded-xl border text-xs cursor-pointer flex items-center justify-between ${
-                                                                        isSelected
-                                                                            ? 'border-purple-400 bg-purple-50/60 font-bold'
-                                                                            : 'border-gray-200 bg-white'
-                                                                    }`}
+                                                                    key={g._id}
+                                                                    onClick={() => togglePackageGroup(g._id)}
+                                                                    className={`p-2 rounded-xl border text-xs cursor-pointer flex items-center justify-between ${isChecked
+                                                                            ? 'border-blue-400 bg-blue-50/60 font-bold'
+                                                                            : 'border-gray-200 bg-white opacity-75'
+                                                                        }`}
                                                                 >
                                                                     <div className="flex items-center gap-2">
                                                                         <input
                                                                             type="checkbox"
-                                                                            checked={isSelected}
-                                                                            onChange={() => {}}
-                                                                            className="h-3.5 w-3.5 rounded text-purple-600"
+                                                                            checked={isChecked}
+                                                                            onChange={() => { }}
+                                                                            className="h-3.5 w-3.5 rounded text-blue-600"
                                                                         />
                                                                         <span>
-                                                                            {group.name} — {teacherObj?.name || 'مدرس'}
+                                                                            {g.name} — {tObj?.name || 'مدرس'}
                                                                         </span>
                                                                     </div>
-                                                                    <span className="text-[11px] text-purple-700 font-bold">
-                                                                        {group.privateMonthlyPrice ? `${group.privateMonthlyPrice} ج.م` : ''}
-                                                                    </span>
+                                                                    {tObj?.subject && (
+                                                                        <span className="text-[10px] text-blue-700 font-bold">
+                                                                            {tObj.subject}
+                                                                        </span>
+                                                                    )}
                                                                 </div>
                                                             );
                                                         })}
                                                     </div>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {(enrollmentType === 'PRIVATE' || enrollmentType === 'BOTH') && (
+                                        <div className="space-y-2">
+                                            <label className="text-[11px] font-bold text-purple-900 block">
+                                                اختر الحصص الفردية التي يحضرها طالب البرايفت فقط ({selectedPrivateTeachers.length} حصة محددة):
+                                            </label>
+                                            {availablePrivateGroups.length === 0 ? (
+                                                <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800">
+                                                    لا توجد حصص مسجلة لهذا الصف حالياً.
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                                                    {availablePrivateGroups.map((group) => {
+                                                        const isSelected = selectedPrivateTeachers.some((p) => p.groupId === group._id);
+                                                        const teacherId =
+                                                            typeof group.centerTeacherId === 'object'
+                                                                ? (group.centerTeacherId as any)._id
+                                                                : group.centerTeacherId;
+                                                        const teacherObj =
+                                                            typeof group.centerTeacherId === 'object'
+                                                                ? (group.centerTeacherId as any)
+                                                                : teachers.find((t) => t._id === teacherId);
+
+                                                        return (
+                                                            <div
+                                                                key={group._id}
+                                                                onClick={() => togglePrivateGroup(group)}
+                                                                className={`p-2 rounded-xl border text-xs cursor-pointer flex items-center justify-between ${isSelected
+                                                                        ? 'border-purple-400 bg-purple-50/60 font-bold'
+                                                                        : 'border-gray-200 bg-white'
+                                                                    }`}
+                                                            >
+                                                                <div className="flex items-center gap-2">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={isSelected}
+                                                                        onChange={() => { }}
+                                                                        className="h-3.5 w-3.5 rounded text-purple-600"
+                                                                    />
+                                                                    <span>
+                                                                        {group.name} — {teacherObj?.name || 'مدرس'}
+                                                                    </span>
+                                                                </div>
+                                                                <span className="text-[11px] text-purple-700 font-bold">
+                                                                    {group.privateMonthlyPrice ? `${group.privateMonthlyPrice} ج.م` : ''}
+                                                                </span>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
 
                         <DialogFooter className="gap-2 pt-2">
                             <Button
