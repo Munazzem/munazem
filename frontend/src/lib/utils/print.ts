@@ -1,4 +1,22 @@
 /**
+ * Detects whether the current client is a mobile or tablet device (not a desktop/laptop).
+ * Used to skip automatic printer dialogs on mobile browsers that have no physical printer attached.
+ */
+export const isMobileDevice = (): boolean => {
+    if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+        return false;
+    }
+
+    const ua = navigator.userAgent || '';
+    const isMobileUa = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(ua);
+    const isIpadOs = navigator.maxTouchPoints > 1 && /Macintosh/i.test(ua);
+    const isTouchSmallViewport =
+        Boolean(window.matchMedia?.('(pointer: coarse)').matches) && window.innerWidth < 1024;
+
+    return isMobileUa || isIpadOs || isTouchSmallViewport;
+};
+
+/**
  * Injects HTML content into a hidden iframe and triggers native print.
  * Completely eliminates popup blocker issues on mobile (iOS/Android) and desktop browsers.
  */

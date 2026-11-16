@@ -62,17 +62,36 @@ const getNavItems = (role?: string, permissions?: any) => {
     }
 
     if (role === 'centerSupervisor') {
-        return [
-            { name: 'لوحة تحكم السنتر',   href: '/center',             icon: LayoutDashboard },
-            { name: 'الحصص الدراسية',     href: '/center/groups',      icon: Users           },
-            { name: 'دليل الطلاب',        href: '/center/students',    icon: UserCheck       },
-            { name: 'الكارت الذكي',        href: '/center/cards',       icon: CreditCard      },
-            { name: 'الامتحانات',         href: '/exams',              icon: FileText        },
-            { name: 'الحضور والغياب',     href: '/center/attendance',  icon: CalendarCheck   },
-            { name: 'رسائل أولياء الأمور', href: '/center/messages',    icon: MessageSquare   },
-            { name: 'التقارير',          href: '/center/reports',     icon: BarChart3       },
-            { name: 'الماليات',          href: '/center/financials',  icon: Wallet          },
+        const items: any[] = [
+            { name: 'لوحة تحكم السنتر',   href: '/center',          icon: LayoutDashboard },
         ];
+        if (permissions?.canManageTeachers) {
+            items.push({ name: 'المعلمون', href: '/center/teachers', icon: GraduationCap });
+        }
+        if (permissions?.canManagePackages) {
+            items.push({ name: 'الباكيدجات', href: '/center/packages', icon: BookOpen });
+        }
+        items.push({ name: 'الحصص الدراسية', href: '/center/groups', icon: Users });
+        items.push({ name: 'دليل الطلاب', href: '/center/students', icon: UserCheck });
+        if (permissions?.canManageStudents) {
+            items.push({ name: 'الكارت الذكي', href: '/center/cards', icon: CreditCard });
+        }
+        if (permissions?.canCreateExams) {
+            items.push({ name: 'الامتحانات', href: '/exams', icon: FileText });
+        }
+        if (permissions?.canViewAttendance || permissions?.canTakeAttendance) {
+            items.push({ name: 'الحضور والغياب', href: '/center/attendance', icon: CalendarCheck });
+        }
+        if (permissions?.canSendNotifications !== false) {
+            items.push({ name: 'رسائل أولياء الأمور', href: '/center/messages', icon: MessageSquare });
+        }
+        if (permissions?.canViewFinancials || permissions?.canViewAttendance || permissions?.canViewReports) {
+            items.push({ name: 'التقارير', href: '/center/reports', icon: BarChart3 });
+        }
+        if (permissions?.canViewFinancials || permissions?.canRecordPayments) {
+            items.push({ name: 'الماليات', href: '/center/financials', icon: Wallet });
+        }
+        return items;
     }
 
     const base = [
@@ -127,7 +146,9 @@ export function Sidebar() {
         setIsMounted(true);
     }, []);
 
-    const navItems = getNavItems(user?.role, user?.assistantPermissions);
+    const activePermissions =
+        user?.role === 'centerSupervisor' ? user?.supervisorPermissions : user?.assistantPermissions;
+    const navItems = getNavItems(user?.role, activePermissions);
 
     const handleLogout = () => {
         logout();

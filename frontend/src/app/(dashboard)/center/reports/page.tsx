@@ -13,6 +13,8 @@ import {
     type CenterGroupReportItem,
 } from '@/lib/api/centers';
 import { apiClient } from '@/lib/api/axios';
+import { useAuthStore } from '@/lib/store/auth.store';
+import { getCairoDateString, getCairoYearMonth } from '@/lib/utils/formatters';
 import { printHtmlContent } from '@/lib/utils/print';
 import { STAGE_HIERARCHY } from '@/lib/constants/grade.constants';
 import {
@@ -48,7 +50,21 @@ import { toast } from 'sonner';
 type ActiveTab = 'financials' | 'teachers' | 'groups' | 'weekly_attendance';
 
 export default function CenterReportsPage() {
-    const [activeTab, setActiveTab] = useState<ActiveTab>('weekly_attendance');
+    const user = useAuthStore((s) => s.user);
+    const isOwner = user?.role === 'centerOwner';
+    const canViewFinancials = isOwner || Boolean(user?.supervisorPermissions?.canViewFinancials);
+    const canViewAttendance = isOwner || Boolean(user?.supervisorPermissions?.canViewAttendance);
+
+    const [activeTab, setActiveTab] = useState<ActiveTab>(
+        canViewAttendance ? 'weekly_attendance' : 'financials'
+    );
+
+    const effectiveTab: ActiveTab =
+        (activeTab === 'weekly_attendance' || activeTab === 'groups') && !canViewAttendance
+            ? (canViewFinancials ? 'financials' : activeTab)
+            : (activeTab === 'financials' || activeTab === 'teachers') && !canViewFinancials
+                ? (canViewAttendance ? 'weekly_attendance' : activeTab)
+                : activeTab;
 
     // Weekly Attendance Sheet Filters
     const [weeklyMode, setWeeklyMode] = useState<'CLASSES' | 'QUICK_CHECKIN'>('CLASSES');
@@ -56,43 +72,41 @@ export default function CenterReportsPage() {
     const [weeklyGradeLevel, setWeeklyGradeLevel] = useState<string>('الصف الأول الثانوي');
     const [weeklyGroupId, setWeeklyGroupId] = useState<string>('');
     const [weeklyStartDate, setWeeklyStartDate] = useState<string>(() => {
-        const d = new Date();
-        // Start from Saturday of current week
-        const day = d.getDay(); // 0=Sun..6=Sat
+        const todayCairo = getCairoDateString();
+        const [y, m, d] = todayCairo.split('-').map(Number);
+        const utc = new Date(Date.UTC(y, m - 1, d));
+        const day = utc.getUTCDay(); // 0=Sun..6=Sat
         const diff = day === 6 ? 0 : -(day + 1);
-        d.setDate(d.getDate() + diff);
-        return d.toISOString().split('T')[0];
+        utc.setUTCDate(utc.getUTCDate() + diff);
+        return utc.toISOString().split('T')[0];
     });
     const [isPrintingWeekly, setIsPrintingWeekly] = useState(false);
 
     // Date filters for Financials & Teachers
     const [dateRangePreset, setDateRangePreset] = useState<'today' | 'week' | 'month' | 'all' | 'custom'>('month');
     const [startDate, setStartDate] = useState<string>(() => {
-        const d = new Date();
-        d.setDate(1); // 1st of current month
-        return d.toISOString().split('T')[0];
+        const { year, month } = getCairoYearMonth();
+        return `${year}-${String(month).padStart(2, '0')}-01`;
     });
     const [endDate, setEndDate] = useState<string>(() => {
-        return new Date().toISOString().split('T')[0];
+        return getCairoDateString();
     });
 
     // Preset handler
     const applyDatePreset = (preset: 'today' | 'week' | 'month' | 'all') => {
         setDateRangePreset(preset);
-        const today = new Date();
-        const todayStr = today.toISOString().split('T')[0];
+        const todayStr = getCairoDateString();
 
         if (preset === 'today') {
             setStartDate(todayStr);
             setEndDate(todayStr);
         } else if (preset === 'week') {
-            const lastWeek = new Date();
-            lastWeek.setDate(today.getDate() - 7);
-            setStartDate(lastWeek.toISOString().split('T')[0]);
+            const lastWeekStr = getCairoDateString(Date.now() - 7 * 86400000);
+            setStartDate(lastWeekStr);
             setEndDate(todayStr);
         } else if (preset === 'month') {
-            const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-            setStartDate(firstOfMonth.toISOString().split('T')[0]);
+            const { year, month } = getCairoYearMonth();
+            setStartDate(`${year}-${String(month).padStart(2, '0')}-01`);
             setEndDate(todayStr);
         } else if (preset === 'all') {
             setStartDate('');
@@ -114,6 +128,7 @@ export default function CenterReportsPage() {
     } = useQuery({
         queryKey: ['center-reports-overview', startDate, endDate],
         queryFn: () => fetchCenterReportsOverview(startDate || undefined, endDate || undefined),
+        enabled: canViewFinancials,
     });
 
     const {
@@ -123,6 +138,7 @@ export default function CenterReportsPage() {
     } = useQuery({
         queryKey: ['center-reports-teachers', startDate, endDate],
         queryFn: () => fetchCenterTeachersReport(startDate || undefined, endDate || undefined),
+        enabled: canViewFinancials,
     });
 
     const {
@@ -132,6 +148,7 @@ export default function CenterReportsPage() {
     } = useQuery({
         queryKey: ['center-reports-groups'],
         queryFn: () => fetchCenterGroupsReport(),
+        enabled: canViewAttendance,
     });
 
     const { data: centerGroups = [] } = useQuery({
@@ -151,7 +168,7 @@ export default function CenterReportsPage() {
                 groupId: weeklyMode === 'CLASSES' && weeklyGroupId ? weeklyGroupId : undefined,
                 weekStartDate: weeklyStartDate,
             }),
-        enabled: Boolean(weeklyGradeLevel),
+        enabled: Boolean(weeklyGradeLevel) && canViewAttendance,
     });
 
     const weeklyStageGrades = useMemo(() => {
@@ -195,7 +212,7 @@ export default function CenterReportsPage() {
 
     // Print handler
     const handlePrint = () => {
-        if (activeTab === 'weekly_attendance') {
+        if (effectiveTab === 'weekly_attendance') {
             handlePrintWeeklySheet();
             return;
         }
@@ -206,7 +223,7 @@ export default function CenterReportsPage() {
     const handleExportCsv = () => {
         try {
             let csvContent = 'data:text/csv;charset=utf-8,\uFEFF';
-            if (activeTab === 'financials') {
+            if (effectiveTab === 'financials') {
                 csvContent += 'البيان,القيمة\n';
                 csvContent += `إجمالي الإيرادات,${overview?.revenue?.totalRevenue || 0}\n`;
                 csvContent += `إيرادات الباكيدجات,${overview?.revenue?.packageRevenue || 0}\n`;
@@ -214,12 +231,12 @@ export default function CenterReportsPage() {
                 csvContent += `إجمالي المديونيات المتبقية,${overview?.revenue?.totalDebt || 0}\n`;
                 csvContent += `إجمالي الطلاب,${overview?.students?.total || 0}\n`;
                 csvContent += `حضور البوابة اليوم,${overview?.todayCheckIns || 0}\n`;
-            } else if (activeTab === 'teachers' && teachersReport) {
+            } else if (effectiveTab === 'teachers' && teachersReport) {
                 csvContent += 'المعلم,المادة,الهاتف,عدد المجموعات,الطلاب المسجلين,الإيرادات,الحصص المنعقدة\n';
                 teachersReport.forEach((t) => {
                     csvContent += `"${t.teacher.name}","${t.teacher.subject}","${t.teacher.phone}",${t.groupsCount},${t.enrolledStudentsCount},${t.revenue},${t.attendanceCount}\n`;
                 });
-            } else if (activeTab === 'groups' && groupsReport) {
+            } else if (effectiveTab === 'groups' && groupsReport) {
                 csvContent += 'المجموعة,المعلم,المادة,المرحلة,النوع,السعة,المسجلين,نسبة الامتلاء,الإيرادات,نسبة الحضور\n';
                 groupsReport.forEach((g) => {
                     csvContent += `"${g.group.name}","${g.group.teacher}","${g.group.subject}","${g.group.gradeLevel}","${g.group.groupType}",${g.group.capacity || 0},${g.enrolledCount},"${g.fillRate || 0}%",${g.revenue},"${g.attendance.attendanceRate}%"\n`;
@@ -229,7 +246,7 @@ export default function CenterReportsPage() {
             const encodedUri = encodeURI(csvContent);
             const link = document.createElement('a');
             link.setAttribute('href', encodedUri);
-            link.setAttribute('download', `center-report-${activeTab}-${new Date().toISOString().split('T')[0]}.csv`);
+            link.setAttribute('download', `center-report-${effectiveTab}-${getCairoDateString()}.csv`);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -302,72 +319,80 @@ export default function CenterReportsPage() {
 
             {/* Navigation Tabs */}
             <div className="flex items-center gap-2 border-b border-gray-200 overflow-x-auto pb-px">
-                <button
-                    onClick={() => setActiveTab('weekly_attendance')}
-                    className={cn(
-                        'flex items-center gap-2.5 px-5 py-3 text-sm font-bold border-b-2 transition-all whitespace-nowrap',
-                        activeTab === 'weekly_attendance'
-                            ? 'border-primary text-primary bg-primary/5 rounded-t-xl'
-                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    )}
-                >
-                    <ClipboardCheck className="w-4 h-4" />
-                    <span>كشف الحضور والغياب الأسبوعي (للطباعة)</span>
-                </button>
+                {canViewAttendance && (
+                    <button
+                        onClick={() => setActiveTab('weekly_attendance')}
+                        className={cn(
+                            'flex items-center gap-2.5 px-5 py-3 text-sm font-bold border-b-2 transition-all whitespace-nowrap',
+                            effectiveTab === 'weekly_attendance'
+                                ? 'border-primary text-primary bg-primary/5 rounded-t-xl'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        )}
+                    >
+                        <ClipboardCheck className="w-4 h-4" />
+                        <span>كشف الحضور والغياب الأسبوعي (للطباعة)</span>
+                    </button>
+                )}
 
-                <button
-                    onClick={() => setActiveTab('financials')}
-                    className={cn(
-                        'flex items-center gap-2.5 px-5 py-3 text-sm font-bold border-b-2 transition-all whitespace-nowrap',
-                        activeTab === 'financials'
-                            ? 'border-emerald-600 text-emerald-700 bg-emerald-50/50 rounded-t-xl'
-                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    )}
-                >
-                    <Wallet className="w-4 h-4" />
-                    <span>تقارير ماليات السنتر</span>
-                    {overview?.revenue?.totalRevenue != null && (
-                        <span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
-                            {overview.revenue.totalRevenue.toLocaleString('en-US')} ج.م
+                {canViewFinancials && (
+                    <button
+                        onClick={() => setActiveTab('financials')}
+                        className={cn(
+                            'flex items-center gap-2.5 px-5 py-3 text-sm font-bold border-b-2 transition-all whitespace-nowrap',
+                            effectiveTab === 'financials'
+                                ? 'border-emerald-600 text-emerald-700 bg-emerald-50/50 rounded-t-xl'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        )}
+                    >
+                        <Wallet className="w-4 h-4" />
+                        <span>تقارير ماليات السنتر</span>
+                        {overview?.revenue?.totalRevenue != null && (
+                            <span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
+                                {overview.revenue.totalRevenue.toLocaleString('en-US')} ج.م
+                            </span>
+                        )}
+                    </button>
+                )}
+
+                {canViewFinancials && (
+                    <button
+                        onClick={() => setActiveTab('teachers')}
+                        className={cn(
+                            'flex items-center gap-2.5 px-5 py-3 text-sm font-bold border-b-2 transition-all whitespace-nowrap',
+                            effectiveTab === 'teachers'
+                                ? 'border-indigo-600 text-indigo-700 bg-indigo-50/50 rounded-t-xl'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        )}
+                    >
+                        <GraduationCap className="w-4 h-4" />
+                        <span>تقارير أداء المدرسين</span>
+                        <span className="text-xs bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full font-bold">
+                            {teachersReport?.length || 0}
                         </span>
-                    )}
-                </button>
+                    </button>
+                )}
 
-                <button
-                    onClick={() => setActiveTab('teachers')}
-                    className={cn(
-                        'flex items-center gap-2.5 px-5 py-3 text-sm font-bold border-b-2 transition-all whitespace-nowrap',
-                        activeTab === 'teachers'
-                            ? 'border-indigo-600 text-indigo-700 bg-indigo-50/50 rounded-t-xl'
-                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    )}
-                >
-                    <GraduationCap className="w-4 h-4" />
-                    <span>تقارير أداء المدرسين</span>
-                    <span className="text-xs bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full font-bold">
-                        {teachersReport?.length || 0}
-                    </span>
-                </button>
-
-                <button
-                    onClick={() => setActiveTab('groups')}
-                    className={cn(
-                        'flex items-center gap-2.5 px-5 py-3 text-sm font-bold border-b-2 transition-all whitespace-nowrap',
-                        activeTab === 'groups'
-                            ? 'border-blue-600 text-blue-700 bg-blue-50/50 rounded-t-xl'
-                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    )}
-                >
-                    <Layers className="w-4 h-4" />
-                    <span>تقارير الحصص والحضور</span>
-                    <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-bold">
-                        {groupsReport?.length || 0}
-                    </span>
-                </button>
+                {canViewAttendance && (
+                    <button
+                        onClick={() => setActiveTab('groups')}
+                        className={cn(
+                            'flex items-center gap-2.5 px-5 py-3 text-sm font-bold border-b-2 transition-all whitespace-nowrap',
+                            effectiveTab === 'groups'
+                                ? 'border-blue-600 text-blue-700 bg-blue-50/50 rounded-t-xl'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        )}
+                    >
+                        <Layers className="w-4 h-4" />
+                        <span>تقارير الحصص والحضور</span>
+                        <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-bold">
+                            {groupsReport?.length || 0}
+                        </span>
+                    </button>
+                )}
             </div>
 
             {/* TAB 0: WEEKLY ATTENDANCE SHEET & PRINT */}
-            {activeTab === 'weekly_attendance' && (
+            {effectiveTab === 'weekly_attendance' && canViewAttendance && (
                 <div className="space-y-6">
                     <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-5">
                         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-gray-100">
@@ -688,7 +713,7 @@ export default function CenterReportsPage() {
             )}
 
             {/* TAB 1: FINANCIALS */}
-            {activeTab === 'financials' && (
+            {effectiveTab === 'financials' && canViewFinancials && (
                 <div className="space-y-6">
                     {/* Date Filters Bar */}
                     <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
@@ -967,7 +992,7 @@ export default function CenterReportsPage() {
             )}
 
             {/* TAB 2: TEACHERS REPORT */}
-            {activeTab === 'teachers' && (
+            {effectiveTab === 'teachers' && canViewFinancials && (
                 <div className="space-y-6">
                     {/* Controls & Search */}
                     <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -1069,7 +1094,7 @@ export default function CenterReportsPage() {
             )}
 
             {/* TAB 3: GROUPS REPORT */}
-            {activeTab === 'groups' && (
+            {effectiveTab === 'groups' && canViewAttendance && (
                 <div className="space-y-6">
                     {/* Filter & Search Bar */}
                     <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">

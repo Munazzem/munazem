@@ -156,7 +156,12 @@ export default function CenterStudentsPage() {
             typeof t.teacherId === 'object' ? (t.teacherId as any)._id : t.teacherId
         );
 
+        const pkgGroupIds = (pkg.teachers || [])
+            .map((t) => (typeof t.groupId === 'object' ? (t.groupId as any)?._id : t.groupId))
+            .filter(Boolean);
+
         const matchingGroups = groups.filter((g) => {
+            if (pkgGroupIds.includes(g._id)) return true;
             const teacherId = typeof g.centerTeacherId === 'object' ? (g.centerTeacherId as any)._id : g.centerTeacherId;
             const matchesTeacher = pkgTeacherIds.includes(teacherId);
             const matchesGrade = g.gradeLevel === pkg.gradeLevel;
@@ -164,8 +169,25 @@ export default function CenterStudentsPage() {
             return matchesTeacher && matchesGrade && matchesType;
         });
 
-        // Automatically select all matching groups by default!
-        setSelectedPackageGroupIds(matchingGroups.map((g) => g._id));
+        // Auto-select only subjects with a single matching class so students are not
+        // automatically enrolled into multiple teachers/slots for the same subject.
+        const groupsBySubject = new Map<string, string[]>();
+        for (const g of matchingGroups) {
+            const subj = typeof g.centerTeacherId === 'object'
+                ? ((g.centerTeacherId as any)?.subject || '').trim()
+                : '';
+            const key = subj ? subj.toLowerCase() : `__group_${g._id}`;
+            const list = groupsBySubject.get(key) || [];
+            list.push(g._id);
+            groupsBySubject.set(key, list);
+        }
+        const autoSelectedIds: string[] = [];
+        for (const ids of groupsBySubject.values()) {
+            if (ids.length === 1) {
+                autoSelectedIds.push(ids[0]);
+            }
+        }
+        setSelectedPackageGroupIds(autoSelectedIds);
     };
 
     const togglePackageGroup = (groupId: string) => {
@@ -195,7 +217,7 @@ export default function CenterStudentsPage() {
     };
 
     useEffect(() => {
-        if (enrollImmediately && gradeLevel && packages.length > 0) {
+        if (!editingStudent && enrollImmediately && gradeLevel && packages.length > 0) {
             const matchingPkg = packages.find((p) => p.gradeLevel === gradeLevel);
             if (matchingPkg && matchingPkg._id !== packageId) {
                 handleSelectPackage(matchingPkg._id);
@@ -205,7 +227,7 @@ export default function CenterStudentsPage() {
                 setSelectedPackageGroupIds([]);
             }
         }
-    }, [gradeLevel, enrollImmediately, packages]);
+    }, [gradeLevel, enrollImmediately, packages, editingStudent]);
 
     const selectedPkg = packages.find((p) => p._id === packageId);
     const pkgTeacherIds = (selectedPkg?.teachers || []).map((t) =>
@@ -277,8 +299,8 @@ export default function CenterStudentsPage() {
 
     const { data: globalSearchResults, isLoading: isSearchingGlobal } = useQuery({
         queryKey: ['center', 'students', 'global-search', debouncedGlobalSearch],
-        queryFn: () => fetchCenterStudents({ search: debouncedGlobalSearch, limit: 15 }),
-        enabled: debouncedGlobalSearch.length >= 2,
+        queryFn: () => fetchCenterStudents({ search: debouncedGlobalSearch, limit: 25 }),
+        enabled: debouncedGlobalSearch.length >= 1,
         staleTime: 30000,
         refetchOnWindowFocus: false,
     });
@@ -445,13 +467,14 @@ export default function CenterStudentsPage() {
         setPackageDiscountVal('0');
         setPrivateDiscountType('');
         setPrivateDiscountVal('0');
-        setEnrollImmediately(true);
+        setEnrollImmediately(false);
         setIsAddOpen(true);
 
         setIsLoadingEditEnrollment(true);
         try {
             const enrollment = await fetchStudentEnrollment(student._id);
-            if (enrollment) {
+            if (enrollment && !(enrollment as any).isVirtualFallback) {
+                setEnrollImmediately(true);
                 setEnrollmentType((enrollment.type as CenterEnrollmentType) || student.studentType || 'PACKAGE');
                 const pkgIdVal = typeof enrollment.packageId === 'object'
                     ? (enrollment.packageId as any)?._id

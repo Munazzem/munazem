@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { getCairoDateString } from '@/lib/utils/formatters';
 import {
     CalendarCheck,
     QrCode,
@@ -97,7 +98,7 @@ export default function CenterAttendancePage() {
 
     // ── Global Date ───────────────────────────────────────────────────────────
     const [selectedDate, setSelectedDate] = useState<string>(
-        paramDate || new Date().toISOString().split('T')[0]
+        paramDate || getCairoDateString()
     );
 
     // ── Shared Sound & Camera State ───────────────────────────────────────────
@@ -312,6 +313,11 @@ export default function CenterAttendancePage() {
     const feedSearchTerm = feedSearch.trim().toLowerCase();
     const allAbsentStudents = allActiveStudents.filter((s) => {
         if (presentStudentIds.has(String(s._id))) return false;
+        // Do not count students who were created after the selected date as absent
+        if (s.createdAt) {
+            const createdCairoDate = getCairoDateString(new Date(s.createdAt));
+            if (createdCairoDate > selectedDate) return false;
+        }
         if (!feedSearchTerm) return true;
         return (
             (s.studentName || '').toLowerCase().includes(feedSearchTerm) ||

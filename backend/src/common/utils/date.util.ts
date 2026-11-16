@@ -112,6 +112,95 @@ export function egyptDayBounds(y: number, m: number, d: number) {
     return { dayStart, dayEnd };
 }
 
+const cairoPartsFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Africa/Cairo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+});
+
+/**
+ * Returns the UTC offset (in ms) for Africa/Cairo at a given UTC timestamp.
+ * Handles Egypt DST (UTC+2 winter / UTC+3 summer) accurately.
+ */
+export function getCairoOffsetMsAt(utcMs: number): number {
+    const parts = cairoPartsFormatter.formatToParts(new Date(utcMs));
+    const map: Record<string, number> = {};
+    for (const p of parts) {
+        if (p.type !== 'literal') map[p.type] = Number(p.value);
+    }
+    const rawHour = map.hour ?? 0;
+    const hour = rawHour === 24 ? 0 : rawHour;
+    const asUtc = Date.UTC(
+        map.year ?? 1970,
+        (map.month ?? 1) - 1,
+        map.day ?? 1,
+        hour,
+        map.minute ?? 0,
+        map.second ?? 0,
+        0,
+    );
+    const utcSec = Math.floor(utcMs / 1000) * 1000;
+    return asUtc - utcSec;
+}
+
+/**
+ * Converts a wall-clock date/time in Africa/Cairo to a UTC Date, respecting DST.
+ */
+export function cairoWallTimeToUtc(
+    y: number,
+    m: number,
+    d: number,
+    hour = 0,
+    min = 0,
+    sec = 0,
+    ms = 0,
+): Date {
+    const naiveUtc = Date.UTC(y, m - 1, d, hour, min, sec, ms);
+    const offset1 = getCairoOffsetMsAt(naiveUtc);
+    let candidate = naiveUtc - offset1;
+    const offset2 = getCairoOffsetMsAt(candidate);
+    if (offset2 !== offset1) {
+        candidate = naiveUtc - offset2;
+    }
+    return new Date(candidate);
+}
+
+/**
+ * DST-aware start (00:00:00.000) and end (23:59:59.999) of a calendar day in Africa/Cairo.
+ */
+export function cairoDayBounds(y: number, m: number, d: number) {
+    return {
+        dayStart: cairoWallTimeToUtc(y, m, d, 0, 0, 0, 0),
+        dayEnd: cairoWallTimeToUtc(y, m, d, 23, 59, 59, 999),
+    };
+}
+
+export function cairoDateStrBounds(dateStr: string) {
+    const datePart = dateStr.split('T')[0] || '';
+    const [y = 0, m = 1, d = 1] = datePart.split('-').map(Number);
+    return cairoDayBounds(y, m, d);
+}
+
+export function cairoMonthBounds(y: number, m: number) {
+    const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    return {
+        monthStart: cairoWallTimeToUtc(y, m, 1, 0, 0, 0, 0),
+        monthEnd: cairoWallTimeToUtc(y, m, lastDay, 23, 59, 59, 999),
+    };
+}
+
+export function cairoDateRangeBounds(startStr?: string, endStr?: string) {
+    return {
+        start: startStr ? cairoDateStrBounds(startStr).dayStart : undefined,
+        end: endStr ? cairoDateStrBounds(endStr).dayEnd : undefined,
+    };
+}
+
 /**
  * Resolves a transaction date string to a precise Date object.
  * - No input → current time

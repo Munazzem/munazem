@@ -8,7 +8,12 @@ import {
     resolveTransactionDate,
     formatTimeEgypt,
     format24hToEgypt12h,
-    formatDateEgypt
+    formatDateEgypt,
+    cairoWallTimeToUtc,
+    cairoDayBounds,
+    cairoDateStrBounds,
+    cairoMonthBounds,
+    cairoDateRangeBounds,
 } from '../../src/common/utils/date.util.js';
 
 describe('Africa/Cairo Timezone & DST Unit Tests', () => {
@@ -91,5 +96,30 @@ describe('Africa/Cairo Timezone & DST Unit Tests', () => {
         expect(format24hToEgypt12h('09:00')).toBe('09:00 ص');
         expect(format24hToEgypt12h('12:00')).toBe('12:00 م');
         expect(format24hToEgypt12h('00:00')).toBe('12:00 ص');
+    });
+
+    it('cairoDayBounds and cairoDateStrBounds respect Egypt DST (UTC+3 summer, UTC+2 winter)', () => {
+        // Summer DST (UTC+3): 2026-08-15 00:00 Cairo -> 2026-08-14T21:00:00.000Z
+        const summer = cairoDayBounds(2026, 8, 15);
+        expect(summer.dayStart.toISOString()).toBe('2026-08-14T21:00:00.000Z');
+        expect(summer.dayEnd.toISOString()).toBe('2026-08-15T20:59:59.999Z');
+
+        // Winter standard time (UTC+2): 2026-01-15 00:00 Cairo -> 2026-01-14T22:00:00.000Z
+        const winter = cairoDateStrBounds('2026-01-15');
+        expect(winter.dayStart.toISOString()).toBe('2026-01-14T22:00:00.000Z');
+        expect(winter.dayEnd.toISOString()).toBe('2026-01-15T21:59:59.999Z');
+    });
+
+    it('cairoMonthBounds and cairoDateRangeBounds return accurate UTC bounds', () => {
+        const summerMonth = cairoMonthBounds(2026, 6);
+        expect(summerMonth.monthStart.toISOString()).toBe('2026-05-31T21:00:00.000Z');
+        expect(summerMonth.monthEnd.toISOString()).toBe('2026-06-30T20:59:59.999Z');
+
+        const range = cairoDateRangeBounds('2026-01-01', '2026-01-31');
+        expect(range.start?.toISOString()).toBe('2025-12-31T22:00:00.000Z');
+        expect(range.end?.toISOString()).toBe('2026-01-31T21:59:59.999Z');
+
+        const noonCairo = cairoWallTimeToUtc(2026, 1, 15, 12, 0, 0, 0);
+        expect(noonCairo.toISOString()).toBe('2026-01-15T10:00:00.000Z');
     });
 });
