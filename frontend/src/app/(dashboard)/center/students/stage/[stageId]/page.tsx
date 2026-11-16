@@ -222,7 +222,12 @@ export default function StageStudentsPage() {
             typeof t.teacherId === 'object' ? (t.teacherId as any)._id : t.teacherId
         );
 
+        const pkgGroupIds = (pkg.teachers || [])
+            .map((t: any) => (typeof t.groupId === 'object' ? t.groupId?._id : t.groupId))
+            .filter(Boolean);
+
         const matchingGroups = groups.filter((g) => {
+            if (pkgGroupIds.includes(g._id)) return true;
             const teacherId = typeof g.centerTeacherId === 'object' ? (g.centerTeacherId as any)._id : g.centerTeacherId;
             const matchesTeacher = pkgTeacherIds.includes(teacherId);
             const matchesGrade = g.gradeLevel === pkg.gradeLevel;
@@ -230,7 +235,25 @@ export default function StageStudentsPage() {
             return matchesTeacher && matchesGrade && matchesType;
         });
 
-        setSelectedPackageGroupIds(matchingGroups.map((g) => g._id));
+        // Auto-select only subjects with a single matching class so students are not
+        // automatically enrolled into multiple teachers/slots for the same subject.
+        const groupsBySubject = new Map<string, string[]>();
+        for (const g of matchingGroups) {
+            const subj = typeof g.centerTeacherId === 'object'
+                ? ((g.centerTeacherId as any)?.subject || '').trim()
+                : '';
+            const key = subj ? subj.toLowerCase() : `__group_${g._id}`;
+            const list = groupsBySubject.get(key) || [];
+            list.push(g._id);
+            groupsBySubject.set(key, list);
+        }
+        const autoSelectedIds: string[] = [];
+        for (const ids of groupsBySubject.values()) {
+            if (ids.length === 1) {
+                autoSelectedIds.push(ids[0]);
+            }
+        }
+        setSelectedPackageGroupIds(autoSelectedIds);
     };
 
     const togglePackageGroup = (groupId: string) => {
@@ -348,13 +371,14 @@ export default function StageStudentsPage() {
         setPackageId(fallbackPkgId || '');
         setSelectedPackageGroupIds([]);
         setSelectedPrivateTeachers([]);
-        setEnrollImmediately(true);
+        setEnrollImmediately(false);
         setIsAddOpen(true);
 
         setIsLoadingEditEnrollment(true);
         try {
             const enrollment = await fetchStudentEnrollment(student._id);
-            if (enrollment) {
+            if (enrollment && !(enrollment as any).isVirtualFallback) {
+                setEnrollImmediately(true);
                 setEnrollmentType((enrollment.type as CenterEnrollmentType) || student.studentType || 'PACKAGE');
                 const pkgIdVal = typeof enrollment.packageId === 'object'
                     ? (enrollment.packageId as any)?._id
@@ -443,7 +467,7 @@ export default function StageStudentsPage() {
                             studentId: created._id,
                             type: enrollmentType,
                             packageId: (enrollmentType === 'PACKAGE' || enrollmentType === 'BOTH') && packageId ? packageId : undefined,
-                            packageGroups: (enrollmentType === 'PACKAGE' || enrollmentType === 'BOTH') && selectedPackageGroupIds.length > 0 ? selectedPackageGroupIds : undefined,
+                            packageGroups: (enrollmentType === 'PACKAGE' || enrollmentType === 'BOTH') ? selectedPackageGroupIds : undefined,
                             packageDiscount: (enrollmentType === 'PACKAGE' || enrollmentType === 'BOTH') && packageDiscountType ? {
                                 type: packageDiscountType,
                                 value: pDiscVal,

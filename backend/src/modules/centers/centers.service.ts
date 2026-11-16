@@ -21,6 +21,16 @@ import { UserRole, CenterSupervisorType, TransactionType, TransactionCategory, S
 import { ConflictException, NotFoundException, ForbiddenException, BadRequestException } from '../../common/utils/response/error.responce.js';
 import { PasswordUtil } from '../../common/utils/password.util.js';
 import { ParentPushService } from '../parent/parent-push.service.js';
+import {
+    todayEgypt,
+    getEgyptYearMonth,
+    getEgyptParts,
+    resolveTransactionDate,
+    cairoWallTimeToUtc,
+    cairoDateStrBounds,
+    cairoMonthBounds,
+    cairoDateRangeBounds,
+} from '../../common/utils/date.util.js';
 import type { ISupervisorPermissions } from '../../types/center.types.js';
 
 export class CenterService {
@@ -34,17 +44,17 @@ export class CenterService {
         }
 
         if (user.role === UserRole.centerOwner) {
-            // If requested branch specified, verify owner owns it
-            if (requestedCenterId) {
+            // If requested branch specified and valid, verify owner owns it;
+            // otherwise fall back to the owner's main/active branch (prevents stale cookie 404s)
+            if (requestedCenterId && Types.ObjectId.isValid(requestedCenterId)) {
                 const center = await CenterModel.findOne({
                     _id: requestedCenterId,
                     ownerId: user.userId,
                     isActive: true,
                 }).lean();
-                if (!center) {
-                    throw NotFoundException({ message: 'الفرع غير موجود أو غير تابع لك' });
+                if (center) {
+                    return requestedCenterId;
                 }
-                return requestedCenterId;
             }
 
             // Fallback to main center (parentCenterId: null) or user.centerId
@@ -361,6 +371,47 @@ export class CenterService {
         return resolvedTeachers;
     }
 
+    /**
+     * Build a forgiving regex for Arabic student search (normalizes Alef/Ya/Ta-Marbuta/Gaf forms,
+     * removes diacritics/tatweel, and matches flexible whitespace).
+     */
+    static buildArabicSearchRegex(term: string, anchorStart = false): RegExp {
+        const cleaned = term
+            .trim()
+            .replace(/[\u064B-\u065F\u0670\u0640]/g, '')
+            .replace(/\s+/g, ' ');
+
+        const charMap: Record<string, string> = {
+            'ا': '[اأإآٱ]',
+            'أ': '[اأإآٱ]',
+            'إ': '[اأإآٱ]',
+            'آ': '[اأإآٱ]',
+            'ٱ': '[اأإآٱ]',
+            'ى': '[ىيئ]',
+            'ي': '[ىيئ]',
+            'ئ': '[ىيئ]',
+            'ة': '[ةه]',
+            'ه': '[ةه]',
+            'ؤ': '[ؤو]',
+            'و': '[ؤو]',
+            'ج': '[جچ]',
+            'چ': '[جچ]',
+        };
+
+        const optionalDiacritics = '[\u064B-\u065F\u0670\u0640]*';
+        let pattern = '';
+        for (const ch of cleaned) {
+            if (ch === ' ') {
+                pattern += '\\s+';
+            } else if (charMap[ch]) {
+                pattern += `${charMap[ch]}${optionalDiacritics}`;
+            } else {
+                pattern += ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            }
+        }
+        return new RegExp(anchorStart ? `^${pattern}` : pattern, 'i');
+    }
+
     static async resolvePackageClassGroupIds(centerId: string, pkg: any): Promise<Types.ObjectId[]> {
         if (!pkg) return [];
         const centerObjId = new Types.ObjectId(centerId);
@@ -389,8 +440,28 @@ export class CenterService {
                 gradeLevel: pkg.gradeLevel,
                 groupType: { $in: [CenterGroupType.PACKAGE, CenterGroupType.MIXED] },
                 isActive: true,
-            }).select('_id').lean();
-            return groups.map((g) => g._id as Types.ObjectId);
+            })
+                .select('_id centerTeacherId')
+                .populate('centerTeacherId', 'subject')
+                .lean();
+
+            // Only auto-assign subjects that resolve unambiguously to 1 matching class
+            // so students are not automatically enrolled in multiple teachers for the same subject.
+            const bySubject = new Map<string, Types.ObjectId[]>();
+            for (const g of groups) {
+                const subj = ((g.centerTeacherId as any)?.subject || '').trim().toLowerCase();
+                const key = subj || `__group_${String(g._id)}`;
+                const list = bySubject.get(key) || [];
+                list.push(g._id as Types.ObjectId);
+                bySubject.set(key, list);
+            }
+            const resolved: Types.ObjectId[] = [];
+            for (const ids of bySubject.values()) {
+                if (ids.length === 1) {
+                    resolved.push(ids[0]!);
+                }
+            }
+            return resolved;
         }
 
         return [];
@@ -493,24 +564,6 @@ export class CenterService {
             .lean();
 
         if (!pkg) throw NotFoundException({ message: 'الباكيدج غير موجود' });
-
-        // Sync active PACKAGE / BOTH enrollments so package students automatically get all package classes
-        if (Array.isArray(updatePayload.teachers)) {
-            const classGroupIds = updatePayload.teachers
-                .map((t: any) => t.groupId)
-                .filter(Boolean);
-            if (classGroupIds.length > 0) {
-                await CenterEnrollmentModel.updateMany(
-                    {
-                        centerId: new Types.ObjectId(centerId),
-                        packageId: new Types.ObjectId(packageId),
-                        type: { $in: [CenterEnrollmentType.PACKAGE, CenterEnrollmentType.BOTH] },
-                        isActive: true,
-                    },
-                    { $set: { packageGroups: classGroupIds } }
-                );
-            }
-        }
 
         return pkg;
     }
@@ -972,11 +1025,12 @@ export class CenterService {
             });
         }
 
-        if (query.search) {
-            const s = query.search.trim();
-            const escaped = s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const anywhereRegex = new RegExp(escaped, 'i');
-            const prefixRegex = new RegExp(`^${escaped}`, 'i');
+        let searchPrefixRegex: RegExp | null = null;
+        if (query.search && String(query.search).trim()) {
+            const s = String(query.search).trim();
+            const anywhereRegex = CenterService.buildArabicSearchRegex(s, false);
+            const prefixRegex = CenterService.buildArabicSearchRegex(s, true);
+            searchPrefixRegex = prefixRegex;
             filter.$or = [
                 { studentName: anywhereRegex },
                 { parentName: anywhereRegex },
@@ -996,12 +1050,57 @@ export class CenterService {
             query.includeCounts === true ||
             (!query.stage && !query.gradeLevel && !query.search && page === 1);
 
-        const promises: Promise<any>[] = [
-            CenterStudentModel.find(filter)
-                .sort({ createdAt: -1 })
+        const fetchStudentsPromise = (async () => {
+            if (searchPrefixRegex && page === 1) {
+                const { $or: _ignoredOr, ...baseFilter } = filter;
+                const prefixFilter = {
+                    ...baseFilter,
+                    $or: [
+                        { studentName: searchPrefixRegex },
+                        { studentCode: searchPrefixRegex },
+                        { studentPhone: searchPrefixRegex },
+                        { parentPhone: searchPrefixRegex },
+                        { barcode: searchPrefixRegex },
+                    ],
+                };
+                const prefixDocs = await CenterStudentModel.find(prefixFilter)
+                    .collation({ locale: 'ar', strength: 1 })
+                    .sort({ studentName: 1, _id: 1 })
+                    .limit(limit)
+                    .lean();
+                if (prefixDocs.length >= limit) {
+                    return prefixDocs;
+                }
+                const prefixIds = prefixDocs.map((d: any) => d._id);
+                const otherDocs = await CenterStudentModel.find({
+                    ...filter,
+                    ...(prefixIds.length > 0 ? { _id: { $nin: prefixIds } } : {}),
+                })
+                    .collation({ locale: 'ar', strength: 1 })
+                    .sort({ studentName: 1, _id: 1 })
+                    .limit(limit - prefixDocs.length)
+                    .lean();
+                return [...prefixDocs, ...otherDocs];
+            }
+
+            if (query.sortBy === 'newest') {
+                return CenterStudentModel.find(filter)
+                    .sort({ createdAt: -1 })
+                    .skip(skip)
+                    .limit(limit)
+                    .lean();
+            }
+
+            return CenterStudentModel.find(filter)
+                .collation({ locale: 'ar', strength: 1 })
+                .sort({ studentName: 1, _id: 1 })
                 .skip(skip)
                 .limit(limit)
-                .lean(),
+                .lean();
+        })();
+
+        const promises: Promise<any>[] = [
+            fetchStudentsPromise,
             CenterStudentModel.countDocuments(filter),
         ];
 
@@ -1434,7 +1533,7 @@ export class CenterService {
         }
 
         const resolvedPackageGroups = isPackageIncluded
-            ? (Array.isArray(data.packageGroups) && data.packageGroups.length > 0
+            ? (Array.isArray(data.packageGroups)
                 ? data.packageGroups.map((id: string) => new Types.ObjectId(id))
                 : autoPackageGroups)
             : [];
@@ -1781,13 +1880,9 @@ export class CenterService {
     static async getEnrolledStudentsForClass(centerId: string, group: any) {
         const centerObjId = new Types.ObjectId(centerId);
         const groupObjId = new Types.ObjectId(String(group._id));
-        const isPkgOrMixedGroup =
-            group.groupType === CenterGroupType.PACKAGE || group.groupType === CenterGroupType.MIXED;
 
-        // 1. Find enrollments explicitly referencing this groupId:
-        //    - PACKAGE / BOTH students with groupObjId in packageGroups
-        //    - PRIVATE / BOTH students with groupObjId in privateTeachers.groupId
-        //    - Plus legacy PACKAGE / BOTH students if group is PACKAGE/MIXED and packageGroups was never set
+        // Only return students explicitly enrolled in this group via packageGroups or privateTeachers.groupId.
+        // Un-enrolled students or students who excluded this group are never implicitly pulled into every class of their grade.
         const orConditions: any[] = [
             {
                 type: { $in: [CenterEnrollmentType.PACKAGE, CenterEnrollmentType.BOTH] },
@@ -1798,13 +1893,6 @@ export class CenterService {
                 'privateTeachers.groupId': groupObjId,
             },
         ];
-
-        if (isPkgOrMixedGroup) {
-            orConditions.push({
-                type: { $in: [CenterEnrollmentType.PACKAGE, CenterEnrollmentType.BOTH] },
-                packageGroups: { $exists: false },
-            });
-        }
 
         const enrollments = await CenterEnrollmentModel.find({
             centerId: centerObjId,
@@ -1817,99 +1905,26 @@ export class CenterService {
 
         const enrollmentMap = new Map<string, any>();
         const explicitStudentIds: Types.ObjectId[] = [];
-        const fallbackStudentIds: Types.ObjectId[] = [];
 
         for (const e of enrollments) {
             const sid = String(e.studentId);
             enrollmentMap.set(sid, e);
-            const hasExplicitPkgGroup = (e.packageGroups || []).some((gid: any) => String(gid) === String(groupObjId));
-            const hasExplicitPrivGroup = (e.privateTeachers || []).some((pt: any) => String(pt.groupId?._id || pt.groupId) === String(groupObjId));
-
-            if (hasExplicitPkgGroup || hasExplicitPrivGroup) {
-                explicitStudentIds.push(new Types.ObjectId(sid));
-            } else {
-                fallbackStudentIds.push(new Types.ObjectId(sid));
-            }
+            explicitStudentIds.push(new Types.ObjectId(sid));
         }
 
-        const studentOr: any[] = [];
-        if (explicitStudentIds.length > 0) {
-            studentOr.push({ _id: { $in: explicitStudentIds } });
-        }
-        if (fallbackStudentIds.length > 0) {
-            studentOr.push({ _id: { $in: fallbackStudentIds }, gradeLevel: group.gradeLevel });
-        }
-        // Also check un-enrolled legacy students with studentType === 'PACKAGE' in same gradeLevel
-        if (isPkgOrMixedGroup) {
-            studentOr.push({
-                gradeLevel: group.gradeLevel,
-                studentType: 'PACKAGE',
-            });
-        }
-
-        if (studentOr.length === 0) {
+        if (explicitStudentIds.length === 0) {
             return { students: [], enrollmentMap };
         }
 
         const students = await CenterStudentModel.find({
             centerId: centerObjId,
             isActive: true,
-            $or: studentOr,
+            _id: { $in: explicitStudentIds },
         })
             .sort({ studentName: 1 })
             .lean();
 
-        // Fetch any active enrollments for candidate students that weren't in the first query,
-        // so students who explicitly chose OTHER packageGroups are strictly excluded!
-        const missingEnrStudentIds = students
-            .filter((st) => !enrollmentMap.has(String(st._id)))
-            .map((st) => st._id);
-
-        if (missingEnrStudentIds.length > 0) {
-            const otherEnrollments = await CenterEnrollmentModel.find({
-                centerId: centerObjId,
-                studentId: { $in: missingEnrStudentIds },
-                isActive: true,
-            })
-                .populate('packageId', 'name gradeLevel monthlyPrice')
-                .populate('privateTeachers.groupId', 'name privateMonthlyPrice')
-                .lean();
-            for (const oe of otherEnrollments) {
-                enrollmentMap.set(String(oe.studentId), oe);
-            }
-        }
-
-        const validStudents = students.filter((st) => {
-            const enr = enrollmentMap.get(String(st._id));
-            if (enr) {
-                const hasPkgGroup =
-                    (enr.type === CenterEnrollmentType.PACKAGE || enr.type === CenterEnrollmentType.BOTH) &&
-                    (enr.packageGroups || []).some((gid: any) => String(gid) === String(groupObjId));
-                const hasPrivGroup =
-                    (enr.type === CenterEnrollmentType.PRIVATE || enr.type === CenterEnrollmentType.BOTH) &&
-                    (enr.privateTeachers || []).some(
-                        (pt: any) => String(pt.groupId?._id || pt.groupId) === String(groupObjId)
-                    );
-
-                if (hasPkgGroup || hasPrivGroup) return true;
-
-                // Legacy fallback ONLY if packageGroups was never defined at all
-                if (
-                    (enr.type === CenterEnrollmentType.PACKAGE || enr.type === CenterEnrollmentType.BOTH) &&
-                    enr.packageGroups === undefined &&
-                    isPkgOrMixedGroup &&
-                    st.gradeLevel === group.gradeLevel
-                ) {
-                    return true;
-                }
-
-                return false;
-            }
-            // No enrollment doc at all: only include legacy un-enrolled PACKAGE students for PACKAGE/MIXED groups
-            return st.studentType === 'PACKAGE' && isPkgOrMixedGroup && st.gradeLevel === group.gradeLevel;
-        });
-
-        return { students: validStudents, enrollmentMap };
+        return { students, enrollmentMap };
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -2267,9 +2282,6 @@ export class CenterService {
         const group = session.groupId as any;
         if (!group) throw NotFoundException({ message: 'بيانات الحصة غير مكتملة' });
 
-        const { students: enrolledStudents, enrollmentMap } = await CenterService.getEnrolledStudentsForClass(centerId, group);
-
-        // Also include any student who already has an attendance record in this session (e.g. make-up student)
         const attendanceRecords = await CenterAttendanceModel.find({
             centerId: centerObjId,
             groupId: group._id,
@@ -2277,13 +2289,165 @@ export class CenterService {
         }).lean();
 
         const attendanceByStudentId = new Map<string, any>();
+        for (const rec of attendanceRecords) {
+            attendanceByStudentId.set(String(rec.studentId), rec);
+        }
+
+        const sessionCairoDate = todayEgypt(new Date(session.sessionDate));
+        const { dayEnd: sessionDayEnd } = cairoDateStrBounds(sessionCairoDate);
+
+        // 1. COMPLETED sessions strictly preserve their frozen attendance snapshot.
+        // Adding/editing students or package groups later NEVER alters past completed sessions.
+        if (session.status === 'COMPLETED') {
+            const rawSnap = [
+                ...(Array.isArray(session.presentStudents) ? session.presentStudents : []),
+                ...(Array.isArray(session.absentStudents) ? session.absentStudents : []),
+            ];
+
+            const snapshotMap = new Map<string, any>();
+            for (const item of rawSnap) {
+                const sid = String(item.studentId);
+                if (!snapshotMap.has(sid)) {
+                    snapshotMap.set(sid, item);
+                }
+            }
+            if (snapshotMap.size === 0 && attendanceRecords.length > 0) {
+                for (const rec of attendanceRecords) {
+                    const sid = String(rec.studentId);
+                    snapshotMap.set(sid, {
+                        studentId: rec.studentId,
+                        status: rec.status,
+                        scannedAt: rec.scannedAt || null,
+                    });
+                }
+            }
+
+            const snapStudentIds = Array.from(snapshotMap.values()).map(
+                (s: any) => new Types.ObjectId(String(s.studentId))
+            );
+
+            const [studentDocs, enrollmentDocs, allTransactions] =
+                snapStudentIds.length > 0
+                    ? await Promise.all([
+                          CenterStudentModel.find({ _id: { $in: snapStudentIds }, centerId: centerObjId }).lean(),
+                          CenterEnrollmentModel.find({
+                              centerId: centerObjId,
+                              studentId: { $in: snapStudentIds },
+                              isActive: true,
+                          })
+                              .populate('packageId', 'name gradeLevel monthlyPrice')
+                              .populate('privateTeachers.groupId', 'name privateMonthlyPrice')
+                              .lean(),
+                          TransactionModel.find({
+                              centerId: centerObjId,
+                              studentId: { $in: snapStudentIds },
+                          }).lean(),
+                      ])
+                    : [[], [], []];
+
+            const studentDocMap = new Map<string, any>();
+            for (const st of studentDocs) studentDocMap.set(String(st._id), st);
+
+            const enrollmentMap = new Map<string, any>();
+            for (const enr of enrollmentDocs) enrollmentMap.set(String(enr.studentId), enr);
+
+            const txByStudentId = new Map<string, any[]>();
+            for (const tx of allTransactions) {
+                if (!tx.studentId) continue;
+                const sid = String(tx.studentId);
+                const arr = txByStudentId.get(sid) || [];
+                arr.push(tx);
+                txByStudentId.set(sid, arr);
+            }
+
+            let presentCount = 0;
+            let absentCount = 0;
+            let lateCount = 0;
+            let debtCount = 0;
+
+            const studentsWithStatus = Array.from(snapshotMap.values())
+                .map((snap: any) => {
+                    const sid = String(snap.studentId);
+                    const st = studentDocMap.get(sid);
+                    const att = attendanceByStudentId.get(sid);
+                    const enr = enrollmentMap.get(sid);
+                    const txs = txByStudentId.get(sid) || [];
+                    const financialStatus = CenterService.computeStudentDebtSummary(enr, txs);
+
+                    if (financialStatus.hasDebt) debtCount++;
+
+                    const status = snap.status || att?.status || 'ABSENT';
+                    if (status === 'PRESENT' || status === 'EXCUSED') presentCount++;
+                    else if (status === 'LATE') {
+                        presentCount++;
+                        lateCount++;
+                    } else {
+                        absentCount++;
+                    }
+
+                    const enrollmentType = enr?.type || st?.studentType || 'PACKAGE';
+                    const packageName = (enr?.packageId as any)?.name || null;
+
+                    return {
+                        _id: snap.studentId,
+                        studentName: st?.studentName || snap.studentName || 'طالب',
+                        studentCode: st?.studentCode || snap.studentCode || '',
+                        studentPhone: st?.studentPhone ?? snap.studentPhone ?? null,
+                        parentPhone: st?.parentPhone ?? snap.parentPhone ?? null,
+                        gradeLevel: st?.gradeLevel || group.gradeLevel,
+                        barcode: st?.barcode || null,
+                        studentType: enrollmentType,
+                        enrollmentType,
+                        packageName,
+                        attendanceStatus: status,
+                        status,
+                        scannedAt: snap.scannedAt || att?.scannedAt || null,
+                        source: att?.source || null,
+                        notes: att?.notes || '',
+                        financialStatus,
+                    };
+                })
+                .sort((a, b) => (a.studentName || '').localeCompare(b.studentName || '', 'ar'));
+
+            return {
+                session: {
+                    ...session,
+                    totalEnrolled: studentsWithStatus.length,
+                    presentCount,
+                    absentCount,
+                },
+                group,
+                teacher: (session.centerTeacherId as any) || (group.centerTeacherId as any) || null,
+                students: studentsWithStatus,
+                stats: {
+                    totalEnrolled: studentsWithStatus.length,
+                    presentCount,
+                    absentCount,
+                    lateCount,
+                    pendingCount: 0,
+                    debtCount,
+                },
+            };
+        }
+
+        // 2. Non-completed session: only include currently enrolled students created on or before sessionDate
+        const { students: rawEnrolledStudents, enrollmentMap } = await CenterService.getEnrolledStudentsForClass(centerId, group);
+        const enrolledStudents = rawEnrolledStudents.filter(
+            (st: any) => !st.createdAt || new Date(st.createdAt) <= sessionDayEnd
+        );
+
+        // Also include make-up students ONLY if they attended / were excused (ignore stale ABSENT records from removed groups)
         const extraStudentIds: Types.ObjectId[] = [];
         const enrolledSet = new Set(enrolledStudents.map((s: any) => String(s._id)));
 
         for (const rec of attendanceRecords) {
             const sid = String(rec.studentId);
-            attendanceByStudentId.set(sid, rec);
-            if (!enrolledSet.has(sid)) {
+            if (
+                !enrolledSet.has(sid) &&
+                (rec.status === AttendanceStatus.PRESENT ||
+                    rec.status === AttendanceStatus.LATE ||
+                    rec.status === AttendanceStatus.EXCUSED)
+            ) {
                 extraStudentIds.push(new Types.ObjectId(sid));
             }
         }
@@ -2606,7 +2770,12 @@ export class CenterService {
         const group = session.groupId as any;
         if (!group) throw NotFoundException({ message: 'بيانات الحصة غير مكتملة' });
 
-        const { students: enrolledStudents } = await CenterService.getEnrolledStudentsForClass(centerId, group);
+        const { students: rawEnrolledStudents } = await CenterService.getEnrolledStudentsForClass(centerId, group);
+        const sessionCairoDate = todayEgypt(new Date(session.sessionDate));
+        const { dayEnd: sessionDayEnd } = cairoDateStrBounds(sessionCairoDate);
+        const enrolledStudents = rawEnrolledStudents.filter(
+            (st: any) => !st.createdAt || new Date(st.createdAt) <= sessionDayEnd
+        );
 
         const existingAttendance = await CenterAttendanceModel.find({
             centerId: centerObjId,
@@ -2773,16 +2942,6 @@ export class CenterService {
             allEnrolledGroups = await CenterGroupModel.find({
                 _id: { $in: candidateGroupIds },
                 centerId,
-                isActive: true,
-            })
-                .populate('centerTeacherId', 'name subject')
-                .lean();
-        } else if (enrollment && (enrollment.type === 'PACKAGE' || enrollment.type === 'BOTH')) {
-            // Fallback for packages with no explicit packageGroups specified
-            allEnrolledGroups = await CenterGroupModel.find({
-                centerId,
-                gradeLevel: student.gradeLevel,
-                groupType: { $in: ['PACKAGE', 'MIXED'] },
                 isActive: true,
             })
                 .populate('centerTeacherId', 'name subject')
@@ -3097,6 +3256,8 @@ export class CenterService {
         const centerObjId = new Types.ObjectId(centerId);
         const checkDate = data.date ? new Date(data.date) : new Date();
         checkDate.setUTCHours(0, 0, 0, 0);
+        const targetDateStr = data.date ? data.date.split('T')[0]! : todayEgypt();
+        const { dayEnd: targetDayEnd } = cairoDateStrBounds(targetDateStr);
 
         const studentFilter: any = {
             centerId: centerObjId,
@@ -3127,7 +3288,7 @@ export class CenterService {
         }
 
         const [allTargetStudents, checkInsToday, centerDoc] = await Promise.all([
-            CenterStudentModel.find(studentFilter).select('_id studentName gradeLevel').lean(),
+            CenterStudentModel.find(studentFilter).select('_id studentName gradeLevel createdAt').lean(),
             CenterCheckInModel.find({
                 centerId: centerObjId,
                 date: checkDate,
@@ -3139,7 +3300,11 @@ export class CenterService {
 
         const checkedInIds = new Set(checkInsToday.map((c) => String(c.studentId)));
         const absentStudents = allTargetStudents
-            .filter((s) => !checkedInIds.has(String(s._id)))
+            .filter(
+                (s: any) =>
+                    !checkedInIds.has(String(s._id)) &&
+                    (!s.createdAt || new Date(s.createdAt) <= targetDayEnd)
+            )
             .map((s) => ({
                 studentId: String(s._id),
                 studentName: s.studentName,
@@ -3191,7 +3356,7 @@ export class CenterService {
             paidAmount: data.paidAmount,
             remainingAmount: data.remainingAmount || 0,
             description: data.description || '',
-            date: data.date ? new Date(data.date) : new Date(),
+            date: resolveTransactionDate(data.date),
         };
 
         if (student) {
@@ -3225,7 +3390,22 @@ export class CenterService {
         }
 
         if (data.description !== undefined) existing.description = data.description || '';
-        if (data.date) existing.date = new Date(data.date);
+        if (data.date) {
+            const rawDate = String(data.date);
+            if (rawDate.includes('T')) {
+                existing.date = new Date(rawDate);
+            } else {
+                const [y, m, d] = rawDate.split('-').map(Number);
+                const prevInstant = existing.date || (existing as any).createdAt || new Date();
+                const prevCairo = getEgyptParts(prevInstant);
+                const prevDateStr = `${prevCairo.year}-${String(prevCairo.month).padStart(2, '0')}-${String(prevCairo.day).padStart(2, '0')}`;
+                if (prevDateStr !== rawDate && y && m && d) {
+                    const hasNonMidnightTime = prevCairo.hour !== 0 || prevCairo.minute !== 0 || prevCairo.second !== 0;
+                    const timeSource = hasNonMidnightTime ? prevCairo : getEgyptParts(new Date());
+                    existing.date = cairoWallTimeToUtc(y, m, d, timeSource.hour, timeSource.minute, timeSource.second, 0);
+                }
+            }
+        }
 
         await existing.save();
 
@@ -3272,10 +3452,7 @@ export class CenterService {
         };
 
         if (startDate && endDate) {
-            const start = new Date(startDate);
-            start.setUTCHours(0, 0, 0, 0);
-            const end = new Date(endDate);
-            end.setUTCHours(23, 59, 59, 999);
+            const { start, end } = cairoDateRangeBounds(startDate, endDate);
             filter.date = { $gte: start, $lte: end };
         }
 
@@ -3323,10 +3500,7 @@ export class CenterService {
         };
 
         if (startDate && endDate) {
-            const start = new Date(startDate);
-            start.setUTCHours(0, 0, 0, 0);
-            const end = new Date(endDate);
-            end.setUTCHours(23, 59, 59, 999);
+            const { start, end } = cairoDateRangeBounds(startDate, endDate);
             filter.date = { $gte: start, $lte: end };
         }
 
@@ -3383,22 +3557,8 @@ export class CenterService {
 
     static async getDailyTally(centerId: string, dateStr?: string) {
         const centerObjId = new Types.ObjectId(centerId);
-
-        let startOfDay: Date;
-        let endOfDay: Date;
-
-        if (dateStr) {
-            const parts = dateStr.split('-');
-            const y = parseInt(parts[0] || '2026', 10);
-            const m = parseInt(parts[1] || '1', 10);
-            const d = parseInt(parts[2] || '1', 10);
-            startOfDay = new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
-            endOfDay = new Date(Date.UTC(y, m - 1, d, 23, 59, 59, 999));
-        } else {
-            const now = new Date();
-            startOfDay = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0));
-            endOfDay = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999));
-        }
+        const resolvedDateStr = dateStr || todayEgypt();
+        const { dayStart: startOfDay, dayEnd: endOfDay } = cairoDateStrBounds(resolvedDateStr);
 
         const dateFilter = {
             centerId: centerObjId,
@@ -3458,7 +3618,7 @@ export class CenterService {
         }
 
         return {
-            date: dateStr || startOfDay.toISOString().split('T')[0],
+            date: resolvedDateStr,
             totalPaid: totalRevenue,
             packageRevenue,
             privateRevenue,
@@ -3471,12 +3631,11 @@ export class CenterService {
 
     static async getMonthlyTally(centerId: string, year?: number, month?: number) {
         const centerObjId = new Types.ObjectId(centerId);
-        const now = new Date();
-        const y = Number(year) || now.getFullYear();
-        const m = Number(month) || (now.getMonth() + 1);
+        const current = getEgyptYearMonth();
+        const y = Number(year) || current.year;
+        const m = Number(month) || current.month;
 
-        const startOfMonth = new Date(Date.UTC(y, m - 1, 1, 0, 0, 0, 0));
-        const endOfMonth = new Date(Date.UTC(y, m, 0, 23, 59, 59, 999));
+        const { monthStart: startOfMonth, monthEnd: endOfMonth } = cairoMonthBounds(y, m);
 
         const dateFilter = {
             centerId: centerObjId,
@@ -3503,7 +3662,7 @@ export class CenterService {
                         _id: {
                             $dayOfMonth: {
                                 date: '$date',
-                                timezone: '+03:00',
+                                timezone: 'Africa/Cairo',
                             },
                         },
                         dayDate: { $first: '$date' },
@@ -3595,18 +3754,10 @@ export class CenterService {
         const filter: any = { centerId: centerObjId };
 
         if (query.startDate && query.endDate) {
-            const start = new Date(query.startDate);
-            start.setUTCHours(0, 0, 0, 0);
-            const end = new Date(query.endDate);
-            end.setUTCHours(23, 59, 59, 999);
+            const { start, end } = cairoDateRangeBounds(query.startDate, query.endDate);
             filter.date = { $gte: start, $lte: end };
         } else if (query.date) {
-            const parts = query.date.split('-').map(Number);
-            const y = parts[0];
-            const m = parts[1];
-            const d = parts[2];
-            const start = new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
-            const end = new Date(Date.UTC(y, m - 1, d, 23, 59, 59, 999));
+            const { dayStart: start, dayEnd: end } = cairoDateStrBounds(query.date);
             filter.date = { $gte: start, $lte: end };
         }
 
@@ -3674,12 +3825,11 @@ export class CenterService {
 
         const dateFilter: any = { centerId: centerObjId };
         if (startDate && endDate) {
-            const start = new Date(startDate);
-            start.setUTCHours(0, 0, 0, 0);
-            const end = new Date(endDate);
-            end.setUTCHours(23, 59, 59, 999);
+            const { start, end } = cairoDateRangeBounds(startDate, endDate);
             dateFilter.date = { $gte: start, $lte: end };
         }
+
+        const { dayStart: todayStart, dayEnd: todayEnd } = cairoDateStrBounds(todayEgypt());
 
         const [stats, transactions, totalStudents, activeStudents, secCount, prepCount, primCount, checkInsToday] = await Promise.all([
             TransactionModel.aggregate([
@@ -3708,8 +3858,8 @@ export class CenterService {
             CenterCheckInModel.countDocuments({
                 centerId: centerObjId,
                 date: {
-                    $gte: new Date(new Date().setHours(0, 0, 0, 0)),
-                    $lte: new Date(new Date().setHours(23, 59, 59, 999)),
+                    $gte: todayStart,
+                    $lte: todayEnd,
                 },
             }),
         ]);
@@ -3801,10 +3951,7 @@ export class CenterService {
 
         const dateFilter: any = { centerId: centerObjId };
         if (startDate && endDate) {
-            const start = new Date(startDate);
-            start.setUTCHours(0, 0, 0, 0);
-            const end = new Date(endDate);
-            end.setUTCHours(23, 59, 59, 999);
+            const { start, end } = cairoDateRangeBounds(startDate, endDate);
             dateFilter.date = { $gte: start, $lte: end };
         }
 
@@ -4770,6 +4917,10 @@ export class CenterService {
             targetStudents = classStudents;
         }
 
+        const dayEndByDate = new Map<string, Date>(
+            weekDays.map((wd: any) => [wd.dateStr, cairoDateStrBounds(wd.dateStr).dayEnd])
+        );
+
         if (mode === 'QUICK_CHECKIN') {
             const checkIns = await CenterCheckInModel.find({
                 centerId: centerObjId,
@@ -4802,6 +4953,15 @@ export class CenterService {
                             time: ci.checkInTime
                                 ? new Date(ci.checkInTime).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
                                 : null,
+                        };
+                    }
+                    const dayEnd = dayEndByDate.get(wd.dateStr);
+                    if (st.createdAt && dayEnd && new Date(st.createdAt) > dayEnd) {
+                        return {
+                            date: wd.dateStr,
+                            dayName: wd.dayName,
+                            status: 'NONE',
+                            time: null,
                         };
                     }
                     absentDays++;
@@ -4878,30 +5038,17 @@ export class CenterService {
 
         const isStudentEnrolledInGroup = (st: any, enr: any, group: any): boolean => {
             const gidStr = String(group._id);
-            const isPkgOrMixedGroup =
-                group.groupType === CenterGroupType.PACKAGE || group.groupType === CenterGroupType.MIXED;
 
-            if (enr) {
-                const hasPkg =
-                    (enr.type === CenterEnrollmentType.PACKAGE || enr.type === CenterEnrollmentType.BOTH) &&
-                    (enr.packageGroups || []).some((gid: any) => String(gid) === gidStr);
-                const hasPriv =
-                    (enr.type === CenterEnrollmentType.PRIVATE || enr.type === CenterEnrollmentType.BOTH) &&
-                    (enr.privateTeachers || []).some(
-                        (pt: any) => String(pt.groupId?._id || pt.groupId) === gidStr
-                    );
-                if (hasPkg || hasPriv) return true;
-                if (
-                    (enr.type === CenterEnrollmentType.PACKAGE || enr.type === CenterEnrollmentType.BOTH) &&
-                    enr.packageGroups === undefined &&
-                    isPkgOrMixedGroup &&
-                    st.gradeLevel === group.gradeLevel
-                ) {
-                    return true;
-                }
-                return false;
-            }
-            return st.studentType === 'PACKAGE' && isPkgOrMixedGroup && st.gradeLevel === group.gradeLevel;
+            if (!enr) return false;
+            const hasPkg =
+                (enr.type === CenterEnrollmentType.PACKAGE || enr.type === CenterEnrollmentType.BOTH) &&
+                (enr.packageGroups || []).some((gid: any) => String(gid) === gidStr);
+            const hasPriv =
+                (enr.type === CenterEnrollmentType.PRIVATE || enr.type === CenterEnrollmentType.BOTH) &&
+                (enr.privateTeachers || []).some(
+                    (pt: any) => String(pt.groupId?._id || pt.groupId) === gidStr
+                );
+            return Boolean(hasPkg || hasPriv);
         };
 
         const rows = targetStudents.map((st: any) => {
@@ -4914,11 +5061,22 @@ export class CenterService {
             let absentCount = 0;
 
             const days = weekDays.map((wd) => {
+                const dayEnd = dayEndByDate.get(wd.dateStr);
+                const recordedList = extraAttByStudentDate.get(`${sid}_${wd.dateStr}`) || [];
+
+                if (st.createdAt && dayEnd && new Date(st.createdAt) > dayEnd && recordedList.length === 0) {
+                    return {
+                        date: wd.dateStr,
+                        dayName: wd.dayName,
+                        status: 'NONE',
+                        classes: [],
+                    };
+                }
+
                 const normDay = CenterService.normalizeArabicDay(wd.dayName);
                 const dayScheduledGroups = (groupsByDay.get(normDay) || []).filter((g: any) =>
                     isStudentEnrolledInGroup(st, enr, g)
                 );
-                const recordedList = extraAttByStudentDate.get(`${sid}_${wd.dateStr}`) || [];
 
                 const classes: Array<{ groupId: any; groupName: string; status: string }> = [];
                 const seenGroupIds = new Set<string>();

@@ -62,6 +62,8 @@ import {
 } from '@/types/center.types';
 import { printHtmlContent } from '@/lib/utils/print';
 import { generateIdCardsHtml } from '@/lib/utils/printIdCard';
+import { useAuthStore } from '@/lib/store/auth.store';
+import { formatArabicDate, formatArabicTime, getTransactionDisplayDate } from '@/lib/utils/formatters';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -79,6 +81,8 @@ export default function CenterStudentProfilePage() {
     const router = useRouter();
     const queryClient = useQueryClient();
     const studentId = params.studentId as string;
+    const user = useAuthStore((s) => s.user);
+    const canViewFinancials = user?.role === 'centerOwner' || Boolean(user?.supervisorPermissions?.canViewFinancials);
 
     const [qrDataUrl, setQrDataUrl] = useState<string>('');
     const [copiedCode, setCopiedCode] = useState(false);
@@ -136,7 +140,7 @@ export default function CenterStudentProfilePage() {
     const { data: financialReport, isLoading: financialLoading } = useQuery({
         queryKey: ['center', 'financials', 'student', studentId],
         queryFn: () => fetchStudentFinancialReport(studentId),
-        enabled: !!studentId,
+        enabled: !!studentId && canViewFinancials,
     });
 
     // 4b. Fetch Unified Full Profile (Classes + Session Attendance + Quick Check-Ins + True Debt)
@@ -1195,7 +1199,10 @@ export default function CenterStudentProfilePage() {
                                         {financialReport.transactions.map((tx: any) => (
                                             <tr key={tx._id} className="hover:bg-gray-50/50">
                                                 <td className="py-3 px-4 font-bold text-gray-800">
-                                                    {new Date(tx.date).toLocaleDateString('ar-EG')}
+                                                    <div>{formatArabicDate(getTransactionDisplayDate(tx) || tx.date)}</div>
+                                                    <div className="text-[11px] text-gray-400 font-normal">
+                                                        {formatArabicTime(getTransactionDisplayDate(tx) || tx.date)}
+                                                    </div>
                                                 </td>
                                                 <td className="py-3 px-4">
                                                     <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">

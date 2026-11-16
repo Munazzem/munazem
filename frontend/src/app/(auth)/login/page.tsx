@@ -68,6 +68,15 @@ export default function LoginPage() {
                     } catch {}
                 }
 
+                // Clear any stale branch selection from a previous account/session
+                try {
+                    Cookies.remove('selectedBranchId', { path: '/' });
+                    Cookies.remove('selectedBranchId');
+                    if (user.role === 'centerSupervisor' && (user as any).centerId) {
+                        Cookies.set('selectedBranchId', String((user as any).centerId), { path: '/', sameSite: 'lax' });
+                    }
+                } catch {}
+
                 toast.success('تم تسجيل الدخول بنجاح', {
                     description: `مرحباً بك، ${user.name || 'في منصة مُنظِّم'}`,
                 });

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useDebounce } from '@/lib/hooks/use-debounce';
 import { toast } from 'sonner';
 import {
@@ -68,6 +68,14 @@ import {
     ICenter,
 } from '@/types/center.types';
 import { BranchSwitcher } from '@/components/center/BranchSwitcher';
+import { useAuthStore } from '@/lib/store/auth.store';
+import {
+    getCairoDateString,
+    getCairoYearMonth,
+    getTransactionDisplayDate,
+    formatArabicDate,
+    formatArabicTime,
+} from '@/lib/utils/formatters';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -80,7 +88,7 @@ import {
     DialogDescription,
     DialogFooter,
 } from '@/components/ui/dialog';
-import { printHtmlContent } from '@/lib/utils/print';
+import { printHtmlContent, isMobileDevice } from '@/lib/utils/print';
 import { cn } from '@/lib/utils';
 
 const MONTHS_AR = [
@@ -90,6 +98,16 @@ const MONTHS_AR = [
 
 export default function CenterFinancialsPage() {
     const queryClient = useQueryClient();
+
+    // Device detection (defer to client effect to prevent SSR hydration mismatch)
+    const [isMobile, setIsMobile] = useState(false);
+
+    useEffect(() => {
+        const updateDevice = () => setIsMobile(isMobileDevice());
+        updateDevice();
+        window.addEventListener('resize', updateDevice);
+        return () => window.removeEventListener('resize', updateDevice);
+    }, []);
 
     // Active View Tab
     const [activeTab, setActiveTab] = useState<'daily' | 'monthly' | 'transactions' | 'teachers'>('daily');
@@ -142,6 +160,10 @@ export default function CenterFinancialsPage() {
         el.scrollBy({ left: 200, behavior: 'smooth' });
     };
 
+    // ── Permissions ─────────────────────────────────────────────────────────
+    const user = useAuthStore((s) => s.user);
+    const canViewFinancials = user?.role === 'centerOwner' || Boolean(user?.supervisorPermissions?.canViewFinancials);
+
     // ── Centers for Branding Print ──────────────────────────────────────────
     const { data: centers = [] } = useQuery<ICenter[]>({
         queryKey: ['center', 'my-centers'],
@@ -150,7 +172,7 @@ export default function CenterFinancialsPage() {
     const centerName = centers[0]?.name || 'سنتر تعليمي';
 
     // ── Tab 1: Daily Tally State ────────────────────────────────────────────
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getCairoDateString();
     const [dailyDate, setDailyDate] = useState(todayStr);
 
     const {
@@ -160,11 +182,11 @@ export default function CenterFinancialsPage() {
     } = useQuery<IDailyTallyReport>({
         queryKey: ['center', 'daily-tally', dailyDate],
         queryFn: () => fetchCenterDailyTally(dailyDate),
+        enabled: canViewFinancials,
     });
 
     // ── Tab 2: Monthly Tally State ──────────────────────────────────────────
-    const currentYear = new Date().getFullYear();
-    const currentMonth = new Date().getMonth() + 1;
+    const { year: currentYear, month: currentMonth } = getCairoYearMonth();
     const [selectedYear, setSelectedYear] = useState<number>(currentYear);
     const [selectedMonth, setSelectedMonth] = useState<number>(currentMonth);
 
@@ -175,6 +197,7 @@ export default function CenterFinancialsPage() {
     } = useQuery<IMonthlyTallyReport>({
         queryKey: ['center', 'monthly-tally', selectedYear, selectedMonth],
         queryFn: () => fetchCenterMonthlyTally(selectedYear, selectedMonth),
+        enabled: canViewFinancials,
     });
 
     // ── Tab 3: Transactions Ledger State ────────────────────────────────────
@@ -194,6 +217,7 @@ export default function CenterFinancialsPage() {
     const [editCategory, setEditCategory] = useState<'CENTER_PACKAGE' | 'CENTER_PRIVATE' | 'CENTER_COMBINED'>('CENTER_PACKAGE');
     const [editDescription, setEditDescription] = useState('');
     const [editDate, setEditDate] = useState('');
+    const [initialEditDate, setInitialEditDate] = useState('');
 
     const invalidateAllFinancialQueries = () => {
         queryClient.invalidateQueries({ queryKey: ['center', 'financials-summary'] });
@@ -246,11 +270,9 @@ export default function CenterFinancialsPage() {
         setEditPaidAmount(String(tx.paidAmount || 0));
         setEditCategory((tx.category as any) || 'CENTER_PACKAGE');
         setEditDescription(tx.description || '');
-        setEditDate(
-            tx.date
-                ? new Date(tx.date).toISOString().split('T')[0]
-                : new Date().toISOString().split('T')[0]
-        );
+        const resolvedDateStr = tx.date ? getCairoDateString(tx.date) : getCairoDateString();
+        setEditDate(resolvedDateStr);
+        setInitialEditDate(resolvedDateStr);
     };
 
     const handleDeleteSingleTx = (tx: ICenterTransaction) => {
@@ -297,6 +319,7 @@ export default function CenterFinancialsPage() {
             page: txPage,
             limit: 25,
         }),
+        enabled: canViewFinancials,
     });
 
     // ── Tab 4: Teacher Reports State ────────────────────────────────────────
@@ -312,13 +335,14 @@ export default function CenterFinancialsPage() {
     const { data: teacherReport, isLoading: loadingTeacherReport } = useQuery<ITeacherFinancialReport>({
         queryKey: ['center', 'teacher-report', selectedTeacherId, teacherStartDate, teacherEndDate],
         queryFn: () => fetchTeacherFinancialReport(selectedTeacherId, teacherStartDate || undefined, teacherEndDate || undefined),
-        enabled: selectedTeacherId !== 'ALL' && !!selectedTeacherId,
+        enabled: canViewFinancials && selectedTeacherId !== 'ALL' && !!selectedTeacherId,
     });
 
     // Overall summary for KPI header
     const { data: summary } = useQuery<ICenterFinancialSummary>({
         queryKey: ['center', 'financials-summary'],
         queryFn: () => fetchCenterFinancialSummary(),
+        enabled: canViewFinancials,
     });
 
     // ── Payment Form Modal State ────────────────────────────────────────────
@@ -332,7 +356,6 @@ export default function CenterFinancialsPage() {
     const [originalAmount, setOriginalAmount] = useState('');
     const [discountAmount, setDiscountAmount] = useState('0');
     const [paidAmount, setPaidAmount] = useState('');
-    const [paymentDate, setPaymentDate] = useState(todayStr);
     const [description, setDescription] = useState('');
 
     const { data: packages = [] } = useQuery<ICenterPackage[]>({
@@ -345,11 +368,13 @@ export default function CenterFinancialsPage() {
         queryFn: () => fetchCenterGroups({ isActive: true }),
     });
 
-    const debouncedStudentSearch = useDebounce(studentSearch, 350);
-    const { data: searchedStudentsData } = useQuery({
-        queryKey: ['center', 'students', 'search', debouncedStudentSearch],
-        queryFn: () => fetchCenterStudents({ search: debouncedStudentSearch, limit: 8 }),
-        enabled: debouncedStudentSearch.trim().length >= 2,
+    const debouncedStudentSearch = useDebounce(studentSearch, 200);
+    const trimmedStudentSearch = debouncedStudentSearch.trim();
+    const { data: searchedStudentsData, isFetching: isSearchingStudents } = useQuery({
+        queryKey: ['center', 'students', 'search', trimmedStudentSearch],
+        queryFn: () => fetchCenterStudents({ search: trimmedStudentSearch, limit: 30 }),
+        enabled: trimmedStudentSearch.length >= 1 && !selectedStudentId,
+        placeholderData: keepPreviousData,
     });
     const studentOptions = searchedStudentsData?.data || [];
 
@@ -451,7 +476,7 @@ export default function CenterFinancialsPage() {
             queryClient.invalidateQueries({ queryKey: ['center', 'transactions'] });
             queryClient.invalidateQueries({ queryKey: ['center', 'teacher-report'] });
             handleClosePayment();
-            if (res) {
+            if (res && !isMobileDevice()) {
                 printReceipt(centerName, res);
             }
         },
@@ -519,7 +544,7 @@ export default function CenterFinancialsPage() {
             paidAmount: paid,
             remainingAmount: remaining,
             description: description.trim() || undefined,
-            date: paymentDate,
+            date: new Date().toISOString(),
         };
 
         paymentMutation.mutate(payload);
@@ -531,7 +556,7 @@ export default function CenterFinancialsPage() {
         const rowsHtml = (dailyTally.transactions || []).map((tx, idx) => `
             <tr>
                 <td style="padding: 7px; border: 1px solid #cbd5e1; text-align: center; font-size: 11px;">${idx + 1}</td>
-                <td style="padding: 7px; border: 1px solid #cbd5e1; font-size: 10px; font-family: monospace;">${new Date(tx.date || tx.createdAt || '').toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</td>
+                <td style="padding: 7px; border: 1px solid #cbd5e1; font-size: 10px; font-family: monospace;">${formatArabicTime(getTransactionDisplayDate(tx) || tx.date || tx.createdAt)}</td>
                 <td style="padding: 7px; border: 1px solid #cbd5e1; font-size: 11px; font-weight: bold;">
                     ${tx.studentName || 'طالب'}
                     ${tx.studentCode ? `<div style="font-size: 9px; color: #64748b; font-family: monospace;">كود: ${tx.studentCode}</div>` : ''}
@@ -579,7 +604,7 @@ export default function CenterFinancialsPage() {
                 </div>
                 <div style="text-align: left;">
                     <div class="badge">تاريخ الجرد: ${dailyTally.date}</div>
-                    <div style="font-size: 10px; color: #64748b; margin-top: 3px;">وقت الطباعة: ${new Date().toLocaleTimeString('ar-EG')}</div>
+                    <div style="font-size: 10px; color: #64748b; margin-top: 3px;">وقت الطباعة: ${formatArabicTime(new Date())}</div>
                 </div>
             </div>
 
@@ -687,7 +712,7 @@ export default function CenterFinancialsPage() {
                 </div>
                 <div style="text-align: left;">
                     <div class="badge">الفترة: شهر ${monthName} ${monthlyTally.year}</div>
-                    <div style="font-size: 10px; color: #64748b; margin-top: 3px;">تاريخ الاستخراج: ${new Date().toLocaleDateString('ar-EG')}</div>
+                    <div style="font-size: 10px; color: #64748b; margin-top: 3px;">تاريخ الاستخراج: ${formatArabicDate(new Date())}</div>
                 </div>
             </div>
 
@@ -772,7 +797,7 @@ export default function CenterFinancialsPage() {
                 <div class="subtitle">إيصال سداد نقدي رسمي بالخزينة</div>
                 <div class="row">
                     <span style="color: #64748b;">التاريخ:</span>
-                    <span>${new Date(tx.date || tx.createdAt || '').toLocaleDateString('ar-EG')} - ${new Date(tx.date || tx.createdAt || '').toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</span>
+                    <span>${formatArabicDate(getTransactionDisplayDate(tx) || tx.date || tx.createdAt)} - ${formatArabicTime(getTransactionDisplayDate(tx) || tx.date || tx.createdAt)}</span>
                 </div>
                 <div class="divider"></div>
                 <div class="row">
@@ -996,9 +1021,7 @@ export default function CenterFinancialsPage() {
                                         <button
                                             type="button"
                                             onClick={() => {
-                                                const y = new Date();
-                                                y.setDate(y.getDate() - 1);
-                                                setDailyDate(y.toISOString().split('T')[0]);
+                                                setDailyDate(getCairoDateString(Date.now() - 86400000));
                                             }}
                                             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                                                 dailyDate !== todayStr ? 'bg-white shadow-sm text-primary font-black' : 'text-gray-600 hover:text-gray-900'
@@ -1177,7 +1200,7 @@ export default function CenterFinancialsPage() {
                                                             <div className="flex items-center justify-between text-xs text-gray-500">
                                                                 <span>{tx.description || (tx.centerTeacherId ? `مدرس: ${tx.centerTeacherId.name}` : '—')}</span>
                                                                 <span className="font-mono text-[11px] text-gray-400">
-                                                                    {new Date(tx.date || tx.createdAt || '').toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
+                                                                    {formatArabicTime(getTransactionDisplayDate(tx) || tx.date || tx.createdAt)}
                                                                 </span>
                                                             </div>
                                                             <div className="grid grid-cols-3 gap-2 bg-gray-50/80 p-2 rounded-lg text-center text-xs">
@@ -1285,7 +1308,7 @@ export default function CenterFinancialsPage() {
                                                                         {idx + 1}
                                                                     </td>
                                                                     <td className="py-3 px-3 font-mono text-[11px] text-gray-500">
-                                                                        {new Date(tx.date || tx.createdAt || '').toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
+                                                                        {formatArabicTime(getTransactionDisplayDate(tx) || tx.date || tx.createdAt)}
                                                                     </td>
                                                                     <td className="py-3 px-3">
                                                                         <div className="font-bold text-gray-900">{tx.studentName || 'طالب'}</div>
@@ -1753,7 +1776,7 @@ export default function CenterFinancialsPage() {
                                                                     )}
                                                                 </div>
                                                                 <div className="text-[10px] text-gray-400 font-mono">
-                                                                    {new Date(tx.date || tx.createdAt).toLocaleDateString('ar-EG')} • {new Date(tx.date || tx.createdAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
+                                                                    {formatArabicDate(getTransactionDisplayDate(tx) || tx.date || tx.createdAt)} • {formatArabicTime(getTransactionDisplayDate(tx) || tx.date || tx.createdAt)}
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -1881,8 +1904,8 @@ export default function CenterFinancialsPage() {
                                                                 )}
                                                             </td>
                                                             <td className="py-3 px-3 font-mono text-[11px] text-gray-500">
-                                                                <div>{new Date(tx.date || tx.createdAt).toLocaleDateString('ar-EG')}</div>
-                                                                <div className="text-[10px] text-gray-400">{new Date(tx.date || tx.createdAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</div>
+                                                                <div>{formatArabicDate(getTransactionDisplayDate(tx) || tx.date || tx.createdAt)}</div>
+                                                                <div className="text-[10px] text-gray-400">{formatArabicTime(getTransactionDisplayDate(tx) || tx.date || tx.createdAt)}</div>
                                                             </td>
                                                             <td className="py-3 px-3">
                                                                 <div className="flex items-center gap-2">
@@ -2084,7 +2107,7 @@ export default function CenterFinancialsPage() {
                                                 <div key={tx._id} className="bg-white p-3.5 rounded-xl border border-gray-100 shadow-xs space-y-2">
                                                     <div className="flex items-center justify-between">
                                                         <span className="font-bold text-gray-900 text-sm">{tx.studentName || 'طالب'}</span>
-                                                        <span className="text-[11px] text-gray-400 font-mono">{new Date(tx.date).toLocaleDateString('ar-EG')}</span>
+                                                        <span className="text-[11px] text-gray-400 font-mono">{formatArabicDate(getTransactionDisplayDate(tx) || tx.date || tx.createdAt)} • {formatArabicTime(getTransactionDisplayDate(tx) || tx.date || tx.createdAt)}</span>
                                                     </div>
                                                     <div className="grid grid-cols-3 gap-2 bg-gray-50/80 p-2 rounded-lg text-center text-xs">
                                                         <div>
@@ -2146,7 +2169,8 @@ export default function CenterFinancialsPage() {
                                                                 {tx.remainingAmount} ج.م
                                                             </td>
                                                             <td className="py-3 px-4 text-gray-400 font-medium">
-                                                                {new Date(tx.date).toLocaleDateString('ar-EG')}
+                                                                <div>{formatArabicDate(getTransactionDisplayDate(tx) || tx.date || tx.createdAt)}</div>
+                                                                <div className="text-[10px] text-gray-400 font-mono">{formatArabicTime(getTransactionDisplayDate(tx) || tx.date || tx.createdAt)}</div>
                                                             </td>
                                                             <td className="py-3 px-4 text-center">
                                                                 <Button
@@ -2190,31 +2214,43 @@ export default function CenterFinancialsPage() {
                             <label className="text-xs font-bold text-gray-700 block mb-1">
                                 البحث عن الطالب *
                             </label>
-                            <Input
-                                value={studentSearch}
-                                onChange={(e) => setStudentSearch(e.target.value)}
-                                placeholder="اكتب اسم الطالب أو الكود..."
-                                className="rounded-xl border-gray-200"
-                            />
-                            {studentOptions.length > 0 && (
-                                <div className="mt-1 border border-gray-200 rounded-xl p-1.5 bg-gray-50/50 max-h-32 overflow-y-auto space-y-1">
-                                    {studentOptions.map((st: any) => (
-                                        <div
-                                            key={st._id}
-                                            onClick={() => {
-                                                setSelectedStudentId(st._id);
-                                                setStudentSearch(`${st.studentName} (${st.studentCode})`);
-                                            }}
-                                            className={`p-2 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
-                                                selectedStudentId === st._id
-                                                    ? 'bg-primary text-white'
-                                                    : 'bg-white hover:bg-gray-100 text-gray-800'
-                                            }`}
-                                        >
-                                            {st.studentName} — كود: {st.studentCode} ({st.gradeLevel})
-                                        </div>
-                                    ))}
-                                </div>
+                            <div className="relative">
+                                <Input
+                                    value={studentSearch}
+                                    onChange={(e) => {
+                                        setStudentSearch(e.target.value);
+                                        if (selectedStudentId) {
+                                            setSelectedStudentId('');
+                                        }
+                                    }}
+                                    placeholder="اكتب حرفاً أو أكثر من اسم الطالب أو الكود..."
+                                    className="rounded-xl border-gray-200"
+                                />
+                                {isSearchingStudents && !selectedStudentId && trimmedStudentSearch.length >= 1 && (
+                                    <Loader2 className="h-4 w-4 animate-spin text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                )}
+                            </div>
+                            {!selectedStudentId && trimmedStudentSearch.length >= 1 && (
+                                studentOptions.length > 0 ? (
+                                    <div className="mt-1 border border-gray-200 rounded-xl p-1.5 bg-gray-50/50 max-h-40 overflow-y-auto space-y-1">
+                                        {studentOptions.map((st: any) => (
+                                            <div
+                                                key={st._id}
+                                                onClick={() => {
+                                                    setSelectedStudentId(st._id);
+                                                    setStudentSearch(`${st.studentName} (${st.studentCode})`);
+                                                }}
+                                                className="p-2 rounded-lg text-xs font-bold cursor-pointer transition-colors bg-white hover:bg-gray-100 text-gray-800"
+                                            >
+                                                {st.studentName} — كود: {st.studentCode} ({st.gradeLevel})
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : !isSearchingStudents ? (
+                                    <p className="mt-1.5 text-[11px] font-medium text-gray-500 px-1">
+                                        لا يوجد طلاب مطابقون للبحث
+                                    </p>
+                                ) : null
                             )}
                         </div>
 
@@ -2468,7 +2504,7 @@ export default function CenterFinancialsPage() {
                                 {paymentMutation.isPending && (
                                     <Loader2 className="h-4 w-4 animate-spin ml-2" />
                                 )}
-                                حفظ المعاملة وطباعة الإيصال
+                                {isMobile ? 'حفظ المعاملة' : 'حفظ المعاملة وطباعة الإيصال'}
                             </Button>
                         </DialogFooter>
                     </form>
@@ -2500,7 +2536,7 @@ export default function CenterFinancialsPage() {
                                         discountAmount: Number(editDiscountAmount || 0),
                                         paidAmount: Number(editPaidAmount || 0),
                                         description: editDescription.trim() || undefined,
-                                        date: editDate || undefined,
+                                        date: editDate && editDate !== initialEditDate ? editDate : undefined,
                                     },
                                 });
                             }}

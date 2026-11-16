@@ -37,13 +37,13 @@ export function BranchSwitcher({ className }: { className?: string }) {
             // Default to main center (parentCenterId is null) or first center
             const main = centers.find((c) => !c.parentCenterId) || centers[0];
             setSelectedBranchId(main._id);
-            Cookies.set('selectedBranchId', main._id);
+            Cookies.set('selectedBranchId', main._id, { path: '/', sameSite: 'lax' });
         }
     }, [centers]);
 
     const handleSelectBranch = (branchId: string) => {
         setSelectedBranchId(branchId);
-        Cookies.set('selectedBranchId', branchId);
+        Cookies.set('selectedBranchId', branchId, { path: '/', sameSite: 'lax' });
         queryClient.invalidateQueries({ queryKey: ['center'] });
     };
 

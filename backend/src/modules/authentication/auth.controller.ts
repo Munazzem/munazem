@@ -51,14 +51,40 @@ router.get('/me', authenticate, async (req: Request, res: Response, next: NextFu
             }
         }
 
+        let centerOwnerId: any = null;
+        if (user.role === 'centerSupervisor' && user.centerId) {
+            const { CenterModel } = await import('../../database/models/center.model.js');
+            const center = await CenterModel.findById(user.centerId).select('name logoUrl ownerId').lean();
+            if (center) {
+                userObject.centerName = userObject.centerName || center.name;
+                userObject.logoUrl = userObject.logoUrl || center.logoUrl;
+                centerOwnerId = center.ownerId;
+            }
+        } else if (user.role === 'centerOwner' && (!userObject.centerName || !userObject.logoUrl)) {
+            const { CenterModel } = await import('../../database/models/center.model.js');
+            const center = await CenterModel.findOne({ ownerId: userId, parentCenterId: null, isActive: true })
+                .select('name logoUrl')
+                .lean();
+            if (center) {
+                userObject.centerName = userObject.centerName || center.name;
+                userObject.logoUrl = userObject.logoUrl || center.logoUrl;
+            }
+        }
+
         // Fetch active subscription to include planTier
         const { SubscriptionModel } = await import('../../database/models/subscription.model.js');
         const { SubscriptionStatus } = await import('../../common/enums/enum.service.js');
-        const activeSubscription = await SubscriptionModel.findOne({
-            teacherId: user.role === 'teacher' ? userId : user.teacherId,
-            status: SubscriptionStatus.ACTIVE,
-            endDate: { $gt: new Date() },
-        }).sort({ endDate: -1 }).lean();
+        const subscriptionOwnerId =
+            user.role === 'teacher' || user.role === 'centerOwner'
+                ? userId
+                : (centerOwnerId || user.teacherId);
+        const activeSubscription = subscriptionOwnerId
+            ? await SubscriptionModel.findOne({
+                teacherId: subscriptionOwnerId,
+                status: SubscriptionStatus.ACTIVE,
+                endDate: { $gt: new Date() },
+            }).sort({ endDate: -1 }).lean()
+            : null;
         
         userObject.planTier = activeSubscription?.planTier || null;
         userObject.id = userObject._id?.toString() || userId;
