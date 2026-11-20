@@ -87,6 +87,7 @@ const userSchema = new Schema<IUserDocument>(
             canGradeExams:        { type: Boolean, default: true },
             canManageNotebooks:   { type: Boolean, default: true },
             canSendNotifications: { type: Boolean, default: true },
+            canManageInquiries:   { type: Boolean, default: false },
         },
         assistantType: {
             type: String,

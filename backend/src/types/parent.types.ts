@@ -58,6 +58,7 @@ export enum ParentNotificationType {
   PAYMENT_RECORDED = 'PAYMENT_RECORDED',
   CYCLE_STARTED = 'CYCLE_STARTED',
   TEACHER_MESSAGE = 'TEACHER_MESSAGE',
+  INQUIRY_REPLY = 'INQUIRY_REPLY',
 }
 
 export interface IParentNotificationDocument extends Document {
