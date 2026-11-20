@@ -24,9 +24,13 @@ import {
     CreditCard,
     UserCheck,
     MessageSquare,
+    Inbox,
 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/lib/store/auth.store';
 import { useUIStore } from '@/lib/store/ui.store';
+import { QK } from '@/lib/query-keys';
+import { fetchInquiryCounts } from '@/lib/api/inquiries';
 
 const getNavItems = (role?: string, permissions?: any) => {
     if (role === 'superAdmin') {
@@ -108,17 +112,26 @@ const getNavItems = (role?: string, permissions?: any) => {
         { name: 'الإعدادات',         href: '/dashboard/settings',  icon: Settings        },
     ];
 
-    // Teacher gets extra links: Parent Messages and Assistants Management
+    // Teacher gets extra links: Parent Messages, Parent Inquiries, and Assistants Management
     if (role === 'teacher') {
         base.splice(8, 0,
-            { name: 'رسائل أولياء الأمور', href: '/messages',   icon: MessageSquare },
-            { name: 'المساعدين',           href: '/assistants', icon: ShieldCheck   }
+            { name: 'رسائل أولياء الأمور',     href: '/messages',   icon: MessageSquare },
+            { name: 'استفسارات أولياء الأمور', href: '/inquiries',  icon: Inbox         },
+            { name: 'المساعدين',               href: '/assistants', icon: ShieldCheck   }
+        );
+    }
+
+    // Assistant gets Parent Inquiries only when canManageInquiries === true
+    if (role === 'assistant' && permissions?.canManageInquiries === true) {
+        base.splice(8, 0,
+            { name: 'استفسارات أولياء الأمور', href: '/inquiries', icon: Inbox }
         );
     }
 
     // Assistant permissions filter
     if (role === 'assistant' && permissions) {
         return base.filter((item) => {
+            if (item.href === '/inquiries' && permissions.canManageInquiries !== true) return false;
             if (item.href === '/dashboard/payments' && permissions.canViewFinancials === false && permissions.canRecordPayments === false) return false;
             if (item.href === '/reports' && permissions.canViewFinancials === false) return false;
             if (item.href === '/groups' && permissions.canManageGroups === false) return false;
@@ -149,6 +162,25 @@ export function Sidebar() {
     const activePermissions =
         user?.role === 'centerSupervisor' ? user?.supervisorPermissions : user?.assistantPermissions;
     const navItems = getNavItems(user?.role, activePermissions);
+
+    // Fetch open inquiry counts only in standalone Teacher / permitted Assistant mode (never in Center mode)
+    const canAccessInquiries =
+        isMounted &&
+        (user?.role === 'teacher' ||
+            (user?.role === 'assistant' && user?.assistantPermissions?.canManageInquiries === true));
+
+    const { data: inquiryCounts } = useQuery({
+        queryKey: QK.inquiries.counts,
+        queryFn: fetchInquiryCounts,
+        enabled: canAccessInquiries,
+        staleTime: 60_000,
+        refetchOnWindowFocus: false,
+    });
+
+    const openInquiriesBadgeCount =
+        user?.role === 'assistant'
+            ? (inquiryCounts?.assistantOpen ?? 0)
+            : (inquiryCounts?.totalOpen ?? 0);
 
     const handleLogout = () => {
         logout();
@@ -232,8 +264,13 @@ export function Sidebar() {
                                 "absolute right-0 top-1/2 -translate-y-1/2 w-1 h-0 bg-primary rounded-l-full transition-all duration-300",
                                 isActive ? "h-3/5" : "group-hover:h-2"
                             )}></div>
-                            <item.icon className={cn("h-5 w-5", isActive ? "text-primary" : "text-gray-400")} />
-                            {item.name}
+                            <item.icon className={cn("h-5 w-5 shrink-0", isActive ? "text-primary" : "text-gray-400")} />
+                            <span className="truncate">{item.name}</span>
+                            {item.href === '/inquiries' && openInquiriesBadgeCount > 0 && (
+                                <span className="mr-auto inline-flex items-center justify-center rounded-full bg-rose-500 px-1.5 py-0.5 text-[11px] font-bold text-white min-w-[20px]">
+                                    {openInquiriesBadgeCount > 99 ? '99+' : openInquiriesBadgeCount}
+                                </span>
+                            )}
                         </Link>
                     );
                 })}

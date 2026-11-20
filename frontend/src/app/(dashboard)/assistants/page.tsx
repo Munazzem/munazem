@@ -61,6 +61,7 @@ const DEFAULT_ATTENDANCE_PERMS: IAssistantPermissions = {
     canGradeExams:        false,
     canManageNotebooks:   false,
     canSendNotifications: true,
+    canManageInquiries:   false,
 };
 
 const DEFAULT_FINANCIAL_PERMS: IAssistantPermissions = {
@@ -76,6 +77,7 @@ const DEFAULT_FINANCIAL_PERMS: IAssistantPermissions = {
     canGradeExams:        false,
     canManageNotebooks:   true,
     canSendNotifications: false,
+    canManageInquiries:   false,
 };
 
 const DEFAULT_ACADEMIC_PERMS: IAssistantPermissions = {
@@ -91,6 +93,7 @@ const DEFAULT_ACADEMIC_PERMS: IAssistantPermissions = {
     canGradeExams:        true,
     canManageNotebooks:   false,
     canSendNotifications: true,
+    canManageInquiries:   false,
 };
 
 const DEFAULT_FULL_PERMS: IAssistantPermissions = {
@@ -106,6 +109,7 @@ const DEFAULT_FULL_PERMS: IAssistantPermissions = {
     canGradeExams:        true,
     canManageNotebooks:   true,
     canSendNotifications: true,
+    canManageInquiries:   false,
 };
 
 const ALL_ASSISTANT_PERMISSION_KEYS: Array<{ key: keyof IAssistantPermissions; label: string; group: string }> = [
@@ -125,6 +129,7 @@ const ALL_ASSISTANT_PERMISSION_KEYS: Array<{ key: keyof IAssistantPermissions; l
 
     { key: 'canManageNotebooks', label: 'بيع وإدارة المذكرات والكتب', group: 'المذكرات والتواصل' },
     { key: 'canSendNotifications', label: 'إرسال إشعارات ورسائل للطلاب وأولياء الأمور', group: 'المذكرات والتواصل' },
+    { key: 'canManageInquiries', label: 'إدارة استفسارات وطلبات أولياء الأمور والرد عليها', group: 'المذكرات والتواصل' },
 ];
 
 const ASSISTANT_TYPE_LABELS: Record<AssistantType, { label: string; badgeClass: string }> = {
@@ -137,7 +142,7 @@ const ASSISTANT_TYPE_LABELS: Record<AssistantType, { label: string; badgeClass: 
 
 function countActivePermissions(perms?: IAssistantPermissions): number {
     if (!perms) return 0;
-    return Object.values(perms).filter(Boolean).length;
+    return ALL_ASSISTANT_PERMISSION_KEYS.filter((item) => perms[item.key] === true).length;
 }
 
 export default function AssistantsPage() {
@@ -329,7 +334,7 @@ function AssistantsContent() {
                                                         {(ASSISTANT_TYPE_LABELS[a.assistantType as AssistantType] || ASSISTANT_TYPE_LABELS.CUSTOM).label}
                                                     </span>
                                                     <span className="text-[11px] text-gray-400 font-medium">
-                                                        {countActivePermissions(a.assistantPermissions)} من 12 صلاحية
+                                                        {countActivePermissions(a.assistantPermissions)} من {ALL_ASSISTANT_PERMISSION_KEYS.length} صلاحية
                                                     </span>
                                                 </div>
                                             </td>
@@ -807,7 +812,11 @@ function EditAssistantModal({
     const [password,      setPassword]      = useState('');
     const [salary,        setSalary]        = useState(assistant.salary != null ? String(assistant.salary) : '');
     const [assistantType, setAssistantType] = useState<AssistantType>(assistant.assistantType || 'CUSTOM');
-    const [permissions,   setPermissions]   = useState<IAssistantPermissions>(assistant.assistantPermissions || DEFAULT_ATTENDANCE_PERMS);
+    const [permissions,   setPermissions]   = useState<IAssistantPermissions>({
+        ...DEFAULT_ATTENDANCE_PERMS,
+        ...(assistant.assistantPermissions || {}),
+        canManageInquiries: assistant.assistantPermissions?.canManageInquiries ?? false,
+    });
     const [errors,        setErrors]        = useState<Record<string, string>>({});
 
     const mutation = useMutation({

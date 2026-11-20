@@ -135,4 +135,12 @@ export const QK = {
         audience: (params?: object) => ['teacherMessages_audience', params] as const,
     },
 
+    // ── Parent Inquiries ─────────────────────────────────────────────
+    inquiries: {
+        all:    ['inquiries'] as const,
+        counts: ['inquiries', 'counts'] as const,
+        list:   (params?: object) => ['inquiries', 'list', params] as const,
+        detail: (id: string)      => ['inquiries', 'detail', id] as const,
+    },
+
 } as const;
