@@ -1,13 +1,52 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
+import rateLimit from 'express-rate-limit';
 import { ParentService } from './parent.service.js';
 import { ParentAuthService } from './parent-auth.service.js';
 import { ParentAppService } from './parent-app.service.js';
+import { InquiriesService } from '../inquiries/inquiries.service.js';
 import { CardsService } from '../cards/cards.service.js';
 import { SuccessResponse } from '../../common/utils/response/success.responce.js';
 import { authenticateParent } from '../../middlewares/parent-auth.middleware.js';
 import type { AuthenticatedParentRequest } from '../../middlewares/parent-auth.middleware.js';
 import { parentLoginRateLimiters } from '../../middlewares/rate-limit.middleware.js';
+import { validate } from '../../middlewares/validate.middleware.js';
+import {
+  createParentInquirySchema,
+  getParentInquiriesSchema,
+  parentInquiryIdParamSchema,
+  updateParentInquirySchema,
+} from '../../validation/parent-inquiry.validation.js';
+
+const isTest = process.env.NODE_ENV === 'test';
+
+// Rate Limit S1: 5 inquiry creations per hour per parentId
+export const parentInquiryCreateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: isTest ? 1000 : 5,
+  keyGenerator: (req: Request) =>
+    (req as AuthenticatedParentRequest).parent?.parentId || req.ip || 'anonymous',
+  message: {
+    message:
+      'تجاوزت الحد المسموح لإنشاء الطلبات (5 طلبات في الساعة)، يرجى المحاولة لاحقاً',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Rate Limit S2: 20 inquiry edits/cancellations per hour per parentId
+export const parentInquiryMutateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: isTest ? 1000 : 20,
+  keyGenerator: (req: Request) =>
+    (req as AuthenticatedParentRequest).parent?.parentId || req.ip || 'anonymous',
+  message: {
+    message:
+      'تجاوزت الحد المسموح لتعديل أو إلغاء الطلبات (20 عملية في الساعة)، يرجى المحاولة لاحقاً',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 const parentRouter = Router();
 
@@ -397,6 +436,131 @@ parentRouter.patch(
       return SuccessResponse({
         res,
         message: 'تم تحديث حالة الإشعار بنجاح',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ─── Parent Inquiries & Requests Routes ──────────────────────────────────────
+
+// GET /parent/inquiries — List parent's inquiries (optionally filtered by studentId)
+parentRouter.get(
+  '/inquiries',
+  authenticateParent,
+  validate(getParentInquiriesSchema),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const parentReq = req as AuthenticatedParentRequest;
+      const data = await InquiriesService.getParentInquiries(
+        parentReq.parent.parentId,
+        req.query as any
+      );
+      return SuccessResponse({
+        res,
+        data,
+        message: 'تم جلب قائمة الطلبات والاستفسارات بنجاح',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// GET /parent/inquiries/:id — Get single inquiry details
+parentRouter.get(
+  '/inquiries/:id',
+  authenticateParent,
+  validate(parentInquiryIdParamSchema),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const parentReq = req as AuthenticatedParentRequest;
+      const { id } = req.params;
+      const data = await InquiriesService.getParentInquiryById(
+        parentReq.parent.parentId,
+        id as string
+      );
+      return SuccessResponse({
+        res,
+        data,
+        message: 'تم جلب تفاصيل الطلب بنجاح',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// POST /parent/inquiries — Create new inquiry (201 Created, or 200 on idempotent replay)
+parentRouter.post(
+  '/inquiries',
+  authenticateParent,
+  parentInquiryCreateLimiter,
+  validate(createParentInquirySchema),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const parentReq = req as AuthenticatedParentRequest;
+      const { inquiry, isReplay } = await InquiriesService.createParentInquiry(
+        parentReq.parent.parentId,
+        req.body
+      );
+      return SuccessResponse({
+        res,
+        data: inquiry,
+        message: 'تم إرسال استفسارك بنجاح وسيتم الرد عليك قريباً',
+        status: isReplay ? 200 : 201,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// PATCH /parent/inquiries/:id — Edit pending inquiry body (up to 3 times)
+parentRouter.patch(
+  '/inquiries/:id',
+  authenticateParent,
+  parentInquiryMutateLimiter,
+  validate(updateParentInquirySchema),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const parentReq = req as AuthenticatedParentRequest;
+      const { id } = req.params;
+      const data = await InquiriesService.updateParentInquiry(
+        parentReq.parent.parentId,
+        id as string,
+        req.body.body
+      );
+      return SuccessResponse({
+        res,
+        data,
+        message: 'تم تعديل نص الطلب بنجاح',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// POST /parent/inquiries/:id/cancel — Soft-cancel pending inquiry
+parentRouter.post(
+  '/inquiries/:id/cancel',
+  authenticateParent,
+  parentInquiryMutateLimiter,
+  validate(parentInquiryIdParamSchema),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const parentReq = req as AuthenticatedParentRequest;
+      const { id } = req.params;
+      const data = await InquiriesService.cancelParentInquiry(
+        parentReq.parent.parentId,
+        id as string
+      );
+      return SuccessResponse({
+        res,
+        data,
+        message: 'تم إلغاء الطلب بنجاح',
       });
     } catch (error) {
       next(error);

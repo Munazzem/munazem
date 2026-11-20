@@ -8,6 +8,7 @@ import { CenterStudentModel } from '../../database/models/center-student.model.j
 import { UserModel } from '../../database/models/user.model.js';
 import { AttendanceModel } from '../../database/models/attendance.model.js';
 import { TeacherMessageModel } from '../../database/models/teacher-message.model.js';
+import { ParentInquiryModel } from '../../database/models/parent-inquiry.model.js';
 import { ParentNotificationType } from '../../types/parent.types.js';
 import { logger } from '../../common/utils/logger.util.js';
 import { normalizePhone } from './parent-auth.service.js';
@@ -1770,6 +1771,110 @@ export class ParentPushService {
       }
 
       return { insertedCount: 0, pushCount: 0 };
+    }
+  }
+
+  /**
+   * 8. Inquiry Reply (Fire-and-forget wrapper via setImmediate)
+   */
+  static notifyInquiryReply(inquiryId: string): void {
+    setImmediate(() => {
+      ParentPushService._sendInquiryReply(inquiryId).catch((err) =>
+        logger.warn('push_notify_inquiry_reply_error', { err, inquiryId })
+      );
+    });
+  }
+
+  /**
+   * Internal implementation of inquiry reply notification.
+   * NOTE (Decision O1): `data` MUST NOT include the key `kind`, because older mobile app
+   * builds check `!!item.data?.kind` to render structured attendance badges.
+   */
+  static async _sendInquiryReply(
+    inquiryId: string
+  ): Promise<{ inserted: boolean; pushSent: boolean }> {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(inquiryId)) {
+        return { inserted: false, pushSent: false };
+      }
+
+      const inquiry = await ParentInquiryModel.findById(inquiryId).lean();
+      if (!inquiry || inquiry.status !== 'REPLIED' || !inquiry.reply) {
+        return { inserted: false, pushSent: false };
+      }
+
+      // Security A8: Ensure parent-student link is still ACTIVE (and teacher-student type)
+      const activeLink = await ParentStudentModel.findOne({
+        parentId: inquiry.parentId,
+        studentId: inquiry.studentId,
+        status: 'ACTIVE',
+      })
+        .select('studentModelType centerId')
+        .lean();
+
+      if (
+        !activeLink ||
+        activeLink.studentModelType === 'CenterStudent' ||
+        activeLink.centerId
+      ) {
+        return { inserted: false, pushSent: false };
+      }
+
+      const studentName = (inquiry.studentName || '').trim();
+      const title = studentName
+        ? `رد على استفسارك — ${studentName}`
+        : 'رد على استفسارك';
+      const fullBody = (inquiry.reply.body || '').trim();
+      const pushBody =
+        fullBody.length > 180 ? `${fullBody.slice(0, 177)}...` : fullBody;
+      const eventId = `inquiry_reply:${inquiry._id.toString()}`;
+
+      // Deliberately omit `kind` to preserve backward compatibility with old app builds (O1)
+      const data: Record<string, any> = {
+        inquiryId: inquiry._id.toString(),
+        studentId: inquiry.studentId.toString(),
+        studentName,
+        category: inquiry.category,
+        repliedByRole: inquiry.reply.repliedByRole,
+        repliedByName: inquiry.reply.repliedByName,
+      };
+
+      const inserted = await saveInAppNotificationSafe({
+        parentId: inquiry.parentId.toString(),
+        studentId: inquiry.studentId.toString(),
+        teacherId: inquiry.teacherId.toString(),
+        type: ParentNotificationType.INQUIRY_REPLY,
+        title,
+        body: fullBody,
+        deepLink: 'monazem://notifications',
+        data,
+        eventId,
+      });
+
+      if (!inserted) {
+        return { inserted: false, pushSent: false };
+      }
+
+      try {
+        await deliverToParent(inquiry.parentId.toString(), {
+          title,
+          body: pushBody,
+          data,
+        });
+        return { inserted: true, pushSent: true };
+      } catch (pushErr) {
+        logger.warn('inquiry_reply_push_delivery_error', {
+          inquiryId,
+          pushErr,
+        });
+        return { inserted: true, pushSent: false };
+      }
+    } catch (error) {
+      logger.warn('inquiry_reply_notification_failed', {
+        inquiryId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return { inserted: false, pushSent: false };
     }
   }
 }
