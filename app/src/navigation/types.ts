@@ -43,6 +43,26 @@ export type RootStackParamList = {
     studentName: string;
   };
 
+  // Parent Inquiries & Requests (Teacher-mode students only)
+  Inquiries:
+    | {
+        studentId?: string;
+        studentName?: string;
+      }
+    | undefined;
+  InquiryDetail: {
+    inquiryId: string;
+  };
+  InquiryCompose: {
+    mode: 'create' | 'edit';
+    studentId?: string;
+    studentName?: string;
+    inquiryId?: string;
+    initialBody?: string;
+    initialCategory?: string;
+    editCount?: number;
+  };
+
   // Barcode scanner (accessible from authenticated context too)
   BarcodeScanner: { parentPhone?: string } | undefined;
   ManualBarcode: { parentPhone?: string } | undefined;

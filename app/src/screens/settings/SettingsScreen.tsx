@@ -201,6 +201,23 @@ export const SettingsScreen: React.FC = () => {
             )}
           </SettingsSection>
 
+          {/* Section: التواصل مع المعلم (Teacher-mode students only) */}
+          {(data?.children ?? []).some(
+            (c) =>
+              !(c as any).isCenter &&
+              (c.subjects ?? []).some((s) => !s.isCenter && !s.isPackage)
+          ) && (
+            <SettingsSection title="التواصل والاستفسارات">
+              <SettingsRow
+                icon={<MessageSquare size={18} color={colors.primary} />}
+                label="الاستفسارات والطلبات"
+                sublabel="إرسال استفسار أو اعتذار للمعلم أو المساعد ومتابعة الرد"
+                onPress={() => navigation.navigate('Inquiries')}
+                isLast
+              />
+            </SettingsSection>
+          )}
+
           {/* Section: الإشعارات */}
           <SettingsSection title="الإشعارات">
             <SettingsToggle

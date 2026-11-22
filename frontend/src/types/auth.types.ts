@@ -15,6 +15,7 @@ export interface IAssistantPermissions {
     canGradeExams?:        boolean;
     canManageNotebooks?:   boolean;
     canSendNotifications?: boolean;
+    canManageInquiries?:   boolean;
 }
 
 export type AssistantType = 'ATTENDANCE' | 'FINANCIAL' | 'ACADEMIC' | 'FULL' | 'CUSTOM';

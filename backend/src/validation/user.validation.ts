@@ -13,6 +13,7 @@ const assistantPermissionsSchema = z.object({
   canGradeExams:        z.boolean().optional(),
   canManageNotebooks:   z.boolean().optional(),
   canSendNotifications: z.boolean().optional(),
+  canManageInquiries:   z.boolean().optional(),
 }).optional().nullable();
 
 // Base User validations

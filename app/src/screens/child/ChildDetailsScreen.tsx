@@ -40,13 +40,14 @@ import {
   Receipt,
   Users,
   Building2,
+  MessageSquare,
 } from 'lucide-react-native';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ChildDetails'>;
 
 type TabType = 'attendance' | 'exams' | 'financial';
 
-export const ChildDetailsScreen: React.FC<Props> = ({ route }) => {
+export const ChildDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
   const { studentId, studentName, initialTab = 'attendance' } = route.params;
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
@@ -147,15 +148,35 @@ export const ChildDetailsScreen: React.FC<Props> = ({ route }) => {
             </Text>
           </View>
 
-          {/* QR Card Action Button */}
-          <TouchableOpacity
-            style={styles.qrBtn}
-            onPress={() => setQrModalVisible(true)}
-            activeOpacity={0.8}
-          >
-            <QrIcon size={18} color={colors.textInverse} />
-            <Text style={styles.qrBtnText}>كارت الطالب</Text>
-          </TouchableOpacity>
+          {/* QR Card & Inquiry Action Buttons */}
+          <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 8 }}>
+            <TouchableOpacity
+              style={styles.qrBtn}
+              onPress={() => setQrModalVisible(true)}
+              activeOpacity={0.8}
+            >
+              <QrIcon size={18} color={colors.textInverse} />
+              <Text style={styles.qrBtnText}>كارت الطالب</Text>
+            </TouchableOpacity>
+
+            {subjects.some((s: any) => !s.isCenter && !s.isPackage) && (
+              <TouchableOpacity
+                style={[styles.qrBtn, { backgroundColor: colors.skyBlue }]}
+                onPress={() =>
+                  navigation.navigate('Inquiries', {
+                    studentId: selectedSubjectId || studentId,
+                    studentName,
+                  })
+                }
+                activeOpacity={0.8}
+              >
+                <MessageSquare size={16} color={colors.navy} />
+                <Text style={[styles.qrBtnText, { color: colors.navy }]}>
+                  استفسار
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
         {/* Subject Filter Pills */}

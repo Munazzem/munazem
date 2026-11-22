@@ -31,8 +31,13 @@ import {
   BookOpen,
   RotateCcw,
   MessageSquare,
+  CheckCircle2,
 } from 'lucide-react-native';
-import { AttendanceNotificationData, ParentNotificationItem } from '../../types/notification.types';
+import {
+  AttendanceNotificationData,
+  ParentNotificationItem,
+} from '../../types/notification.types';
+import { INQUIRY_CATEGORY_LABELS, InquiryCategory } from '../../types/inquiry.types';
 
 export const NotificationsScreen: React.FC = () => {
   const queryClient = useQueryClient();
@@ -71,6 +76,8 @@ export const NotificationsScreen: React.FC = () => {
         return <Wallet size={20} color={colors.warning} />;
       case 'TEACHER_MESSAGE':
         return <MessageSquare size={20} color={colors.primary} />;
+      case 'INQUIRY_REPLY':
+        return <CheckCircle2 size={20} color={colors.success} />;
       case 'CENTER_CHECKIN':
         return <CalendarCheck size={20} color={colors.info} />;
       default:
@@ -291,6 +298,62 @@ export const NotificationsScreen: React.FC = () => {
     );
   };
 
+  const renderInquiryReplyDetails = (item: ParentNotificationItem) => {
+    const notifData = item.data;
+    const studentName = notifData?.studentName || item.studentName || '';
+    const repliedByRole = notifData?.repliedByRole;
+    const repliedByName = notifData?.repliedByName || item.teacherName || '';
+    const categoryKey = notifData?.category as InquiryCategory | undefined;
+    const categoryLabel =
+      (categoryKey && INQUIRY_CATEGORY_LABELS[categoryKey]) || categoryKey || '';
+
+    return (
+      <View style={styles.teacherMessageContainer}>
+        <View style={styles.badgeRow}>
+          <View style={styles.inquiryReplyBadge}>
+            <CheckCircle2
+              size={10}
+              color={colors.successDark}
+              style={styles.msgBadgeIcon}
+            />
+            <Text style={styles.inquiryReplyBadgeText}>
+              {repliedByRole === 'teacher'
+                ? 'رد المستر على استفسارك'
+                : 'رد الأسيستنت على استفسارك'}
+            </Text>
+          </View>
+          {categoryLabel ? (
+            <View style={styles.teacherMsgBadge}>
+              <Text style={styles.teacherMsgBadgeText}>{categoryLabel}</Text>
+            </View>
+          ) : null}
+        </View>
+
+        {(studentName || repliedByName) ? (
+          <View style={styles.metaBox}>
+            {studentName ? (
+              <View style={styles.metaRow}>
+                <Users size={12} color={colors.primary} />
+                <Text style={styles.metaText}>
+                  الطالب: <Text style={styles.metaTextBold}>{studentName}</Text>
+                </Text>
+              </View>
+            ) : null}
+
+            {repliedByName ? (
+              <View style={styles.metaRow}>
+                <User size={12} color={colors.textSecondary} />
+                <Text style={styles.metaText}>
+                  الرد من: <Text style={styles.metaTextBold}>{repliedByName}</Text>
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
@@ -326,7 +389,9 @@ export const NotificationsScreen: React.FC = () => {
           }
           renderItem={({ item }) => {
             const isTeacherMessage = item.type === 'TEACHER_MESSAGE';
-            const hasStructuredAttendance = !isTeacherMessage && !!item.data?.kind;
+            const isInquiryReply = item.type === 'INQUIRY_REPLY';
+            const hasStructuredAttendance =
+              !isTeacherMessage && !isInquiryReply && !!item.data?.kind;
 
             return (
               <TouchableOpacity
@@ -337,6 +402,20 @@ export const NotificationsScreen: React.FC = () => {
                   }
                   // Teacher messages: mark as read only, do NOT navigate to ChildDetails (Decision E2)
                   if (item.type === 'TEACHER_MESSAGE') {
+                    return;
+                  }
+                  // Inquiry reply: navigate directly to InquiryDetail (or Inquiries list fallback)
+                  if (item.type === 'INQUIRY_REPLY') {
+                    if (item.data?.inquiryId) {
+                      navigation.navigate('InquiryDetail', {
+                        inquiryId: String(item.data.inquiryId),
+                      });
+                    } else {
+                      navigation.navigate('Inquiries', {
+                        studentId: item.studentId || undefined,
+                        studentName: item.studentName || undefined,
+                      });
+                    }
                     return;
                   }
 
@@ -401,6 +480,9 @@ export const NotificationsScreen: React.FC = () => {
 
                       {/* Teacher Broadcast Message Meta */}
                       {isTeacherMessage && renderTeacherMessageDetails(item)}
+
+                      {/* Inquiry Reply Meta */}
+                      {isInquiryReply && renderInquiryReplyDetails(item)}
 
                       {/* Structured Attendance Details (Active when data.kind is present) */}
                       {hasStructuredAttendance && item.data ? (
@@ -598,5 +680,18 @@ const styles = StyleSheet.create({
     fontFamily: typography.bold,
     fontSize: 11,
     color: colors.primary,
+  },
+  inquiryReplyBadge: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    backgroundColor: colors.successLight,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  inquiryReplyBadgeText: {
+    fontFamily: typography.bold,
+    fontSize: 11,
+    color: colors.successDark,
   },
 });

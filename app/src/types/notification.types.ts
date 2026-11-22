@@ -5,7 +5,8 @@ export type NotificationType =
   | 'EXAM_RESULT'
   | 'PAYMENT_RECORDED'
   | 'CYCLE_STARTED'
-  | 'TEACHER_MESSAGE';
+  | 'TEACHER_MESSAGE'
+  | 'INQUIRY_REPLY';
 
 export type AttendanceNotificationKind =
   | 'PRESENT'
@@ -27,6 +28,10 @@ export interface AttendanceNotificationData {
   studentIds?: string[];
   studentNames?: string[];
   messageId?: string;
+  inquiryId?: string;
+  category?: string;
+  repliedByRole?: 'assistant' | 'teacher';
+  repliedByName?: string;
   sessionId?: string;
   tab?: string;
   kind?: AttendanceNotificationKind;

@@ -15,6 +15,7 @@ export interface IAssistantPermissions {
   canGradeExams:        boolean; // تصحيح ورصد درجات الامتحانات
   canManageNotebooks:   boolean; // إدارة المذكرات والملازم
   canSendNotifications: boolean; // إرسال الرسائل والإشعارات
+  canManageInquiries?:  boolean; // إدارة استفسارات وطلبات أولياء الأمور
 }
 
 export type AssistantType = 'ATTENDANCE' | 'FINANCIAL' | 'ACADEMIC' | 'FULL' | 'CUSTOM';
