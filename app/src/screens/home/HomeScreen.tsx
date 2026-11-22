@@ -37,6 +37,7 @@ import {
   Minus,
   Calendar,
   QrCode,
+  MessageSquare,
 } from 'lucide-react-native';
 import { StudentQrCardModal } from '../../components/common/StudentQrCardModal';
 
@@ -353,6 +354,32 @@ export const HomeScreen: React.FC = () => {
                     <Text style={styles.emptyText}>لا توجد اختبارات مسجلة بعد</Text>
                   )}
                 </SectionCard>
+
+                {/* ── Parent Inquiries & Requests Card (Standalone Teacher Mode Only) ── */}
+                {activeSubject &&
+                  !activeSubject.isCenter &&
+                  !(activeSubject as any).isPackage &&
+                  !(child as any).isCenter && (
+                    <SectionCard
+                      icon={<MessageSquare size={17} color="#0f4c81" />}
+                      title="الاستفسارات والطلبات"
+                      ctaLabel="عرض وإرسال"
+                      onCta={() =>
+                        navigation.navigate('Inquiries', {
+                          studentId: activeSubject.studentId,
+                          studentName: child.studentName || 'طالب',
+                        })
+                      }
+                    >
+                      <View style={styles.cardSubjectRow}>
+                        <BookOpen size={13} color="#0f4c81" />
+                        <Text style={styles.cardSubjectText} numberOfLines={2}>
+                          تواصل مع أ. {activeSubject.teacherName || 'المعلم'} أو
+                          الأسيستنت لإرسال اعتذار أو استفسار ومتابعة الرد
+                        </Text>
+                      </View>
+                    </SectionCard>
+                  )}
 
                 {/* ── Next Lesson Card ─────────────────────────────── */}
                 {child.subjects?.length > 0 && (

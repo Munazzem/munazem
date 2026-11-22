@@ -58,4 +58,9 @@ export const ENDPOINTS = {
   NOTIFICATIONS: '/parent/notifications',
   MARK_NOTIFICATION_READ: (id: string) => `/parent/notifications/${id}/read`,
   REGISTER_DEVICE_TOKEN: '/parent/device/token',
+
+  // Parent Inquiries & Requests
+  INQUIRIES: '/parent/inquiries',
+  INQUIRY_DETAILS: (id: string) => `/parent/inquiries/${id}`,
+  CANCEL_INQUIRY: (id: string) => `/parent/inquiries/${id}/cancel`,
 } as const;

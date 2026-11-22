@@ -9,6 +9,9 @@ import { SelectChildScreen } from '../screens/child/SelectChildScreen';
 import { FinanceScreen } from '../screens/finance/FinanceScreen';
 import { BarcodeScannerScreen } from '../screens/auth/BarcodeScannerScreen';
 import { ManualBarcodeScreen } from '../screens/auth/ManualBarcodeScreen';
+import { InquiriesScreen } from '../screens/inquiries/InquiriesScreen';
+import { InquiryDetailScreen } from '../screens/inquiries/InquiryDetailScreen';
+import { InquiryComposeScreen } from '../screens/inquiries/InquiryComposeScreen';
 import { useAuthStore } from '../store/auth.store';
 import { useChildStore } from '../store/child.store';
 import { colors } from '../theme/colors';
@@ -107,6 +110,54 @@ export const RootNavigator: React.FC = () => {
               presentation: 'modal',
               animation: 'slide_from_bottom',
             }}
+          />
+          <Stack.Screen
+            name="Inquiries"
+            component={InquiriesScreen}
+            options={{
+              headerShown: true,
+              title: 'الاستفسارات والطلبات',
+              headerTintColor: colors.textInverse,
+              headerTitleStyle: {
+                fontFamily: typography.fontFamily.bold,
+                color: colors.textInverse,
+              },
+              headerShadowVisible: false,
+              headerStyle: { backgroundColor: colors.navy },
+            }}
+          />
+          <Stack.Screen
+            name="InquiryDetail"
+            component={InquiryDetailScreen}
+            options={{
+              headerShown: true,
+              title: 'تفاصيل الطلب والرد',
+              headerTintColor: colors.textInverse,
+              headerTitleStyle: {
+                fontFamily: typography.fontFamily.bold,
+                color: colors.textInverse,
+              },
+              headerShadowVisible: false,
+              headerStyle: { backgroundColor: colors.navy },
+            }}
+          />
+          <Stack.Screen
+            name="InquiryCompose"
+            component={InquiryComposeScreen}
+            options={({ route }) => ({
+              headerShown: true,
+              title:
+                route.params.mode === 'edit'
+                  ? 'تعديل نص الطلب'
+                  : 'إرسال استفسار جديد',
+              headerTintColor: colors.textInverse,
+              headerTitleStyle: {
+                fontFamily: typography.fontFamily.bold,
+                color: colors.textInverse,
+              },
+              headerShadowVisible: false,
+              headerStyle: { backgroundColor: colors.navy },
+            })}
           />
         </>
       )}
